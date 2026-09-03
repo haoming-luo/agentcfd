@@ -39,6 +39,9 @@ Serialized results can be reopened with `read_result_record()`, or checked from
 automation using `agentcfd verify result RESULT.json`. The reader recomputes
 the accepted/trust state from the recorded checks and verifies every artifact's
 size and SHA-256; edited evidence and hand-edited trust claims fail closed.
+The parser also rejects duplicate JSON keys and non-standard `NaN`/`Infinity`
+values so different downstream languages cannot interpret one record
+differently.
 
 ## AgentFEM and AI continuity
 

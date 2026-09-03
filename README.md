@@ -77,6 +77,16 @@ agentcfd doctor
 agentcfd demo pipe
 ```
 
+Common pipe-loss screening is available without a CFD runtime:
+
+```bash
+agentcfd calculate pipe-loss --density 998.2 --viscosity 0.001002 \
+  --length 10 --diameter 0.05 --velocity 0.02 --json
+agentcfd calculate pipe-flow --density 998.2 --viscosity 0.001002 \
+  --length 10 --diameter 0.05 --pressure-loss 2.56512 \
+  --regime laminar --json
+```
+
 For editable development from the repository:
 
 ```bash

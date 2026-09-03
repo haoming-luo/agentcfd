@@ -56,6 +56,40 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
         contracts.load("../untrusted.json")
 
 
+def test_cli_calculates_forward_and_inverse_pipe_operating_point(capsys):
+    common = [
+        "--density",
+        "1000",
+        "--viscosity",
+        "0.001",
+        "--length",
+        "2",
+        "--diameter",
+        "0.1",
+        "--json",
+    ]
+    assert main(["calculate", "pipe-loss", *common, "--velocity", "0.01"]) == 0
+    loss = json.loads(capsys.readouterr().out)
+    assert loss["total_pressure_loss"] == pytest.approx(0.064)
+
+    assert (
+        main(
+            [
+                "calculate",
+                "pipe-flow",
+                *common,
+                "--pressure-loss",
+                "0.064",
+                "--regime",
+                "laminar",
+            ]
+        )
+        == 0
+    )
+    flow = json.loads(capsys.readouterr().out)
+    assert flow["mean_velocity"] == pytest.approx(0.01)
+
+
 def test_cli_prepares_openfoam_case_without_runtime(tmp_path, capsys):
     case_directory = tmp_path / "foam-case"
     assert main(["prepare", "openfoam-pipe", str(case_directory), "--json"]) == 0

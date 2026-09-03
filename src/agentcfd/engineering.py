@@ -381,3 +381,172 @@ def turbulent_pipe_wall_resolution(
         first_cell_center_distance=distance,
         nominal_first_cell_thickness=2.0 * distance,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class TurbulenceInletEstimate:
+    """Two-equation RANS inlet scalars derived from intensity and length scale."""
+
+    intensity: float
+    length_scale: float
+    c_mu: float
+    turbulent_kinetic_energy: float
+    specific_dissipation_rate: float
+    dissipation_rate: float
+
+    def to_dict(self) -> dict[str, float]:
+        return asdict(self)
+
+
+def turbulence_inlet_from_intensity(
+    *,
+    mean_velocity: float,
+    intensity: float,
+    length_scale: float,
+    c_mu: float = 0.09,
+) -> TurbulenceInletEstimate:
+    """Return ``k``, ``omega``, and ``epsilon`` inlet screening values.
+
+    Intensity is a fraction, not a percentage. The returned values initialize
+    common two-equation RANS models but do not choose a turbulence model or
+    hide the engineering choice of length scale.
+    """
+
+    velocity = _positive(mean_velocity, "mean_velocity")
+    selected_intensity = _positive(intensity, "intensity")
+    if selected_intensity >= 1.0:
+        raise ValueError("intensity must be a fraction below one.")
+    selected_length = _positive(length_scale, "length_scale")
+    selected_c_mu = _positive(c_mu, "c_mu")
+    if selected_c_mu >= 1.0:
+        raise ValueError("c_mu must be below one.")
+    kinetic_energy = 1.5 * (selected_intensity * velocity) ** 2
+    omega = math.sqrt(kinetic_energy) / (selected_c_mu**0.25 * selected_length)
+    epsilon = selected_c_mu**0.75 * kinetic_energy**1.5 / selected_length
+    return TurbulenceInletEstimate(
+        intensity=selected_intensity,
+        length_scale=selected_length,
+        c_mu=selected_c_mu,
+        turbulent_kinetic_energy=kinetic_energy,
+        specific_dissipation_rate=omega,
+        dissipation_rate=epsilon,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PipeOperatingPoint:
+    """Pressure-driven circular-pipe screening operating point."""
+
+    regime: str
+    pressure_loss: float
+    mean_velocity: float
+    volume_flow_rate: float
+    reynolds_number: float
+    darcy_friction_factor: float
+
+    def to_dict(self) -> dict[str, float | str]:
+        return asdict(self)
+
+
+def circular_pipe_operating_point(
+    *,
+    pressure_loss: float,
+    density: float,
+    dynamic_viscosity: float,
+    length: float,
+    diameter: float,
+    regime: str,
+    roughness: float = 0.0,
+    loss_coefficient: float = 0.0,
+) -> PipeOperatingPoint:
+    """Invert distributed and local loss for one declared flow regime.
+
+    Laminar flow uses the exact linear-plus-quadratic pressure relation.
+    Turbulent flow uses a bracketed solve around the implicit Colebrook factor.
+    Solutions landing in the transitional range fail instead of being blended.
+    """
+
+    target = _positive(pressure_loss, "pressure_loss")
+    selected_density = _positive(density, "density")
+    viscosity = _positive(dynamic_viscosity, "dynamic_viscosity")
+    selected_length = _positive(length, "length")
+    selected_diameter = _positive(diameter, "diameter")
+    selected_roughness = _nonnegative(roughness, "roughness")
+    selected_loss = _nonnegative(loss_coefficient, "loss_coefficient")
+    if selected_roughness >= selected_diameter:
+        raise ValueError("roughness must be smaller than diameter.")
+    if regime not in {"laminar", "turbulent"}:
+        raise ValueError("regime must be 'laminar' or 'turbulent'.")
+
+    if regime == "laminar":
+        linear = 32.0 * viscosity * selected_length / selected_diameter**2
+        quadratic = 0.5 * selected_loss * selected_density
+        velocity = (
+            target / linear
+            if quadratic == 0.0
+            else 2.0 * target / (linear + math.sqrt(linear**2 + 4.0 * quadratic * target))
+        )
+    else:
+        lower = 4000.0 * viscosity / (selected_density * selected_diameter)
+
+        def loss(velocity: float) -> float:
+            return pipe_pressure_loss(
+                density=selected_density,
+                dynamic_viscosity=viscosity,
+                mean_velocity=velocity,
+                length=selected_length,
+                hydraulic_diameter=selected_diameter,
+                roughness=selected_roughness,
+                loss_coefficient=selected_loss,
+            ).total_pressure_loss
+
+        if target < loss(lower):
+            raise ValueError(
+                "Requested pressure loss has no solution in the declared turbulent regime."
+            )
+        upper = 2.0 * lower
+        for _ in range(100):
+            if loss(upper) >= target:
+                break
+            upper *= 2.0
+        else:
+            raise ValueError("Could not bracket the turbulent pipe operating point.")
+        for _ in range(100):
+            middle = 0.5 * (lower + upper)
+            if loss(middle) < target:
+                lower = middle
+            else:
+                upper = middle
+        velocity = 0.5 * (lower + upper)
+
+    solution_reynolds = reynolds_number(
+        density=selected_density,
+        mean_velocity=velocity,
+        hydraulic_diameter=selected_diameter,
+        dynamic_viscosity=viscosity,
+    )
+    if regime == "laminar" and solution_reynolds >= 2300.0:
+        raise ValueError(
+            "Pressure-driven solution is transitional or turbulent, not declared 'laminar'."
+        )
+    estimate = pipe_pressure_loss(
+        density=selected_density,
+        dynamic_viscosity=viscosity,
+        mean_velocity=velocity,
+        length=selected_length,
+        hydraulic_diameter=selected_diameter,
+        roughness=selected_roughness,
+        loss_coefficient=selected_loss,
+    )
+    if estimate.regime != regime:
+        raise ValueError(
+            f"Pressure-driven solution falls in {estimate.regime!r}, not declared {regime!r}."
+        )
+    return PipeOperatingPoint(
+        regime=regime,
+        pressure_loss=estimate.total_pressure_loss,
+        mean_velocity=velocity,
+        volume_flow_rate=math.pi * selected_diameter**2 / 4.0 * velocity,
+        reynolds_number=estimate.reynolds_number,
+        darcy_friction_factor=estimate.darcy_friction_factor,
+    )

@@ -61,6 +61,16 @@ machine-readable capability catalog.
   AgentFEM, AI pipelines, and external validators.
 - add dependency-free result reopening that recomputes trust and verifies every
   artifact identity; use it automatically before file-based GCI.
+- reject duplicate JSON keys and non-standard non-finite numbers when reopening
+  scientific result evidence.
+- stop the exact Docker container identified by a per-command CID file when an
+  OpenFOAM subprocess times out.
+- add explicit turbulence-intensity/length-scale initialization for `k`,
+  `omega`, and `epsilon` as a bounded RANS setup primitive.
+- add a bracketed circular-pipe operating-point solver that inverts available
+  pressure into flow without hiding laminar, transitional, or turbulent choice.
+- expose forward pipe loss and inverse pressure-to-flow calculations through a
+  dependency-free JSON CLI for engineers and agents.
 
 ## 0.1.0a1 — 2026-09-03
 

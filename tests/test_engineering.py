@@ -179,3 +179,85 @@ def test_turbulent_wall_resolution_rejects_non_turbulent_regime():
             hydraulic_diameter=0.1,
             target_y_plus=1.0,
         )
+
+
+def test_turbulence_inlet_estimate_matches_two_equation_definitions():
+    estimate = engineering.turbulence_inlet_from_intensity(
+        mean_velocity=10.0,
+        intensity=0.05,
+        length_scale=0.1,
+    )
+
+    expected_k = 1.5 * (0.05 * 10.0) ** 2
+    assert estimate.turbulent_kinetic_energy == pytest.approx(expected_k)
+    assert estimate.specific_dissipation_rate == pytest.approx(
+        math.sqrt(expected_k) / (0.09**0.25 * 0.1)
+    )
+    assert estimate.dissipation_rate == pytest.approx(
+        0.09**0.75 * expected_k**1.5 / 0.1
+    )
+    assert estimate.to_dict()["intensity"] == 0.05
+
+    with pytest.raises(ValueError, match="fraction below one"):
+        engineering.turbulence_inlet_from_intensity(
+            mean_velocity=10.0,
+            intensity=5.0,
+            length_scale=0.1,
+        )
+
+
+def test_pipe_operating_point_inverts_laminar_and_turbulent_losses():
+    laminar = engineering.circular_pipe_operating_point(
+        pressure_loss=0.064,
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+        length=2.0,
+        diameter=0.1,
+        regime="laminar",
+    )
+    assert laminar.mean_velocity == pytest.approx(0.01)
+    assert laminar.reynolds_number == pytest.approx(1000.0)
+    assert laminar.volume_flow_rate == pytest.approx(math.pi * 0.1**2 / 4.0 * 0.01)
+
+    target = engineering.pipe_pressure_loss(
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+        mean_velocity=1.0,
+        length=10.0,
+        hydraulic_diameter=0.1,
+        roughness=1.0e-4,
+        loss_coefficient=1.5,
+    ).total_pressure_loss
+    turbulent = engineering.circular_pipe_operating_point(
+        pressure_loss=target,
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+        length=10.0,
+        diameter=0.1,
+        regime="turbulent",
+        roughness=1.0e-4,
+        loss_coefficient=1.5,
+    )
+    assert turbulent.mean_velocity == pytest.approx(1.0, rel=1.0e-10)
+    assert turbulent.pressure_loss == pytest.approx(target, rel=1.0e-10)
+
+
+def test_pipe_operating_point_refuses_a_declared_regime_mismatch():
+    with pytest.raises(ValueError, match="not declared 'laminar'"):
+        engineering.circular_pipe_operating_point(
+            pressure_loss=0.192,
+            density=1000.0,
+            dynamic_viscosity=1.0e-3,
+            length=2.0,
+            diameter=0.1,
+            regime="laminar",
+        )
+    with pytest.raises(ValueError, match="no solution.*turbulent"):
+        engineering.circular_pipe_operating_point(
+            pressure_loss=0.01,
+            density=1000.0,
+            dynamic_viscosity=1.0e-3,
+            length=2.0,
+            diameter=0.1,
+            regime="turbulent",
+        )

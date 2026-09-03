@@ -295,6 +295,40 @@ def test_openfoam_container_reports_missing_docker_clearly(tmp_path, monkeypatch
         provider.run(pipe_model().step())
 
 
+def test_openfoam_timeout_stops_exact_container_and_removes_cidfile(tmp_path, monkeypatch):
+    provider = OpenFOAMProvider(
+        case_directory=tmp_path / "case",
+        container_image="opencfd/openfoam-run:2606",
+        timeout_seconds=1,
+    )
+    monkeypatch.setattr("agentcfd.providers.openfoam.shutil.which", lambda name: "/docker")
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[1] == "run":
+            cidfile = Path(argv[argv.index("--cidfile") + 1])
+            cidfile.write_text("a" * 64)
+            raise subprocess.TimeoutExpired(argv, 1, output="partial output")
+        if argv[1:3] == ["rm", "--force"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="removed", stderr="")
+        if argv[1:3] == ["image", "inspect"]:
+            payload = [{"Id": f"sha256:{'b' * 64}"}]
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(payload), stderr="")
+        raise AssertionError(argv)
+
+    monkeypatch.setattr("agentcfd.providers.openfoam.subprocess.run", fake_run)
+
+    result = provider.run(pipe_model().step())
+
+    assert result.status == "failed"
+    assert any(argv[1:3] == ["rm", "--force"] and argv[3] == "a" * 64 for argv in calls)
+    assert not (tmp_path / "case" / ".agentcfd-blockMesh.cid").exists()
+    assert "Stopped timed-out container" in (
+        tmp_path / "case" / "log.blockMesh"
+    ).read_text()
+
+
 def test_openfoam_container_image_identity_is_immutable_and_structured(monkeypatch):
     digest = "a" * 64
     payload = [

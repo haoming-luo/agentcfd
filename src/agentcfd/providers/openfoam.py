@@ -259,6 +259,31 @@ def _container_image_identity(
     return record
 
 
+def _stop_timed_out_container(docker_command: str, cidfile: Path) -> str:
+    """Stop exactly the container recorded for a timed-out provider command."""
+
+    try:
+        container_id = cidfile.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        return f"Container cleanup unavailable: {error}"
+    if re.fullmatch(r"[0-9a-fA-F]{12,64}", container_id) is None:
+        return "Container cleanup refused an invalid container identity."
+    try:
+        cleanup = subprocess.run(
+            [docker_command, "rm", "--force", container_id],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30.0,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return f"Container cleanup failed: {error}"
+    if cleanup.returncode == 0:
+        return f"Stopped timed-out container {container_id}."
+    detail = (cleanup.stderr or cleanup.stdout).strip()[-500:]
+    return f"Container cleanup failed for {container_id}: {detail}"
+
+
 def _write_mesh_manifest(case_directory: Path) -> tuple[str | None, Path | None]:
     """Content-address the generated OpenFOAM mesh used by the solved fields."""
 
@@ -767,13 +792,25 @@ class OpenFOAMProvider:
             "simpleFoam": shutil.which("simpleFoam"),
         }
 
-    def _execution_argv(self, name: str, command: str, case_directory: Path) -> list[str]:
+    def _execution_argv(
+        self,
+        name: str,
+        command: str,
+        case_directory: Path,
+        *,
+        cidfile: Path | None = None,
+    ) -> list[str]:
         if self.container_image is None:
             return [command, "-case", str(case_directory)]
-        return [
+        argv = [
             command,
             "run",
             "--rm",
+        ]
+        if cidfile is not None:
+            argv.extend(("--cidfile", str(cidfile)))
+        argv.extend(
+            [
             "-v",
             f"{case_directory.resolve()}:/case",
             "-w",
@@ -782,7 +819,9 @@ class OpenFOAMProvider:
             name,
             "-case",
             "/case",
-        ]
+            ]
+        )
+        return argv
 
     def descriptor(self) -> ProviderDescriptor:
         commands = self._commands()
@@ -974,12 +1013,18 @@ class OpenFOAMProvider:
         logs: dict[str, str] = {}
         return_codes: dict[str, int] = {}
         for name in ("blockMesh", "checkMesh", "simpleFoam"):
+            cidfile = (
+                prepared.directory / f".agentcfd-{name}.cid"
+                if self.container_image is not None
+                else None
+            )
             try:
                 completed = subprocess.run(
                     self._execution_argv(
                         name,
                         str(commands[name]),
                         prepared.directory,
+                        cidfile=cidfile,
                     ),
                     check=False,
                     capture_output=True,
@@ -992,7 +1037,15 @@ class OpenFOAMProvider:
                 stdout = error.stdout.decode() if isinstance(error.stdout, bytes) else (error.stdout or "")
                 stderr = error.stderr.decode() if isinstance(error.stderr, bytes) else (error.stderr or "")
                 combined = stdout + stderr + f"\nAgentCFD timeout after {self.timeout_seconds:g} seconds.\n"
+                if cidfile is not None:
+                    combined += _stop_timed_out_container(
+                        str(commands[name]),
+                        cidfile,
+                    ) + "\n"
                 return_codes[name] = -124
+            finally:
+                if cidfile is not None:
+                    cidfile.unlink(missing_ok=True)
             logs[name] = combined
             (prepared.directory / f"log.{name}").write_text(combined, encoding="utf-8")
             if return_codes[name] != 0:

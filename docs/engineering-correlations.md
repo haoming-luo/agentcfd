@@ -20,6 +20,13 @@ the Reynolds number, declared regime, relative roughness, Darcy factor, major
 loss, minor loss, and total pressure loss. Individual functions remain public
 so an agent never has to reverse-engineer a bundled calculation.
 
+`circular_pipe_operating_point` solves the inverse industrial question: given
+available pressure loss, what mean velocity and volume flow can the circular
+line carry? The laminar branch uses the exact linear-plus-local-quadratic form;
+the turbulent branch brackets the Colebrook-dependent nonlinear loss. The
+caller must declare `laminar` or `turbulent`, and a solution that falls into a
+different or transitional regime is rejected.
+
 For a uniform laminar inlet,
 `laminar_hydrodynamic_entrance_length` exposes the screening estimate
 `L_e = C Re D_h` with an explicit default `C = 0.05`. Published definitions
@@ -55,6 +62,14 @@ identifies approximately `y+ <= 1` for wall-resolved operation and `30 <= y+
 common source of modelling inconsistency. Those ranges are guidance, not
 hard-coded acceptance thresholds; the selected wall treatment and the solved
 `y+` distribution must be recorded together.
+
+`turbulence_inlet_from_intensity` derives the common `k`, `omega`, and
+`epsilon` inlet estimates from an explicit mean speed, fractional turbulence
+intensity, and length scale. OpenFOAM documents
+`k = 1.5 (I |U|)^2` and `omega = sqrt(k)/(C_mu^0.25 L)` for
+[k-omega SST initialization](https://doc.openfoam.com/2606/tools/processing/models/turbulence/ras/linear-evm/rtm/kOmegaSST/).
+The function does not guess an intensity or length scale and does not imply
+that the experimental RANS provider has been promoted.
 
 ## Gas screening
 

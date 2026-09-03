@@ -60,6 +60,10 @@ macOS, CI, and future remote workers while preserving runtime provenance.
 After execution, AgentCFD inspects the local Docker image and records its
 immutable image SHA-256, repository digests, operating system, and architecture.
 A container run without a verifiable immutable image identity is not accepted.
+Each container command also uses a dedicated Docker CID file. If the client
+timeout fires, AgentCFD force-stops only that exact container and removes the
+CID file, preventing an abandoned solver from consuming resources in the
+background.
 
 Result recovery reads the four independent patch histories, converts OpenFOAM
 kinematic pressure to Pa, checks relative mass imbalance, compares pressure

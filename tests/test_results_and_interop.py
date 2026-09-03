@@ -102,6 +102,23 @@ def test_result_reader_verifies_derived_state_and_artifact_identity(tmp_path):
         read_result_record(result_path)
 
 
+def test_result_reader_rejects_nonfinite_duplicate_and_inconsistent_claims(tmp_path):
+    result_path = pipe_model().step().run().write(tmp_path / "result.json")
+    original = result_path.read_text()
+
+    result_path.write_text(original.replace('"accepted": true', '"accepted": false', 1))
+    with pytest.raises(ValueError, match="accepted flag is inconsistent"):
+        read_result_record(result_path)
+
+    result_path.write_text(original.replace("{", '{"nonfinite": NaN,', 1))
+    with pytest.raises(ValueError, match="non-finite JSON number NaN"):
+        read_result_record(result_path)
+
+    result_path.write_text(original.replace("{", '{"schema": "duplicate",', 1))
+    with pytest.raises(ValueError, match="duplicate key 'schema'"):
+        read_result_record(result_path)
+
+
 def test_cfd_to_fem_manifest_is_explicit_and_versioned():
     model_digest = hashlib.sha256(b"model").hexdigest()
     mesh_digest = hashlib.sha256(b"mesh").hexdigest()

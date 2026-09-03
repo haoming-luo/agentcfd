@@ -10,7 +10,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from . import benchmarks, boundaries, capabilities, contracts, fluids, geometry, outputs, procedures, properties, studies
+from . import benchmarks, boundaries, capabilities, contracts, engineering, fluids, geometry, outputs, procedures, properties, studies
 from ._version import __version__
 from .errors import AgentCFDError
 from .model import Model
@@ -246,6 +246,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     contract_catalog.add_argument("--json", action="store_true", dest="as_json")
 
+    calculate = subparsers.add_parser(
+        "calculate",
+        help="Run dependency-free industrial engineering calculations.",
+    )
+    calculate_subparsers = calculate.add_subparsers(dest="calculation", required=True)
+    pipe_loss = calculate_subparsers.add_parser(
+        "pipe-loss",
+        help="Calculate major and local incompressible pipe loss.",
+    )
+    pipe_flow = calculate_subparsers.add_parser(
+        "pipe-flow",
+        help="Invert available pipe pressure loss into velocity and flow.",
+    )
+    for command in (pipe_loss, pipe_flow):
+        command.add_argument("--density", type=float, required=True)
+        command.add_argument("--viscosity", type=float, required=True)
+        command.add_argument("--length", type=float, required=True)
+        command.add_argument("--diameter", type=float, required=True)
+        command.add_argument("--roughness", type=float, default=0.0)
+        command.add_argument("--loss-coefficient", type=float, default=0.0)
+        command.add_argument("--json", action="store_true", dest="as_json")
+    pipe_loss.add_argument("--velocity", type=float, required=True)
+    pipe_flow.add_argument("--pressure-loss", type=float, required=True)
+    pipe_flow.add_argument("--regime", choices=("laminar", "turbulent"), required=True)
+
     demo = subparsers.add_parser("demo", help="Run a bundled verified workflow.")
     demo_subparsers = demo.add_subparsers(dest="demo", required=True)
     pipe = demo_subparsers.add_parser("pipe", help="Run the laminar circular-pipe reference workflow.")
@@ -386,6 +411,43 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for contract in report["contracts"]:
                 print(f"{contract['name']}: {contract['id']}")
+        return 0
+    if args.command == "calculate" and args.calculation == "pipe-loss":
+        report = engineering.pipe_pressure_loss(
+            density=args.density,
+            dynamic_viscosity=args.viscosity,
+            mean_velocity=args.velocity,
+            length=args.length,
+            hydraulic_diameter=args.diameter,
+            roughness=args.roughness,
+            loss_coefficient=args.loss_coefficient,
+        ).to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"{report['regime']} pipe | Re {report['reynolds_number']:.6g} | "
+                f"pressure loss {report['total_pressure_loss']:.6g} Pa"
+            )
+        return 0
+    if args.command == "calculate" and args.calculation == "pipe-flow":
+        report = engineering.circular_pipe_operating_point(
+            pressure_loss=args.pressure_loss,
+            density=args.density,
+            dynamic_viscosity=args.viscosity,
+            length=args.length,
+            diameter=args.diameter,
+            regime=args.regime,
+            roughness=args.roughness,
+            loss_coefficient=args.loss_coefficient,
+        ).to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"{report['regime']} pipe | velocity {report['mean_velocity']:.6g} m/s | "
+                f"flow {report['volume_flow_rate']:.6g} m^3/s"
+            )
         return 0
     if args.command == "demo" and args.demo == "pipe":
         result = _pipe_demo(args.output)

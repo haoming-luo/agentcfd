@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/thermophysical-state.schema.json",
+  "title": "AgentCFD thermophysical state 0.1.0",
+  "type": "object",
+  "required": [
+    "schema", "schema_version", "fluid", "backend", "pressure", "temperature",
+    "phase", "density", "dynamic_viscosity", "specific_heat",
+    "thermal_conductivity", "speed_of_sound", "prandtl_number", "provider",
+    "provider_version"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.thermophysical-state"},
+    "schema_version": {"const": "0.1.0"},
+    "fluid": {"type": "string", "minLength": 1},
+    "backend": {"type": "string", "minLength": 1},
+    "pressure": {"type": "number", "exclusiveMinimum": 0},
+    "temperature": {"type": "number", "exclusiveMinimum": 0},
+    "phase": {"type": "string", "minLength": 1},
+    "density": {"type": "number", "exclusiveMinimum": 0},
+    "dynamic_viscosity": {"type": "number", "exclusiveMinimum": 0},
+    "specific_heat": {"type": "number", "exclusiveMinimum": 0},
+    "thermal_conductivity": {"type": "number", "exclusiveMinimum": 0},
+    "speed_of_sound": {"type": "number", "exclusiveMinimum": 0},
+    "prandtl_number": {"type": "number", "exclusiveMinimum": 0},
+    "provider": {"type": "string", "minLength": 1},
+    "provider_version": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

@@ -20,6 +20,7 @@ _SCHEMAS = (
     "result-exchange.schema.json",
     "scientific-sample.schema.json",
     "simulation-result.schema.json",
+    "thermophysical-state.schema.json",
     "validation-point.schema.json",
 )
 

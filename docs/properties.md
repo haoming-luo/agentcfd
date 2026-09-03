@@ -23,6 +23,9 @@ model silently.
 
 The record includes phase, density, dynamic viscosity, specific heat, thermal
 conductivity, speed of sound, Prandtl number, backend, and provider version.
+It also carries `agentcfd.thermophysical-state` and schema version `0.1.0`;
+the corresponding JSON Schema is shipped with the package and discoverable
+through `agentcfd contracts`.
 CoolProp documents the `PropsSI` pressure-temperature interface and the IF97
 water/steam backend at:
 

@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
 
+import jsonschema
 import pytest
 
-from agentcfd import properties
+from agentcfd import contracts, properties
 
 
 def test_coolprop_property_provider_returns_auditable_si_state(monkeypatch):
@@ -50,6 +51,10 @@ def test_coolprop_property_provider_returns_auditable_si_state(monkeypatch):
     assert state.density == pytest.approx(values["D"])
     assert state.provider_version == "test"
     assert state.to_dict()["pressure"] == 101325.0
+    assert state.schema == "agentcfd.thermophysical-state"
+    jsonschema.Draft202012Validator(
+        contracts.load("thermophysical-state.schema.json")
+    ).validate(state.to_dict())
 
 
 def test_coolprop_property_provider_rejects_invalid_or_failed_states(monkeypatch):

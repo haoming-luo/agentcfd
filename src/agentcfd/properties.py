@@ -30,12 +30,16 @@ class ThermophysicalState:
     prandtl_number: float
     provider: str
     provider_version: str
+    schema: str = "agentcfd.thermophysical-state"
+    schema_version: str = "0.1.0"
 
     def __post_init__(self) -> None:
         for name in ("fluid", "backend", "phase", "provider", "provider_version"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"Thermophysical state {name} must be a non-empty string.")
+        if self.schema != "agentcfd.thermophysical-state" or self.schema_version != "0.1.0":
+            raise ValueError("Unsupported thermophysical-state schema or version.")
         for name in (
             "pressure",
             "temperature",

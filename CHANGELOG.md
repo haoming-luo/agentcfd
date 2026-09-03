@@ -135,6 +135,7 @@ machine-readable capability catalog.
 - validate every thermophysical-state identity and positive SI property at its
   construction boundary, including manually created records.
 - expose versioned CoolProp/IF97 pressure-temperature states through the CLI.
+- version thermophysical-state records and ship their JSON Schema contract.
 
 ## 0.1.0a1 — 2026-09-03
 

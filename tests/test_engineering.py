@@ -140,3 +140,42 @@ def test_laminar_entrance_length_screen_is_explicit_and_bounded():
             reynolds=2300.0,
             hydraulic_diameter=0.1,
         )
+
+
+def test_turbulent_pipe_wall_resolution_round_trips_target_y_plus():
+    estimate = engineering.turbulent_pipe_wall_resolution(
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+        mean_velocity=1.0,
+        hydraulic_diameter=0.1,
+        target_y_plus=1.0,
+    )
+
+    assert estimate.reynolds_number == pytest.approx(100_000.0)
+    assert estimate.wall_shear_stress == pytest.approx(
+        estimate.darcy_friction_factor * 1000.0 / 8.0
+    )
+    assert engineering.friction_velocity(
+        wall_shear_stress=estimate.wall_shear_stress,
+        density=1000.0,
+    ) == pytest.approx(estimate.friction_velocity)
+    assert engineering.y_plus(
+        wall_distance=estimate.first_cell_center_distance,
+        friction_velocity=estimate.friction_velocity,
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+    ) == pytest.approx(1.0)
+    assert estimate.nominal_first_cell_thickness == pytest.approx(
+        2.0 * estimate.first_cell_center_distance
+    )
+
+
+def test_turbulent_wall_resolution_rejects_non_turbulent_regime():
+    with pytest.raises(ValueError, match="Re >= 4000"):
+        engineering.turbulent_pipe_wall_resolution(
+            density=1000.0,
+            dynamic_viscosity=1.0e-3,
+            mean_velocity=0.03,
+            hydraulic_diameter=0.1,
+            target_y_plus=1.0,
+        )

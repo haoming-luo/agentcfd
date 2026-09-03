@@ -266,3 +266,118 @@ def laminar_hydrodynamic_entrance_length(
         * selected_reynolds
         * _positive(hydraulic_diameter, "hydraulic_diameter")
     )
+
+
+def friction_velocity(*, wall_shear_stress: float, density: float) -> float:
+    """Return wall friction velocity ``sqrt(tau_w / rho)``."""
+
+    return math.sqrt(
+        _positive(wall_shear_stress, "wall_shear_stress")
+        / _positive(density, "density")
+    )
+
+
+def y_plus(
+    *,
+    wall_distance: float,
+    friction_velocity: float,
+    density: float,
+    dynamic_viscosity: float,
+) -> float:
+    """Return the first-cell-centre wall coordinate ``y u_tau / nu``."""
+
+    return (
+        _positive(wall_distance, "wall_distance")
+        * _positive(friction_velocity, "friction_velocity")
+        * _positive(density, "density")
+        / _positive(dynamic_viscosity, "dynamic_viscosity")
+    )
+
+
+def wall_distance_for_y_plus(
+    *,
+    target_y_plus: float,
+    friction_velocity: float,
+    density: float,
+    dynamic_viscosity: float,
+) -> float:
+    """Invert the wall-coordinate definition for cell-centre distance."""
+
+    return (
+        _positive(target_y_plus, "target_y_plus")
+        * _positive(dynamic_viscosity, "dynamic_viscosity")
+        / (
+            _positive(density, "density")
+            * _positive(friction_velocity, "friction_velocity")
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class WallResolutionEstimate:
+    """Auditable turbulent-pipe near-wall mesh screening estimate."""
+
+    reynolds_number: float
+    darcy_friction_factor: float
+    wall_shear_stress: float
+    friction_velocity: float
+    target_y_plus: float
+    first_cell_center_distance: float
+    nominal_first_cell_thickness: float
+
+    def to_dict(self) -> dict[str, float]:
+        return asdict(self)
+
+
+def turbulent_pipe_wall_resolution(
+    *,
+    density: float,
+    dynamic_viscosity: float,
+    mean_velocity: float,
+    hydraulic_diameter: float,
+    target_y_plus: float,
+    roughness: float = 0.0,
+) -> WallResolutionEstimate:
+    """Estimate turbulent-pipe first-cell distance from a target ``y+``.
+
+    Bulk Darcy friction provides a screening wall stress. The nominal cell
+    thickness assumes its centroid lies halfway between two radial faces; the
+    achieved local ``y+`` must still be checked from the solved field.
+    """
+
+    diameter = _positive(hydraulic_diameter, "hydraulic_diameter")
+    selected_density = _positive(density, "density")
+    selected_velocity = _positive(mean_velocity, "mean_velocity")
+    selected_roughness = _nonnegative(roughness, "roughness")
+    reynolds = reynolds_number(
+        density=selected_density,
+        mean_velocity=selected_velocity,
+        hydraulic_diameter=diameter,
+        dynamic_viscosity=dynamic_viscosity,
+    )
+    if reynolds < 4000.0:
+        raise ValueError("Turbulent wall-resolution screening requires Re >= 4000.")
+    friction = darcy_friction_factor(
+        reynolds,
+        relative_roughness=selected_roughness / diameter,
+    )
+    wall_shear = friction * selected_density * selected_velocity**2 / 8.0
+    friction_speed = friction_velocity(
+        wall_shear_stress=wall_shear,
+        density=selected_density,
+    )
+    distance = wall_distance_for_y_plus(
+        target_y_plus=target_y_plus,
+        friction_velocity=friction_speed,
+        density=selected_density,
+        dynamic_viscosity=dynamic_viscosity,
+    )
+    return WallResolutionEstimate(
+        reynolds_number=reynolds,
+        darcy_friction_factor=friction,
+        wall_shear_stress=wall_shear,
+        friction_velocity=friction_speed,
+        target_y_plus=_positive(target_y_plus, "target_y_plus"),
+        first_cell_center_distance=distance,
+        nominal_first_cell_thickness=2.0 * distance,
+    )

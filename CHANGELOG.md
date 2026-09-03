@@ -51,6 +51,16 @@ machine-readable capability catalog.
   and fail container-run acceptance when that provenance cannot be verified.
 - make generated-case byte identities and unrecorded-path checks portable
   across LF and CRLF hosts.
+- add fail-closed turbulent-pipe wall-resolution and target-`y+` screening
+  functions for future RANS mesh setup.
+- compare recovered inlet flow against the public boundary request under an
+  explicit policy, so coarse inlet integration error cannot be hidden.
+- record resolved mesh controls, verify expected versus actual cell count, and
+  bind final fields to a content-addressed native `polyMesh` manifest.
+- add a dependency-free installed-contract discovery API and CLI for AgentCFD,
+  AgentFEM, AI pipelines, and external validators.
+- add dependency-free result reopening that recomputes trust and verifies every
+  artifact identity; use it automatically before file-based GCI.
 
 ## 0.1.0a1 — 2026-09-03
 

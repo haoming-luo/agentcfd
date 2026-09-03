@@ -396,6 +396,91 @@ def _is_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdef" for character in value.lower())
 
 
+def read_result_record(
+    path: str | Path,
+    *,
+    verify_artifacts: bool = True,
+) -> dict[str, Any]:
+    """Read a native result and verify its derived trust state and artifacts."""
+
+    selected = Path(path)
+    try:
+        record = json.loads(selected.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid AgentCFD result JSON: {selected}") from error
+    if not isinstance(record, dict):
+        raise ValueError("AgentCFD result must contain a JSON object.")
+    if (
+        record.get("schema") != "agentcfd.simulation-result"
+        or record.get("schema_version") != "0.1.0"
+    ):
+        raise ValueError("Unsupported AgentCFD result schema or version.")
+    checks = record.get("checks")
+    if not isinstance(checks, list) or any(
+        not isinstance(check, dict) or not isinstance(check.get("passed"), bool)
+        for check in checks
+    ):
+        raise ValueError("AgentCFD result checks are malformed.")
+    status = record.get("status")
+    converged = record.get("converged")
+    if not isinstance(status, str) or not isinstance(converged, bool):
+        raise ValueError("AgentCFD result execution state is malformed.")
+    expected_accepted = (
+        status == "completed"
+        and converged
+        and bool(checks)
+        and all(check["passed"] for check in checks)
+    )
+    if record.get("accepted") is not expected_accepted:
+        raise ValueError("AgentCFD result accepted flag is inconsistent with its checks.")
+    if status != "completed":
+        expected_trust = "not_computed"
+    elif not converged:
+        expected_trust = "computed"
+    elif not checks or any(not check["passed"] for check in checks):
+        expected_trust = "converged"
+    else:
+        kinds = {check.get("kind") for check in checks}
+        expected_trust = (
+            "validated"
+            if "validation" in kinds
+            else "verified"
+            if "verification" in kinds
+            else "converged"
+        )
+    if record.get("trust_level") != expected_trust:
+        raise ValueError("AgentCFD result trust level is inconsistent with its checks.")
+
+    artifacts = record.get("artifact_records")
+    if not isinstance(artifacts, dict):
+        raise ValueError("AgentCFD result artifact records are malformed.")
+    if verify_artifacts:
+        from .provenance import file_sha256
+
+        for name, artifact in artifacts.items():
+            if not isinstance(name, str) or not isinstance(artifact, dict):
+                raise ValueError("AgentCFD result artifact record is malformed.")
+            artifact_path = artifact.get("path")
+            digest = artifact.get("sha256")
+            size = artifact.get("size_bytes")
+            if (
+                not isinstance(artifact_path, str)
+                or not isinstance(digest, str)
+                or not _is_sha256(digest)
+                or not isinstance(size, int)
+                or size < 0
+            ):
+                raise ValueError(f"Artifact {name!r} has incomplete identity metadata.")
+            candidate = Path(artifact_path)
+            if not candidate.is_absolute():
+                candidate = selected.parent / candidate
+            if not candidate.is_file():
+                raise ValueError(f"Artifact {name!r} is missing: {candidate}")
+            if candidate.stat().st_size != size or file_sha256(candidate) != digest:
+                raise ValueError(f"Artifact {name!r} no longer matches its identity.")
+    return record
+
+
 __all__ = [
     "Artifact",
     "Check",
@@ -403,4 +488,5 @@ __all__ = [
     "History",
     "Quantity",
     "SimulationResult",
+    "read_result_record",
 ]

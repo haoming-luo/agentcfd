@@ -361,8 +361,11 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
             (final / "p").write_text("synthetic pressure field")
             stdout = "Time = 10\nSIMPLE solution converged in 10 iterations\nEnd\n"
         elif name == "checkMesh":
-            stdout = "    cells: 1000\nMax aspect ratio = 2\nMesh non-orthogonality Max: 3 average: 1\nMax skewness = 0.5\nMesh OK.\nEnd\n"
+            stdout = "    cells: 12800\nMax aspect ratio = 2\nMesh non-orthogonality Max: 3 average: 1\nMax skewness = 0.5\nMesh OK.\nEnd\n"
         else:
+            mesh = case_directory / "constant" / "polyMesh"
+            mesh.mkdir(parents=True)
+            (mesh / "points").write_text("synthetic mesh points")
             stdout = "End\n"
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
@@ -377,7 +380,8 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         0.0,
         abs=1.0e-14,
     )
-    assert result.quantities["mesh.cell_count"].value == 1000
+    assert result.quantities["mesh.cell_count"].value == 12800
+    assert result.quantities["mesh.expected_cell_count"].value == 12800
     assert result.quantities["flow.reynolds_number"].value == pytest.approx(
         998.2 * 0.01 * 0.1 / 1.002e-3
     )
@@ -386,13 +390,16 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     )
     assert result.scientific_inputs["mesh_controls"] == {
         "cross_section_cells": 8,
-        "axial_cells": None,
+        "axial_cells": 40,
     }
     assert result.scientific_inputs["validation_policy"] == {
         "maximum_relative_mass_imbalance": 1.0e-6,
         "maximum_relative_pressure_error": 0.02,
+        "maximum_relative_inlet_flow_error": 0.01,
     }
     assert set(result.fields) == {"U", "p"}
+    assert result.fields["U"].mesh_sha256 == result.provenance["mesh_sha256"]
+    assert result.artifacts["mesh_manifest"].media_type == "application/json"
     assert len(result.histories["flow.pressure_drop"].values) == 1
     assert all(check.passed for check in result.checks)
 
@@ -520,3 +527,28 @@ def test_openfoam_validation_policy_is_explicit_and_controls_acceptance(tmp_path
     assert all(check.passed for check in declared_checks)
     with pytest.raises(ValueError, match="maximum_relative_pressure_error"):
         OpenFOAMValidationPolicy(maximum_relative_pressure_error=math.nan)
+
+
+def test_openfoam_patch_recovery_checks_requested_inlet_flow(tmp_path):
+    samples = {
+        "agentcfd_inlet_flow": -0.009,
+        "agentcfd_outlet_flow": 0.009,
+        "agentcfd_inlet_pressure": 0.25,
+        "agentcfd_outlet_pressure": 0.0,
+    }
+    for name, value in samples.items():
+        directory = tmp_path / "postProcessing" / name / "0"
+        directory.mkdir(parents=True)
+        (directory / "surfaceFieldValue.dat").write_text(f"# Time value\n1 {value}\n")
+
+    quantities, _, checks, _ = _recover_patch_data(
+        tmp_path,
+        density=1000.0,
+        reference_pressure_drop=250.0,
+        solver_tolerance=1.0e-8,
+        requested_volume_flow=0.01,
+        inlet_flow_error_limit=0.01,
+    )
+
+    assert quantities["flow.inlet_flow_relative_error"].value == pytest.approx(0.1)
+    assert not next(check for check in checks if check.name == "inlet-flow-target").passed

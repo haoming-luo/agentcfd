@@ -35,6 +35,11 @@ result.require_accepted()
 result.require_trust("verified")
 ```
 
+Serialized results can be reopened with `read_result_record()`, or checked from
+automation using `agentcfd verify result RESULT.json`. The reader recomputes
+the accepted/trust state from the recorded checks and verifies every artifact's
+size and SHA-256; edited evidence and hand-edited trust claims fail closed.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

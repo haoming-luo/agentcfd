@@ -40,6 +40,22 @@ by an unlabelled approximation. These correlations remain empirical
 engineering evidence; their domain of applicability must travel with any
 decision that uses them.
 
+## Near-wall mesh screening
+
+`friction_velocity`, `y_plus`, and `wall_distance_for_y_plus` expose the
+standard relations `u_tau = sqrt(tau_w/rho)` and `y+ = y u_tau/nu`.
+`turbulent_pipe_wall_resolution` combines them with the bulk Darcy factor to
+estimate first-cell-centre distance and nominal first-cell thickness for a
+target `y+`. The estimate is deliberately restricted to `Re >= 4000` and does
+not replace post-processing the achieved local wall coordinate.
+
+OpenFOAM's [wall-function guidance](https://doc.openfoam.com/2606/tools/processing/models/turbulence/ras/wall-functions/)
+identifies approximately `y+ <= 1` for wall-resolved operation and `30 <= y+
+<= 300` for high-Re wall functions, with the buffer layer between them being a
+common source of modelling inconsistency. Those ranges are guidance, not
+hard-coded acceptance thresholds; the selected wall treatment and the solved
+`y+` distribution must be recorded together.
+
 ## Gas screening
 
 The ideal-gas density, calorically perfect-gas speed of sound, and Mach number

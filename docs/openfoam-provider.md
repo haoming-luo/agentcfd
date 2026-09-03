@@ -70,12 +70,22 @@ explicit SIMPLE convergence marker. Per-equation initial residual, final
 residual, and linear-iteration histories are retained as diagnostics rather
 than being left only in human-readable logs.
 
+The provider records the resolved axial and cross-section counts recovered
+from the generated case, verifies `checkMesh` returned the corresponding cell
+count, and writes a content-addressed `agentcfd-mesh.json` over every native
+`polyMesh` file. Final `U` and `p` records carry that mesh SHA-256, preventing a
+field from being silently paired with another mesh in downstream AI or FEM
+workflows.
+
 `OpenFOAMValidationPolicy` makes the scientific thresholds auditable. Its
 defaults require relative mass imbalance no greater than `1e-6` (or ten times
 the requested iterative tolerance, whichever is larger) and recovered-flow
-pressure-drop error no greater than 2%. The exact policy is retained in every
-result's scientific inputs. A project may declare different thresholds, but it
-cannot change them after the run without changing the recorded evidence.
+pressure-drop error no greater than 2%. It also requires the recovered inlet
+flow to match the public mean-velocity or mass-flow request within 1%, exposing
+coarse-face integration error instead of hiding it by renormalizing only the
+pressure reference. The exact policy is retained in every result's scientific
+inputs. A project may declare different thresholds, but it cannot change them
+after the run without changing the recorded evidence.
 
 `mean_velocity_inlet` remains uniform and therefore includes entrance effects.
 Uniform velocity and mass-flow-derived inlets also report Reynolds number, the

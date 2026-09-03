@@ -5,7 +5,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Check, Model, Quantity, SimulationResult, boundaries, fluids, geometry, interoperability, studies
+from agentcfd import Artifact, Check, Model, Quantity, SimulationResult, boundaries, fluids, geometry, interoperability, read_result_record, studies
 
 
 def test_all_published_json_schemas_are_valid():
@@ -78,6 +78,28 @@ def test_execution_acceptance_and_trust_are_separate():
     assert result.trust_level == "converged"
     with pytest.raises(RuntimeError, match="verified"):
         result.require_trust("verified")
+
+
+def test_result_reader_verifies_derived_state_and_artifact_identity(tmp_path):
+    evidence = tmp_path / "evidence.txt"
+    evidence.write_text("immutable evidence")
+    result = SimulationResult(
+        status="completed",
+        converged=True,
+        provider="test",
+        quantities={"flow.pressure_drop": Quantity(1.0, "Pa")},
+        checks=(Check("verification", True, kind="verification"),),
+        artifacts={"evidence": Artifact.from_path(evidence)},
+    )
+    result_path = result.write(tmp_path / "result.json")
+
+    record = read_result_record(result_path)
+
+    assert record["accepted"] is True
+    assert record["artifact_records"]["evidence"]["path"] == "evidence.txt"
+    evidence.write_text("changed evidence")
+    with pytest.raises(ValueError, match="no longer matches"):
+        read_result_record(result_path)
 
 
 def test_cfd_to_fem_manifest_is_explicit_and_versioned():

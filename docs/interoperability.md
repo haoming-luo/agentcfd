@@ -49,6 +49,11 @@ The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack
 behind the stable `agentcae.*` records.
 
+Installed tools can discover these contracts through
+`agentcfd.contracts.available()`, `path()`, and `load()`, or with
+`agentcfd contracts --json`. This avoids repository-relative paths and does not
+require a JSON-schema validation library at runtime.
+
 The intended sequence is:
 
 ```text

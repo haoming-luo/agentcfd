@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities
+from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts
 from agentcfd.cli import build_parser, entrypoint, main
 from agentcfd.providers import OpenFOAMProvider
 
@@ -40,6 +40,20 @@ def test_benchmark_catalog_is_machine_readable_and_cli_visible(capsys):
 
     assert main(["benchmarks", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == report
+
+
+def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
+    assert "simulation-result.schema.json" in contracts.available()
+    result_schema = contracts.load("simulation-result.schema.json")
+    assert result_schema["$schema"].endswith("2020-12/schema")
+    assert contracts.path("simulation-result.schema.json").is_file()
+
+    assert main(["contracts", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == "agentcfd.contract-catalog/0.1"
+    assert len(payload["contracts"]) == len(contracts.available())
+    with pytest.raises(KeyError, match="Unknown AgentCFD contract"):
+        contracts.load("../untrusted.json")
 
 
 def test_cli_prepares_openfoam_case_without_runtime(tmp_path, capsys):
@@ -165,19 +179,17 @@ def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     paths = []
     for index, (cells, value) in enumerate(((64, 3.56), (512, 1.64), (4096, 1.16))):
         path = tmp_path / f"result-{index}.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "status": "completed",
-                    "converged": True,
-                    "provenance": {"model_sha256": "a" * 64},
-                    "quantities": {
-                        "mesh.cell_count": {"value": cells, "unit": "1"},
-                        "flow.pressure_drop": {"value": value, "unit": "Pa"},
-                    },
-                }
-            )
-        )
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="synthetic",
+            quantities={
+                "mesh.cell_count": Quantity(cells, "1"),
+                "flow.pressure_drop": Quantity(value, "Pa"),
+            },
+            checks=(Check("synthetic-convergence", True, kind="verification"),),
+            provenance={"model_sha256": "a" * 64},
+        ).write(path)
         paths.append(path)
 
     assert (
@@ -197,6 +209,11 @@ def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     assert payload["observed_order"] == pytest.approx(2.0)
     assert payload["schema"] == "agentcfd.grid-convergence/0.1"
     assert all(len(item["sha256"]) == 64 for item in payload["sources"])
+
+    assert main(["verify", "result", str(paths[0]), "--json"]) == 0
+    verification = json.loads(capsys.readouterr().out)
+    assert verification["verified"] is True
+    assert verification["trust_level"] == "verified"
 
 
 def test_cli_openfoam_run_is_nonzero_when_scientific_checks_fail(

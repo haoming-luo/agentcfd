@@ -259,6 +259,35 @@ def _container_image_identity(
     return record
 
 
+def _write_mesh_manifest(case_directory: Path) -> tuple[str | None, Path | None]:
+    """Content-address the generated OpenFOAM mesh used by the solved fields."""
+
+    root = case_directory / "constant" / "polyMesh"
+    if not root.is_dir():
+        return None, None
+    files = {
+        path.relative_to(root).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+    if not files:
+        return None, None
+    mesh_sha256 = hashlib.sha256(
+        json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    manifest = case_directory / "agentcfd-mesh.json"
+    payload = {
+        "schema": "agentcfd.openfoam-mesh/0.1",
+        "mesh_sha256": mesh_sha256,
+        "root": "constant/polyMesh",
+        "files": files,
+    }
+    manifest.write_bytes(
+        (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    )
+    return mesh_sha256, manifest
+
+
 def _runtime_version(logs: dict[str, str], fallback: str) -> str:
     for log in logs.values():
         match = re.search(r"(?m)^\|.*Version:\s*([^ ]+)\s+", log)
@@ -298,8 +327,10 @@ def _recover_patch_data(
     reference_pressure_drop: float,
     solver_tolerance: float,
     reference_pressure_drop_per_flow: float | None = None,
+    requested_volume_flow: float | None = None,
     pressure_error_limit: float = 0.02,
     mass_balance_limit: float = 1.0e-6,
+    inlet_flow_error_limit: float = 0.01,
     validation_message: str = "Pressure drop is compared with Hagen--Poiseuille at recovered flow.",
 ) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...], str]:
     series = {
@@ -352,6 +383,37 @@ def _recover_patch_data(
     final_outlet_flow = outlet_flow[-1]
     final_pressure_drop = pressure_drop[-1]
     final_mass_imbalance = mass_imbalance[-1]
+    inlet_flow_check: tuple[Check, ...] = ()
+    if requested_volume_flow is not None:
+        requested_volume_flow = positive_float(
+            requested_volume_flow,
+            name="requested_volume_flow",
+        )
+        inlet_flow_error_limit = positive_float(
+            inlet_flow_error_limit,
+            name="inlet_flow_error_limit",
+        )
+        inlet_flow_error = abs(final_inlet_flow - requested_volume_flow) / requested_volume_flow
+        quantities["flow.requested_volume_flow_rate"] = Quantity(
+            requested_volume_flow,
+            "m^3/s",
+        )
+        quantities["flow.inlet_flow_relative_error"] = Quantity(
+            inlet_flow_error,
+            "1",
+            kind="verification_metric",
+            description="Recovered inlet flow error relative to the public boundary request.",
+        )
+        inlet_flow_check = (
+            Check(
+                name="inlet-flow-target",
+                passed=inlet_flow_error <= inlet_flow_error_limit,
+                value=inlet_flow_error,
+                limit=inlet_flow_error_limit,
+                kind="verification",
+                observable="flow.inlet_volume_flow_rate",
+            ),
+        )
     reference_from_recovered_flow = reference_pressure_drop
     if reference_pressure_drop_per_flow is not None:
         reference_from_recovered_flow = reference_pressure_drop_per_flow * 0.5 * (
@@ -458,6 +520,7 @@ def _recover_patch_data(
             kind="validation",
             observable="flow.pressure_drop_relative_error",
         ),
+        *inlet_flow_check,
     )
     return (
         quantities,
@@ -502,6 +565,7 @@ class OpenFOAMValidationPolicy:
 
     maximum_relative_mass_imbalance: float = 1.0e-6
     maximum_relative_pressure_error: float = 0.02
+    maximum_relative_inlet_flow_error: float = 0.01
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -518,6 +582,14 @@ class OpenFOAMValidationPolicy:
             positive_float(
                 self.maximum_relative_pressure_error,
                 name="maximum_relative_pressure_error",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "maximum_relative_inlet_flow_error",
+            positive_float(
+                self.maximum_relative_inlet_flow_error,
+                name="maximum_relative_inlet_flow_error",
             ),
         )
 
@@ -783,7 +855,8 @@ class OpenFOAMProvider:
         """
 
         prepared = self.prepare(step)
-        return self._execute_prepared(step, prepared, mesh_controls=self.mesh)
+        mesh_controls = _mesh_controls_from_case(prepared.directory)
+        return self._execute_prepared(step, prepared, mesh_controls=mesh_controls)
 
     def run_prepared(
         self,
@@ -955,6 +1028,10 @@ class OpenFOAMProvider:
                 ),
             )
         reference_drop = self._reference_pressure_drop(step)
+        mean_velocity = self._mean_velocity(step.model)
+        requested_volume_flow = (
+            math.pi * step.model.domain.diameter**2 / 4.0 * mean_velocity
+        )
         quantities, histories, recovery_checks, recovery_message = _recover_patch_data(
             prepared.directory,
             density=step.model.fluid.density,
@@ -966,8 +1043,10 @@ class OpenFOAMProvider:
                 * step.model.domain.length
                 / (math.pi * step.model.domain.diameter**4)
             ),
+            requested_volume_flow=requested_volume_flow,
             pressure_error_limit=self.validation.maximum_relative_pressure_error,
             mass_balance_limit=self.validation.maximum_relative_mass_imbalance,
+            inlet_flow_error_limit=self.validation.maximum_relative_inlet_flow_error,
             validation_message=(
                 "The fully developed profile isolates spatial and outlet-boundary error."
                 if any(
@@ -978,10 +1057,23 @@ class OpenFOAMProvider:
             ),
         )
         quantities.update(_mesh_quality_quantities(logs.get("checkMesh", "")))
+        expected_cell_count = (
+            5 * mesh_controls.cross_section_cells**2 * int(mesh_controls.axial_cells or 0)
+        )
+        actual_cell_count = quantities.get("mesh.cell_count")
+        quantities["mesh.expected_cell_count"] = Quantity(
+            float(expected_cell_count),
+            "1",
+            kind="verification_metric",
+        )
+        mesh_count_matches = bool(
+            expected_cell_count > 0
+            and actual_cell_count is not None
+            and actual_cell_count.value == expected_cell_count
+        )
         residual_quantities, residual_histories = _solver_residual_evidence(solver_log)
         quantities.update(residual_quantities)
         histories.update(residual_histories)
-        mean_velocity = self._mean_velocity(step.model)
         reynolds = engineering.reynolds_number(
             density=step.model.fluid.density,
             mean_velocity=mean_velocity,
@@ -1008,6 +1100,7 @@ class OpenFOAMProvider:
                 "1",
                 kind="diagnostic",
             )
+        mesh_sha256, mesh_manifest = _write_mesh_manifest(prepared.directory)
         artifact_paths = {
             "case_manifest": prepared.directory / "agentcfd-case.json",
             **{
@@ -1015,6 +1108,8 @@ class OpenFOAMProvider:
                 for name in logs
             },
         }
+        if mesh_manifest is not None:
+            artifact_paths["mesh_manifest"] = mesh_manifest
         fields: dict[str, FieldRecord] = {}
         latest_time = _latest_time_directory(prepared.directory)
         if latest_time is not None:
@@ -1026,6 +1121,7 @@ class OpenFOAMProvider:
                         unit=unit,
                         artifact=str(path),
                         components=("x", "y", "z") if name == "U" else (),
+                        mesh_sha256=mesh_sha256,
                     )
                     artifact_paths[f"field_{name}"] = path
         descriptor = self.descriptor()
@@ -1081,11 +1177,31 @@ class OpenFOAMProvider:
                     kind="verification",
                     observable="mesh.quality",
                 ),
+                Check(
+                    name="mesh-cell-count",
+                    passed=mesh_count_matches,
+                    value=(actual_cell_count.value if actual_cell_count is not None else None),
+                    limit=float(expected_cell_count),
+                    kind="verification",
+                    observable="mesh.cell_count",
+                ),
+                Check(
+                    name="mesh-identity",
+                    passed=mesh_sha256 is not None,
+                    value=mesh_sha256 or "missing",
+                    limit="content-addressed polyMesh manifest exists",
+                    kind="verification",
+                    observable="mesh.identity",
+                ),
                 *container_checks,
                 *recovery_checks,
             ),
             artifacts={
-                name: Artifact.from_path(path, role="execution-evidence", media_type="text/plain")
+                name: Artifact.from_path(
+                    path,
+                    role="execution-evidence",
+                    media_type=("application/json" if path.suffix == ".json" else "text/plain"),
+                )
                 for name, path in artifact_paths.items()
             },
             scientific_inputs={
@@ -1100,6 +1216,7 @@ class OpenFOAMProvider:
                 "agentcfd_version": __version__,
                 "model_sha256": step.model.fingerprint(),
                 "case_sha256": prepared.case_sha256,
+                "mesh_sha256": mesh_sha256,
                 "provider": "openfoam",
                 "provider_version": _runtime_version(
                     logs,

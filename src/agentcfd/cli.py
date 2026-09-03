@@ -10,12 +10,13 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from . import benchmarks, boundaries, capabilities, fluids, geometry, outputs, procedures, properties, studies
+from . import benchmarks, boundaries, capabilities, contracts, fluids, geometry, outputs, procedures, properties, studies
 from ._version import __version__
 from .errors import AgentCFDError
 from .model import Model
 from .provenance import file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
+from .results import read_result_record
 from .verification import grid_convergence_from_result_records
 
 
@@ -154,7 +155,7 @@ def _grid_convergence_payload(
     *,
     quantity: str,
 ) -> dict[str, object]:
-    records = [json.loads(path.read_text(encoding="utf-8")) for path in paths]
+    records = [read_result_record(path) for path in paths]
     study = grid_convergence_from_result_records(records, quantity=quantity)
     return {
         "schema": "agentcfd.grid-convergence/0.1",
@@ -238,6 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the evidence-gated benchmark roadmap.",
     )
     benchmark_catalog.add_argument("--json", action="store_true", dest="as_json")
+
+    contract_catalog = subparsers.add_parser(
+        "contracts",
+        help="Locate installed AgentCFD and AgentCAE JSON contracts.",
+    )
+    contract_catalog.add_argument("--json", action="store_true", dest="as_json")
 
     demo = subparsers.add_parser("demo", help="Run a bundled verified workflow.")
     demo_subparsers = demo.add_subparsers(dest="demo", required=True)
@@ -337,6 +344,12 @@ def build_parser() -> argparse.ArgumentParser:
     grid.add_argument("results", nargs=3, type=Path)
     grid.add_argument("--quantity", required=True)
     grid.add_argument("--json", action="store_true", dest="as_json")
+    result_check = verify_subparsers.add_parser(
+        "result",
+        help="Verify a result's trust state and content-addressed artifacts.",
+    )
+    result_check.add_argument("result", type=Path)
+    result_check.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -365,6 +378,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for case in benchmarks.all():
                 print(f"{case.id}: {case.status} | next: {case.next_gate}")
+        return 0
+    if args.command == "contracts":
+        report = contracts.catalog()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            for contract in report["contracts"]:
+                print(f"{contract['name']}: {contract['id']}")
         return 0
     if args.command == "demo" and args.demo == "pipe":
         result = _pipe_demo(args.output)
@@ -443,6 +464,24 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"GCI {args.quantity} | observed order {payload['observed_order']:.6g} | "
                 f"fine relative GCI {relative_text}"
+            )
+        return 0
+    if args.command == "verify" and args.verification == "result":
+        record = read_result_record(args.result)
+        report = {
+            "schema": "agentcfd.result-verification/0.1",
+            "path": str(args.result),
+            "accepted": record["accepted"],
+            "trust_level": record["trust_level"],
+            "artifact_count": len(record["artifact_records"]),
+            "verified": True,
+        }
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Verified result | trust {report['trust_level']} | "
+                f"artifacts {report['artifact_count']}"
             )
         return 0
     return 2

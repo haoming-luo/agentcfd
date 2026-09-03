@@ -48,7 +48,9 @@ cannot confuse a boundary value with a volume force.
 A readable registry of the Study, Domain, Regions, Fluids, Boundaries, Sources,
 Zone Models, and metadata. It supports inspection, validation, and a stable
 fingerprint. It must expose engineering intent rather than hide a generated
-backend case.
+backend case. Fingerprints are emitted only after boundary cardinality and
+metadata stability checks; unknown boundary objects, non-finite metadata, and
+non-JSON context fail closed instead of entering an ambiguous hash.
 
 ## Analysis Step
 

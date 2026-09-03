@@ -124,6 +124,8 @@ def _recover_patch_data(
     reference_pressure_drop: float,
     solver_tolerance: float,
     reference_pressure_drop_per_flow: float | None = None,
+    pressure_error_limit: float = 0.02,
+    mass_balance_limit: float = 1.0e-6,
     validation_message: str = "Pressure drop is compared with Hagen--Poiseuille at recovered flow.",
 ) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...], str]:
     series = {
@@ -193,8 +195,14 @@ def _recover_patch_data(
         if reference_is_positive
         else 1.0
     )
-    mass_balance_limit = max(1.0e-6, 10.0 * solver_tolerance)
-    pressure_error_limit = 0.02
+    pressure_error_limit = positive_float(
+        pressure_error_limit,
+        name="pressure_error_limit",
+    )
+    mass_balance_limit = max(
+        positive_float(mass_balance_limit, name="mass_balance_limit"),
+        10.0 * solver_tolerance,
+    )
     quantities.update(
         {
             "flow.inlet_volume_flow_rate": Quantity(final_inlet_flow, "m^3/s"),
@@ -312,6 +320,32 @@ class OpenFOAMMeshControls:
                     minimum=2,
                 ),
             )
+
+
+@dataclass(frozen=True, slots=True)
+class OpenFOAMValidationPolicy:
+    """Explicit scientific acceptance thresholds for the pipe provider."""
+
+    maximum_relative_mass_imbalance: float = 1.0e-6
+    maximum_relative_pressure_error: float = 0.02
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "maximum_relative_mass_imbalance",
+            positive_float(
+                self.maximum_relative_mass_imbalance,
+                name="maximum_relative_mass_imbalance",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "maximum_relative_pressure_error",
+            positive_float(
+                self.maximum_relative_pressure_error,
+                name="maximum_relative_pressure_error",
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,11 +501,13 @@ class OpenFOAMProvider:
         *,
         case_directory: str | Path | None = None,
         mesh: OpenFOAMMeshControls | None = None,
+        validation: OpenFOAMValidationPolicy | None = None,
         timeout_seconds: float = 3600.0,
         container_image: str | None = None,
     ) -> None:
         self.case_directory = Path(case_directory) if case_directory is not None else None
         self.mesh = mesh or OpenFOAMMeshControls()
+        self.validation = validation or OpenFOAMValidationPolicy()
         self.timeout_seconds = positive_float(timeout_seconds, name="timeout_seconds")
         self.container_image = str(container_image).strip() if container_image else None
 
@@ -625,6 +661,8 @@ class OpenFOAMProvider:
                 * step.model.domain.length
                 / (math.pi * step.model.domain.diameter**4)
             ),
+            pressure_error_limit=self.validation.maximum_relative_pressure_error,
+            mass_balance_limit=self.validation.maximum_relative_mass_imbalance,
             validation_message=(
                 "The fully developed profile isolates spatial and outlet-boundary error."
                 if any(
@@ -719,6 +757,7 @@ class OpenFOAMProvider:
                 "procedure": step.procedure.to_dict(),
                 "output_request": step.output.to_dict(),
                 "mesh_controls": asdict(self.mesh),
+                "validation_policy": asdict(self.validation),
                 "lowered_case_sha256": prepared.case_sha256,
             },
             provenance={

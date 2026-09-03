@@ -30,7 +30,11 @@ machine-readable capability catalog.
 - add ideal-gas/Mach screening functions and a lazy optional CoolProp property
   provider with structured IF97 water/steam state records;
 - add a fail-closed same-model OpenFOAM three-grid preparation workflow with
-  isotropic resolution scaling, per-case identities, and a JSON study schema.
+  isotropic resolution scaling, per-case identities, and a JSON study schema;
+- make OpenFOAM mass-balance and pressure-error acceptance thresholds explicit,
+  validated, and part of every result's scientific inputs;
+- reject unknown boundary objects, non-boolean study flags, duplicate output
+  names, and non-finite or non-JSON model metadata before fingerprinting.
 
 ## 0.1.0a1 — 2026-09-03
 

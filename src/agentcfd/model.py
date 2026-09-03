@@ -26,12 +26,30 @@ class Model:
     metadata: dict[str, Any] = field(default_factory=dict)
     _boundaries: dict[str, boundary_types.Boundary] = field(default_factory=dict, init=False, repr=False)
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Model name cannot be empty.")
+        if not isinstance(self.metadata, dict):
+            raise ValueError("Model metadata must be a dictionary.")
+        self.metadata = dict(self.metadata)
+
     def boundaries(self, **named: boundary_types.Boundary) -> "Model":
         """Attach explicitly named engineering boundaries and return this model."""
 
         for name, condition in named.items():
             if not name.strip():
                 raise ValueError("Boundary names cannot be empty.")
+            if not isinstance(
+                condition,
+                (
+                    boundary_types.MassFlowInlet,
+                    boundary_types.MeanVelocityInlet,
+                    boundary_types.FullyDevelopedVelocityInlet,
+                    boundary_types.PressureOutlet,
+                    boundary_types.NoSlipWall,
+                ),
+            ):
+                raise TypeError(f"Boundary {name!r} has an unsupported condition type.")
             self._boundaries[name] = condition
         return self
 
@@ -40,6 +58,12 @@ class Model:
         return dict(self._boundaries)
 
     def validate(self) -> None:
+        try:
+            json.dumps(self.metadata, sort_keys=True, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ModelValidationError(
+                "Model metadata must be finite, JSON-serializable scientific context."
+            ) from error
         inlet_count = sum(
             isinstance(
                 value,
@@ -75,7 +99,13 @@ class Model:
         }
 
     def fingerprint(self) -> str:
-        payload = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+        self.validate()
+        payload = json.dumps(
+            self.to_dict(),
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def step(

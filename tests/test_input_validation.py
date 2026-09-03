@@ -2,7 +2,8 @@ import math
 
 import pytest
 
-from agentcfd import boundaries, fluids, geometry, procedures
+from agentcfd import Model, boundaries, fluids, geometry, outputs, procedures, studies
+from agentcfd.errors import ModelValidationError
 from agentcfd.providers import OpenFOAMMeshControls, OpenFOAMProvider
 
 
@@ -50,3 +51,31 @@ def test_numeric_inputs_are_normalized_for_stable_serialization():
     assert pipe.to_dict()["length"] == 2.0
     assert fluid.to_dict()["density"] == 1000.0
     assert inlet.to_dict()["velocity"] == 2.0
+
+
+def test_model_rejects_unknown_boundaries_and_unstable_metadata():
+    model = Model(
+        study=studies.internal_flow(),
+        domain=geometry.circular_pipe(length=1.0, diameter=0.1),
+        fluid=fluids.newtonian("water", density=1000.0, dynamic_viscosity=0.001),
+        metadata={"source": math.nan},
+    )
+    with pytest.raises(TypeError, match="unsupported condition"):
+        model.boundaries(extra=object())
+    model.boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.01),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+    with pytest.raises(ModelValidationError, match="finite, JSON-serializable"):
+        model.fingerprint()
+
+
+def test_study_flags_and_output_names_are_runtime_validated():
+    with pytest.raises(ValueError, match="steady must be a boolean"):
+        studies.internal_flow(steady=1)
+    with pytest.raises(ValueError, match="duplicates"):
+        outputs.OutputRequest(
+            fields=("fluid.velocity", "fluid.velocity"),
+            histories=(),
+        )

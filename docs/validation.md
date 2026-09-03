@@ -8,6 +8,10 @@ Completion is not acceptance. Every `SimulationResult` distinguishes:
 - whether conservation and applicability checks passed;
 - which exact model and provider produced the data.
 
+Provider-specific acceptance limits are inputs, not hidden constants. The
+OpenFOAM pipe provider records an explicit `OpenFOAMValidationPolicy` alongside
+the mesh controls, model, procedure, output request, and lowered-case identity.
+
 The first executable workflow is deliberately narrow. It checks the laminar
 Reynolds-number range, mass balance, and consistency between Hagen–Poiseuille
 and Darcy–Weisbach relations. It is a reference solution, not a claim that

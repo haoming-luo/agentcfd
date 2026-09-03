@@ -51,6 +51,13 @@ native `U` and `p` fields. `checkMesh` observables are also structured. A normal
 `End` proves completion only; numerical convergence still requires OpenFOAM's
 explicit SIMPLE convergence marker.
 
+`OpenFOAMValidationPolicy` makes the scientific thresholds auditable. Its
+defaults require relative mass imbalance no greater than `1e-6` (or ten times
+the requested iterative tolerance, whichever is larger) and recovered-flow
+pressure-drop error no greater than 2%. The exact policy is retained in every
+result's scientific inputs. A project may declare different thresholds, but it
+cannot change them after the run without changing the recorded evidence.
+
 `mean_velocity_inlet` remains uniform and therefore includes entrance effects.
 The separate `fully_developed_velocity_inlet` uses OpenCFD's non-compiling
 expression parser to prescribe the radial Hagen--Poiseuille profile. It is

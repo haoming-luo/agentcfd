@@ -15,6 +15,9 @@ class Study:
     turbulence: str | None = None
 
     def __post_init__(self) -> None:
+        for name in ("steady", "compressible", "energy", "reacting"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"Study {name} must be a boolean.")
         if self.family != "internal-flow":
             raise ValueError(f"Unsupported study family: {self.family!r}")
         if self.reacting and not self.energy:

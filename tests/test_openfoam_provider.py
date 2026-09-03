@@ -11,6 +11,7 @@ from agentcfd.errors import ProviderUnavailableError, UnsupportedCaseError
 from agentcfd.providers import (
     OpenFOAMMeshControls,
     OpenFOAMProvider,
+    OpenFOAMValidationPolicy,
     prepare_pipe_grid_study,
 )
 from agentcfd.providers.openfoam import (
@@ -274,6 +275,10 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "cross_section_cells": 8,
         "axial_cells": None,
     }
+    assert result.scientific_inputs["validation_policy"] == {
+        "maximum_relative_mass_imbalance": 1.0e-6,
+        "maximum_relative_pressure_error": 0.02,
+    }
     assert set(result.fields) == {"U", "p"}
     assert len(result.histories["flow.pressure_drop"].values) == 1
     assert all(check.passed for check in result.checks)
@@ -344,3 +349,41 @@ def test_openfoam_patch_recovery_computes_physical_quantities_and_checks(tmp_pat
     assert histories["flow.pressure_drop"].values == pytest.approx((300.0, 250.0))
     assert all(check.passed for check in checks)
     assert "recovered" in message
+
+
+def test_openfoam_validation_policy_is_explicit_and_controls_acceptance(tmp_path):
+    samples = {
+        "agentcfd_inlet_flow": -0.01,
+        "agentcfd_outlet_flow": 0.0099,
+        "agentcfd_inlet_pressure": 0.255,
+        "agentcfd_outlet_pressure": 0.0,
+    }
+    for name, value in samples.items():
+        directory = tmp_path / "postProcessing" / name / "0"
+        directory.mkdir(parents=True)
+        (directory / "surfaceFieldValue.dat").write_text(f"# Time value\n1 {value}\n")
+
+    _, _, strict_checks, _ = _recover_patch_data(
+        tmp_path,
+        density=1000.0,
+        reference_pressure_drop=250.0,
+        solver_tolerance=1.0e-8,
+        pressure_error_limit=0.01,
+        mass_balance_limit=0.001,
+    )
+    _, _, declared_checks, _ = _recover_patch_data(
+        tmp_path,
+        density=1000.0,
+        reference_pressure_drop=250.0,
+        solver_tolerance=1.0e-8,
+        pressure_error_limit=0.03,
+        mass_balance_limit=0.02,
+    )
+
+    assert {check.name for check in strict_checks if not check.passed} == {
+        "mass-balance",
+        "pressure-drop-reference",
+    }
+    assert all(check.passed for check in declared_checks)
+    with pytest.raises(ValueError, match="maximum_relative_pressure_error"):
+        OpenFOAMValidationPolicy(maximum_relative_pressure_error=math.nan)

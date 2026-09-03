@@ -419,8 +419,11 @@ def _recover_patch_data(
     pressure_error_limit: float = 0.02,
     mass_balance_limit: float = 1.0e-6,
     inlet_flow_error_limit: float = 0.01,
+    pressure_reference_applicable: bool = True,
     validation_message: str = "Pressure drop is compared with Hagen--Poiseuille at recovered flow.",
 ) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...], str]:
+    if not isinstance(pressure_reference_applicable, bool):
+        raise ValueError("pressure_reference_applicable must be a boolean.")
     series = {
         name: _read_scalar_series(case_directory, name)
         for name in (
@@ -536,7 +539,20 @@ def _recover_patch_data(
                 "kg/s",
             ),
             "flow.pressure_drop": Quantity(final_pressure_drop, "Pa"),
-            "flow.pressure_drop_relative_error": Quantity(relative_pressure_error, "1"),
+            "flow.pressure_drop_relative_error": Quantity(
+                relative_pressure_error,
+                "1",
+                kind=(
+                    "validation_metric"
+                    if pressure_reference_applicable
+                    else "diagnostic"
+                ),
+                description=(
+                    "Relative validation error against an applicable fully developed reference."
+                    if pressure_reference_applicable
+                    else "Diagnostic difference from a non-applicable fully developed reference."
+                ),
+            ),
         }
     )
     iteration = tuple(common_times)
@@ -601,12 +617,28 @@ def _recover_patch_data(
         ),
         Check(
             name="pressure-drop-reference",
-            passed=relative_pressure_error <= pressure_error_limit,
+            passed=(
+                relative_pressure_error <= pressure_error_limit
+                if pressure_reference_applicable
+                else True
+            ),
             value=relative_pressure_error,
             limit=pressure_error_limit,
             message=validation_message,
             kind="validation",
             observable="flow.pressure_drop_relative_error",
+        ),
+        Check(
+            name="pressure-reference-applicability",
+            passed=pressure_reference_applicable,
+            value=("applicable" if pressure_reference_applicable else "not applicable"),
+            limit="fully developed inlet boundary",
+            message=(
+                "Hagen--Poiseuille validates total pipe pressure drop only for the "
+                "declared fully developed inlet case."
+            ),
+            kind="validation",
+            observable="boundary.inlet_profile",
         ),
         *inlet_flow_check,
     )
@@ -1268,6 +1300,10 @@ class OpenFOAMProvider:
         requested_volume_flow = (
             math.pi * step.model.domain.diameter**2 / 4.0 * mean_velocity
         )
+        fully_developed_inlet = any(
+            isinstance(value, boundaries.FullyDevelopedVelocityInlet)
+            for value in step.model.boundary_conditions.values()
+        )
         quantities, histories, recovery_checks, recovery_message = _recover_patch_data(
             prepared.directory,
             density=step.model.fluid.density,
@@ -1283,12 +1319,10 @@ class OpenFOAMProvider:
             pressure_error_limit=self.validation.maximum_relative_pressure_error,
             mass_balance_limit=self.validation.maximum_relative_mass_imbalance,
             inlet_flow_error_limit=self.validation.maximum_relative_inlet_flow_error,
+            pressure_reference_applicable=fully_developed_inlet,
             validation_message=(
                 "The fully developed profile isolates spatial and outlet-boundary error."
-                if any(
-                    isinstance(value, boundaries.FullyDevelopedVelocityInlet)
-                    for value in step.model.boundary_conditions.values()
-                )
+                if fully_developed_inlet
                 else "The uniform inlet includes developing-flow effects in the total pressure drop."
             ),
         )

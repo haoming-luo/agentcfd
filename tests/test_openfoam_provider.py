@@ -339,7 +339,7 @@ def test_openfoam_timeout_stops_exact_container_and_removes_cidfile(tmp_path, mo
 
     monkeypatch.setattr("agentcfd.providers.openfoam.subprocess.run", fake_run)
 
-    result = provider.run(pipe_model().step())
+    result = provider.run(pipe_model(fully_developed=True).step())
 
     assert result.status == "failed"
     assert any(argv[1:3] == ["rm", "--force"] and argv[3] == "a" * 64 for argv in calls)
@@ -434,7 +434,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr("agentcfd.providers.openfoam.subprocess.run", fake_run)
-    result = provider.run(pipe_model().step())
+    result = provider.run(pipe_model(fully_developed=True).step())
 
     assert result.status == "completed"
     assert result.converged is True
@@ -460,9 +460,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     assert result.quantities["flow.reynolds_number"].value == pytest.approx(
         998.2 * 0.01 * 0.1 / 1.002e-3
     )
-    assert result.quantities["flow.laminar_entrance_length_estimate"].value == pytest.approx(
-        0.05 * result.quantities["flow.reynolds_number"].value * 0.1
-    )
+    assert "flow.laminar_entrance_length_estimate" not in result.quantities
     assert result.scientific_inputs["mesh_controls"] == {
         "cross_section_cells": 8,
         "axial_cells": 40,
@@ -578,6 +576,12 @@ def test_openfoam_missing_requested_native_field_fails_acceptance(
     )
     assert completeness.passed is False
     assert completeness.value == "fluid.pressure"
+    assert "flow.laminar_entrance_length_estimate" in result.quantities
+    assert not next(
+        check
+        for check in result.checks
+        if check.name == "pressure-reference-applicability"
+    ).passed
     assert result.accepted is False
 
 
@@ -787,12 +791,29 @@ def test_openfoam_validation_policy_is_explicit_and_controls_acceptance(tmp_path
         pressure_error_limit=0.03,
         mass_balance_limit=0.02,
     )
+    _, _, uniform_checks, _ = _recover_patch_data(
+        tmp_path,
+        density=1000.0,
+        reference_pressure_drop=250.0,
+        solver_tolerance=1.0e-8,
+        pressure_error_limit=0.01,
+        mass_balance_limit=0.02,
+        pressure_reference_applicable=False,
+    )
 
     assert {check.name for check in strict_checks if not check.passed} == {
         "mass-balance",
         "pressure-drop-reference",
     }
     assert all(check.passed for check in declared_checks)
+    assert next(
+        check for check in uniform_checks if check.name == "pressure-drop-reference"
+    ).passed
+    assert not next(
+        check
+        for check in uniform_checks
+        if check.name == "pressure-reference-applicability"
+    ).passed
     with pytest.raises(ValueError, match="maximum_relative_pressure_error"):
         OpenFOAMValidationPolicy(maximum_relative_pressure_error=math.nan)
     with pytest.raises(ValueError, match="maximum_mesh_skewness"):

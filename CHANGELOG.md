@@ -90,6 +90,8 @@ machine-readable capability catalog.
   control records.
 - make non-orthogonality, skewness, and aspect-ratio mesh limits explicit
   scientific acceptance inputs instead of relying only on `Mesh OK`.
+- separate uniform-inlet entrance effects from discretization error by making
+  fully developed pressure-reference applicability an explicit validation gate.
 
 ## 0.1.0a1 — 2026-09-03
 

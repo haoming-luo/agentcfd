@@ -31,9 +31,10 @@ accepted result.
 Patch-integrated inlet and outlet volume flow differed by approximately
 `2.56e-10` relatively. The recovered pressure drop was `2.834396 Pa`, about
 `10.50%` above the fully developed Hagen–Poiseuille reference. That difference
-is not treated as validation failure or success yet: this case prescribes a
-uniform inlet profile and includes the developing entrance region, while mesh
-convergence and an entrance-length policy remain future promotion gates.
+is retained as a diagnostic difference, not mislabeled as discretization error:
+this case prescribes a uniform inlet profile and includes the developing
+entrance region. Its pressure-reference applicability check fails closed. The
+fully developed inlet plus grid convergence is the validation path.
 
 Numerical capabilities will add, as appropriate:
 

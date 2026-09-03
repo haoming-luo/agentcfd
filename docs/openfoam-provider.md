@@ -121,6 +121,10 @@ Uniform velocity and mass-flow-derived inlets also report Reynolds number, the
 `0.05 Re D` hydrodynamic entrance-length estimate, and pipe/entrance-length
 ratio as diagnostics. These quantities explain the physical mismatch without
 making the fully developed pressure law an acceptance shortcut.
+For this boundary, the Hagen--Poiseuille difference is tagged diagnostic and a
+separate reference-applicability check fails; it is not presented as pure CFD
+error. The pressure-error validation threshold applies only to the declared
+fully developed profile.
 The separate `fully_developed_velocity_inlet` uses OpenCFD's non-compiling
 expression parser to prescribe the radial Hagen--Poiseuille profile. It is
 explicit in the model fingerprint and is never selected by backend guesswork.

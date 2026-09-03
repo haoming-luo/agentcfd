@@ -27,6 +27,16 @@ python -m pip install "agentcfd[arrays]"
 python -m pip install "agentcfd[properties]"
 ```
 
+The properties extra remains optional and the core has no mandatory third-party
+runtime dependency. After installation, verify the environment and one IF97
+state without writing project files:
+
+```bash
+agentcfd doctor --json
+agentcfd properties state \
+  --fluid IF97::Water --pressure 101325 --temperature 500 --json
+```
+
 ## OpenFOAM numerical plane
 
 OpenFOAM is an external solver runtime, not a Python dependency. AgentCFD first

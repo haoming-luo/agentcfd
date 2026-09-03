@@ -136,6 +136,8 @@ machine-readable capability catalog.
   construction boundary, including manually created records.
 - expose versioned CoolProp/IF97 pressure-temperature states through the CLI.
 - version thermophysical-state records and ship their JSON Schema contract.
+- document agent-facing gas screening, IF97 state evaluation, and installed
+  contract discovery in the primary quickstart.
 
 ## 0.1.0a1 — 2026-09-03
 

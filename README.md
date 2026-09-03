@@ -87,6 +87,20 @@ agentcfd calculate pipe-flow --density 998.2 --viscosity 0.001002 \
   --regime laminar --json
 ```
 
+Gas-model screening and optional CoolProp/IF97 states use equally explicit
+commands:
+
+```bash
+agentcfd calculate compressibility \
+  --velocity 100 --speed-of-sound 400 --json
+python -m pip install "agentcfd[properties]"
+agentcfd properties state \
+  --fluid IF97::Water --pressure 101325 --temperature 500 --json
+```
+
+Both return structured records rather than presentation-only text. Installed
+AgentCFD/AgentCAE schemas can be discovered with `agentcfd contracts --json`.
+
 For editable development from the repository:
 
 ```bash
@@ -179,8 +193,9 @@ agentcfd verify grid-convergence coarse.json medium.json fine.json \
 The preparation workflow creates a 0.5 m by 0.1 m benchmark with one declared
 fully developed inlet model, isotropic refinement ratios, per-case hashes, and
 an explicit plan. The grid runner verifies and executes every fresh case and
-writes the GCI evidence automatically. The result workflow checks that all runs completed, converged, share one model
-identity, and contain distinct positive mesh cell counts before it records
+writes the GCI evidence automatically. The result workflow checks that all runs
+completed, converged, share one model identity, use the same quantity unit, and
+contain distinct positive dimensionless mesh cell counts before it records
 Richardson extrapolation, observed order, GCI, the asymptotic ratio, and hashes
 of all three source files.
 Common pipe checks are available under `agentcfd.engineering`: hydraulic
@@ -226,6 +241,8 @@ authoritative.
 - [Product and market strategy](docs/product-strategy.md)
 - [AgentFEM, CFD, and AI interoperability](docs/interoperability.md)
 - [Results, evidence, and AI exchange](docs/results-and-ai.md)
+- [Thermophysical properties and IF97](docs/properties.md)
+- [Engineering correlations and model screening](docs/engineering-correlations.md)
 - [Installation and solver runtime](docs/installation.md)
 - [Dependency and license policy](docs/licensing.md)
 - [Thermophysical properties](docs/properties.md)

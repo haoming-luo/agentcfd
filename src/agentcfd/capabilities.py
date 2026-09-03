@@ -14,7 +14,10 @@ class Capability:
     limitations: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        record = asdict(self)
+        record["evidence"] = list(self.evidence)
+        record["limitations"] = list(self.limitations)
+        return record
 
 
 _CAPABILITIES = (
@@ -44,6 +47,23 @@ _CAPABILITIES = (
         limitations=(
             "Single-phase incompressible engineering correlations only.",
             "Reynolds numbers from 2300 up to 4000 require an explicit regime-specific model.",
+        ),
+    ),
+    Capability(
+        name="engineering.gas-screening",
+        maturity="experimental",
+        scope=(
+            "Ideal-gas state, sound speed, Mach number, and explicit "
+            "incompressible-model screening."
+        ),
+        evidence=(
+            "ideal-gas identity tests",
+            "low-Mach threshold decision tests",
+            "NASA low-speed compressibility guidance",
+        ),
+        limitations=(
+            "The Mach threshold is a preliminary model-selection screen, not validation.",
+            "Non-ideal steam and large thermal or composition changes need dedicated models.",
         ),
     ),
     Capability(
@@ -81,6 +101,23 @@ _CAPABILITIES = (
         limitations=(
             "Requires exactly three monotonically converging scalar solutions.",
             "Users must establish that the grids are geometrically similar and in the asymptotic range.",
+        ),
+    ),
+    Capability(
+        name="validation.single-observable-uncertainty",
+        maturity="experimental",
+        scope=(
+            "Solver-neutral comparison of one simulated observable with reference "
+            "data and combined validation uncertainty."
+        ),
+        evidence=(
+            "root-sum-square uncertainty tests",
+            "coverage-factor acceptance tests",
+            "installed JSON contract",
+        ),
+        limitations=(
+            "Input uncertainty components must be defensible standard uncertainties.",
+            "Passing one observable does not validate a model outside that comparison point.",
         ),
     ),
     Capability(

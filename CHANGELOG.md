@@ -126,6 +126,8 @@ machine-readable capability catalog.
 - fail closed on malformed or duplicate CFD-to-FEM coupling fields and validate
   emitted coupling manifests against the installed contract.
 - expose low-Mach model screening through the human- and agent-facing CLI.
+- publish a capability-catalog JSON contract and advertise gas screening and
+  single-observable validation with explicit maturity boundaries.
 
 ## 0.1.0a1 — 2026-09-03
 

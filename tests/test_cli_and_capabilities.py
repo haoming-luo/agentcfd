@@ -1,5 +1,6 @@
 import json
 
+import jsonschema
 import pytest
 
 from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing
@@ -12,6 +13,12 @@ def test_capability_catalog_is_truthful():
     assert maturity["reference.hagen-poiseuille"] == "release"
     assert maturity["provider.openfoam"] == "experimental"
     assert maturity["openfoam.steady-laminar-circular-pipe"] == "experimental"
+    assert maturity["engineering.gas-screening"] == "experimental"
+    assert maturity["validation.single-observable-uncertainty"] == "experimental"
+    report = capabilities.as_dict()
+    jsonschema.Draft202012Validator(
+        contracts.load("capability-catalog.schema.json")
+    ).validate(report)
 
 
 def test_cli_demo_writes_accepted_result(tmp_path, capsys):

@@ -10,6 +10,7 @@ from typing import Any
 
 _SCHEMAS = (
     "benchmark-catalog.schema.json",
+    "capability-catalog.schema.json",
     "coupling-manifest.schema.json",
     "grid-convergence.schema.json",
     "license-catalog.schema.json",

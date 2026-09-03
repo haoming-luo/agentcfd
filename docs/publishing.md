@@ -1,13 +1,15 @@
 # Publishing and PyPI name status
 
-## Name check
+## Published status
 
-On 2026-09-03 the official PyPI JSON endpoint for `agentcfd` returned HTTP 404,
-so no public PyPI project existed at that moment. The GitHub repository
-`haoming-luo/agentcfd` exists and is the canonical source repository.
+`agentcfd` 0.1.0a1 was published on 2026-09-03 from GitHub commit `2746e60`
+through PyPI Trusted Publishing. The distribution name is now occupied by the
+project, and `haoming-luo/agentcfd` remains the canonical source repository.
 
-A 404 is a point-in-time observation, not a reservation. Only a successful
-upload creates the PyPI project. Recheck immediately before publishing.
+The pending publisher converted to an active publisher after the first OIDC
+upload. Its identity is GitHub owner `haoming-luo`, repository `agentcfd`,
+workflow `release.yml`, and environment `pypi`; no long-lived PyPI upload token
+is required by the release workflow.
 
 ## First-release gate
 
@@ -25,10 +27,10 @@ upload creates the PyPI project. Recheck immediately before publishing.
 9. Publish the exact audited artifacts using a scoped PyPI token or trusted
    publishing. Never upload a rebuild with the same version.
 
-## Recommended first upload: trusted publishing
+## Configured publishing path
 
-The repository includes `.github/workflows/release.yml`. In the PyPI account's
-Publishing page, add a pending GitHub publisher with these exact values:
+The repository includes `.github/workflows/release.yml`. The active PyPI
+publisher uses these exact values:
 
 | Field | Value |
 |---|---|
@@ -38,12 +40,12 @@ Publishing page, add a pending GitHub publisher with these exact values:
 | Workflow filename | `release.yml` |
 | Environment | `pypi` |
 
-Protect the GitHub `pypi` environment with a required reviewer, then publish a
-GitHub release for the matching version. The workflow builds in a separate job,
-tests the exact wheel, passes only the distributions to the minimal OIDC publish
-job, and publishes with attestations. A pending publisher does not reserve the
-name until that first workflow upload succeeds.
+For future versions, publish a GitHub release for the matching version. The
+workflow builds in a separate job, tests the exact wheel, passes only the
+distributions to the minimal OIDC publish job, and publishes with attestations.
+The `pypi` environment can add required-reviewer protection as the maintainer
+team grows.
 
-The first upload should remain an alpha release. PyPI publication reserves the
-distribution name; it does not establish trademark rights or scientific
+The first upload is intentionally an alpha release. PyPI publication reserves
+the distribution name; it does not establish trademark rights or scientific
 maturity.

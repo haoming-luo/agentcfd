@@ -67,7 +67,17 @@ The reference provider implements the Hagen–Poiseuille solution, rejects flow
 outside its declared laminar range, and records mass balance and an independent
 Darcy–Weisbach identity check.
 
-## Install from this repository
+## Install
+
+Install the published alpha from PyPI with Python 3.11 or newer:
+
+```bash
+python -m pip install agentcfd==0.1.0a1
+agentcfd doctor
+agentcfd demo pipe
+```
+
+For editable development from the repository:
 
 ```bash
 git clone https://github.com/haoming-luo/agentcfd.git
@@ -78,8 +88,6 @@ python -m pip install -e .
 agentcfd doctor
 agentcfd demo pipe
 ```
-
-PyPI and conda-forge publication will follow an installed-artifact release gate.
 
 ## Prepare the first OpenFOAM case
 
@@ -150,6 +158,7 @@ mechanics and deterministic numerical computation remain authoritative.
 - [OpenFOAM provider boundary](docs/openfoam-provider.md)
 - [Publishing and PyPI name status](docs/publishing.md)
 - [Validation policy](docs/validation.md)
+- [OpenFOAM v2606 execution evidence](docs/openfoam-v2606-validation.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

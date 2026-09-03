@@ -15,7 +15,7 @@ import re
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .. import boundaries, engineering
@@ -186,14 +186,14 @@ def _unexpected_case_entries(prepared: PreparedOpenFOAMCase) -> tuple[str, ...]:
 
     allowed_files = set(prepared.files) | {"agentcfd-case.json"}
     allowed_directories = {
-        str(parent)
+        parent.as_posix()
         for relative in prepared.files
-        for parent in Path(relative).parents
-        if str(parent) != "."
+        for parent in PurePosixPath(relative).parents
+        if parent.as_posix() != "."
     }
     unexpected: list[str] = []
     for path in prepared.directory.rglob("*"):
-        relative = str(path.relative_to(prepared.directory))
+        relative = path.relative_to(prepared.directory).as_posix()
         if path.is_symlink():
             unexpected.append(relative)
         elif path.is_dir():
@@ -202,6 +202,61 @@ def _unexpected_case_entries(prepared: PreparedOpenFOAMCase) -> tuple[str, ...]:
         elif relative not in allowed_files:
             unexpected.append(relative)
     return tuple(sorted(unexpected))
+
+
+def _container_image_identity(
+    docker_command: str,
+    image: str,
+    *,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    """Inspect the local image used by Docker and return immutable identity data."""
+
+    record: dict[str, Any] = {
+        "requested_reference": image,
+        "image_id": None,
+        "repo_digests": [],
+        "os": None,
+        "architecture": None,
+        "identity_verified": False,
+    }
+    try:
+        completed = subprocess.run(
+            [docker_command, "image", "inspect", image],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=min(timeout_seconds, 30.0),
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        record["inspection_error"] = str(error)
+        return record
+    if completed.returncode != 0:
+        record["inspection_error"] = (completed.stderr or completed.stdout).strip()[-500:]
+        return record
+    try:
+        payload = json.loads(completed.stdout)
+        selected = payload[0]
+    except (json.JSONDecodeError, IndexError, KeyError, TypeError) as error:
+        record["inspection_error"] = f"invalid docker image inspect output: {error}"
+        return record
+    image_id = selected.get("Id")
+    repo_digests = selected.get("RepoDigests") or []
+    if isinstance(image_id, str):
+        record["image_id"] = image_id
+    if isinstance(repo_digests, list):
+        record["repo_digests"] = sorted(
+            item for item in repo_digests if isinstance(item, str)
+        )
+    for key, source in (("os", "Os"), ("architecture", "Architecture")):
+        value = selected.get(source)
+        if isinstance(value, str):
+            record[key] = value
+    record["identity_verified"] = bool(
+        isinstance(image_id, str)
+        and re.fullmatch(r"sha256:[0-9a-fA-F]{64}", image_id)
+    )
+    return record
 
 
 def _runtime_version(logs: dict[str, str], fallback: str) -> str:
@@ -697,8 +752,9 @@ class OpenFOAMProvider:
         for relative, content in sorted(rendered.items()):
             path = target / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-            hashes[relative] = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            data = content.encode("utf-8")
+            path.write_bytes(data)
+            hashes[relative] = hashlib.sha256(data).hexdigest()
 
         case_identity = hashlib.sha256(
             json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -710,9 +766,10 @@ class OpenFOAMProvider:
             files=hashes,
         )
         manifest = target / "agentcfd-case.json"
-        manifest.write_text(
-            json.dumps(prepared.to_dict(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
+        manifest.write_bytes(
+            (json.dumps(prepared.to_dict(), indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            )
         )
         return prepared
 
@@ -872,6 +929,31 @@ class OpenFOAMProvider:
         solver_log = logs.get("simpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
         solver_converged = process_ok and _solver_converged(solver_log)
+        container_identity: dict[str, Any] | None = None
+        container_checks: tuple[Check, ...] = ()
+        if self.container_image is not None:
+            docker_command = next(
+                (str(command) for command in commands.values() if command is not None),
+                "docker",
+            )
+            container_identity = _container_image_identity(
+                docker_command,
+                self.container_image,
+                timeout_seconds=self.timeout_seconds,
+            )
+            container_checks = (
+                Check(
+                    name="container-image-identity",
+                    passed=bool(container_identity["identity_verified"]),
+                    value=(
+                        container_identity.get("image_id")
+                        or container_identity.get("inspection_error", "missing")
+                    ),
+                    limit="immutable local image SHA-256 is recorded",
+                    kind="runtime",
+                    observable="provider.container_identity",
+                ),
+            )
         reference_drop = self._reference_pressure_drop(step)
         quantities, histories, recovery_checks, recovery_message = _recover_patch_data(
             prepared.directory,
@@ -999,6 +1081,7 @@ class OpenFOAMProvider:
                     kind="verification",
                     observable="mesh.quality",
                 ),
+                *container_checks,
                 *recovery_checks,
             ),
             artifacts={
@@ -1024,6 +1107,7 @@ class OpenFOAMProvider:
                 ),
                 "execution_boundary": descriptor.execution_boundary,
                 "container_image": self.container_image,
+                "container_identity": container_identity,
                 "case_manifest": str(prepared.directory / "agentcfd-case.json"),
             },
             messages=(recovery_message,),

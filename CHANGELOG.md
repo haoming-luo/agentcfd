@@ -45,6 +45,12 @@ machine-readable capability catalog.
   iteration histories from OpenFOAM solver evidence.
 - reject unrecorded prepared-case files, directories, and symbolic links that
   could alter solver semantics outside the content-addressed manifest.
+- make the console fail closed with stable exit codes for execution failure,
+  expected input errors, and completed-but-unaccepted results.
+- record the immutable Docker image SHA-256, repository digests, and platform,
+  and fail container-run acceptance when that provenance cannot be verified.
+- make generated-case byte identities and unrecorded-path checks portable
+  across LF and CRLF hosts.
 
 ## 0.1.0a1 — 2026-09-03
 

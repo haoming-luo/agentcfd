@@ -12,6 +12,7 @@ from pathlib import Path
 
 from . import benchmarks, boundaries, capabilities, fluids, geometry, outputs, procedures, properties, studies
 from ._version import __version__
+from .errors import AgentCFDError
 from .model import Model
 from .provenance import file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
@@ -415,7 +416,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"accepted {str(result.accepted).lower()}"
             )
             print(target)
-        return 0 if result.status == "completed" else 1
+        if result.accepted:
+            return 0
+        return 1 if result.status != "completed" else 3
     if args.command == "run" and args.provider == "openfoam-pipe-grid":
         payload, target = _run_openfoam_pipe_grid(
             args.directory,
@@ -445,5 +448,15 @@ def main(argv: list[str] | None = None) -> int:
     return 2
 
 
+def entrypoint(argv: list[str] | None = None) -> int:
+    """Run the console interface with concise expected-failure reporting."""
+
+    try:
+        return main(argv)
+    except (AgentCFDError, FileExistsError, FileNotFoundError, ValueError) as error:
+        print(f"agentcfd: error: {error}", file=sys.stderr)
+        return 2
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(entrypoint())

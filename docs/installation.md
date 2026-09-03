@@ -40,6 +40,12 @@ generate a case without OpenFOAM. Execution recovers conservation, pressure,
 mesh, convergence, and final-field evidence; scientific acceptance is decided
 from those checks rather than the process exit code.
 
+The CLI maps that decision back to automation-friendly exit status: `0` means
+accepted, `1` means execution failure, `2` means invalid input or unavailable
+capability, and `3` means execution completed but convergence or a scientific
+check failed. A result file is still written for completed unaccepted runs so
+the evidence can be diagnosed.
+
 Docker can be selected explicitly without wrapper scripts:
 
 ```bash

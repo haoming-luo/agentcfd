@@ -35,7 +35,7 @@ Repository = "https://github.com/haoming-luo/agentcfd"
 Issues = "https://github.com/haoming-luo/agentcfd/issues"
 
 [project.scripts]
-agentcfd = "agentcfd.cli:main"
+agentcfd = "agentcfd.cli:entrypoint"
 
 [project.optional-dependencies]
 arrays = ["numpy>=1.24"]

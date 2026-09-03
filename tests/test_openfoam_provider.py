@@ -1,3 +1,4 @@
+import hashlib
 import json
 import math
 import subprocess
@@ -15,6 +16,7 @@ from agentcfd.providers import (
     prepare_pipe_grid_study,
 )
 from agentcfd.providers.openfoam import (
+    _container_image_identity,
     _mesh_controls_from_case,
     _mesh_quality_quantities,
     _read_scalar_series,
@@ -58,6 +60,10 @@ def test_openfoam_case_lowering_is_deterministic_and_content_addressed(tmp_path)
     assert first.model_sha256 == second.model_sha256
     assert len(first.files) == 8
     assert all(len(digest) == 64 for digest in first.files.values())
+    assert all(
+        hashlib.sha256((first.directory / relative).read_bytes()).hexdigest() == digest
+        for relative, digest in first.files.items()
+    )
 
     manifest = json.loads((first.directory / "agentcfd-case.json").read_text())
     assert manifest["case_sha256"] == first.case_sha256
@@ -287,6 +293,35 @@ def test_openfoam_container_reports_missing_docker_clearly(tmp_path, monkeypatch
 
     with pytest.raises(ProviderUnavailableError, match="requires docker on PATH"):
         provider.run(pipe_model().step())
+
+
+def test_openfoam_container_image_identity_is_immutable_and_structured(monkeypatch):
+    digest = "a" * 64
+    payload = [
+        {
+            "Id": f"sha256:{digest}",
+            "RepoDigests": [f"opencfd/openfoam-run@sha256:{'b' * 64}"],
+            "Os": "linux",
+            "Architecture": "arm64",
+        }
+    ]
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam.subprocess.run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 0, stdout=json.dumps(payload), stderr=""
+        ),
+    )
+
+    identity = _container_image_identity(
+        "/usr/bin/docker",
+        "opencfd/openfoam-run:2606",
+        timeout_seconds=60,
+    )
+
+    assert identity["identity_verified"] is True
+    assert identity["image_id"] == f"sha256:{digest}"
+    assert identity["os"] == "linux"
+    assert identity["architecture"] == "arm64"
 
 
 def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypatch):

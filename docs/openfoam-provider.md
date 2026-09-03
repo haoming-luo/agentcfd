@@ -57,6 +57,9 @@ Native commands and an explicit Docker image are both supported. Container
 mode mounts only the selected case at `/case`; it does not infer, download, or
 silently switch images. This makes the same provider usable from Linux,
 macOS, CI, and future remote workers while preserving runtime provenance.
+After execution, AgentCFD inspects the local Docker image and records its
+immutable image SHA-256, repository digests, operating system, and architecture.
+A container run without a verifiable immutable image identity is not accepted.
 
 Result recovery reads the four independent patch histories, converts OpenFOAM
 kinematic pressure to Pa, checks relative mass imbalance, compares pressure

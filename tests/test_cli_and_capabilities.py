@@ -3,7 +3,7 @@ import json
 import pytest
 
 from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities
-from agentcfd.cli import build_parser, main
+from agentcfd.cli import build_parser, entrypoint, main
 from agentcfd.providers import OpenFOAMProvider
 
 
@@ -197,3 +197,34 @@ def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     assert payload["observed_order"] == pytest.approx(2.0)
     assert payload["schema"] == "agentcfd.grid-convergence/0.1"
     assert all(len(item["sha256"]) == 64 for item in payload["sources"])
+
+
+def test_cli_openfoam_run_is_nonzero_when_scientific_checks_fail(
+    tmp_path, capsys, monkeypatch
+):
+    result = SimulationResult(
+        status="completed",
+        converged=True,
+        provider="openfoam",
+        quantities={"flow.pressure_drop": Quantity(1.0, "Pa")},
+        checks=(Check("pressure-validation", False, kind="validation"),),
+    )
+    target = tmp_path / "result.json"
+    monkeypatch.setattr(
+        "agentcfd.cli._run_openfoam_pipe",
+        lambda *args, **kwargs: (result, target),
+    )
+
+    assert main(["run", "openfoam-pipe", str(tmp_path / "case")]) == 3
+    assert "accepted false" in capsys.readouterr().out
+
+
+def test_console_entrypoint_reports_expected_errors_without_traceback(tmp_path, capsys):
+    occupied = tmp_path / "occupied"
+    occupied.mkdir()
+    (occupied / "keep.txt").write_text("user data")
+
+    assert entrypoint(["prepare", "openfoam-pipe", str(occupied)]) == 2
+    captured = capsys.readouterr()
+    assert "agentcfd: error:" in captured.err
+    assert "Traceback" not in captured.err

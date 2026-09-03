@@ -16,7 +16,9 @@ is not called validated merely because a solver tutorial exists.
 | Component | Bend, tee, and manifold | loss coefficient, branch balance, uniformity | published data plus conservation | planned |
 | Thermal | Heated pipe / conjugate wall | bulk temperature, Nusselt number, heat balance | analytical correlation and mesh/time studies | planned |
 | Steam | Single-phase steam pipe | pressure and enthalpy loss | property uncertainty plus experiment | planned |
-| Reacting | Canonical premixed flame | flame speed and temperature | chemistry-source provenance and experiment | planned |
+| Thermal mixing | IAEA tee junction | temperature mean, fluctuations, wall response | IAEA benchmark plus temporal/model studies | planned |
+| Reacting | Sandia TNF non-premixed flame | mixture fraction, temperature, species, velocity | workshop measurements plus model sensitivity | planned |
+| Reacting multiphase | NIST spray flame | droplet size/velocity/flux and gas temperature | NIST benchmark database | planned |
 
 The [NASA NPARC validation archive](https://www.grc.nasa.gov/WWW/wind/valid/archive.html)
 provides documented cavity, backward-facing-step, diffuser, cylinder, and duct
@@ -34,8 +36,18 @@ with geometry, flow conditions, properties, pressure, and velocity validation
 data. Its nozzle is relevant beyond medical devices because it exercises an
 industrial sequence of contraction, jet, expansion, and recirculation.
 
+For thermal piping, the
+[IAEA tee-junction benchmark](https://www-pub.iaea.org/MTCD/Publications/PDF/te_1318_web.pdf)
+adds transient temperature mixing and wall loading. Combustion follows a staged
+path: the [Sandia turbulent-flame program](https://www.sandia.gov/research/publications/details/thirteenth-international-workshop-on-measurement-and-computation-of-turbule-2016-12-01/)
+for canonical gas flames, then the
+[NIST spray-flame database](https://www.nist.gov/publications/benchmark-database-input-and-validation-multiphase-combustion-models)
+for multiphase coupling. These are roadmap evidence sources, not claims of
+current solver support.
+
 The same roadmap is available to agents and automation as
 `agentcfd benchmarks --json`. Each record carries a stable identifier,
 physics, observables, authoritative source, implementation status, and the next
-evidence gate. Source data are linked, not copied, until redistribution terms
-have been reviewed.
+evidence gate. Every record defaults to
+`link-only-pending-terms-review`: source data are linked, not copied, until
+redistribution terms have been reviewed and recorded.

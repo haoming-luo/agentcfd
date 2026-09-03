@@ -92,6 +92,14 @@ machine-readable capability catalog.
   scientific acceptance inputs instead of relying only on `Mesh OK`.
 - separate uniform-inlet entrance effects from discretization error by making
   fully developed pressure-reference applicability an explicit validation gate.
+- add authoritative IAEA thermal-mixing, Sandia turbulent-flame, and NIST spray
+  combustion cases to the machine-readable benchmark roadmap.
+- mark every benchmark dataset link-only until redistribution terms are
+  explicitly reviewed.
+- expand the development dependency inventory and record NumPy's composite
+  permissive license expression rather than reducing it to one top-level label.
+- expose a dependency-free machine-readable license catalog for core, optional
+  Python extras, and the external OpenFOAM process boundary.
 
 ## 0.1.0a1 — 2026-09-03
 

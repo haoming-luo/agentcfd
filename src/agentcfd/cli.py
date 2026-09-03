@@ -10,7 +10,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from . import benchmarks, boundaries, capabilities, contracts, engineering, fluids, geometry, outputs, procedures, properties, studies
+from . import benchmarks, boundaries, capabilities, contracts, engineering, fluids, geometry, licensing, outputs, procedures, properties, studies
 from ._version import __version__
 from .errors import AgentCFDError
 from .jsonio import strict_json_object
@@ -257,6 +257,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     contract_catalog.add_argument("--json", action="store_true", dest="as_json")
 
+    license_catalog = subparsers.add_parser(
+        "licenses",
+        help="Show dependency and external-solver license boundaries.",
+    )
+    license_catalog.add_argument("--json", action="store_true", dest="as_json")
+
     calculate = subparsers.add_parser(
         "calculate",
         help="Run dependency-free industrial engineering calculations.",
@@ -434,6 +440,18 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for contract in report["contracts"]:
                 print(f"{contract['name']}: {contract['id']}")
+        return 0
+    if args.command == "licenses":
+        report = licensing.as_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            for component in licensing.all():
+                required = "required" if component.mandatory_runtime else "optional"
+                print(
+                    f"{component.name}: {component.license_expression} | "
+                    f"{component.relationship} | {required}"
+                )
         return 0
     if args.command == "calculate" and args.calculation == "pipe-loss":
         report = engineering.pipe_pressure_loss(

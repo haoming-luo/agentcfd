@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts
+from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing
 from agentcfd.cli import build_parser, entrypoint, main
 from agentcfd.providers import OpenFOAMProvider
 
@@ -36,7 +36,14 @@ def test_benchmark_catalog_is_machine_readable_and_cli_visible(capsys):
     assert "laminar-fully-developed-pipe" in ids
     assert "fda-benchmark-nozzle" in ids
     assert "single-phase-if97-steam-pipe" in ids
+    assert "iaea-tee-junction-thermal-mixing" in ids
+    assert "sandia-tnf-nonpremixed-flame" in ids
+    assert "nist-multiphase-spray-flame" in ids
     assert all(case["source_url"].startswith("https://") for case in report["cases"])
+    assert all(
+        case["redistribution_status"] == "link-only-pending-terms-review"
+        for case in report["cases"]
+    )
 
     assert main(["benchmarks", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == report
@@ -54,6 +61,18 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert len(payload["contracts"]) == len(contracts.available())
     with pytest.raises(KeyError, match="Unknown AgentCFD contract"):
         contracts.load("../untrusted.json")
+
+
+def test_license_catalog_keeps_copyleft_solver_external(capsys):
+    report = licensing.as_dict()
+    components = {item["name"]: item for item in report["components"]}
+    assert report["core_has_mandatory_third_party_runtime_dependencies"] is False
+    assert components["agentcfd"]["license_expression"] == "Apache-2.0"
+    assert components["OpenFOAM"]["relationship"] == "user-managed-external-process"
+    assert components["OpenFOAM"]["mandatory_runtime"] is False
+
+    assert main(["licenses", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == report
 
 
 def test_cli_calculates_forward_and_inverse_pipe_operating_point(capsys):

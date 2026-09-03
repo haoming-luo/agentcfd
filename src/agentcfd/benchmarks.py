@@ -15,6 +15,7 @@ class BenchmarkCase:
     source_url: str
     status: str
     next_gate: str
+    redistribution_status: str = "link-only-pending-terms-review"
 
     def to_dict(self) -> dict[str, object]:
         record = asdict(self)
@@ -82,6 +83,51 @@ _CASES = (
         source_url="https://coolprop.org/fluid_properties/IF97.html",
         status="property-provider-active",
         next_gate="Add compressible energy solver lowering and a public experimental dataset.",
+    ),
+    BenchmarkCase(
+        id="iaea-tee-junction-thermal-mixing",
+        stage="industrial-benchmark",
+        physics="Transient single-phase non-isothermal mixing in a pipe tee junction.",
+        observables=("mean temperature", "temperature fluctuations", "wall temperature"),
+        source="IAEA tee-junction thermal-mixing benchmark",
+        source_url="https://www-pub.iaea.org/MTCD/Publications/PDF/te_1318_web.pdf",
+        status="planned",
+        next_gate=(
+            "Add transient energy transport, conjugate-wall semantics, and spectral "
+            "temperature validation."
+        ),
+    ),
+    BenchmarkCase(
+        id="sandia-tnf-nonpremixed-flame",
+        stage="reacting-benchmark",
+        physics="Canonical turbulent non-premixed reacting jet flame.",
+        observables=("mixture fraction", "temperature", "species", "velocity"),
+        source="Sandia Turbulent Flames Workshop validation program",
+        source_url=(
+            "https://www.sandia.gov/research/publications/details/"
+            "thirteenth-international-workshop-on-measurement-and-computation-of-turbule-2016-12-01/"
+        ),
+        status="planned",
+        next_gate=(
+            "Add chemistry-mechanism identity, reacting transport, radiation policy, "
+            "and turbulence-chemistry model sensitivity."
+        ),
+    ),
+    BenchmarkCase(
+        id="nist-multiphase-spray-flame",
+        stage="reacting-benchmark",
+        physics="Enclosed multiphase spray flame with measured droplet and gas fields.",
+        observables=("droplet size", "droplet velocity", "fuel flux", "gas temperature"),
+        source="NIST multiphase combustion-model validation database",
+        source_url=(
+            "https://www.nist.gov/publications/"
+            "benchmark-database-input-and-validation-multiphase-combustion-models"
+        ),
+        status="planned",
+        next_gate=(
+            "Review data terms, add Lagrangian spray provenance, and validate a "
+            "non-reacting precursor before combustion."
+        ),
     ),
 )
 

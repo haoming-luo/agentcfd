@@ -11,14 +11,20 @@ review.
 | Component | Role | License | Distribution rule |
 |---|---|---|---|
 | AgentCFD | workflow and scientific contracts | Apache-2.0 | core |
-| NumPy | optional array hashing/interchange | BSD-3-Clause | optional `arrays` extra; development dependency |
+| NumPy | optional array hashing/interchange | permissive composite (BSD-3-Clause, 0BSD, MIT, Zlib, CC0) | optional `arrays` extra; audit bundled notices |
 | setuptools | build backend | MIT | source-build dependency only |
 | wheel | wheel build | MIT | source-build dependency only |
 | jsonschema | development-time schema validation | MIT | development dependency only |
+| pytest | tests | MIT | development dependency only |
+| Ruff | linting | MIT | development dependency only |
+| build | release artifact construction | MIT | development dependency only |
+| Twine | release artifact checking/upload | Apache-2.0 | development dependency only |
 
 The core has no mandatory third-party runtime dependency and must not acquire a
 mandatory solver, mesher, GUI, LLM SDK, or machine-learning framework
 dependency. Optional integrations import lazily at their capability boundary.
+The current runtime boundary is also available to automation through
+`agentcfd licenses --json`.
 
 ## Planned and optional providers
 
@@ -48,9 +54,13 @@ dependency. Optional integrations import lazily at their capability boundary.
   generated-case fingerprint in result provenance.
 - Audit transitive dependencies and included data files, not only top-level
   package metadata, before every release.
+- Treat accessible benchmark data as link-only until dataset redistribution
+  terms are reviewed; public access alone is not a redistribution license.
 
-License references were reviewed on 2026-09-03 against the upstream project
-license files and official OpenFOAM licensing pages. The current review links
+License references were reviewed on 2026-09-03 against installed PEP 639
+metadata, upstream project license files, and official OpenFOAM licensing pages.
+Composite packages retain their bundled license files; the table is not a
+replacement for release SBOM/notice generation. The current review links
 to the upstream [meshio](https://github.com/nschloe/meshio),
 [PyVista](https://github.com/pyvista/pyvista),
 [Cantera](https://github.com/Cantera/cantera/blob/main/License.txt),

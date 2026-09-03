@@ -37,5 +37,6 @@ jobs:
       - run: wheel-test/bin/python -c "import importlib.util; assert importlib.util.find_spec('numpy') is None"
       - run: wheel-test/bin/agentcfd doctor --json
       - run: wheel-test/bin/agentcfd contracts --json
+      - run: wheel-test/bin/agentcfd calculate compressibility --velocity 100 --speed-of-sound 400 --json
       - run: wheel-test/bin/agentcfd demo pipe --output pipe-result.json
       - run: wheel-test/bin/agentcfd prepare openfoam-pipe openfoam-pipe --fully-developed --cross-section-cells 4 --axial-cells 20 --json

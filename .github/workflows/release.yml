@@ -24,6 +24,7 @@ jobs:
           cd /tmp
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" doctor --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" capabilities --json
+          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" calculate compressibility --velocity 100 --speed-of-sound 400 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" demo pipe --output pipe-result.json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-pipe openfoam-pipe --json
       - uses: actions/upload-artifact@v7

@@ -138,6 +138,7 @@ machine-readable capability catalog.
 - version thermophysical-state records and ship their JSON Schema contract.
 - document agent-facing gas screening, IF97 state evaluation, and installed
   contract discovery in the primary quickstart.
+- exercise low-Mach screening in both offline-wheel CI and release smoke gates.
 
 ## 0.1.0a1 — 2026-09-03
 

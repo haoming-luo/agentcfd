@@ -250,11 +250,13 @@ authoritative.
 - [Dependency and license policy](docs/licensing.md)
 - [Thermophysical properties](docs/properties.md)
 - [OpenFOAM provider boundary](docs/openfoam-provider.md)
+- [Numerical strategy and performance tiers](docs/numerical-strategy.md)
 - [Publishing and PyPI name status](docs/publishing.md)
 - [Validation policy](docs/validation.md)
 - [Engineering correlations](docs/engineering-correlations.md)
 - [Benchmark catalog](docs/benchmark-catalog.md)
 - [OpenFOAM v2606 execution evidence](docs/openfoam-v2606-validation.json)
+- [OpenFOAM v2606 grid-validation evidence](docs/openfoam-v2606-grid-validation.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

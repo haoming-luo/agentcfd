@@ -2,16 +2,20 @@
 
 ## Published status
 
-`agentcfd` 0.1.0a1 was published on 2026-09-03 from GitHub commit `2746e60`
-through PyPI Trusted Publishing. The distribution name is now occupied by the
-project, and `haoming-luo/agentcfd` remains the canonical source repository.
+`agentcfd` 0.1.0a2 was published on 2026-09-03 from GitHub commit `be1c663`
+through PyPI Trusted Publishing after the Linux, macOS, Windows, Python
+3.11--3.13, and offline-wheel gates passed. The distribution name is occupied
+by the project, and `haoming-luo/agentcfd` remains the canonical source
+repository. Release artifacts are rebuilt by GitHub Actions, receive PyPI
+digital attestations, and are therefore expected to have different hashes from
+any local pre-release build.
 
 The pending publisher converted to an active publisher after the first OIDC
 upload. Its identity is GitHub owner `haoming-luo`, repository `agentcfd`,
 workflow `release.yml`, and environment `pypi`; no long-lived PyPI upload token
 is required by the release workflow.
 
-## First-release gate
+## Release gate
 
 1. Run the complete tests and lint checks.
 2. Build the sdist and wheel in a clean environment.

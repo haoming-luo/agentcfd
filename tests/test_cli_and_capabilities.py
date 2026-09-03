@@ -3,7 +3,7 @@ import json
 import jsonschema
 import pytest
 
-from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing
+from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing, properties
 from agentcfd.cli import build_parser, entrypoint, main
 from agentcfd.providers import OpenFOAMProvider
 
@@ -137,6 +137,49 @@ def test_cli_exposes_auditable_compressibility_screen(capsys):
         "mach_number": 0.25,
         "maximum_incompressible_mach": 0.3,
     }
+
+
+def test_cli_exposes_versioned_thermophysical_state(monkeypatch, capsys):
+    state = properties.ThermophysicalState(
+        fluid="IF97::Water",
+        backend="IF97",
+        pressure=101325.0,
+        temperature=500.0,
+        phase="gas",
+        density=0.4409,
+        dynamic_viscosity=1.73e-5,
+        specific_heat=1981.5,
+        thermal_conductivity=0.036,
+        speed_of_sound=548.0,
+        prandtl_number=0.952,
+        provider="coolprop-properties",
+        provider_version="test",
+    )
+    monkeypatch.setattr(
+        properties.CoolPropPropertyProvider,
+        "at_pressure_temperature",
+        lambda self, fluid, *, pressure, temperature: state,
+    )
+    assert (
+        main(
+            [
+                "properties",
+                "state",
+                "--fluid",
+                "IF97::Water",
+                "--pressure",
+                "101325",
+                "--temperature",
+                "500",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["backend"] == "IF97"
+    assert report["provider_version"] == "test"
+    assert report["density"] == pytest.approx(0.4409)
 
 
 def test_cli_prepares_openfoam_case_without_runtime(tmp_path, capsys):

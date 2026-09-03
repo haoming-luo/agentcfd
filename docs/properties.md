@@ -15,6 +15,12 @@ state = CoolPropPropertyProvider().at_pressure_temperature(
 print(state.to_dict())
 ```
 
+The same provider is available to automation and agents through
+`agentcfd properties state --fluid IF97::Water --pressure 101325
+--temperature 500 --json`. If the optional extra is absent, the command fails
+explicitly and recommends `agentcfd[properties]`; it never changes the property
+model silently.
+
 The record includes phase, density, dynamic viscosity, specific heat, thermal
 conductivity, speed of sound, Prandtl number, backend, and provider version.
 CoolProp documents the `PropsSI` pressure-temperature interface and the IF97

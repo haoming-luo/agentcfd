@@ -300,6 +300,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compressibility.add_argument("--json", action="store_true", dest="as_json")
 
+    property_command = subparsers.add_parser(
+        "properties",
+        help="Evaluate an auditable optional thermophysical-property state.",
+    )
+    property_subparsers = property_command.add_subparsers(
+        dest="property_operation",
+        required=True,
+    )
+    property_state = property_subparsers.add_parser(
+        "state",
+        help="Evaluate a CoolProp pressure-temperature state in SI units.",
+    )
+    property_state.add_argument("--fluid", required=True)
+    property_state.add_argument("--pressure", type=float, required=True)
+    property_state.add_argument("--temperature", type=float, required=True)
+    property_state.add_argument("--json", action="store_true", dest="as_json")
+
     demo = subparsers.add_parser("demo", help="Run a bundled verified workflow.")
     demo_subparsers = demo.add_subparsers(dest="demo", required=True)
     pipe = demo_subparsers.add_parser("pipe", help="Run the laminar circular-pipe reference workflow.")
@@ -531,6 +548,21 @@ def main(argv: list[str] | None = None) -> int:
                 f"Mach {report['mach_number']:.6g} | incompressible model "
                 f"{decision} under threshold "
                 f"{report['maximum_incompressible_mach']:.6g}"
+            )
+        return 0
+    if args.command == "properties" and args.property_operation == "state":
+        state = properties.CoolPropPropertyProvider().at_pressure_temperature(
+            args.fluid,
+            pressure=args.pressure,
+            temperature=args.temperature,
+        ).to_dict()
+        if args.as_json:
+            print(json.dumps(state, indent=2, sort_keys=True))
+        else:
+            print(
+                f"{state['fluid']} | {state['phase']} | density "
+                f"{state['density']:.6g} kg/m^3 | provider "
+                f"{state['provider']} {state['provider_version']}"
             )
         return 0
     if args.command == "demo" and args.demo == "pipe":

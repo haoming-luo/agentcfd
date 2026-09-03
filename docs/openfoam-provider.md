@@ -65,6 +65,11 @@ timeout fires, AgentCFD force-stops only that exact container and removes the
 CID file, preventing an abandoned solver from consuming resources in the
 background.
 
+Scientific acceptance is currently version-gated to the tested OpenCFD `2606`
+dialect. An unknown or different runtime can still produce diagnostic evidence,
+but the result is not promoted as accepted until that distribution and version
+has its own validation evidence.
+
 Result recovery reads the four independent patch histories, converts OpenFOAM
 kinematic pressure to Pa, checks relative mass imbalance, compares pressure
 drop with Hagen--Poiseuille at the recovered flow rate, and attaches the final
@@ -73,6 +78,9 @@ native `U` and `p` fields. `checkMesh` observables are also structured. A normal
 explicit SIMPLE convergence marker. Per-equation initial residual, final
 residual, and linear-iteration histories are retained as diagnostics rather
 than being left only in human-readable logs.
+Command-level return codes and monotonic wall-clock durations are also retained,
+supporting timeout diagnosis and performance regression tracking without
+treating performance as scientific convergence.
 
 The provider records the resolved axial and cross-section counts recovered
 from the generated case, verifies `checkMesh` returned the corresponding cell
@@ -90,6 +98,11 @@ coarse-face integration error instead of hiding it by renormalizing only the
 pressure reference. The exact policy is retained in every result's scientific
 inputs. A project may declare different thresholds, but it cannot change them
 after the run without changing the recorded evidence.
+
+The provider validates requested output names before case generation and checks
+their recovery after execution. Missing final velocity or pressure fields, or
+missing requested histories, therefore make the result unaccepted even when the
+solver process exits normally.
 
 `mean_velocity_inlet` remains uniform and therefore includes entrance effects.
 Uniform velocity and mass-flow-derived inlets also report Reynolds number, the
@@ -109,7 +122,7 @@ post-processed; it does not promote the provider beyond experimental status.
 
 Before this provider advances beyond experimental maturity it must add:
 
-1. OpenFOAM Foundation and OpenCFD dialect/version detection;
+1. OpenFOAM Foundation distribution detection and separately validated dialects;
 2. three-grid convergence evidence for the fully developed profile case;
 3. a documented uniform-inlet entrance-length policy;
 4. installed-runtime tests on Linux and macOS, plus Windows through WSL2;

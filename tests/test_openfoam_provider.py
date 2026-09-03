@@ -7,7 +7,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Model, boundaries, fluids, geometry, studies
+from agentcfd import Model, boundaries, fluids, geometry, outputs, studies
 from agentcfd.errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from agentcfd.providers import (
     OpenFOAMMeshControls,
@@ -393,7 +393,10 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
             final.mkdir()
             (final / "U").write_text("synthetic velocity field")
             (final / "p").write_text("synthetic pressure field")
-            stdout = "Time = 10\nSIMPLE solution converged in 10 iterations\nEnd\n"
+            stdout = (
+                "version=2606\nTime = 10\n"
+                "SIMPLE solution converged in 10 iterations\nEnd\n"
+            )
         elif name == "checkMesh":
             stdout = "    cells: 12800\nMax aspect ratio = 2\nMesh non-orthogonality Max: 3 average: 1\nMax skewness = 0.5\nMesh OK.\nEnd\n"
         else:
@@ -416,6 +419,17 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     )
     assert result.quantities["mesh.cell_count"].value == 12800
     assert result.quantities["mesh.expected_cell_count"].value == 12800
+    assert result.quantities["runtime.total_wall_seconds"].value >= 0.0
+    assert set(result.provenance["command_return_codes"]) == {
+        "blockMesh",
+        "checkMesh",
+        "simpleFoam",
+    }
+    assert set(result.provenance["command_wall_seconds"]) == {
+        "blockMesh",
+        "checkMesh",
+        "simpleFoam",
+    }
     assert result.quantities["flow.reynolds_number"].value == pytest.approx(
         998.2 * 0.01 * 0.1 / 1.002e-3
     )
@@ -430,6 +444,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "maximum_relative_mass_imbalance": 1.0e-6,
         "maximum_relative_pressure_error": 0.02,
         "maximum_relative_inlet_flow_error": 0.01,
+        "validated_runtime_versions": ("2606",),
     }
     assert set(result.fields) == {"U", "p"}
     assert result.fields["U"].mesh_sha256 == result.provenance["mesh_sha256"]
@@ -445,6 +460,117 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     jsonschema.Draft202012Validator(mesh_schema).validate(mesh_manifest)
     assert len(result.histories["flow.pressure_drop"].values) == 1
     assert all(check.passed for check in result.checks)
+    assert result.provenance["provider_version"] == "2606"
+    assert next(
+        check for check in result.checks if check.name == "requested-output-completeness"
+    ).passed
+
+
+def test_openfoam_rejects_unsupported_output_request(tmp_path):
+    step = pipe_model().step(
+        output=outputs.OutputRequest(
+            fields=("fluid.temperature",),
+            histories=("flow.pressure_drop",),
+        )
+    )
+
+    with pytest.raises(UnsupportedCaseError, match="fluid.temperature"):
+        OpenFOAMProvider().prepare(step, tmp_path / "case")
+
+
+def test_openfoam_missing_requested_native_field_fails_acceptance(
+    tmp_path, monkeypatch
+):
+    case_directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=case_directory)
+    monkeypatch.setattr(
+        provider,
+        "_commands",
+        lambda: {
+            "blockMesh": "/runtime/blockMesh",
+            "checkMesh": "/runtime/checkMesh",
+            "simpleFoam": "/runtime/simpleFoam",
+        },
+    )
+    volume_flow = math.pi * 0.1**2 / 4.0 * 0.01
+    pressure_drop = 32.0 * 1.002e-3 * 2.0 * 0.01 / 0.1**2
+
+    def fake_run(argv, **kwargs):
+        name = Path(argv[0]).name
+        if name == "blockMesh":
+            mesh = case_directory / "constant" / "polyMesh"
+            mesh.mkdir(parents=True)
+            (mesh / "points").write_text("synthetic mesh points")
+            stdout = "version=2606\nEnd\n"
+        elif name == "checkMesh":
+            stdout = "version=2606\n    cells: 12800\nMesh OK.\nEnd\n"
+        else:
+            samples = {
+                "agentcfd_inlet_flow": -volume_flow,
+                "agentcfd_outlet_flow": volume_flow,
+                "agentcfd_inlet_pressure": pressure_drop / 998.2,
+                "agentcfd_outlet_pressure": 0.0,
+            }
+            for function_name, value in samples.items():
+                directory = case_directory / "postProcessing" / function_name / "0"
+                directory.mkdir(parents=True)
+                (directory / "surfaceFieldValue.dat").write_text(
+                    f"# Time value\n10 {value:.17g}\n"
+                )
+            final = case_directory / "10"
+            final.mkdir()
+            (final / "U").write_text("synthetic velocity field")
+            stdout = (
+                "version=2606\nTime = 10\n"
+                "SIMPLE solution converged in 10 iterations\nEnd\n"
+            )
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr("agentcfd.providers.openfoam.subprocess.run", fake_run)
+    result = provider.run(pipe_model().step())
+
+    completeness = next(
+        check for check in result.checks if check.name == "requested-output-completeness"
+    )
+    assert completeness.passed is False
+    assert completeness.value == "fluid.pressure"
+    assert result.accepted is False
+
+
+def test_openfoam_unknown_runtime_version_fails_scientific_acceptance(
+    tmp_path, monkeypatch
+):
+    case_directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=case_directory)
+    monkeypatch.setattr(
+        provider,
+        "_commands",
+        lambda: {
+            "blockMesh": "/runtime/blockMesh",
+            "checkMesh": "/runtime/checkMesh",
+            "simpleFoam": "/runtime/simpleFoam",
+        },
+    )
+
+    def fake_run(argv, **kwargs):
+        name = Path(argv[0]).name
+        if name == "blockMesh":
+            mesh = case_directory / "constant" / "polyMesh"
+            mesh.mkdir(parents=True)
+            (mesh / "points").write_text("synthetic mesh points")
+        return subprocess.CompletedProcess(
+            argv, 1, stdout="version=unknown\n", stderr=""
+        )
+
+    monkeypatch.setattr("agentcfd.providers.openfoam.subprocess.run", fake_run)
+    result = provider.run(pipe_model().step())
+
+    version_check = next(
+        check for check in result.checks if check.name == "openfoam-runtime-version"
+    )
+    assert version_check.passed is False
+    assert version_check.value == "unknown"
+    assert result.accepted is False
 
 
 def test_openfoam_convergence_requires_explicit_solver_marker():

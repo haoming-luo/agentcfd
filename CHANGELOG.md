@@ -75,6 +75,11 @@ machine-readable capability catalog.
   versioned JSON Schema contract.
 - add an explicit GCI promotion policy for fine-grid uncertainty and
   asymptotic-range evidence, with fail-closed CLI status.
+- fail scientific acceptance closed for unvalidated OpenFOAM runtime versions.
+- validate OpenFOAM output requests and fail acceptance when requested native
+  fields or histories are missing after execution.
+- record command-level return codes and monotonic wall-clock durations for mesh,
+  mesh checking, and solver execution.
 
 ## 0.1.0a1 — 2026-09-03
 

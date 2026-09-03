@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -27,6 +28,14 @@ from .base import ProviderDescriptor
 
 
 _FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_OUTPUT_FIELD_KEYS = {
+    "fluid.velocity": "U",
+    "fluid.pressure": "p",
+}
+_OUTPUT_HISTORY_KEYS = {
+    "flow.mass_balance": "flow.relative_mass_imbalance",
+    "flow.pressure_drop": "flow.pressure_drop",
+}
 
 
 def _solver_converged(log: str) -> bool:
@@ -591,6 +600,7 @@ class OpenFOAMValidationPolicy:
     maximum_relative_mass_imbalance: float = 1.0e-6
     maximum_relative_pressure_error: float = 0.02
     maximum_relative_inlet_flow_error: float = 0.01
+    validated_runtime_versions: tuple[str, ...] = ("2606",)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -617,6 +627,10 @@ class OpenFOAMValidationPolicy:
                 name="maximum_relative_inlet_flow_error",
             ),
         )
+        versions = tuple(str(version).strip() for version in self.validated_runtime_versions)
+        if not versions or any(not version for version in versions):
+            raise ValueError("validated_runtime_versions must contain non-empty versions.")
+        object.__setattr__(self, "validated_runtime_versions", versions)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1012,12 +1026,14 @@ class OpenFOAMProvider:
 
         logs: dict[str, str] = {}
         return_codes: dict[str, int] = {}
+        command_wall_seconds: dict[str, float] = {}
         for name in ("blockMesh", "checkMesh", "simpleFoam"):
             cidfile = (
                 prepared.directory / f".agentcfd-{name}.cid"
                 if self.container_image is not None
                 else None
             )
+            started_at = time.monotonic()
             try:
                 completed = subprocess.run(
                     self._execution_argv(
@@ -1044,6 +1060,7 @@ class OpenFOAMProvider:
                     ) + "\n"
                 return_codes[name] = -124
             finally:
+                command_wall_seconds[name] = time.monotonic() - started_at
                 if cidfile is not None:
                     cidfile.unlink(missing_ok=True)
             logs[name] = combined
@@ -1108,6 +1125,17 @@ class OpenFOAMProvider:
                 )
                 else "The uniform inlet includes developing-flow effects in the total pressure drop."
             ),
+        )
+        for name, duration in command_wall_seconds.items():
+            quantities[f"runtime.{name}.wall_seconds"] = Quantity(
+                duration,
+                "s",
+                kind="runtime_metric",
+            )
+        quantities["runtime.total_wall_seconds"] = Quantity(
+            sum(command_wall_seconds.values()),
+            "s",
+            kind="runtime_metric",
         )
         quantities.update(_mesh_quality_quantities(logs.get("checkMesh", "")))
         expected_cell_count = (
@@ -1177,7 +1205,18 @@ class OpenFOAMProvider:
                         mesh_sha256=mesh_sha256,
                     )
                     artifact_paths[f"field_{name}"] = path
+        missing_outputs = [
+            name
+            for name in step.output.fields
+            if _OUTPUT_FIELD_KEYS[name] not in fields
+        ] + [
+            name
+            for name in step.output.histories
+            if _OUTPUT_HISTORY_KEYS[name] not in histories
+        ]
         descriptor = self.descriptor()
+        runtime_version = _runtime_version(logs, descriptor.version)
+        runtime_version_validated = runtime_version in self.validation.validated_runtime_versions
         return SimulationResult(
             status="completed" if process_ok else "failed",
             converged=solver_converged,
@@ -1246,6 +1285,33 @@ class OpenFOAMProvider:
                     kind="verification",
                     observable="mesh.identity",
                 ),
+                Check(
+                    name="openfoam-runtime-version",
+                    passed=runtime_version_validated,
+                    value=runtime_version,
+                    limit=(
+                        "validated versions: "
+                        + ", ".join(self.validation.validated_runtime_versions)
+                    ),
+                    message=(
+                        "Case generation is validated against the OpenCFD v2606 dialect; "
+                        "other distributions or versions require an explicit validation run."
+                    ),
+                    kind="runtime",
+                    observable="provider.version",
+                ),
+                Check(
+                    name="requested-output-completeness",
+                    passed=not missing_outputs,
+                    value=(
+                        "complete"
+                        if not missing_outputs
+                        else ", ".join(missing_outputs)
+                    ),
+                    limit="all requested fields and histories are recovered",
+                    kind="runtime",
+                    observable="result.outputs",
+                ),
                 *container_checks,
                 *recovery_checks,
             ),
@@ -1271,13 +1337,12 @@ class OpenFOAMProvider:
                 "case_sha256": prepared.case_sha256,
                 "mesh_sha256": mesh_sha256,
                 "provider": "openfoam",
-                "provider_version": _runtime_version(
-                    logs,
-                    descriptor.version,
-                ),
+                "provider_version": runtime_version,
                 "execution_boundary": descriptor.execution_boundary,
                 "container_image": self.container_image,
                 "container_identity": container_identity,
+                "command_return_codes": return_codes,
+                "command_wall_seconds": command_wall_seconds,
                 "case_manifest": str(prepared.directory / "agentcfd-case.json"),
             },
             messages=(recovery_message,),
@@ -1286,6 +1351,15 @@ class OpenFOAMProvider:
     def _validate_supported(self, step) -> None:
         model = step.model
         study = model.study
+        unsupported_fields = sorted(set(step.output.fields) - _OUTPUT_FIELD_KEYS.keys())
+        unsupported_histories = sorted(
+            set(step.output.histories) - _OUTPUT_HISTORY_KEYS.keys()
+        )
+        if unsupported_fields or unsupported_histories:
+            unsupported = ", ".join((*unsupported_fields, *unsupported_histories))
+            raise UnsupportedCaseError(
+                f"The OpenFOAM pipe provider cannot recover requested outputs: {unsupported}."
+            )
         if not study.steady or study.compressible or study.energy or study.reacting or not study.laminar:
             raise UnsupportedCaseError(
                 "The initial OpenFOAM provider supports steady, incompressible, "

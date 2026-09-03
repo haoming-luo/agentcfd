@@ -110,6 +110,10 @@ machine-readable capability catalog.
 - reject boolean numeric quantities and non-boolean result/check state before
   computing scientific acceptance or trust.
 - enforce unused-import linting in the default quality gate.
+- reject boolean serialized quantities and non-boolean derived acceptance state
+  before reopening result evidence or computing GCI.
+- validate serialized check names/kinds and reject boolean artifact sizes during
+  result evidence reopening.
 
 ## 0.1.0a1 — 2026-09-03
 

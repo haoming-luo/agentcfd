@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -424,7 +425,11 @@ def read_result_record(
         raise ValueError("Unsupported AgentCFD result schema or version.")
     checks = record.get("checks")
     if not isinstance(checks, list) or any(
-        not isinstance(check, dict) or not isinstance(check.get("passed"), bool)
+        not isinstance(check, dict)
+        or not isinstance(check.get("name"), str)
+        or not check["name"].strip()
+        or not isinstance(check.get("passed"), bool)
+        or check.get("kind") not in _CLAIM_KINDS
         for check in checks
     ):
         raise ValueError("AgentCFD result checks are malformed.")
@@ -432,13 +437,27 @@ def read_result_record(
     converged = record.get("converged")
     if not isinstance(status, str) or not isinstance(converged, bool):
         raise ValueError("AgentCFD result execution state is malformed.")
+    accepted = record.get("accepted")
+    trust_level = record.get("trust_level")
+    if not isinstance(accepted, bool) or not isinstance(trust_level, str):
+        raise ValueError("AgentCFD result derived state is malformed.")
+    quantities = record.get("quantities")
+    if not isinstance(quantities, dict) or any(
+        not isinstance(name, str)
+        or not isinstance(quantity, dict)
+        or isinstance(quantity.get("value"), bool)
+        or not isinstance(quantity.get("value"), (int, float))
+        or not math.isfinite(float(quantity["value"]))
+        for name, quantity in quantities.items()
+    ):
+        raise ValueError("AgentCFD result quantities are malformed.")
     expected_accepted = (
         status == "completed"
         and converged
         and bool(checks)
         and all(check["passed"] for check in checks)
     )
-    if record.get("accepted") is not expected_accepted:
+    if accepted is not expected_accepted:
         raise ValueError("AgentCFD result accepted flag is inconsistent with its checks.")
     if status != "completed":
         expected_trust = "not_computed"
@@ -455,7 +474,7 @@ def read_result_record(
             if "verification" in kinds
             else "converged"
         )
-    if record.get("trust_level") != expected_trust:
+    if trust_level != expected_trust:
         raise ValueError("AgentCFD result trust level is inconsistent with its checks.")
 
     artifacts = record.get("artifact_records")
@@ -474,6 +493,7 @@ def read_result_record(
                 not isinstance(artifact_path, str)
                 or not isinstance(digest, str)
                 or not _is_sha256(digest)
+                or isinstance(size, bool)
                 or not isinstance(size, int)
                 or size < 0
             ):

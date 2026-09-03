@@ -354,6 +354,8 @@ def _record_quantity_value(
     entry = quantities.get(name)
     if not isinstance(entry, Mapping) or "value" not in entry:
         raise ValueError(f"Result {index} is missing quantity {name!r}.")
+    if isinstance(entry["value"], bool):
+        raise ValueError(f"Result {index} quantity {name!r} must be numeric.")
     try:
         value = float(entry["value"])
     except (TypeError, ValueError) as error:

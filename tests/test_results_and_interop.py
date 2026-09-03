@@ -156,6 +156,22 @@ def test_result_reader_rejects_nonfinite_duplicate_and_inconsistent_claims(tmp_p
     with pytest.raises(ValueError, match="duplicate key 'schema'"):
         read_result_record(result_path)
 
+    result_path.write_text(original.replace('"accepted": true', '"accepted": 1', 1))
+    with pytest.raises(ValueError, match="derived state is malformed"):
+        read_result_record(result_path)
+
+    payload = json.loads(original)
+    payload["quantities"]["flow.pressure_drop"]["value"] = True
+    result_path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="quantities are malformed"):
+        read_result_record(result_path)
+
+    payload = json.loads(original)
+    payload["checks"][0]["kind"] = "certified"
+    result_path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="checks are malformed"):
+        read_result_record(result_path)
+
 
 def test_cfd_to_fem_manifest_is_explicit_and_versioned():
     model_digest = hashlib.sha256(b"model").hexdigest()

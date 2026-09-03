@@ -163,7 +163,9 @@ class Artifact:
             raise ValueError("Artifact.path must not be empty.")
         if self.sha256 is not None and not _is_sha256(self.sha256):
             raise ValueError("Artifact.sha256 must be a SHA-256 hex digest.")
-        if isinstance(self.size_bytes, bool):
+        if self.size_bytes is not None and (
+            isinstance(self.size_bytes, bool) or not isinstance(self.size_bytes, int)
+        ):
             raise ValueError("Artifact.size_bytes must be an integer.")
         if self.size_bytes is not None and self.size_bytes < 0:
             raise ValueError("Artifact.size_bytes must not be negative.")
@@ -230,6 +232,23 @@ class SimulationResult:
             raise ValueError("Result converged must be a boolean.")
         self.quantities = dict(self.quantities)
         self.checks = tuple(self.checks)
+        for label, records, expected_type in (
+            ("quantities", self.quantities, Quantity),
+            ("fields", self.fields, FieldRecord),
+            ("histories", self.histories, History),
+            ("artifacts", self.artifacts, Artifact),
+        ):
+            if any(
+                not isinstance(name, str)
+                or not name.strip()
+                or not isinstance(record, expected_type)
+                for name, record in records.items()
+            ):
+                raise ValueError(
+                    f"Result {label} must map non-empty names to {expected_type.__name__}."
+                )
+        if any(not isinstance(check, Check) for check in self.checks):
+            raise ValueError("Result checks must contain Check records.")
         self.arrays = {
             str(name): [_finite(item, label=f"Array {name!r}") for item in values]
             for name, values in self.arrays.items()

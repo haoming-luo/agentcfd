@@ -122,6 +122,24 @@ def test_result_claims_reject_boolean_numeric_and_truthy_state_inputs():
             quantities={"value": Quantity(1.0, None)},
             checks=(Check("process", True),),
         )
+    with pytest.raises(ValueError, match="must map non-empty names to Quantity"):
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="test",
+            quantities={"value": 1.0},
+            checks=(Check("process", True),),
+        )
+    with pytest.raises(ValueError, match="must contain Check records"):
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="test",
+            quantities={"value": Quantity(1.0, None)},
+            checks=(True,),
+        )
+    with pytest.raises(ValueError, match="size_bytes must be an integer"):
+        Artifact("evidence.txt", size_bytes=1.5)
 
 
 def test_result_reader_verifies_derived_state_and_artifact_identity(tmp_path):

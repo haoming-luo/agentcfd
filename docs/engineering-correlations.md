@@ -89,6 +89,10 @@ and heat-capacity-ratio inputs. Steam near saturation and non-ideal gases
 require a property backend such as the optional CoolProp IF97 provider;
 AgentCFD does not silently substitute ideal-gas relations.
 
+The same decision record is available without Python code through
+`agentcfd calculate compressibility --velocity U --speed-of-sound A --json`,
+which makes the threshold visible to shell automation and AI agents.
+
 ## Numerical verification
 
 `agentcfd.verification.grid_convergence_index` implements the monotonic

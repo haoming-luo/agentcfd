@@ -109,6 +109,29 @@ def test_cli_calculates_forward_and_inverse_pipe_operating_point(capsys):
     assert flow["mean_velocity"] == pytest.approx(0.01)
 
 
+def test_cli_exposes_auditable_compressibility_screen(capsys):
+    assert (
+        main(
+            [
+                "calculate",
+                "compressibility",
+                "--velocity",
+                "100",
+                "--speed-of-sound",
+                "400",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report == {
+        "incompressible_model_appropriate": True,
+        "mach_number": 0.25,
+        "maximum_incompressible_mach": 0.3,
+    }
+
+
 def test_cli_prepares_openfoam_case_without_runtime(tmp_path, capsys):
     case_directory = tmp_path / "foam-case"
     assert main(["prepare", "openfoam-pipe", str(case_directory), "--json"]) == 0

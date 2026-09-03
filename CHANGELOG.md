@@ -125,6 +125,7 @@ machine-readable capability catalog.
   requested outputs, before AgentCAE serialization.
 - fail closed on malformed or duplicate CFD-to-FEM coupling fields and validate
   emitted coupling manifests against the installed contract.
+- expose low-Mach model screening through the human- and agent-facing CLI.
 
 ## 0.1.0a1 — 2026-09-03
 

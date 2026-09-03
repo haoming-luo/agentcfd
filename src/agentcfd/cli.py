@@ -287,6 +287,18 @@ def build_parser() -> argparse.ArgumentParser:
     pipe_loss.add_argument("--velocity", type=float, required=True)
     pipe_flow.add_argument("--pressure-loss", type=float, required=True)
     pipe_flow.add_argument("--regime", choices=("laminar", "turbulent"), required=True)
+    compressibility = calculate_subparsers.add_parser(
+        "compressibility",
+        help="Screen Mach number for an incompressible flow model.",
+    )
+    compressibility.add_argument("--velocity", type=float, required=True)
+    compressibility.add_argument("--speed-of-sound", type=float, required=True)
+    compressibility.add_argument(
+        "--maximum-incompressible-mach",
+        type=float,
+        default=0.3,
+    )
+    compressibility.add_argument("--json", action="store_true", dest="as_json")
 
     demo = subparsers.add_parser("demo", help="Run a bundled verified workflow.")
     demo_subparsers = demo.add_subparsers(dest="demo", required=True)
@@ -499,6 +511,26 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"{report['regime']} pipe | velocity {report['mean_velocity']:.6g} m/s | "
                 f"flow {report['volume_flow_rate']:.6g} m^3/s"
+            )
+        return 0
+    if args.command == "calculate" and args.calculation == "compressibility":
+        report = engineering.screen_incompressible_flow(
+            velocity=args.velocity,
+            speed_of_sound=args.speed_of_sound,
+            maximum_incompressible_mach=args.maximum_incompressible_mach,
+        ).to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            decision = (
+                "appropriate"
+                if report["incompressible_model_appropriate"]
+                else "not appropriate"
+            )
+            print(
+                f"Mach {report['mach_number']:.6g} | incompressible model "
+                f"{decision} under threshold "
+                f"{report['maximum_incompressible_mach']:.6g}"
             )
         return 0
     if args.command == "demo" and args.demo == "pipe":

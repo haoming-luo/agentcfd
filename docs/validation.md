@@ -65,9 +65,11 @@ extrapolated value, fine/medium GCI, asymptotic ratio, and source-file hashes.
 `agentcfd prepare openfoam-pipe-grid` creates the matching input side of this
 workflow. It uses one fully developed public model for all three cases, scales
 cross-section and axial counts by the same ratio, records each case hash and
-expected cell count, and refuses a non-empty destination. The default bounded
-benchmark is 0.5 m long and 0.1 m in diameter so the 4/8/16 by 20/40/80 family
-contains 1,600, 12,800, and 102,400 cells without extreme axial aspect ratios.
+expected cell count, and refuses a non-empty destination. The bounded benchmark
+is 0.5 m long and 0.1 m in diameter. The evidence-backed default is the 8/16/32
+by 40/80/160 family containing 12,800, 102,400, and 819,200 cells. Lower-cost
+counts remain explicit CLI inputs but are not presented as meeting the default
+GCI promotion gate.
 `agentcfd run openfoam-pipe-grid` closes the loop: it verifies every prepared
 case against the plan, executes the three fresh cases, writes a structured
 result beside each case, and emits `agentcfd-grid-convergence.json`. A case
@@ -79,6 +81,25 @@ fine-grid relative GCI must be at most 2% and the GCI asymptotic ratio must lie
 within 10% of unity. These are promotion gates rather than universal physical
 constants. A completed study that misses them is still written for diagnosis,
 but the CLI returns the completed-unaccepted exit status `3`.
+
+The OpenCFD v2606 validation run in
+`docs/openfoam-v2606-grid-validation.json` passed that policy. The observed
+order was 2.0443, the fine-grid relative GCI was 0.5079%, and the asymptotic
+ratio was effectively 1.0. The 102,400-cell case had 1.5606% pressure-drop
+error and the 819,200-cell case had 0.2873% error against Hagen--Poiseuille.
+All three inlet flows matched the declared physical circular-pipe flow within
+approximately `3.25e-12` relatively after discrete face-area normalization.
+The 12,800-cell result remains intentionally unaccepted at 6.8126% pressure
+error; the grid-family certificate, not every member, is the promoted evidence.
+
+At the finest grid, OpenFOAM's normalized residuals for the analytically zero
+transverse velocity components stalled above `1e-8` while axial velocity and
+pressure residuals met the target, pressure drop was constant over the final
+window, and relative mass imbalance was approximately `1.15e-10`. The bounded
+axis-aligned pipe convergence route therefore gates axial residual, observable
+stability, conservation, process completion, and output recovery together.
+Transverse residuals remain in the result as diagnostics. This exception is
+not generalized to bends, tees, turbulence, or other providers.
 
 `agentcfd.verification.assess_validation_point` provides a dependency-free
 single-observable screening calculation for later experimental benchmarks. It

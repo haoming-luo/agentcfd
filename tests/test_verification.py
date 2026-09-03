@@ -182,11 +182,20 @@ def test_gci_result_records_reject_forged_numeric_state():
         GridConvergenceResult(**{**valid, "extrapolated_value": float("nan")})
 
 
-def _result_record(*, cells: int, value: float, model: str = "a" * 64):
+def _result_record(
+    *,
+    cells: int,
+    value: float,
+    model: str = "a" * 64,
+    analysis: str | None = None,
+):
+    provenance = {"model_sha256": model}
+    if analysis is not None:
+        provenance["analysis_sha256"] = analysis
     return {
         "status": "completed",
         "converged": True,
-        "provenance": {"model_sha256": model},
+        "provenance": provenance,
         "quantities": {
             "mesh.cell_count": {"value": cells, "unit": "1"},
             "flow.pressure_drop": {"value": value, "unit": "Pa"},
@@ -244,3 +253,17 @@ def test_result_record_grid_convergence_rejects_mixed_models_and_unconverged_run
             (records[0], records[1], object()),
             quantity="flow.pressure_drop",
         )
+
+
+def test_result_record_grid_convergence_rejects_mixed_analysis_inputs():
+    records = [
+        _result_record(cells=64, value=3.56, analysis="c" * 64),
+        _result_record(cells=512, value=1.64, analysis="c" * 64),
+        _result_record(cells=4096, value=1.16, analysis="d" * 64),
+    ]
+    with pytest.raises(ValueError, match="share one analysis procedure"):
+        grid_convergence_from_result_records(records, quantity="flow.pressure_drop")
+
+    records[2] = _result_record(cells=4096, value=1.16)
+    with pytest.raises(ValueError, match="all provide an analysis"):
+        grid_convergence_from_result_records(records, quantity="flow.pressure_drop")

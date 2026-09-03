@@ -188,6 +188,20 @@ def _run_openfoam_pipe_grid(
     )
     if plan.get("model_sha256") != step.model.fingerprint():
         raise ValueError("OpenFOAM grid-study plan belongs to a different benchmark model.")
+    expected_inputs = json.loads(
+        json.dumps(
+            {
+                "model": step.model.to_dict(),
+                "procedure": step.procedure.to_dict(),
+                "output_request": step.output.to_dict(),
+            },
+            allow_nan=False,
+        )
+    )
+    if plan.get("scientific_inputs") != expected_inputs:
+        raise ValueError(
+            "OpenFOAM grid-study plan uses different model, procedure, or output inputs."
+        )
     cases = plan.get("cases")
     if not isinstance(cases, list) or len(cases) != 3:
         raise ValueError("OpenFOAM grid-study plan must contain exactly three cases.")
@@ -355,10 +369,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--cross-section-cells",
         nargs=3,
         type=int,
-        default=(4, 8, 16),
+        default=(8, 16, 32),
         metavar=("COARSE", "MEDIUM", "FINE"),
+        help="O-grid block counts; the validated default is 8/16/32.",
     )
-    grid_prepare.add_argument("--base-axial-cells", type=int, default=20)
+    grid_prepare.add_argument(
+        "--base-axial-cells",
+        type=int,
+        default=40,
+        help="Coarse-grid axial cells (validated default: 40).",
+    )
     grid_prepare.add_argument("--json", action="store_true", dest="as_json")
 
     run = subparsers.add_parser("run", help="Prepare, execute, and recover a provider result.")

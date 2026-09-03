@@ -361,6 +361,8 @@ def grid_convergence_from_result_records(
         raise ValueError("cell_count_quantity must be a non-empty string.")
 
     identities: set[str] = set()
+    analysis_identities: set[str] = set()
+    analysis_identity_count = 0
     quantity_units: set[str | None] = set()
     solutions: list[GridSolution] = []
     for index, record in enumerate(selected, start=1):
@@ -379,6 +381,19 @@ def grid_convergence_from_result_records(
         ):
             raise ValueError(f"Result {index} is missing a model SHA-256 identity.")
         identities.add(identity)
+        analysis_identity = provenance.get("analysis_sha256")
+        if analysis_identity is not None:
+            if (
+                not isinstance(analysis_identity, str)
+                or len(analysis_identity) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in analysis_identity.lower()
+                )
+            ):
+                raise ValueError(f"Result {index} has an invalid analysis SHA-256 identity.")
+            analysis_identities.add(analysis_identity)
+            analysis_identity_count += 1
 
         quantities = record.get("quantities")
         if not isinstance(quantities, Mapping):
@@ -413,6 +428,14 @@ def grid_convergence_from_result_records(
 
     if len(identities) != 1:
         raise ValueError("Grid convergence results must share one model SHA-256 identity.")
+    if analysis_identity_count not in (0, len(selected)):
+        raise ValueError(
+            "Grid convergence results must all provide an analysis SHA-256 identity or none."
+        )
+    if len(analysis_identities) > 1:
+        raise ValueError(
+            "Grid convergence results must share one analysis procedure and output identity."
+        )
     if len(quantity_units) != 1:
         raise ValueError("Grid convergence quantity units must match exactly.")
     return grid_convergence_index(solutions, safety_factor=safety_factor)

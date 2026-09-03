@@ -72,7 +72,7 @@ Darcy–Weisbach identity check.
 Install the published alpha from PyPI with Python 3.11 or newer:
 
 ```bash
-python -m pip install agentcfd==0.1.0a1
+python -m pip install agentcfd==0.1.0a2
 agentcfd doctor
 agentcfd demo pipe
 ```
@@ -177,8 +177,8 @@ consume three serialized results directly:
 
 ```bash
 agentcfd prepare openfoam-pipe-grid pipe-grid \
-  --cross-section-cells 4 8 16 \
-  --base-axial-cells 20 \
+  --cross-section-cells 8 16 32 \
+  --base-axial-cells 40 \
   --json
 
 agentcfd run openfoam-pipe-grid pipe-grid \
@@ -194,10 +194,13 @@ The preparation workflow creates a 0.5 m by 0.1 m benchmark with one declared
 fully developed inlet model, isotropic refinement ratios, per-case hashes, and
 an explicit plan. The grid runner verifies and executes every fresh case and
 writes the GCI evidence automatically. The result workflow checks that all runs
-completed, converged, share one model identity, use the same quantity unit, and
-contain distinct positive dimensionless mesh cell counts before it records
+completed, converged, share model and analysis identities, use the same quantity
+unit, and contain distinct positive dimensionless mesh cell counts before it records
 Richardson extrapolation, observed order, GCI, the asymptotic ratio, and hashes
 of all three source files.
+The rationale for analytical, flow-rate, and `boundaryFoam` inlets, measured
+resolution/runtime tiers, and the staged turbulence and steam plan is recorded
+in [the numerical strategy](docs/numerical-strategy.md).
 Common pipe checks are available under `agentcfd.engineering`: hydraulic
 diameter, Reynolds number, laminar or iterated Colebrook--White Darcy friction,
 straight-run pressure loss, local-loss pressure drop, and one auditable

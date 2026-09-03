@@ -78,12 +78,11 @@ Result recovery reads the four independent patch histories, converts OpenFOAM
 kinematic pressure to Pa, checks relative mass imbalance, compares pressure
 drop with Hagen--Poiseuille at the recovered flow rate, and attaches the final
 native `U` and `p` fields. `checkMesh` observables are also structured. A normal
-`End` proves completion only; numerical convergence still requires OpenFOAM's
-explicit SIMPLE convergence marker. Per-equation initial residual, final
-residual, and linear-iteration histories are retained as diagnostics rather
-than being left only in human-readable logs. Acceptance additionally requires
-the final recorded pressure and velocity outer residuals to meet the procedure
-tolerance; a textual convergence marker alone is insufficient. The final five
+`End` proves completion only. Numerical convergence requires relevant equation
+residuals, pressure-drop stability, and conservation; an explicit SIMPLE marker
+is retained when present but is not sufficient on its own. For the bounded
+axis-aligned pipe only, analytically zero transverse-velocity residuals remain
+diagnostics while axial velocity and pressure gate convergence. The final five
 pressure-drop samples must also stay within a relative range of `1e-4` by
 default, so algebraic convergence cannot hide a drifting engineering result.
 Command-level return codes and monotonic wall-clock durations are also retained,
@@ -126,8 +125,16 @@ separate reference-applicability check fails; it is not presented as pure CFD
 error. The pressure-error validation threshold applies only to the declared
 fully developed profile.
 The separate `fully_developed_velocity_inlet` uses OpenCFD's non-compiling
-expression parser to prescribe the radial Hagen--Poiseuille profile. It is
-explicit in the model fingerprint and is never selected by backend guesswork.
+expression parser to prescribe the radial Hagen--Poiseuille profile. The
+profile is normalized by its discrete patch-area integral so its volume flow
+equals the public `mean velocity * physical circular area` request even on a
+coarse polygonal patch. It is explicit in the model fingerprint and is never
+selected by backend guesswork.
+
+Prepared-case manifests bind the model, procedure, and output request through
+an analysis SHA-256 in addition to hashing every generated file. Reusing a case
+with changed iteration tolerance or requested outputs therefore fails before
+execution instead of attaching false scientific inputs to an old case.
 
 An OpenCFD v2606 container execution has been completed on Linux/arm64. Its
 machine-readable evidence is retained in `docs/openfoam-v2606-validation.json`.
@@ -139,7 +146,8 @@ post-processed; it does not promote the provider beyond experimental status.
 Before this provider advances beyond experimental maturity it must add:
 
 1. OpenFOAM Foundation distribution detection and separately validated dialects;
-2. three-grid convergence evidence for the fully developed profile case;
+2. repeat the accepted fully developed three-grid evidence on another supported
+   platform and on any newly supported OpenFOAM dialect;
 3. a documented uniform-inlet entrance-length policy;
 4. installed-runtime tests on Linux and macOS, plus Windows through WSL2;
 5. restart, failure taxonomy, and bounded log/result artifacts.

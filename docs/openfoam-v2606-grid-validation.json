@@ -1,0 +1,88 @@
+{
+  "schema": "agentcfd.grid-validation-evidence/0.1",
+  "recorded_at": "2026-09-03",
+  "agentcfd_version": "0.1.0a2",
+  "capability": "openfoam.steady-laminar-circular-pipe",
+  "model_sha256": "4c760544ab097024b57b129dc6e535bd1f88cc86cfb1631ad41748153987ebcb",
+  "analysis_sha256": "97bee1f2a10b8a8b97f05b1e9de335b410716cd00699968f003636b2e16ce7e2",
+  "case": {
+    "diameter_m": 0.1,
+    "length_m": 0.5,
+    "mean_velocity_m_per_s": 0.01,
+    "density_kg_per_m3": 998.2,
+    "dynamic_viscosity_pa_s": 0.001002,
+    "hagen_poiseuille_pressure_drop_pa": 0.016032,
+    "inlet_profile": "discrete-flow-normalized Hagen-Poiseuille"
+  },
+  "runtime": {
+    "distribution": "OpenCFD OpenFOAM",
+    "version": "2606",
+    "container_image": "opencfd/openfoam-run:2606",
+    "container_digest": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb",
+    "platform": "linux/arm64"
+  },
+  "grids": [
+    {
+      "label": "coarse",
+      "cross_section_cells": 8,
+      "axial_cells": 40,
+      "hex_cells": 12800,
+      "case_sha256": "c7904bdc00457d605765b6000c03634e40c68a16c2b0cb3486cb1120fb2bcf55",
+      "mesh_sha256": "134e0ba614b9677a8b05632dfb7d88edc43d08e11822c1d751dcafe9cdc5eab1",
+      "pressure_drop_pa": 0.0171241973014098,
+      "relative_pressure_error": 0.0681260791490832,
+      "relative_inlet_flow_error": 3.2487143548130218e-12,
+      "relative_mass_imbalance": 5.092959814853162e-11,
+      "wall_seconds": 5.056691501005844,
+      "converged": true,
+      "accepted": false
+    },
+    {
+      "label": "medium",
+      "cross_section_cells": 16,
+      "axial_cells": 80,
+      "hex_cells": 102400,
+      "case_sha256": "0ac7ffe20ddc9b92c7017d45667373e7ac15618a6e102857af6fb7a7be588325",
+      "mesh_sha256": "235b9951085dbb9ffa34e1500f1573af38fafa7baa4b6a5b3bfa792f192bf1ba",
+      "pressure_drop_pa": 0.0162821932257586,
+      "relative_pressure_error": 0.015605864863921433,
+      "relative_inlet_flow_error": 3.2487143548130218e-12,
+      "relative_mass_imbalance": 2.5464799074914268e-11,
+      "wall_seconds": 28.3213314589957,
+      "converged": true,
+      "accepted": true
+    },
+    {
+      "label": "fine",
+      "cross_section_cells": 32,
+      "axial_cells": 160,
+      "hex_cells": 819200,
+      "case_sha256": "e4e10fc704dd753384a69fcce103bbba02b942c9d4de9ce6d56e7164df5b9fe5",
+      "mesh_sha256": "ff419ff3486dbbf2c47b0067c91b785e6df3ae2c9e47eaa73ae549a43b48ca5f",
+      "pressure_drop_pa": 0.016078058450942602,
+      "relative_pressure_error": 0.0028729073084556886,
+      "relative_inlet_flow_error": 3.2487143548130218e-12,
+      "relative_mass_imbalance": 1.1459159582690102e-10,
+      "wall_seconds": 390.13171112500277,
+      "convergence_route": "axial-residual-pressure-stability-and-conservation",
+      "converged": true,
+      "accepted": true
+    }
+  ],
+  "grid_convergence": {
+    "quantity": "flow.pressure_drop",
+    "observed_order": 2.044305246917594,
+    "extrapolated_value_pa": 0.01601273001103396,
+    "fine_grid_relative_gci": 0.005079005660724612,
+    "asymptotic_ratio": 0.9999999999999999,
+    "safety_factor": 1.25,
+    "accepted": true
+  },
+  "acceptance": {
+    "fine_grid_gci_limit": 0.02,
+    "pressure_error_limit": 0.02,
+    "scientifically_accepted": true,
+    "scope": "steady incompressible isothermal laminar flow in one smooth circular pipe",
+    "provider_maturity": "experimental"
+  }
+}

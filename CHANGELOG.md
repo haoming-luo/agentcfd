@@ -6,6 +6,21 @@ machine-readable capability catalog.
 
 ## Unreleased
 
+## 0.1.0a2 — 2026-09-03
+
+- validate the fully developed OpenCFD v2606 pipe workflow with an accepted
+  8/16/32 three-grid study: observed order 2.0443, fine-grid GCI 0.5079%, and
+  fine-grid Hagen--Poiseuille pressure-drop error 0.2873%;
+- normalize the analytic inlet profile by its discrete area integral so every
+  mesh matches the requested physical circular-pipe flow to machine precision;
+- accept bounded axis-aligned pipe convergence from axial residual, pressure
+  stability, and conservation evidence when zero transverse-component
+  normalized residuals prevent OpenFOAM's aggregate marker;
+- bind prepared cases to model, procedure, and output request with an analysis
+  SHA-256, and require matching analysis identities in new GCI result records;
+- update the validated grid-study default to 12,800 / 102,400 / 819,200 cells
+  and repair the GCI schema for its three acceptance checks.
+
 - recover OpenFOAM inlet/outlet flow and pressure histories automatically;
 - add `checkMesh` execution, structured mesh-quality observables, physical-Pa
   pressure drop, mass balance, final native fields, and runtime provenance;

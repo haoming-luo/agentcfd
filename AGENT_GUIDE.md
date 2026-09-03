@@ -28,8 +28,9 @@ python -m pytest -q
 
 ## Current boundary
 
-Only the laminar circular-pipe reference workflow is scientifically accepted in
-0.1.0a1. Deterministic OpenFOAM `simpleFoam` case lowering for the same bounded
-physics is experimental. External execution still returns an unaccepted result
-until mesh-field pressure loss and conservation are recovered. Do not turn a
-generated case or a zero process exit code into a broader CFD claim.
+The laminar circular-pipe reference workflow is released. In 0.1.0a2, the
+bounded OpenCFD v2606 fully developed pipe workflow has accepted 8/16/32
+three-grid evidence, while the OpenFOAM provider remains experimental as a
+general capability. Do not extend that evidence to uniform developing inlets,
+other OpenFOAM dialects, turbulence, heat transfer, or general geometry. A
+generated case or a zero process exit code is never a broader CFD claim.

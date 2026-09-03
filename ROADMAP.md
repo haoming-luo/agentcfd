@@ -28,6 +28,8 @@ Study -> Model -> Geometry/Mesh -> Regions -> Fluids
 
 ## P1 — industrial internal flow
 
+- follow the inlet, resolution, turbulence, and steam promotion sequence in
+  `docs/numerical-strategy.md`;
 - steady and transient incompressible flow;
 - RANS workflows with k-epsilon and k-omega SST, wall treatment, and y-plus evidence;
 - bends, tees, manifolds, valves, porous losses, fans, pumps, and rotating zones;

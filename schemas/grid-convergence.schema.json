@@ -62,16 +62,16 @@
         },
         "checks": {
           "type": "array",
-          "minItems": 2,
-          "maxItems": 2,
+          "minItems": 3,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "required": ["name", "passed", "value", "limit"],
             "properties": {
               "name": {"type": "string", "minLength": 1},
               "passed": {"type": "boolean"},
-              "value": {"type": ["number", "null"]},
-              "limit": {"type": "number", "exclusiveMinimum": 0}
+              "value": {"type": ["number", "boolean", "null"]},
+              "limit": {"type": ["number", "boolean"]}
             },
             "additionalProperties": false
           }

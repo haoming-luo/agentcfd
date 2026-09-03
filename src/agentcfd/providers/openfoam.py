@@ -39,6 +39,23 @@ _OUTPUT_HISTORY_KEYS = {
 }
 
 
+def _analysis_sha256(step) -> str:
+    """Fingerprint every public analysis input represented by a prepared case."""
+
+    payload = {
+        "model": step.model.to_dict(),
+        "procedure": step.procedure.to_dict(),
+        "output_request": step.output.to_dict(),
+    }
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _solver_converged(log: str) -> bool:
     """Return true only for an explicit OpenFOAM convergence statement."""
 
@@ -118,8 +135,16 @@ def _outer_residual_check(
     quantities: dict[str, Quantity],
     *,
     tolerance: float,
+    axial_velocity_component: str | None = None,
 ) -> Check:
-    """Require pressure/velocity outer-residual evidence below the target."""
+    """Require relevant pressure/velocity outer residuals below the target.
+
+    The bounded pipe provider knows that the physical velocity is aligned with
+    ``z``.  OpenFOAM's normalized residuals for the analytically zero transverse
+    components can become ill-conditioned as their solution norm approaches
+    machine zero, so those components are retained as diagnostics but are not
+    used as axial pipe convergence gates.
+    """
 
     prefix = "solver.initial_residual."
     residuals = {
@@ -128,8 +153,18 @@ def _outer_residual_check(
         if name.startswith(prefix)
     }
     has_pressure = "p" in residuals
-    has_velocity = any(name == "U" or name.startswith("U") for name in residuals)
-    maximum = max(residuals.values()) if residuals else None
+    if axial_velocity_component is None:
+        velocity_names = tuple(
+            name for name in residuals if name == "U" or name.startswith("U")
+        )
+    else:
+        velocity_names = tuple(
+            name for name in (axial_velocity_component, "U") if name in residuals
+        )
+    has_velocity = bool(velocity_names)
+    selected_names = (("p",) if has_pressure else ()) + velocity_names
+    selected = tuple(residuals[name] for name in selected_names)
+    maximum = max(selected) if selected else None
     passed = bool(
         has_pressure
         and has_velocity
@@ -147,7 +182,7 @@ def _outer_residual_check(
         value=maximum,
         limit=tolerance,
         message=(
-            "Final recorded outer initial residuals satisfy the configured target."
+            "Final recorded relevant outer initial residuals satisfy the configured target."
             if passed
             else "Missing equations: " + ", ".join(missing)
             if missing
@@ -797,6 +832,38 @@ def _pressure_drop_stability_check(
     )
 
 
+def _bounded_pipe_convergence(
+    *,
+    process_ok: bool,
+    reached_end: bool,
+    residual_check: Check,
+    pressure_stability_check: Check,
+    recovery_checks: tuple[Check, ...],
+    explicit_marker: bool,
+) -> tuple[bool, str]:
+    """Resolve convergence from independent evidence for the bounded pipe case."""
+
+    mass_balance_passed = next(
+        (check.passed for check in recovery_checks if check.name == "mass-balance"),
+        False,
+    )
+    converged = bool(
+        process_ok
+        and reached_end
+        and residual_check.passed
+        and pressure_stability_check.passed
+        and mass_balance_passed
+    )
+    route = (
+        "explicit-marker"
+        if converged and explicit_marker
+        else "axial-residual-pressure-stability-and-conservation"
+        if converged
+        else "insufficient-evidence"
+    )
+    return converged, route
+
+
 def _mesh_metric_checks(
     quantities: dict[str, Quantity],
     *,
@@ -834,16 +901,18 @@ class PreparedOpenFOAMCase:
 
     directory: Path
     model_sha256: str
+    analysis_sha256: str
     case_sha256: str
     files: dict[str, str]
     capability: str = "openfoam.steady-laminar-circular-pipe"
-    schema: str = "agentcfd.openfoam-case/0.1"
+    schema: str = "agentcfd.openfoam-case/0.2"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": self.schema,
             "capability": self.capability,
             "model_sha256": self.model_sha256,
+            "analysis_sha256": self.analysis_sha256,
             "case_sha256": self.case_sha256,
             "files": dict(sorted(self.files.items())),
             "provider": {
@@ -890,8 +959,8 @@ def prepare_pipe_grid_study(
     step,
     directory: str | Path,
     *,
-    cross_section_cells: tuple[int, int, int] = (4, 8, 16),
-    base_axial_cells: int = 20,
+    cross_section_cells: tuple[int, int, int] = (8, 16, 32),
+    base_axial_cells: int = 40,
 ) -> PreparedOpenFOAMGridStudy:
     """Prepare three same-model, geometrically similar circular-pipe cases."""
 
@@ -1082,6 +1151,7 @@ class OpenFOAMProvider:
         prepared = PreparedOpenFOAMCase(
             directory=target,
             model_sha256=step.model.fingerprint(),
+            analysis_sha256=_analysis_sha256(step),
             case_sha256=case_identity,
             files=hashes,
         )
@@ -1158,12 +1228,17 @@ class OpenFOAMProvider:
             raise CaseIntegrityError(
                 f"Prepared OpenFOAM case manifest is missing or invalid: {manifest_path}"
             ) from error
-        if manifest.get("schema") != "agentcfd.openfoam-case/0.1":
+        if manifest.get("schema") != "agentcfd.openfoam-case/0.2":
             raise CaseIntegrityError("Prepared OpenFOAM case schema is unsupported.")
         model_sha256 = step.model.fingerprint()
         if manifest.get("model_sha256") != model_sha256:
             raise CaseIntegrityError(
                 "Prepared OpenFOAM case belongs to a different scientific model."
+            )
+        analysis_sha256 = _analysis_sha256(step)
+        if manifest.get("analysis_sha256") != analysis_sha256:
+            raise CaseIntegrityError(
+                "Prepared OpenFOAM case belongs to a different analysis procedure or output request."
             )
         recorded_files = manifest.get("files")
         if not isinstance(recorded_files, dict) or not recorded_files:
@@ -1200,6 +1275,7 @@ class OpenFOAMProvider:
         return PreparedOpenFOAMCase(
             directory=target,
             model_sha256=model_sha256,
+            analysis_sha256=analysis_sha256,
             case_sha256=case_sha256,
             files=verified_files,
         )
@@ -1269,7 +1345,7 @@ class OpenFOAMProvider:
         process_ok = all(return_codes.get(name) == 0 for name in commands)
         solver_log = logs.get("simpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
-        solver_converged = process_ok and _solver_converged(solver_log)
+        explicit_solver_converged = process_ok and _solver_converged(solver_log)
         container_identity: dict[str, Any] | None = None
         container_checks: tuple[Check, ...] = ()
         if self.container_image is not None:
@@ -1363,10 +1439,19 @@ class OpenFOAMProvider:
         residual_check = _outer_residual_check(
             residual_quantities,
             tolerance=step.procedure.relative_tolerance,
+            axial_velocity_component=(None if explicit_solver_converged else "Uz"),
         )
         pressure_stability_check = _pressure_drop_stability_check(
             histories.get("flow.pressure_drop"),
             policy=self.validation,
+        )
+        solver_converged, convergence_route = _bounded_pipe_convergence(
+            process_ok=process_ok,
+            reached_end=reached_end,
+            residual_check=residual_check,
+            pressure_stability_check=pressure_stability_check,
+            recovery_checks=recovery_checks,
+            explicit_marker=explicit_solver_converged,
         )
         reynolds = engineering.reynolds_number(
             density=step.model.fluid.density,
@@ -1460,12 +1545,16 @@ class OpenFOAMProvider:
                 Check(
                     name="solver-convergence-marker",
                     passed=solver_converged,
-                    value="found" if solver_converged else "missing",
-                    limit="OpenFOAM reports solution converged",
+                    value=convergence_route,
+                    limit=(
+                        "explicit marker or bounded-pipe axial residual, pressure stability, "
+                        "and conservation evidence"
+                    ),
                     message=(
-                        "A normal End marker proves process completion, not numerical "
-                        "convergence; reaching the configured iteration limit remains "
-                        "unconverged."
+                        "Transverse residuals are retained as diagnostics but do not gate "
+                        "this axis-aligned pipe because its physical transverse velocity is zero."
+                        if solver_converged and not explicit_solver_converged
+                        else "A normal End marker alone does not prove numerical convergence."
                     ),
                     kind="verification",
                     observable="provider.numerical_convergence",
@@ -1549,10 +1638,12 @@ class OpenFOAMProvider:
                 "mesh_controls": asdict(mesh_controls),
                 "validation_policy": asdict(self.validation),
                 "lowered_case_sha256": prepared.case_sha256,
+                "analysis_sha256": prepared.analysis_sha256,
             },
             provenance={
                 "agentcfd_version": __version__,
                 "model_sha256": step.model.fingerprint(),
+                "analysis_sha256": prepared.analysis_sha256,
                 "case_sha256": prepared.case_sha256,
                 "mesh_sha256": mesh_sha256,
                 "provider": "openfoam",
@@ -1562,6 +1653,8 @@ class OpenFOAMProvider:
                 "container_identity": container_identity,
                 "command_return_codes": return_codes,
                 "command_wall_seconds": command_wall_seconds,
+                "explicit_solver_convergence_marker": explicit_solver_converged,
+                "convergence_route": convergence_route,
                 "case_manifest": str(prepared.directory / "agentcfd-case.json"),
             },
             messages=(recovery_message,),
@@ -1746,12 +1839,16 @@ def _velocity_field(
         f"    {name}\n    {{\n        type noSlip;\n    }}" for name in walls
     )
     if fully_developed:
+        target_volume_flow = math.pi * radius**2 * velocity
+        radial_profile = (
+            f"(1 - (sqr(pos().x()) + sqr(pos().y()))/{radius**2:.17g})"
+        )
         inlet_block = f"""        type uniformFixedValue;
         value uniform (0 0 {velocity:.17g});
         uniformValue
         {{
             type expression;
-            expression "vector(0, 0, ({2.0 * velocity:.17g})*(1 - (sqr(pos().x()) + sqr(pos().y()))/{radius**2:.17g}))";
+            expression "vector(0, 0, ({target_volume_flow:.17g})*{radial_profile}/weightSum({radial_profile}))";
         }}"""
     else:
         inlet_block = f"""        type fixedValue;

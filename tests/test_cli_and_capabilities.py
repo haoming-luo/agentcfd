@@ -273,7 +273,7 @@ def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monk
     root = tmp_path / "grid-study"
     assert main(["prepare", "openfoam-pipe-grid", str(root), "--json"]) == 0
     capsys.readouterr()
-    values = {4: 1.0256, 8: 1.0064, 16: 1.0016}
+    values = {8: 1.0256, 16: 1.0064, 32: 1.0016}
 
     def fake_run_prepared(self, step, directory=None):
         cross = self.mesh.cross_section_cells
@@ -297,11 +297,14 @@ def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monk
     assert payload["observed_order"] == pytest.approx(2.0)
     assert payload["extrapolated_value"] == pytest.approx(1.0)
     assert payload["acceptance"]["accepted"] is True
+    jsonschema.Draft202012Validator(
+        contracts.load("grid-convergence.schema.json")
+    ).validate(payload)
     assert (root / "agentcfd-grid-convergence.json").is_file()
     assert all((root / case / "agentcfd-result.json").is_file() for case in (
-        "grid-1-c4-a20",
-        "grid-2-c8-a40",
-        "grid-3-c16-a80",
+        "grid-1-c8-a40",
+        "grid-2-c16-a80",
+        "grid-3-c32-a160",
     ))
 
 
@@ -451,3 +454,16 @@ def test_grid_study_cli_rejects_ambiguous_json_plan(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "duplicate key" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_grid_study_cli_rejects_changed_procedure_inputs(tmp_path, capsys):
+    root = tmp_path / "grid-study"
+    assert main(["prepare", "openfoam-pipe-grid", str(root), "--json"]) == 0
+    capsys.readouterr()
+    plan_path = root / "agentcfd-grid-study.json"
+    plan = json.loads(plan_path.read_text())
+    plan["scientific_inputs"]["procedure"]["relative_tolerance"] = 1.0e-6
+    plan_path.write_text(json.dumps(plan))
+
+    assert entrypoint(["run", "openfoam-pipe-grid", str(root)]) == 2
+    assert "different model, procedure, or output" in capsys.readouterr().err

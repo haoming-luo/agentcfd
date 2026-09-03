@@ -7,7 +7,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Model, boundaries, fluids, geometry, outputs, studies
+from agentcfd import Model, boundaries, fluids, geometry, outputs, procedures, studies
 from agentcfd.errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from agentcfd.providers import (
     OpenFOAMMeshControls,
@@ -16,6 +16,7 @@ from agentcfd.providers import (
     prepare_pipe_grid_study,
 )
 from agentcfd.providers.openfoam import (
+    _bounded_pipe_convergence,
     _container_image_identity,
     _mesh_controls_from_case,
     _mesh_metric_checks,
@@ -30,7 +31,7 @@ from agentcfd.providers.openfoam import (
     _solver_residual_evidence,
     _unexpected_case_entries,
 )
-from agentcfd.results import History
+from agentcfd.results import Check, History
 
 
 def pipe_model(
@@ -64,6 +65,7 @@ def test_openfoam_case_lowering_is_deterministic_and_content_addressed(tmp_path)
 
     assert first.case_sha256 == second.case_sha256
     assert first.model_sha256 == second.model_sha256
+    assert first.analysis_sha256 == second.analysis_sha256
     assert len(first.files) == 8
     assert all(len(digest) == 64 for digest in first.files.values())
     assert all(
@@ -73,7 +75,12 @@ def test_openfoam_case_lowering_is_deterministic_and_content_addressed(tmp_path)
 
     manifest = json.loads((first.directory / "agentcfd-case.json").read_text())
     assert manifest["case_sha256"] == first.case_sha256
+    assert manifest["analysis_sha256"] == first.analysis_sha256
     assert manifest["provider"]["execution_boundary"] == "filesystem-and-subprocess"
+    schema = json.loads(
+        (Path(__file__).parents[1] / "schemas" / "openfoam-case.schema.json").read_text()
+    )
+    jsonschema.Draft202012Validator(schema).validate(manifest)
 
 
 def test_prepared_case_recovers_mesh_controls_from_verified_input(tmp_path):
@@ -114,9 +121,9 @@ def test_openfoam_grid_study_prepares_same_model_geometrically_similar_cases(tmp
 
     assert payload["refinement_ratio"] == 2.0
     assert [case["expected_cell_count"] for case in payload["cases"]] == [
-        1600,
         12800,
         102400,
+        819200,
     ]
     assert len({case["case_sha256"] for case in payload["cases"]}) == 3
     identities = {
@@ -183,6 +190,8 @@ def test_openfoam_fully_developed_inlet_uses_non_compiling_radial_expression(tmp
     assert "type uniformFixedValue;" in velocity
     assert "type expression;" in velocity
     assert "sqr(pos().x()) + sqr(pos().y())" in velocity
+    assert "weightSum(" in velocity
+    assert "7.853981633974484" in velocity
     assert "codedFixedValue" not in velocity and "exprFixedValue" not in velocity
 
     reference = pipe_model(fully_developed=True).step().run()
@@ -241,6 +250,18 @@ def test_prepared_openfoam_case_rejects_model_mismatch_and_path_escape(tmp_path)
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(CaseIntegrityError, match="escapes the case directory"):
         provider.run_prepared(pipe_model().step())
+
+
+def test_prepared_openfoam_case_rejects_analysis_procedure_mismatch(tmp_path):
+    directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=directory)
+    provider.prepare(pipe_model().step(procedure=procedures.steady()))
+
+    changed = pipe_model().step(
+        procedure=procedures.steady(relative_tolerance=1.0e-6)
+    )
+    with pytest.raises(CaseIntegrityError, match="different analysis procedure"):
+        provider.run_prepared(changed)
 
 
 def test_prepared_openfoam_case_rejects_mixed_prior_execution_evidence(tmp_path):
@@ -668,6 +689,54 @@ GAMG: Solving for p, Initial residual = 3e-7, Final residual = 1e-9, No Iteratio
         {"solver.initial_residual.p": quantities["solver.initial_residual.p"]},
         tolerance=1.0e-6,
     ).passed is False
+
+
+def test_axis_aligned_pipe_residual_check_ignores_zero_transverse_components():
+    quantities, _ = _solver_residual_evidence(
+        """
+Time = 500
+smoothSolver: Solving for Ux, Initial residual = 7e-6, Final residual = 3e-7, No Iterations 2
+smoothSolver: Solving for Uy, Initial residual = 8e-6, Final residual = 4e-7, No Iterations 2
+smoothSolver: Solving for Uz, Initial residual = 8e-10, Final residual = 8e-10, No Iterations 0
+GAMG: Solving for p, Initial residual = 9e-9, Final residual = 9e-9, No Iterations 0
+"""
+    )
+
+    generic = _outer_residual_check(quantities, tolerance=1.0e-8)
+    pipe = _outer_residual_check(
+        quantities,
+        tolerance=1.0e-8,
+        axial_velocity_component="Uz",
+    )
+
+    assert generic.passed is False
+    assert pipe.passed is True
+    assert pipe.value == pytest.approx(9.0e-9)
+
+
+def test_bounded_pipe_convergence_requires_independent_evidence_without_marker():
+    passed = Check("evidence", True, kind="verification")
+    mass = Check("mass-balance", True, kind="verification")
+    converged, route = _bounded_pipe_convergence(
+        process_ok=True,
+        reached_end=True,
+        residual_check=passed,
+        pressure_stability_check=passed,
+        recovery_checks=(mass,),
+        explicit_marker=False,
+    )
+
+    assert converged is True
+    assert route == "axial-residual-pressure-stability-and-conservation"
+    unconverged, _ = _bounded_pipe_convergence(
+        process_ok=True,
+        reached_end=True,
+        residual_check=passed,
+        pressure_stability_check=passed,
+        recovery_checks=(),
+        explicit_marker=False,
+    )
+    assert unconverged is False
 
 
 def test_pressure_drop_stability_requires_enough_stable_tail_samples():

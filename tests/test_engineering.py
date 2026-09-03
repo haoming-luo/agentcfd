@@ -126,6 +126,29 @@ def test_pipe_pressure_loss_reports_turbulent_rough_pipe_regime():
     assert estimate.total_pressure_loss == pytest.approx(1108.726795, rel=1.0e-6)
 
 
+def test_turbulent_inverse_bracket_stays_above_transition_under_roundoff():
+    inputs = {
+        "density": 1079.7164288681627,
+        "dynamic_viscosity": 1.086420494465392e-5,
+        "length": 65.71132142175101,
+        "diameter": 0.22065370832669287,
+        "roughness": 3.5158754542717e-5,
+        "loss_coefficient": 1.8857443807927932,
+    }
+    velocity = 0.04271522642236901
+    pressure_loss = engineering.pipe_pressure_loss(
+        mean_velocity=velocity,
+        hydraulic_diameter=inputs["diameter"],
+        **{key: value for key, value in inputs.items() if key != "diameter"},
+    ).total_pressure_loss
+    solved = engineering.circular_pipe_operating_point(
+        pressure_loss=pressure_loss,
+        regime="turbulent",
+        **inputs,
+    )
+    assert solved.mean_velocity == pytest.approx(velocity, rel=1.0e-10)
+
+
 def test_ideal_gas_state_and_mach_screening_for_air():
     density = engineering.ideal_gas_density(
         absolute_pressure=101325.0,

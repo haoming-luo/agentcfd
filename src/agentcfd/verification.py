@@ -6,7 +6,7 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Iterable, Mapping
 
-from ._validation import finite_float, positive_float
+from ._validation import finite_float, nonnegative_float, positive_float
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +46,48 @@ class GridConvergenceResult:
     refinement_ratio_medium_coarse: float
     converging: bool
     safety_factor: float
+
+    def __post_init__(self) -> None:
+        for name in ("observed_order", "asymptotic_ratio"):
+            object.__setattr__(
+                self,
+                name,
+                positive_float(getattr(self, name), name=f"GCI {name}"),
+            )
+        object.__setattr__(
+            self,
+            "extrapolated_value",
+            finite_float(self.extrapolated_value, name="GCI extrapolated_value"),
+        )
+        for name in ("fine_grid_absolute_gci", "medium_grid_absolute_gci"):
+            object.__setattr__(
+                self,
+                name,
+                nonnegative_float(getattr(self, name), name=f"GCI {name}"),
+            )
+        if self.fine_grid_relative_gci is not None:
+            object.__setattr__(
+                self,
+                "fine_grid_relative_gci",
+                nonnegative_float(
+                    self.fine_grid_relative_gci,
+                    name="GCI fine_grid_relative_gci",
+                ),
+            )
+        for name in (
+            "refinement_ratio_fine_medium",
+            "refinement_ratio_medium_coarse",
+        ):
+            value = positive_float(getattr(self, name), name=f"GCI {name}")
+            if value <= 1.0:
+                raise ValueError(f"GCI {name} must be greater than one.")
+            object.__setattr__(self, name, value)
+        factor = positive_float(self.safety_factor, name="GCI safety_factor")
+        if factor < 1.0:
+            raise ValueError("GCI safety_factor must be at least one.")
+        object.__setattr__(self, "safety_factor", factor)
+        if not isinstance(self.converging, bool):
+            raise ValueError("GCI converging must be a boolean.")
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -180,6 +222,12 @@ def assess_grid_convergence(
             ),
             "value": result.asymptotic_ratio,
             "limit": selected.maximum_asymptotic_ratio_deviation,
+        },
+        {
+            "name": "monotonic-convergence",
+            "passed": result.converging,
+            "value": result.converging,
+            "limit": True,
         },
     ]
     return {

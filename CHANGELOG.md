@@ -141,6 +141,11 @@ machine-readable capability catalog.
 - exercise low-Mach screening in both offline-wheel CI and release smoke gates.
 - fail closed with domain errors when GCI receives malformed record, label,
   policy, or solution types instead of leaking incidental attribute failures.
+- validate constructed GCI result records for finite values, ordered refinement
+  ratios, non-negative uncertainty, boolean state, and a valid safety factor.
+- include the declared monotonic-convergence state in GCI promotion acceptance.
+- keep the turbulent inverse pipe-flow bracket strictly above Re 4000 despite
+  floating-point reconstruction roundoff.
 
 ## 0.1.0a1 — 2026-09-03
 

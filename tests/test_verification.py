@@ -1,7 +1,10 @@
+from dataclasses import replace
+
 import pytest
 
 from agentcfd.verification import (
     GridConvergencePolicy,
+    GridConvergenceResult,
     GridSolution,
     assess_validation_point,
     assess_grid_convergence,
@@ -82,12 +85,11 @@ def test_grid_convergence_recovers_second_order_sequence():
 
 
 def test_grid_convergence_promotion_policy_is_explicit():
-    accepted = assess_grid_convergence(
-        grid_convergence_index(
-            GridSolution(size, 1.0 + 0.01 * size**2)
-            for size in (0.4, 0.2, 0.1)
-        )
+    converging_result = grid_convergence_index(
+        GridSolution(size, 1.0 + 0.01 * size**2)
+        for size in (0.4, 0.2, 0.1)
     )
+    accepted = assess_grid_convergence(converging_result)
     rejected = assess_grid_convergence(
         grid_convergence_index(
             GridSolution(size, 1.0 + 10.0 * size**2)
@@ -98,6 +100,11 @@ def test_grid_convergence_promotion_policy_is_explicit():
     assert accepted["accepted"] is True
     assert rejected["accepted"] is False
     assert rejected["policy"] == GridConvergencePolicy().to_dict()
+    forged_nonconverging = assess_grid_convergence(
+        replace(converging_result, converging=False)
+    )
+    assert forged_nonconverging["accepted"] is False
+    assert forged_nonconverging["checks"][-1]["name"] == "monotonic-convergence"
 
 
 def test_grid_convergence_supports_unequal_refinement_ratios():
@@ -150,6 +157,29 @@ def test_grid_verification_rejects_boolean_numeric_inputs():
         grid_convergence_index((GridSolution(0.1, 1.0), object(), object()))
     with pytest.raises(ValueError, match="label must be a string"):
         GridSolution(0.1, 1.0, label=True)
+
+
+def test_gci_result_records_reject_forged_numeric_state():
+    valid = dict(
+        observed_order=2.0,
+        extrapolated_value=1.0,
+        fine_grid_absolute_gci=0.01,
+        fine_grid_relative_gci=0.01,
+        medium_grid_absolute_gci=0.04,
+        asymptotic_ratio=1.0,
+        refinement_ratio_fine_medium=2.0,
+        refinement_ratio_medium_coarse=2.0,
+        converging=True,
+        safety_factor=1.25,
+    )
+    with pytest.raises(ValueError, match="converging must be a boolean"):
+        GridConvergenceResult(**{**valid, "converging": 1})
+    with pytest.raises(ValueError, match="greater than one"):
+        GridConvergenceResult(
+            **{**valid, "refinement_ratio_fine_medium": 1.0}
+        )
+    with pytest.raises(ValueError, match="finite number"):
+        GridConvergenceResult(**{**valid, "extrapolated_value": float("nan")})
 
 
 def _result_record(*, cells: int, value: float, model: str = "a" * 64):

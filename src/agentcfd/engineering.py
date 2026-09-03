@@ -516,7 +516,12 @@ def circular_pipe_operating_point(
             else 2.0 * target / (linear + math.sqrt(linear**2 + 4.0 * quadratic * target))
         )
     else:
-        lower = 4000.0 * viscosity / (selected_density * selected_diameter)
+        # Keep the numerical bracket strictly inside the declared turbulent
+        # regime. Roundoff in ``4000*mu/(rho*D)`` can otherwise reconstruct as
+        # Re=3999.999... and spuriously enter the rejected transition range.
+        lower = 4000.0 * (1.0 + 1.0e-12) * viscosity / (
+            selected_density * selected_diameter
+        )
 
         def loss(velocity: float) -> float:
             return pipe_pressure_loss(

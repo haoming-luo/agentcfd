@@ -476,6 +476,7 @@ def read_result_record(
     quantities = record.get("quantities")
     if not isinstance(quantities, dict) or any(
         not isinstance(name, str)
+        or not name.strip()
         or not isinstance(quantity, dict)
         or isinstance(quantity.get("value"), bool)
         or not isinstance(quantity.get("value"), (int, float))
@@ -485,9 +486,33 @@ def read_result_record(
             and not isinstance(quantity.get("unit"), str)
         )
         or not isinstance(quantity.get("kind"), str)
+        or not quantity["kind"].strip()
+        or not isinstance(quantity.get("description"), str)
         for name, quantity in quantities.items()
     ):
         raise ValueError("AgentCFD result quantities are malformed.")
+    quantity_records = record.get("quantity_records")
+    if not isinstance(quantity_records, list):
+        raise ValueError("AgentCFD result quantity records are malformed.")
+    reconstructed_quantities: dict[str, object] = {}
+    for quantity_record in quantity_records:
+        if not isinstance(quantity_record, dict):
+            raise ValueError("AgentCFD result quantity records are malformed.")
+        quantity_name = quantity_record.get("name")
+        if (
+            not isinstance(quantity_name, str)
+            or not quantity_name.strip()
+            or quantity_name in reconstructed_quantities
+            or quantity_record.get("shape") != []
+        ):
+            raise ValueError("AgentCFD result quantity records are malformed.")
+        reconstructed_quantities[quantity_name] = {
+            key: value
+            for key, value in quantity_record.items()
+            if key not in {"name", "shape"}
+        }
+    if reconstructed_quantities != quantities:
+        raise ValueError("AgentCFD result quantity records disagree with its quantities.")
     expected_accepted = (
         status == "completed"
         and converged
@@ -514,9 +539,25 @@ def read_result_record(
     if trust_level != expected_trust:
         raise ValueError("AgentCFD result trust level is inconsistent with its checks.")
 
+    artifact_summary = record.get("artifacts")
     artifacts = record.get("artifact_records")
-    if not isinstance(artifacts, dict):
+    if not isinstance(artifact_summary, dict) or not isinstance(artifacts, dict):
         raise ValueError("AgentCFD result artifact records are malformed.")
+    if set(artifact_summary) != set(artifacts):
+        raise ValueError("AgentCFD result artifact records disagree with its artifact index.")
+    for name, summary_path in artifact_summary.items():
+        artifact = artifacts.get(name)
+        record_path = artifact.get("path") if isinstance(artifact, dict) else None
+        if not isinstance(name, str) or not isinstance(summary_path, str) or not isinstance(record_path, str):
+            raise ValueError("AgentCFD result artifact records are malformed.")
+        indexed = Path(summary_path)
+        recorded = Path(record_path)
+        indexed = indexed if indexed.is_absolute() else selected.parent / indexed
+        recorded = recorded if recorded.is_absolute() else selected.parent / recorded
+        if indexed.resolve() != recorded.resolve():
+            raise ValueError(
+                "AgentCFD result artifact records disagree with its artifact index."
+            )
     if verify_artifacts:
         from .provenance import file_sha256
 

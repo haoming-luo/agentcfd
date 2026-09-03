@@ -130,6 +130,8 @@ machine-readable capability catalog.
   single-observable validation with explicit maturity boundaries.
 - enforce runtime types for model/step components and non-empty string names
   for physical geometry and fluid assets.
+- cross-check quantity records and artifact indexes when reopening a result so
+  redundant exchange representations cannot silently disagree.
 
 ## 0.1.0a1 — 2026-09-03
 

@@ -216,6 +216,18 @@ def test_result_reader_rejects_nonfinite_duplicate_and_inconsistent_claims(tmp_p
     with pytest.raises(ValueError, match="checks are malformed"):
         read_result_record(result_path)
 
+    payload = json.loads(original)
+    payload["quantity_records"][0]["value"] += 1.0
+    result_path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="quantity records disagree"):
+        read_result_record(result_path)
+
+    payload = json.loads(original)
+    payload["artifacts"]["invented"] = "not-recorded.dat"
+    result_path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match="artifact records disagree"):
+        read_result_record(result_path, verify_artifacts=False)
+
 
 def test_cfd_to_fem_manifest_is_explicit_and_versioned():
     model_digest = hashlib.sha256(b"model").hexdigest()

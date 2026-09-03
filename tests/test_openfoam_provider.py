@@ -44,6 +44,8 @@ def test_openfoam_case_has_physical_pipe_and_expected_boundary_semantics(tmp_pat
 
     assert "type cylinder;" in mesh
     assert mesh.count("hex (") == 5
+    assert mesh.count("    arc ") == 8
+    assert "arc 4 5 (0 -0.050000000000000003 0)" in mesh
     assert "inlet" in mesh and "outlet" in mesh and "wall" in mesh
     assert "value uniform (0 0 0.01);" in velocity
     assert "dimensions      [0 2 -2 0 0 0 0];" in pressure

@@ -500,14 +500,14 @@ blocks
 
 edges
 (
-    project 4 5 (pipeCylinder)
-    project 7 5 (pipeCylinder)
-    project 6 7 (pipeCylinder)
-    project 4 6 (pipeCylinder)
-    project 12 13 (pipeCylinder)
-    project 13 15 (pipeCylinder)
-    project 12 14 (pipeCylinder)
-    project 14 15 (pipeCylinder)
+    arc 4 5 (0 {-radius:.17g} 0)
+    arc 7 5 ({radius:.17g} 0 0)
+    arc 6 7 (0 {radius:.17g} 0)
+    arc 4 6 ({-radius:.17g} 0 0)
+    arc 12 13 (0 {-radius:.17g} {length:.17g})
+    arc 13 15 ({radius:.17g} 0 {length:.17g})
+    arc 12 14 ({-radius:.17g} 0 {length:.17g})
+    arc 14 15 (0 {radius:.17g} {length:.17g})
 );
 
 boundary

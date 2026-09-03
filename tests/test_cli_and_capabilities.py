@@ -167,11 +167,14 @@ def test_cli_exposes_hash_verified_prepared_case_execution():
             "16",
             "--axial-cells",
             "80",
+            "--timeout-seconds",
+            "120",
         ]
     )
     assert args.prepared is True
     assert args.cross_section_cells == 16
     assert args.axial_cells == 80
+    assert args.timeout_seconds == 120.0
 
 
 def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monkeypatch):
@@ -317,4 +320,18 @@ def test_console_entrypoint_reports_expected_errors_without_traceback(tmp_path, 
     assert entrypoint(["prepare", "openfoam-pipe", str(occupied)]) == 2
     captured = capsys.readouterr()
     assert "agentcfd: error:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_grid_study_cli_rejects_ambiguous_json_plan(tmp_path, capsys):
+    root = tmp_path / "grid-study"
+    root.mkdir()
+    (root / "agentcfd-grid-study.json").write_text(
+        '{"schema":"agentcfd.openfoam-grid-study/0.1",'
+        '"schema":"agentcfd.openfoam-grid-study/0.1"}'
+    )
+
+    assert entrypoint(["run", "openfoam-pipe-grid", str(root)]) == 2
+    captured = capsys.readouterr()
+    assert "duplicate key" in captured.err
     assert "Traceback" not in captured.err

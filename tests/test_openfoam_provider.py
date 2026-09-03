@@ -19,12 +19,17 @@ from agentcfd.providers.openfoam import (
     _container_image_identity,
     _mesh_controls_from_case,
     _mesh_quality_quantities,
+    _outer_residual_check,
+    _pressure_drop_stability_check,
     _read_scalar_series,
+    _runtime_version,
+    _runtime_version_key,
     _recover_patch_data,
     _solver_converged,
     _solver_residual_evidence,
     _unexpected_case_entries,
 )
+from agentcfd.results import History
 
 
 def pipe_model(
@@ -83,6 +88,20 @@ def test_prepared_case_recovers_mesh_controls_from_verified_input(tmp_path):
         axial_cells=20,
     )
     assert _unexpected_case_entries(prepared) == ()
+
+
+def test_prepared_case_rejects_duplicate_manifest_keys(tmp_path):
+    provider = OpenFOAMProvider(case_directory=tmp_path / "case")
+    step = pipe_model().step()
+    prepared = provider.prepare(step)
+    manifest = prepared.directory / "agentcfd-case.json"
+    manifest.write_text(
+        '{"schema":"agentcfd.openfoam-case/0.1",'
+        '"schema":"agentcfd.openfoam-case/0.1"}'
+    )
+
+    with pytest.raises(CaseIntegrityError, match="missing or invalid"):
+        provider.run_prepared(step)
 
 
 def test_openfoam_grid_study_prepares_same_model_geometrically_similar_cases(tmp_path):
@@ -386,8 +405,11 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
             for function_name, value in samples.items():
                 directory = case_directory / "postProcessing" / function_name / "0"
                 directory.mkdir(parents=True)
+                history = "".join(
+                    f"{iteration} {value:.17g}\n" for iteration in range(6, 11)
+                )
                 (directory / "surfaceFieldValue.dat").write_text(
-                    f"# Time value\n10 {value:.17g}\n"
+                    "# Time value\n" + history
                 )
             final = case_directory / "10"
             final.mkdir()
@@ -395,6 +417,10 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
             (final / "p").write_text("synthetic pressure field")
             stdout = (
                 "version=2606\nTime = 10\n"
+                "smoothSolver: Solving for Ux, Initial residual = 1e-9, "
+                "Final residual = 1e-10, No Iterations 1\n"
+                "GAMG: Solving for p, Initial residual = 1e-9, "
+                "Final residual = 1e-10, No Iterations 1\n"
                 "SIMPLE solution converged in 10 iterations\nEnd\n"
             )
         elif name == "checkMesh":
@@ -444,6 +470,8 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "maximum_relative_mass_imbalance": 1.0e-6,
         "maximum_relative_pressure_error": 0.02,
         "maximum_relative_inlet_flow_error": 0.01,
+        "maximum_relative_pressure_drop_drift": 1.0e-4,
+        "minimum_steady_samples": 5,
         "validated_runtime_versions": ("2606",),
     }
     assert set(result.fields) == {"U", "p"}
@@ -458,7 +486,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         ).read_text(encoding="utf-8")
     )
     jsonschema.Draft202012Validator(mesh_schema).validate(mesh_manifest)
-    assert len(result.histories["flow.pressure_drop"].values) == 1
+    assert len(result.histories["flow.pressure_drop"].values) == 5
     assert all(check.passed for check in result.checks)
     assert result.provenance["provider_version"] == "2606"
     assert next(
@@ -514,14 +542,21 @@ def test_openfoam_missing_requested_native_field_fails_acceptance(
             for function_name, value in samples.items():
                 directory = case_directory / "postProcessing" / function_name / "0"
                 directory.mkdir(parents=True)
+                history = "".join(
+                    f"{iteration} {value:.17g}\n" for iteration in range(6, 11)
+                )
                 (directory / "surfaceFieldValue.dat").write_text(
-                    f"# Time value\n10 {value:.17g}\n"
+                    "# Time value\n" + history
                 )
             final = case_directory / "10"
             final.mkdir()
             (final / "U").write_text("synthetic velocity field")
             stdout = (
                 "version=2606\nTime = 10\n"
+                "smoothSolver: Solving for Ux, Initial residual = 1e-9, "
+                "Final residual = 1e-10, No Iterations 1\n"
+                "GAMG: Solving for p, Initial residual = 1e-9, "
+                "Final residual = 1e-10, No Iterations 1\n"
                 "SIMPLE solution converged in 10 iterations\nEnd\n"
             )
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
@@ -578,6 +613,13 @@ def test_openfoam_convergence_requires_explicit_solver_marker():
     assert _solver_converged("SIMPLE solution converged in 42 iterations\nEnd\n")
 
 
+def test_openfoam_runtime_version_normalizes_official_release_prefix():
+    logs = {"simpleFoam": "|  Version:  v2606  |\n"}
+    assert _runtime_version(logs, "fallback") == "v2606"
+    assert _runtime_version_key("v2606") == "2606"
+    assert _runtime_version_key("2606") == "2606"
+
+
 def test_openfoam_solver_residuals_are_recovered_as_diagnostics():
     quantities, histories = _solver_residual_evidence(
         """Time = 1
@@ -596,6 +638,36 @@ GAMG: Solving for p, Initial residual = 0.02, Final residual = 3e-05, No Iterati
     assert histories["solver.final_residual.Ux"].values == pytest.approx(
         (0.002, 2.0e-5)
     )
+
+
+def test_outer_residual_check_requires_pressure_and_velocity_below_target():
+    quantities, _ = _solver_residual_evidence(
+        """
+Time = 1
+smoothSolver: Solving for Ux, Initial residual = 2e-7, Final residual = 1e-9, No Iterations 2
+GAMG: Solving for p, Initial residual = 3e-7, Final residual = 1e-9, No Iterations 2
+"""
+    )
+
+    assert _outer_residual_check(quantities, tolerance=1.0e-6).passed is True
+    assert _outer_residual_check(quantities, tolerance=1.0e-8).passed is False
+    assert _outer_residual_check(
+        {"solver.initial_residual.p": quantities["solver.initial_residual.p"]},
+        tolerance=1.0e-6,
+    ).passed is False
+
+
+def test_pressure_drop_stability_requires_enough_stable_tail_samples():
+    policy = OpenFOAMValidationPolicy(
+        minimum_steady_samples=3,
+        maximum_relative_pressure_drop_drift=1.0e-3,
+    )
+    stable = History((1.0, 2.0, 3.0), (10.0, 10.005, 10.004), unit="Pa")
+    drifting = History((1.0, 2.0, 3.0), (10.0, 10.1, 10.2), unit="Pa")
+
+    assert _pressure_drop_stability_check(stable, policy=policy).passed is True
+    assert _pressure_drop_stability_check(drifting, policy=policy).passed is False
+    assert _pressure_drop_stability_check(None, policy=policy).passed is False
 
 
 def test_openfoam_scalar_history_recovery_merges_restart_directories(tmp_path):
@@ -696,6 +768,10 @@ def test_openfoam_validation_policy_is_explicit_and_controls_acceptance(tmp_path
     assert all(check.passed for check in declared_checks)
     with pytest.raises(ValueError, match="maximum_relative_pressure_error"):
         OpenFOAMValidationPolicy(maximum_relative_pressure_error=math.nan)
+    with pytest.raises(ValueError, match="unique non-empty"):
+        OpenFOAMValidationPolicy(validated_runtime_versions=("2606", "v2606"))
+    with pytest.raises(ValueError, match="unique non-empty"):
+        OpenFOAMValidationPolicy(validated_runtime_versions=(2606,))
 
 
 def test_openfoam_patch_recovery_checks_requested_inlet_flow(tmp_path):

@@ -47,6 +47,8 @@ Before launching any command, AgentCFD checks the model SHA, every generated
 file SHA, the combined case SHA, and that all manifest paths remain inside the
 case directory. Changed, missing, mismatched, or path-escaping cases fail with
 `CaseIntegrityError`; AgentCFD never silently blesses a hand-edited case.
+Case and grid-study manifests use strict JSON parsing that rejects duplicate
+keys, non-finite numbers, and non-object roots before identity checks.
 The executed result records mesh controls recovered from the verified
 `system/blockMeshDict`, rather than trusting callers to repeat the original
 mesh options correctly. Unrecorded files, directories, and symbolic links are
@@ -64,6 +66,8 @@ Each container command also uses a dedicated Docker CID file. If the client
 timeout fires, AgentCFD force-stops only that exact container and removes the
 CID file, preventing an abandoned solver from consuming resources in the
 background.
+The CLI exposes this per-command limit as `--timeout-seconds` for both single
+cases and three-grid studies; invalid non-positive values fail before execution.
 
 Scientific acceptance is currently version-gated to the tested OpenCFD `2606`
 dialect. An unknown or different runtime can still produce diagnostic evidence,
@@ -77,7 +81,11 @@ native `U` and `p` fields. `checkMesh` observables are also structured. A normal
 `End` proves completion only; numerical convergence still requires OpenFOAM's
 explicit SIMPLE convergence marker. Per-equation initial residual, final
 residual, and linear-iteration histories are retained as diagnostics rather
-than being left only in human-readable logs.
+than being left only in human-readable logs. Acceptance additionally requires
+the final recorded pressure and velocity outer residuals to meet the procedure
+tolerance; a textual convergence marker alone is insufficient. The final five
+pressure-drop samples must also stay within a relative range of `1e-4` by
+default, so algebraic convergence cannot hide a drifting engineering result.
 Command-level return codes and monotonic wall-clock durations are also retained,
 supporting timeout diagnosis and performance regression tracking without
 treating performance as scientific convergence.

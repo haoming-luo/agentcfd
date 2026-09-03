@@ -23,6 +23,7 @@ from .. import boundaries, engineering
 from .._version import __version__
 from .._validation import integer_at_least, positive_float
 from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
+from ..jsonio import strict_json_object
 from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
 from .base import ProviderDescriptor
 
@@ -111,6 +112,50 @@ def _solver_residual_evidence(
                 description=f"Final recorded {description.lower()}",
             )
     return quantities, histories
+
+
+def _outer_residual_check(
+    quantities: dict[str, Quantity],
+    *,
+    tolerance: float,
+) -> Check:
+    """Require pressure/velocity outer-residual evidence below the target."""
+
+    prefix = "solver.initial_residual."
+    residuals = {
+        name.removeprefix(prefix): quantity.value
+        for name, quantity in quantities.items()
+        if name.startswith(prefix)
+    }
+    has_pressure = "p" in residuals
+    has_velocity = any(name == "U" or name.startswith("U") for name in residuals)
+    maximum = max(residuals.values()) if residuals else None
+    passed = bool(
+        has_pressure
+        and has_velocity
+        and maximum is not None
+        and maximum <= tolerance
+    )
+    missing = []
+    if not has_pressure:
+        missing.append("pressure")
+    if not has_velocity:
+        missing.append("velocity")
+    return Check(
+        name="outer-residual-target",
+        passed=passed,
+        value=maximum,
+        limit=tolerance,
+        message=(
+            "Final recorded outer initial residuals satisfy the configured target."
+            if passed
+            else "Missing equations: " + ", ".join(missing)
+            if missing
+            else "Final recorded outer initial residual exceeds the configured target."
+        ),
+        kind="verification",
+        observable="solver.initial_residual",
+    )
 
 
 def _read_scalar_series(case_directory: Path, function_name: str) -> dict[float, float]:
@@ -331,6 +376,15 @@ def _runtime_version(logs: dict[str, str], fallback: str) -> str:
         if match is not None:
             return match.group(1)
     return fallback
+
+
+def _runtime_version_key(version: str) -> str:
+    """Normalize the optional ``v`` prefix used in OpenCFD release labels."""
+
+    selected = version.strip()
+    if len(selected) > 1 and selected[0].lower() == "v" and selected[1:].isdigit():
+        return selected[1:]
+    return selected
 
 
 def _latest_time_directory(case_directory: Path) -> Path | None:
@@ -600,6 +654,8 @@ class OpenFOAMValidationPolicy:
     maximum_relative_mass_imbalance: float = 1.0e-6
     maximum_relative_pressure_error: float = 0.02
     maximum_relative_inlet_flow_error: float = 0.01
+    maximum_relative_pressure_drop_drift: float = 1.0e-4
+    minimum_steady_samples: int = 5
     validated_runtime_versions: tuple[str, ...] = ("2606",)
 
     def __post_init__(self) -> None:
@@ -627,10 +683,73 @@ class OpenFOAMValidationPolicy:
                 name="maximum_relative_inlet_flow_error",
             ),
         )
-        versions = tuple(str(version).strip() for version in self.validated_runtime_versions)
-        if not versions or any(not version for version in versions):
-            raise ValueError("validated_runtime_versions must contain non-empty versions.")
+        object.__setattr__(
+            self,
+            "maximum_relative_pressure_drop_drift",
+            positive_float(
+                self.maximum_relative_pressure_drop_drift,
+                name="maximum_relative_pressure_drop_drift",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "minimum_steady_samples",
+            integer_at_least(
+                self.minimum_steady_samples,
+                name="minimum_steady_samples",
+                minimum=2,
+            ),
+        )
+        try:
+            versions = tuple(self.validated_runtime_versions)
+        except TypeError as error:
+            raise ValueError(
+                "validated_runtime_versions must be a sequence of version strings."
+            ) from error
+        if (
+            not versions
+            or any(not isinstance(version, str) or not version.strip() for version in versions)
+            or len({_runtime_version_key(version) for version in versions}) != len(versions)
+        ):
+            raise ValueError(
+                "validated_runtime_versions must contain unique non-empty version strings."
+            )
+        versions = tuple(version.strip() for version in versions)
         object.__setattr__(self, "validated_runtime_versions", versions)
+
+
+def _pressure_drop_stability_check(
+    history: History | None,
+    *,
+    policy: OpenFOAMValidationPolicy,
+) -> Check:
+    """Assess engineering-observable stability over the requested tail window."""
+
+    enough_samples = bool(
+        history is not None and len(history.values) >= policy.minimum_steady_samples
+    )
+    relative_drift: float | None = None
+    if enough_samples and history is not None:
+        tail = history.values[-policy.minimum_steady_samples :]
+        scale = max(abs(tail[-1]), 1.0e-300)
+        relative_drift = (max(tail) - min(tail)) / scale
+    passed = bool(
+        relative_drift is not None
+        and relative_drift <= policy.maximum_relative_pressure_drop_drift
+    )
+    return Check(
+        name="pressure-drop-tail-stability",
+        passed=passed,
+        value=relative_drift,
+        limit=policy.maximum_relative_pressure_drop_drift,
+        message=(
+            f"Requires {policy.minimum_steady_samples} final pressure-drop samples."
+            if not enough_samples
+            else "Relative range over the final pressure-drop samples."
+        ),
+        kind="verification",
+        observable="flow.pressure_drop",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -955,8 +1074,11 @@ class OpenFOAMProvider:
             raise ValueError("OpenFOAM case_directory is required for prepared execution.")
         manifest_path = target / "agentcfd-case.json"
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (FileNotFoundError, json.JSONDecodeError) as error:
+            manifest = strict_json_object(
+                manifest_path.read_text(encoding="utf-8"),
+                label=f"OpenFOAM case manifest {manifest_path}",
+            )
+        except (FileNotFoundError, ValueError) as error:
             raise CaseIntegrityError(
                 f"Prepared OpenFOAM case manifest is missing or invalid: {manifest_path}"
             ) from error
@@ -1155,6 +1277,14 @@ class OpenFOAMProvider:
         residual_quantities, residual_histories = _solver_residual_evidence(solver_log)
         quantities.update(residual_quantities)
         histories.update(residual_histories)
+        residual_check = _outer_residual_check(
+            residual_quantities,
+            tolerance=step.procedure.relative_tolerance,
+        )
+        pressure_stability_check = _pressure_drop_stability_check(
+            histories.get("flow.pressure_drop"),
+            policy=self.validation,
+        )
         reynolds = engineering.reynolds_number(
             density=step.model.fluid.density,
             mean_velocity=mean_velocity,
@@ -1216,7 +1346,10 @@ class OpenFOAMProvider:
         ]
         descriptor = self.descriptor()
         runtime_version = _runtime_version(logs, descriptor.version)
-        runtime_version_validated = runtime_version in self.validation.validated_runtime_versions
+        runtime_version_validated = _runtime_version_key(runtime_version) in {
+            _runtime_version_key(version)
+            for version in self.validation.validated_runtime_versions
+        }
         return SimulationResult(
             status="completed" if process_ok else "failed",
             converged=solver_converged,
@@ -1254,6 +1387,8 @@ class OpenFOAMProvider:
                     kind="verification",
                     observable="provider.numerical_convergence",
                 ),
+                residual_check,
+                pressure_stability_check,
                 Check(
                     name="mesh-quality",
                     passed=(

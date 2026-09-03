@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .jsonio import strict_json_object
+
 
 _CLAIM_KINDS = {"runtime", "verification", "validation"}
 _FIELD_LOCATIONS = {"point", "cell", "facet", "global"}
@@ -396,31 +398,6 @@ def _is_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdef" for character in value.lower())
 
 
-def _strict_json_object(text: str, *, label: str) -> dict[str, Any]:
-    def reject_constant(value: str) -> None:
-        raise ValueError(f"{label} contains non-finite JSON number {value}.")
-
-    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        record: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in record:
-                raise ValueError(f"{label} contains duplicate key {key!r}.")
-            record[key] = value
-        return record
-
-    try:
-        record = json.loads(
-            text,
-            parse_constant=reject_constant,
-            object_pairs_hook=unique_object,
-        )
-    except json.JSONDecodeError as error:
-        raise ValueError(f"Invalid {label} JSON.") from error
-    if not isinstance(record, dict):
-        raise ValueError(f"{label} must contain a JSON object.")
-    return record
-
-
 def read_result_record(
     path: str | Path,
     *,
@@ -429,7 +406,7 @@ def read_result_record(
     """Read a native result and verify its derived trust state and artifacts."""
 
     selected = Path(path)
-    record = _strict_json_object(
+    record = strict_json_object(
         selected.read_text(encoding="utf-8"),
         label=f"AgentCFD result {selected}",
     )

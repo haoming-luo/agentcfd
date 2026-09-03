@@ -13,6 +13,7 @@ from pathlib import Path
 from . import benchmarks, boundaries, capabilities, contracts, engineering, fluids, geometry, outputs, procedures, properties, studies
 from ._version import __version__
 from .errors import AgentCFDError
+from .jsonio import strict_json_object
 from .model import Model
 from .provenance import file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
@@ -113,6 +114,7 @@ def _run_openfoam_pipe(
     cross_section_cells: int,
     axial_cells: int | None,
     prepared: bool,
+    timeout_seconds: float,
 ):
     step = _pipe_model(fully_developed=fully_developed).step(
         procedure=procedures.steady(),
@@ -121,6 +123,7 @@ def _run_openfoam_pipe(
     provider = OpenFOAMProvider(
         case_directory=case_directory,
         container_image=container_image,
+        timeout_seconds=timeout_seconds,
         mesh=OpenFOAMMeshControls(
             cross_section_cells=cross_section_cells,
             axial_cells=axial_cells,
@@ -170,9 +173,13 @@ def _run_openfoam_pipe_grid(
     directory: Path,
     *,
     container_image: str | None,
+    timeout_seconds: float,
 ) -> tuple[dict[str, object], Path]:
     plan_path = directory / "agentcfd-grid-study.json"
-    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    plan = strict_json_object(
+        plan_path.read_text(encoding="utf-8"),
+        label=f"OpenFOAM grid-study plan {plan_path}",
+    )
     if plan.get("schema") != "agentcfd.openfoam-grid-study/0.1":
         raise ValueError("OpenFOAM grid-study plan schema is unsupported.")
     step = _pipe_grid_benchmark_model().step(
@@ -195,8 +202,10 @@ def _run_openfoam_pipe_grid(
             case_directory.relative_to(root)
         except ValueError as error:
             raise ValueError("OpenFOAM grid-study case escapes the study directory.") from error
-        manifest = json.loads(
-            (case_directory / "agentcfd-case.json").read_text(encoding="utf-8")
+        manifest_path = case_directory / "agentcfd-case.json"
+        manifest = strict_json_object(
+            manifest_path.read_text(encoding="utf-8"),
+            label=f"OpenFOAM case manifest {manifest_path}",
         )
         if manifest.get("case_sha256") != case.get("case_sha256"):
             raise ValueError("OpenFOAM grid-study case identity differs from its plan.")
@@ -208,6 +217,7 @@ def _run_openfoam_pipe_grid(
             case_directory=case_directory,
             mesh=mesh,
             container_image=container_image,
+            timeout_seconds=timeout_seconds,
         ).run_prepared(step)
         result_path = case_directory / "agentcfd-result.json"
         result.write(result_path)
@@ -328,6 +338,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--container-image",
         help="Run OpenFOAM through Docker, for example opencfd/openfoam-run:2606.",
     )
+    run_openfoam.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=3600.0,
+        help="Maximum wall time for each external command (default: 3600).",
+    )
     run_openfoam.add_argument("--json", action="store_true", dest="as_json")
     run_openfoam.add_argument(
         "--prepared",
@@ -358,6 +374,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_grid.add_argument(
         "--container-image",
         help="Run all three cases through the selected Docker image.",
+    )
+    run_grid.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=3600.0,
+        help="Maximum wall time for each external command in each case.",
     )
     run_grid.add_argument("--json", action="store_true", dest="as_json")
 
@@ -491,6 +513,7 @@ def main(argv: list[str] | None = None) -> int:
             cross_section_cells=args.cross_section_cells,
             axial_cells=args.axial_cells,
             prepared=args.prepared,
+            timeout_seconds=args.timeout_seconds,
         )
         if args.as_json:
             print(json.dumps(result.summary(), indent=2, sort_keys=True))
@@ -507,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         payload, target = _run_openfoam_pipe_grid(
             args.directory,
             container_image=args.container_image,
+            timeout_seconds=args.timeout_seconds,
         )
         if args.as_json:
             print(json.dumps(payload, indent=2, sort_keys=True))

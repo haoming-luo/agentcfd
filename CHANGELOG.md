@@ -80,6 +80,14 @@ machine-readable capability catalog.
   fields or histories are missing after execution.
 - record command-level return codes and monotonic wall-clock durations for mesh,
   mesh checking, and solver execution.
+- require structured pressure and velocity outer-residual evidence below the
+  configured tolerance in addition to OpenFOAM's convergence marker.
+- expose a validated per-command OpenFOAM timeout for single and three-grid CLI
+  executions.
+- require a configurable stable tail window for pressure drop in addition to
+  algebraic residual convergence.
+- reject ambiguous or non-standard JSON in prepared OpenFOAM case and grid-study
+  control records.
 
 ## 0.1.0a1 — 2026-09-03
 

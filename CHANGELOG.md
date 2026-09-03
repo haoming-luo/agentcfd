@@ -121,6 +121,8 @@ machine-readable capability catalog.
 - validate typed quantity, field, history, artifact, and check collections when
   constructing a result instead of failing later during serialization.
 - add an explicit, auditable low-Mach incompressible-model screening result.
+- reject ambiguous non-string array and learning-sample names, and duplicate
+  requested outputs, before AgentCAE serialization.
 
 ## 0.1.0a1 — 2026-09-03
 

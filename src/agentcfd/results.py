@@ -232,6 +232,10 @@ class SimulationResult:
             raise ValueError("Result converged must be a boolean.")
         self.quantities = dict(self.quantities)
         self.checks = tuple(self.checks)
+        self.arrays = dict(self.arrays)
+        self.fields = dict(self.fields)
+        self.histories = dict(self.histories)
+        self.artifacts = dict(self.artifacts)
         for label, records, expected_type in (
             ("quantities", self.quantities, Quantity),
             ("fields", self.fields, FieldRecord),
@@ -249,13 +253,12 @@ class SimulationResult:
                 )
         if any(not isinstance(check, Check) for check in self.checks):
             raise ValueError("Result checks must contain Check records.")
+        if any(not isinstance(name, str) or not name.strip() for name in self.arrays):
+            raise ValueError("Result arrays must use non-empty string names.")
         self.arrays = {
-            str(name): [_finite(item, label=f"Array {name!r}") for item in values]
+            name: [_finite(item, label=f"Array {name!r}") for item in values]
             for name, values in self.arrays.items()
         }
-        self.fields = dict(self.fields)
-        self.histories = dict(self.histories)
-        self.artifacts = dict(self.artifacts)
         self.scientific_inputs = dict(self.scientific_inputs)
         self.provenance = dict(self.provenance)
         self.messages = tuple(str(message) for message in self.messages)
@@ -399,6 +402,16 @@ class SimulationResult:
         selected_outputs = outputs if outputs is not None else responses
         if selected_inputs is None or selected_outputs is None:
             raise TypeError("to_sample requires inputs/outputs (or parameters/responses).")
+        if any(
+            not isinstance(name, str) or not name.strip()
+            for name in selected_inputs
+        ):
+            raise ValueError("Sample inputs must use non-empty string names.")
+        selected_outputs = tuple(selected_outputs)
+        if any(not isinstance(name, str) or not name.strip() for name in selected_outputs):
+            raise ValueError("Sample outputs must contain non-empty string names.")
+        if len(set(selected_outputs)) != len(selected_outputs):
+            raise ValueError("Sample outputs must not contain duplicates.")
         missing = [name for name in selected_outputs if name not in self.quantities]
         if missing:
             raise KeyError(f"Unknown output quantities: {', '.join(missing)}")

@@ -140,6 +140,26 @@ def test_result_claims_reject_boolean_numeric_and_truthy_state_inputs():
         )
     with pytest.raises(ValueError, match="size_bytes must be an integer"):
         Artifact("evidence.txt", size_bytes=1.5)
+    with pytest.raises(ValueError, match="arrays must use non-empty string names"):
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="test",
+            quantities={"value": Quantity(1.0, None)},
+            checks=(Check("process", True),),
+            arrays={1: [1.0]},
+        )
+
+
+def test_learning_sample_rejects_ambiguous_names():
+    result = pipe_model().step().run()
+    with pytest.raises(ValueError, match="inputs must use non-empty string names"):
+        result.to_sample(inputs={1: 0.05}, outputs=("flow.pressure_drop",))
+    with pytest.raises(ValueError, match="outputs must not contain duplicates"):
+        result.to_sample(
+            inputs={"diameter": 0.05},
+            outputs=("flow.pressure_drop", "flow.pressure_drop"),
+        )
 
 
 def test_result_reader_verifies_derived_state_and_artifact_identity(tmp_path):

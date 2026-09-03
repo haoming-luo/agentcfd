@@ -132,6 +132,8 @@ machine-readable capability catalog.
   for physical geometry and fluid assets.
 - cross-check quantity records and artifact indexes when reopening a result so
   redundant exchange representations cannot silently disagree.
+- validate every thermophysical-state identity and positive SI property at its
+  construction boundary, including manually created records.
 
 ## 0.1.0a1 — 2026-09-03
 

@@ -31,6 +31,27 @@ class ThermophysicalState:
     provider: str
     provider_version: str
 
+    def __post_init__(self) -> None:
+        for name in ("fluid", "backend", "phase", "provider", "provider_version"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Thermophysical state {name} must be a non-empty string.")
+        for name in (
+            "pressure",
+            "temperature",
+            "density",
+            "dynamic_viscosity",
+            "specific_heat",
+            "thermal_conductivity",
+            "speed_of_sound",
+            "prandtl_number",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                positive_float(getattr(self, name), name=f"Thermophysical state {name}"),
+            )
+
     def to_dict(self) -> dict[str, float | str]:
         return asdict(self)
 
@@ -72,9 +93,9 @@ class CoolPropPropertyProvider:
     ) -> ThermophysicalState:
         """Evaluate a fluid state from absolute pressure in Pa and temperature in K."""
 
-        selected_fluid = str(fluid).strip()
-        if not selected_fluid:
-            raise ValueError("fluid must not be empty.")
+        if not isinstance(fluid, str) or not fluid.strip():
+            raise ValueError("fluid must be a non-empty string.")
+        selected_fluid = fluid.strip()
         selected_pressure = positive_float(pressure, name="Absolute pressure")
         selected_temperature = positive_float(temperature, name="Temperature")
         props_si, phase_si = _coolprop_api()

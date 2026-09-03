@@ -54,6 +54,8 @@ def test_coolprop_property_provider_returns_auditable_si_state(monkeypatch):
 
 def test_coolprop_property_provider_rejects_invalid_or_failed_states(monkeypatch):
     provider = properties.CoolPropPropertyProvider()
+    with pytest.raises(ValueError, match="fluid must be a non-empty string"):
+        provider.at_pressure_temperature(None, pressure=101325.0, temperature=300.0)
     with pytest.raises(ValueError, match="Absolute pressure"):
         provider.at_pressure_temperature("Water", pressure=0.0, temperature=300.0)
 
@@ -79,6 +81,28 @@ def test_coolprop_property_provider_rejects_invalid_or_failed_states(monkeypatch
     )
     with pytest.raises(ValueError, match="could not evaluate density"):
         provider.at_pressure_temperature("Water", pressure=101325.0, temperature=300.0)
+
+
+def test_thermophysical_state_rejects_ambiguous_manual_records():
+    values = dict(
+        fluid="Water",
+        backend="default",
+        pressure=101325.0,
+        temperature=300.0,
+        phase="liquid",
+        density=998.0,
+        dynamic_viscosity=1.0e-3,
+        specific_heat=4180.0,
+        thermal_conductivity=0.6,
+        speed_of_sound=1480.0,
+        prandtl_number=7.0,
+        provider="test",
+        provider_version="1",
+    )
+    with pytest.raises(ValueError, match="density"):
+        properties.ThermophysicalState(**{**values, "density": True})
+    with pytest.raises(ValueError, match="phase must be a non-empty string"):
+        properties.ThermophysicalState(**{**values, "phase": ""})
 
 
 def test_frozen_if97_runtime_evidence_matches_upstream_reference_values():

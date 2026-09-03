@@ -27,6 +27,9 @@ changing resolution therefore changes the case identity and remains auditable.
 For formal refinement work, `prepare openfoam-pipe-grid` creates three
 same-model cases and a versioned `agentcfd-grid-study.json` plan; it prevents
 manual boundary edits from being mistaken for a valid GCI family.
+`run openfoam-pipe-grid` verifies each plan/case identity, performs all three
+runs, and feeds their serialized pressure-drop quantities into the same
+result-based GCI implementation used by `verify grid-convergence`.
 
 ## Safety and failure behavior
 
@@ -39,6 +42,17 @@ Execution requires `blockMesh`, `checkMesh`, and `simpleFoam` on `PATH`. Command
 passed as argument lists without a shell. Their combined output is retained as
 `log.blockMesh`, `log.checkMesh`, and `log.simpleFoam`.
 
+An existing generated case can be executed with `run openfoam-pipe --prepared`.
+Before launching any command, AgentCFD checks the model SHA, every generated
+file SHA, the combined case SHA, and that all manifest paths remain inside the
+case directory. Changed, missing, mismatched, or path-escaping cases fail with
+`CaseIntegrityError`; AgentCFD never silently blesses a hand-edited case.
+The executed result records mesh controls recovered from the verified
+`system/blockMeshDict`, rather than trusting callers to repeat the original
+mesh options correctly. Unrecorded files, directories, and symbolic links are
+also rejected because inputs such as an added `fvOptions` can change the
+equations without changing any recorded file.
+
 Native commands and an explicit Docker image are both supported. Container
 mode mounts only the selected case at `/case`; it does not infer, download, or
 silently switch images. This makes the same provider usable from Linux,
@@ -49,7 +63,9 @@ kinematic pressure to Pa, checks relative mass imbalance, compares pressure
 drop with Hagen--Poiseuille at the recovered flow rate, and attaches the final
 native `U` and `p` fields. `checkMesh` observables are also structured. A normal
 `End` proves completion only; numerical convergence still requires OpenFOAM's
-explicit SIMPLE convergence marker.
+explicit SIMPLE convergence marker. Per-equation initial residual, final
+residual, and linear-iteration histories are retained as diagnostics rather
+than being left only in human-readable logs.
 
 `OpenFOAMValidationPolicy` makes the scientific thresholds auditable. Its
 defaults require relative mass imbalance no greater than `1e-6` (or ten times
@@ -59,6 +75,10 @@ result's scientific inputs. A project may declare different thresholds, but it
 cannot change them after the run without changing the recorded evidence.
 
 `mean_velocity_inlet` remains uniform and therefore includes entrance effects.
+Uniform velocity and mass-flow-derived inlets also report Reynolds number, the
+`0.05 Re D` hydrodynamic entrance-length estimate, and pipe/entrance-length
+ratio as diagnostics. These quantities explain the physical mismatch without
+making the fully developed pressure law an acceptance shortcut.
 The separate `fully_developed_velocity_inlet` uses OpenCFD's non-compiling
 expression parser to prescribe the radial Hagen--Poiseuille profile. It is
 explicit in the model fingerprint and is never selected by backend guesswork.

@@ -20,6 +20,15 @@ the Reynolds number, declared regime, relative roughness, Darcy factor, major
 loss, minor loss, and total pressure loss. Individual functions remain public
 so an agent never has to reverse-engineer a bundled calculation.
 
+For a uniform laminar inlet,
+`laminar_hydrodynamic_entrance_length` exposes the screening estimate
+`L_e = C Re D_h` with an explicit default `C = 0.05`. Published definitions
+commonly put the coefficient around 0.05--0.06; the
+[Cambridge engineering reference](https://www-mdp.eng.cam.ac.uk/web/library/enginfo/aerothermal_dvd_only/aero/fprops/pipeflow/node9.html)
+uses approximately 0.06. The estimate diagnoses whether entrance effects are
+likely important; it is not used as a substitute for a developing-flow
+validation solution.
+
 The interval `2300 <= Re < 4000` is rejected. AgentCFD will not turn a regime
 choice into an undocumented interpolation. Density and viscosity are treated
 as constant, and all returned pressure losses are positive magnitudes.

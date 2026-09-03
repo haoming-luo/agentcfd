@@ -157,6 +157,10 @@ agentcfd prepare openfoam-pipe-grid pipe-grid \
   --base-axial-cells 20 \
   --json
 
+agentcfd run openfoam-pipe-grid pipe-grid \
+  --container-image opencfd/openfoam-run:2606 \
+  --json
+
 agentcfd verify grid-convergence coarse.json medium.json fine.json \
   --quantity flow.pressure_drop \
   --json
@@ -164,7 +168,8 @@ agentcfd verify grid-convergence coarse.json medium.json fine.json \
 
 The preparation workflow creates a 0.5 m by 0.1 m benchmark with one declared
 fully developed inlet model, isotropic refinement ratios, per-case hashes, and
-an explicit plan. The result workflow checks that all runs completed, converged, share one model
+an explicit plan. The grid runner verifies and executes every fresh case and
+writes the GCI evidence automatically. The result workflow checks that all runs completed, converged, share one model
 identity, and contain distinct positive mesh cell counts before it records
 Richardson extrapolation, observed order, GCI, the asymptotic ratio, and hashes
 of all three source files.

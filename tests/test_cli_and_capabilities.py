@@ -2,8 +2,9 @@ import json
 
 import pytest
 
-from agentcfd import benchmarks, capabilities
-from agentcfd.cli import main
+from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities
+from agentcfd.cli import build_parser, main
+from agentcfd.providers import OpenFOAMProvider
 
 
 def test_capability_catalog_is_truthful():
@@ -104,6 +105,60 @@ def test_cli_prepares_same_model_openfoam_grid_family(tmp_path, capsys):
         12800,
         102400,
     ]
+
+
+def test_cli_exposes_hash_verified_prepared_case_execution():
+    args = build_parser().parse_args(
+        [
+            "run",
+            "openfoam-pipe",
+            "case",
+            "--prepared",
+            "--fully-developed",
+            "--cross-section-cells",
+            "16",
+            "--axial-cells",
+            "80",
+        ]
+    )
+    assert args.prepared is True
+    assert args.cross_section_cells == 16
+    assert args.axial_cells == 80
+
+
+def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monkeypatch):
+    root = tmp_path / "grid-study"
+    assert main(["prepare", "openfoam-pipe-grid", str(root), "--json"]) == 0
+    capsys.readouterr()
+    values = {4: 3.56, 8: 1.64, 16: 1.16}
+
+    def fake_run_prepared(self, step, directory=None):
+        cross = self.mesh.cross_section_cells
+        axial = self.mesh.axial_cells
+        return SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={
+                "mesh.cell_count": Quantity(5 * cross**2 * axial, "1"),
+                "flow.pressure_drop": Quantity(values[cross], "Pa"),
+            },
+            checks=(Check("synthetic-runtime", True, kind="runtime"),),
+            provenance={"model_sha256": step.model.fingerprint()},
+        )
+
+    monkeypatch.setattr(OpenFOAMProvider, "run_prepared", fake_run_prepared)
+    assert main(["run", "openfoam-pipe-grid", str(root), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["observed_order"] == pytest.approx(2.0)
+    assert payload["extrapolated_value"] == pytest.approx(1.0)
+    assert (root / "agentcfd-grid-convergence.json").is_file()
+    assert all((root / case / "agentcfd-result.json").is_file() for case in (
+        "grid-1-c4-a20",
+        "grid-2-c8-a40",
+        "grid-3-c16-a80",
+    ))
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

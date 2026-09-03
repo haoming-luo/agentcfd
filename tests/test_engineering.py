@@ -123,3 +123,20 @@ def test_ideal_gas_speed_of_sound_requires_physical_heat_capacity_ratio():
             specific_heat_ratio=1.0,
             specific_gas_constant=287.05,
         )
+
+
+def test_laminar_entrance_length_screen_is_explicit_and_bounded():
+    assert engineering.laminar_hydrodynamic_entrance_length(
+        reynolds=1000.0,
+        hydraulic_diameter=0.1,
+    ) == pytest.approx(5.0)
+    assert engineering.laminar_hydrodynamic_entrance_length(
+        reynolds=1000.0,
+        hydraulic_diameter=0.1,
+        coefficient=0.06,
+    ) == pytest.approx(6.0)
+    with pytest.raises(ValueError, match="Re < 2300"):
+        engineering.laminar_hydrodynamic_entrance_length(
+            reynolds=2300.0,
+            hydraulic_diameter=0.1,
+        )

@@ -18,10 +18,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .. import boundaries
+from .. import boundaries, engineering
 from .._version import __version__
 from .._validation import integer_at_least, positive_float
-from ..errors import ProviderUnavailableError, UnsupportedCaseError
+from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
 from .base import ProviderDescriptor
 
@@ -33,6 +33,75 @@ def _solver_converged(log: str) -> bool:
     """Return true only for an explicit OpenFOAM convergence statement."""
 
     return bool(re.search(r"(?mi)^.*solution converged in \d+ iterations\s*$", log))
+
+
+def _solver_residual_evidence(
+    log: str,
+) -> tuple[dict[str, Quantity], dict[str, History]]:
+    """Recover per-equation initial and final residual histories from a solver log."""
+
+    current_iteration: float | None = None
+    samples: dict[str, dict[float, tuple[float, float, int]]] = {}
+    time_pattern = re.compile(r"^\s*Time\s*=\s*([0-9.eE+-]+)\s*$")
+    solve_pattern = re.compile(
+        r"Solving for\s+([^,]+),\s+Initial residual\s*=\s*([^,]+),\s+"
+        r"Final residual\s*=\s*([^,]+),\s+No Iterations\s+(\d+)"
+    )
+    for line in log.splitlines():
+        time_match = time_pattern.match(line)
+        if time_match is not None:
+            try:
+                selected = float(time_match.group(1))
+            except ValueError:
+                current_iteration = None
+            else:
+                current_iteration = selected if math.isfinite(selected) else None
+            continue
+        solve_match = solve_pattern.search(line)
+        if solve_match is None or current_iteration is None:
+            continue
+        field = solve_match.group(1).strip()
+        if _FOAM_WORD.fullmatch(field) is None:
+            continue
+        try:
+            initial = float(solve_match.group(2))
+            final = float(solve_match.group(3))
+            iterations = int(solve_match.group(4))
+        except ValueError:
+            continue
+        if not all(math.isfinite(value) and value >= 0.0 for value in (initial, final)):
+            continue
+        samples.setdefault(field, {})[current_iteration] = (initial, final, iterations)
+
+    quantities: dict[str, Quantity] = {}
+    histories: dict[str, History] = {}
+    for field, field_samples in sorted(samples.items()):
+        ordered = sorted(field_samples.items())
+        axis = tuple(item[0] for item in ordered)
+        initial_values = tuple(item[1][0] for item in ordered)
+        final_values = tuple(item[1][1] for item in ordered)
+        iteration_values = tuple(float(item[1][2]) for item in ordered)
+        for kind, values, unit, description in (
+            ("initial_residual", initial_values, "1", "Initial linear-system residual."),
+            ("final_residual", final_values, "1", "Final linear-system residual."),
+            ("linear_iterations", iteration_values, "1", "Linear solver iterations."),
+        ):
+            name = f"solver.{kind}.{field}"
+            histories[name] = History(
+                axis,
+                values,
+                unit=unit,
+                abscissa_name="iteration",
+                abscissa_unit="1",
+                description=description,
+            )
+            quantities[name] = Quantity(
+                values[-1],
+                unit,
+                kind="diagnostic",
+                description=f"Final recorded {description.lower()}",
+            )
+    return quantities, histories
 
 
 def _read_scalar_series(case_directory: Path, function_name: str) -> dict[float, float]:
@@ -92,6 +161,49 @@ def _mesh_quality_quantities(log: str) -> dict[str, Quantity]:
     return quantities
 
 
+def _mesh_controls_from_case(case_directory: Path) -> OpenFOAMMeshControls:
+    """Recover the generated five-block resolution without trusting CLI repetition."""
+
+    path = case_directory / "system" / "blockMeshDict"
+    content = path.read_text(encoding="utf-8")
+    matches = re.findall(
+        r"hex\s+\([^)]*\)\s+\((\d+)\s+(\d+)\s+(\d+)\)",
+        content,
+    )
+    if len(matches) != 5:
+        raise CaseIntegrityError("Prepared pipe case does not contain five recognized hex blocks.")
+    counts = {(int(first), int(second), int(axial)) for first, second, axial in matches}
+    if len(counts) != 1:
+        raise CaseIntegrityError("Prepared pipe blocks do not share one mesh resolution.")
+    first, second, axial = counts.pop()
+    if first != second:
+        raise CaseIntegrityError("Prepared pipe cross-section block counts are inconsistent.")
+    return OpenFOAMMeshControls(cross_section_cells=first, axial_cells=axial)
+
+
+def _unexpected_case_entries(prepared: PreparedOpenFOAMCase) -> tuple[str, ...]:
+    """Find unrecorded inputs and links that could change prepared-case semantics."""
+
+    allowed_files = set(prepared.files) | {"agentcfd-case.json"}
+    allowed_directories = {
+        str(parent)
+        for relative in prepared.files
+        for parent in Path(relative).parents
+        if str(parent) != "."
+    }
+    unexpected: list[str] = []
+    for path in prepared.directory.rglob("*"):
+        relative = str(path.relative_to(prepared.directory))
+        if path.is_symlink():
+            unexpected.append(relative)
+        elif path.is_dir():
+            if relative not in allowed_directories:
+                unexpected.append(relative + "/")
+        elif relative not in allowed_files:
+            unexpected.append(relative)
+    return tuple(sorted(unexpected))
+
+
 def _runtime_version(logs: dict[str, str], fallback: str) -> str:
     for log in logs.values():
         match = re.search(r"(?m)^\|.*Version:\s*([^ ]+)\s+", log)
@@ -115,6 +227,13 @@ def _latest_time_directory(case_directory: Path) -> Path | None:
         if time > 0.0:
             candidates.append((time, path))
     return max(candidates, default=(0.0, None), key=lambda item: item[0])[1]
+
+
+def _is_positive_time_name(name: str) -> bool:
+    try:
+        return float(name) > 0.0
+    except ValueError:
+        return False
 
 
 def _recover_patch_data(
@@ -607,6 +726,110 @@ class OpenFOAMProvider:
         """
 
         prepared = self.prepare(step)
+        return self._execute_prepared(step, prepared, mesh_controls=self.mesh)
+
+    def run_prepared(
+        self,
+        step,
+        directory: str | Path | None = None,
+    ) -> SimulationResult:
+        """Verify and execute an existing content-addressed case."""
+
+        prepared = self._load_prepared_case(step, directory)
+        execution_outputs = [
+            path
+            for path in prepared.directory.iterdir()
+            if path.name.startswith("log.")
+            or path.name == "postProcessing"
+            or (path.is_dir() and _is_positive_time_name(path.name))
+        ]
+        if (prepared.directory / "constant" / "polyMesh").exists():
+            execution_outputs.append(prepared.directory / "constant" / "polyMesh")
+        if execution_outputs:
+            names = ", ".join(sorted(path.name for path in execution_outputs))
+            raise CaseIntegrityError(
+                "Prepared OpenFOAM case already contains execution output; "
+                f"use a fresh case to avoid mixed evidence: {names}"
+            )
+        unexpected = _unexpected_case_entries(prepared)
+        if unexpected:
+            raise CaseIntegrityError(
+                "Prepared OpenFOAM case contains unrecorded entries that could alter "
+                f"execution: {', '.join(unexpected)}"
+            )
+        mesh_controls = _mesh_controls_from_case(prepared.directory)
+        return self._execute_prepared(step, prepared, mesh_controls=mesh_controls)
+
+    def _load_prepared_case(
+        self,
+        step,
+        directory: str | Path | None = None,
+    ) -> PreparedOpenFOAMCase:
+        step.model.validate()
+        self._validate_supported(step)
+        target = Path(directory) if directory is not None else self.case_directory
+        if target is None:
+            raise ValueError("OpenFOAM case_directory is required for prepared execution.")
+        manifest_path = target / "agentcfd-case.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as error:
+            raise CaseIntegrityError(
+                f"Prepared OpenFOAM case manifest is missing or invalid: {manifest_path}"
+            ) from error
+        if manifest.get("schema") != "agentcfd.openfoam-case/0.1":
+            raise CaseIntegrityError("Prepared OpenFOAM case schema is unsupported.")
+        model_sha256 = step.model.fingerprint()
+        if manifest.get("model_sha256") != model_sha256:
+            raise CaseIntegrityError(
+                "Prepared OpenFOAM case belongs to a different scientific model."
+            )
+        recorded_files = manifest.get("files")
+        if not isinstance(recorded_files, dict) or not recorded_files:
+            raise CaseIntegrityError("Prepared OpenFOAM case has no recorded files.")
+
+        verified_files: dict[str, str] = {}
+        root = target.resolve()
+        for relative, expected in recorded_files.items():
+            if not isinstance(relative, str) or not isinstance(expected, str):
+                raise CaseIntegrityError("Prepared case file identities are malformed.")
+            path = (target / relative).resolve()
+            try:
+                path.relative_to(root)
+            except ValueError as error:
+                raise CaseIntegrityError(
+                    f"Prepared case file escapes the case directory: {relative!r}"
+                ) from error
+            if not path.is_file():
+                raise CaseIntegrityError(f"Prepared case file is missing: {relative}")
+            actual = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual != expected:
+                raise CaseIntegrityError(f"Prepared case file has changed: {relative}")
+            verified_files[relative] = actual
+
+        case_sha256 = hashlib.sha256(
+            json.dumps(
+                verified_files,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if manifest.get("case_sha256") != case_sha256:
+            raise CaseIntegrityError("Prepared OpenFOAM combined case identity has changed.")
+        return PreparedOpenFOAMCase(
+            directory=target,
+            model_sha256=model_sha256,
+            case_sha256=case_sha256,
+            files=verified_files,
+        )
+
+    def _execute_prepared(
+        self,
+        step,
+        prepared: PreparedOpenFOAMCase,
+        *,
+        mesh_controls: OpenFOAMMeshControls,
+    ) -> SimulationResult:
         commands = self._commands()
         missing = [name for name, path in commands.items() if path is None]
         if missing:
@@ -673,6 +896,36 @@ class OpenFOAMProvider:
             ),
         )
         quantities.update(_mesh_quality_quantities(logs.get("checkMesh", "")))
+        residual_quantities, residual_histories = _solver_residual_evidence(solver_log)
+        quantities.update(residual_quantities)
+        histories.update(residual_histories)
+        mean_velocity = self._mean_velocity(step.model)
+        reynolds = engineering.reynolds_number(
+            density=step.model.fluid.density,
+            mean_velocity=mean_velocity,
+            hydraulic_diameter=step.model.domain.diameter,
+            dynamic_viscosity=step.model.fluid.dynamic_viscosity,
+        )
+        quantities["flow.reynolds_number"] = Quantity(reynolds, "1")
+        if any(
+            isinstance(value, (boundaries.MassFlowInlet, boundaries.MeanVelocityInlet))
+            for value in step.model.boundary_conditions.values()
+        ):
+            entrance_length = engineering.laminar_hydrodynamic_entrance_length(
+                reynolds=reynolds,
+                hydraulic_diameter=step.model.domain.diameter,
+            )
+            quantities["flow.laminar_entrance_length_estimate"] = Quantity(
+                entrance_length,
+                "m",
+                kind="diagnostic",
+                description="Screening estimate 0.05 Re D for a uniform laminar inlet.",
+            )
+            quantities["flow.pipe_to_entrance_length_ratio"] = Quantity(
+                step.model.domain.length / entrance_length,
+                "1",
+                kind="diagnostic",
+            )
         artifact_paths = {
             "case_manifest": prepared.directory / "agentcfd-case.json",
             **{
@@ -756,7 +1009,7 @@ class OpenFOAMProvider:
                 "model": step.model.to_dict(),
                 "procedure": step.procedure.to_dict(),
                 "output_request": step.output.to_dict(),
-                "mesh_controls": asdict(self.mesh),
+                "mesh_controls": asdict(mesh_controls),
                 "validation_policy": asdict(self.validation),
                 "lowered_case_sha256": prepared.case_sha256,
             },

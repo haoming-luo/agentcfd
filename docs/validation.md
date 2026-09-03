@@ -67,6 +67,11 @@ cross-section and axial counts by the same ratio, records each case hash and
 expected cell count, and refuses a non-empty destination. The default bounded
 benchmark is 0.5 m long and 0.1 m in diameter so the 4/8/16 by 20/40/80 family
 contains 1,600, 12,800, and 102,400 cells without extreme axial aspect ratios.
+`agentcfd run openfoam-pipe-grid` closes the loop: it verifies every prepared
+case against the plan, executes the three fresh cases, writes a structured
+result beside each case, and emits `agentcfd-grid-convergence.json`. A case
+containing prior mesh, time, log, or post-processing output is rejected so two
+executions cannot be silently mixed into one evidence record.
 
 For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
 are different scientific problems. Total inlet-to-outlet static pressure from

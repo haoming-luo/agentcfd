@@ -34,7 +34,17 @@ machine-readable capability catalog.
 - make OpenFOAM mass-balance and pressure-error acceptance thresholds explicit,
   validated, and part of every result's scientific inputs;
 - reject unknown boundary objects, non-boolean study flags, duplicate output
-  names, and non-finite or non-JSON model metadata before fingerprinting.
+  names, and non-finite or non-JSON model metadata before fingerprinting;
+- report Reynolds number and an explicit uniform-inlet laminar development
+  length diagnostic instead of conflating entrance effects with mesh error;
+- verify model, file, combined-case, and path-containment identities before
+  executing an existing prepared OpenFOAM case;
+- execute a prepared three-grid family end to end and automatically write
+  source-hashed GCI evidence, while rejecting mixed prior execution output.
+- recover structured per-equation initial residual, final residual, and linear
+  iteration histories from OpenFOAM solver evidence.
+- reject unrecorded prepared-case files, directories, and symbolic links that
+  could alter solver semantics outside the content-addressed manifest.
 
 ## 0.1.0a1 — 2026-09-03
 

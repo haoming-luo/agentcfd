@@ -7,7 +7,7 @@ import jsonschema
 import pytest
 
 from agentcfd import Model, boundaries, fluids, geometry, studies
-from agentcfd.errors import ProviderUnavailableError, UnsupportedCaseError
+from agentcfd.errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from agentcfd.providers import (
     OpenFOAMMeshControls,
     OpenFOAMProvider,
@@ -15,10 +15,13 @@ from agentcfd.providers import (
     prepare_pipe_grid_study,
 )
 from agentcfd.providers.openfoam import (
+    _mesh_controls_from_case,
     _mesh_quality_quantities,
     _read_scalar_series,
     _recover_patch_data,
     _solver_converged,
+    _solver_residual_evidence,
+    _unexpected_case_entries,
 )
 
 
@@ -59,6 +62,21 @@ def test_openfoam_case_lowering_is_deterministic_and_content_addressed(tmp_path)
     manifest = json.loads((first.directory / "agentcfd-case.json").read_text())
     assert manifest["case_sha256"] == first.case_sha256
     assert manifest["provider"]["execution_boundary"] == "filesystem-and-subprocess"
+
+
+def test_prepared_case_recovers_mesh_controls_from_verified_input(tmp_path):
+    provider = OpenFOAMProvider(
+        mesh=OpenFOAMMeshControls(cross_section_cells=4, axial_cells=20)
+    )
+    prepared = provider.prepare(pipe_model().step(), tmp_path / "case")
+
+    recovered = _mesh_controls_from_case(prepared.directory)
+
+    assert recovered == OpenFOAMMeshControls(
+        cross_section_cells=4,
+        axial_cells=20,
+    )
+    assert _unexpected_case_entries(prepared) == ()
 
 
 def test_openfoam_grid_study_prepares_same_model_geometrically_similar_cases(tmp_path):
@@ -167,6 +185,60 @@ def test_openfoam_provider_never_overwrites_a_case(tmp_path):
     assert (case_directory / "keep.txt").read_text() == "user data"
 
 
+def test_prepared_openfoam_case_is_verified_before_reuse(tmp_path):
+    step = pipe_model().step()
+    directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=directory)
+    prepared = provider.prepare(step)
+
+    loaded = provider._load_prepared_case(step)
+    assert loaded.case_sha256 == prepared.case_sha256
+    assert loaded.files == prepared.files
+
+    velocity = directory / "0" / "U"
+    velocity.write_text(velocity.read_text() + "\n// changed\n")
+    with pytest.raises(CaseIntegrityError, match="has changed: 0/U"):
+        provider.run_prepared(step)
+
+
+def test_prepared_openfoam_case_rejects_model_mismatch_and_path_escape(tmp_path):
+    directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=directory)
+    provider.prepare(pipe_model().step())
+
+    with pytest.raises(CaseIntegrityError, match="different scientific model"):
+        provider.run_prepared(pipe_model(velocity=0.005).step())
+
+    manifest_path = directory / "agentcfd-case.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["files"]["../outside"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(CaseIntegrityError, match="escapes the case directory"):
+        provider.run_prepared(pipe_model().step())
+
+
+def test_prepared_openfoam_case_rejects_mixed_prior_execution_evidence(tmp_path):
+    directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=directory)
+    step = pipe_model().step()
+    provider.prepare(step)
+    (directory / "postProcessing").mkdir()
+
+    with pytest.raises(CaseIntegrityError, match="already contains execution output"):
+        provider.run_prepared(step)
+
+
+def test_prepared_openfoam_case_rejects_unrecorded_solver_inputs(tmp_path):
+    directory = tmp_path / "case"
+    provider = OpenFOAMProvider(case_directory=directory)
+    step = pipe_model().step()
+    provider.prepare(step)
+    (directory / "system" / "fvOptions").write_text("unexpected source term")
+
+    with pytest.raises(CaseIntegrityError, match="unrecorded entries.*system/fvOptions"):
+        provider.run_prepared(step)
+
+
 def test_openfoam_run_requires_external_runtime_after_preparing(tmp_path, monkeypatch):
     provider = OpenFOAMProvider(case_directory=tmp_path / "case")
     monkeypatch.setattr(
@@ -271,6 +343,12 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         abs=1.0e-14,
     )
     assert result.quantities["mesh.cell_count"].value == 1000
+    assert result.quantities["flow.reynolds_number"].value == pytest.approx(
+        998.2 * 0.01 * 0.1 / 1.002e-3
+    )
+    assert result.quantities["flow.laminar_entrance_length_estimate"].value == pytest.approx(
+        0.05 * result.quantities["flow.reynolds_number"].value * 0.1
+    )
     assert result.scientific_inputs["mesh_controls"] == {
         "cross_section_cells": 8,
         "axial_cells": None,
@@ -287,6 +365,26 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
 def test_openfoam_convergence_requires_explicit_solver_marker():
     assert not _solver_converged("Time = 500\nEnd\n")
     assert _solver_converged("SIMPLE solution converged in 42 iterations\nEnd\n")
+
+
+def test_openfoam_solver_residuals_are_recovered_as_diagnostics():
+    quantities, histories = _solver_residual_evidence(
+        """Time = 1
+smoothSolver: Solving for Ux, Initial residual = 0.1, Final residual = 0.002, No Iterations 2
+GAMG: Solving for p, Initial residual = 0.2, Final residual = 0.003, No Iterations 3
+Time = 2
+smoothSolver: Solving for Ux, Initial residual = 0.01, Final residual = 2e-05, No Iterations 1
+GAMG: Solving for p, Initial residual = 0.02, Final residual = 3e-05, No Iterations 2
+"""
+    )
+
+    assert quantities["solver.initial_residual.Ux"].value == pytest.approx(0.01)
+    assert quantities["solver.final_residual.p"].value == pytest.approx(3.0e-5)
+    assert quantities["solver.linear_iterations.p"].value == 2
+    assert histories["solver.initial_residual.Ux"].abscissa == (1.0, 2.0)
+    assert histories["solver.final_residual.Ux"].values == pytest.approx(
+        (0.002, 2.0e-5)
+    )
 
 
 def test_openfoam_scalar_history_recovery_merges_restart_directories(tmp_path):

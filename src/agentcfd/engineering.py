@@ -243,3 +243,26 @@ def mach_number(*, velocity: float, speed_of_sound: float) -> float:
         speed_of_sound,
         "speed_of_sound",
     )
+
+
+def laminar_hydrodynamic_entrance_length(
+    *,
+    reynolds: float,
+    hydraulic_diameter: float,
+    coefficient: float = 0.05,
+) -> float:
+    """Estimate uniform-inlet laminar development length as ``C Re D_h``.
+
+    This is a screening correlation, not an exact boundary between developing
+    and fully developed flow. The coefficient is explicit because definitions
+    in the literature commonly vary from about 0.05 to 0.06.
+    """
+
+    selected_reynolds = _positive(reynolds, "reynolds")
+    if selected_reynolds >= 2300.0:
+        raise ValueError("Laminar entrance-length screening requires Re < 2300.")
+    return (
+        _positive(coefficient, "coefficient")
+        * selected_reynolds
+        * _positive(hydraulic_diameter, "hydraulic_diameter")
+    )

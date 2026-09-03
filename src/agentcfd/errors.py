@@ -12,3 +12,7 @@ class UnsupportedCaseError(AgentCFDError):
 
 class ProviderUnavailableError(AgentCFDError):
     """A selected numerical provider is not installed or cannot be executed."""
+
+
+class CaseIntegrityError(AgentCFDError):
+    """A prepared provider case no longer matches its recorded identity."""

@@ -9,7 +9,7 @@ import numpy as np
 from .. import boundaries
 from .._version import __version__
 from ..errors import UnsupportedCaseError
-from ..results import Check, Quantity, SimulationResult
+from ..results import Check, History, Quantity, SimulationResult
 from .base import ProviderDescriptor
 
 
@@ -88,12 +88,16 @@ class ReferencePipeProvider:
                     passed=reynolds < 2300.0,
                     value=reynolds,
                     limit="Re < 2300",
+                    kind="runtime",
+                    observable="flow.reynolds_number",
                 ),
                 Check(
                     name="darcy-weisbach-identity",
                     passed=identity_error < 1.0e-12,
                     value=identity_error,
                     limit=1.0e-12,
+                    kind="verification",
+                    observable="flow.pressure_drop",
                 ),
                 Check(
                     name="mass-balance",
@@ -101,11 +105,28 @@ class ReferencePipeProvider:
                     value=0.0,
                     limit=1.0e-12,
                     message="Fully developed reference flow has identical inlet and outlet mass flow.",
+                    kind="verification",
+                    observable="flow.mass_balance",
                 ),
             ),
             arrays={
                 "profile.radius": radius.tolist(),
                 "profile.axial_velocity": axial_velocity.tolist(),
+            },
+            histories={
+                "profile.axial_velocity": History(
+                    abscissa=tuple(radius),
+                    values=tuple(axial_velocity),
+                    unit="m/s",
+                    abscissa_name="radius",
+                    abscissa_unit="m",
+                    description="Fully developed axial-velocity profile from the pipe centreline to the wall.",
+                ),
+            },
+            scientific_inputs={
+                "model": model.to_dict(),
+                "procedure": step.procedure.to_dict(),
+                "output_request": step.output.to_dict(),
             },
             provenance={
                 "agentcfd_version": __version__,

@@ -85,6 +85,15 @@ A zero process exit code is not scientific acceptance. A converged result can
 remain unaccepted when field recovery, conservation, or applicability evidence
 is missing.
 
+## Trust Level
+
+Trust is an evidence ladder independent of execution status: `not_computed`,
+`computed`, `converged`, `verified`, and `validated`. Runtime checks can establish
+that a solver ran and converged; verification checks test numerical or analytical
+consistency; validation checks compare against trusted physical evidence. AI and
+release automation must request an explicit minimum level instead of inferring
+trust from a process exit code.
+
 ## Capability and Evidence Maturity
 
 A capability name identifies a precise supported scope. Maturity advances from

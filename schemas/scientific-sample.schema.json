@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/scientific-sample.schema.json",
+  "title": "AgentCAE Scientific Sample 0.1.0",
+  "type": "object",
+  "required": [
+    "schema", "schema_version", "case_id", "source", "inputs", "outputs",
+    "quantity_schema", "trust_level", "accepted", "scientific_inputs",
+    "provenance", "artifacts"
+  ],
+  "properties": {
+    "schema": {"const": "agentcae.scientific-sample"},
+    "schema_version": {"const": "0.1.0"},
+    "case_id": {"type": "string", "minLength": 1},
+    "source": {
+      "type": "object",
+      "required": ["product", "provider"],
+      "properties": {
+        "product": {"const": "agentcfd"},
+        "provider": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "inputs": {"type": "object", "additionalProperties": {"type": "number"}},
+    "outputs": {"type": "object", "additionalProperties": {"type": "number"}},
+    "quantity_schema": {"type": "array", "items": {"type": "object"}},
+    "trust_level": {
+      "enum": ["not_computed", "computed", "converged", "verified", "validated"]
+    },
+    "accepted": {"const": true},
+    "scientific_inputs": {"type": "object"},
+    "provenance": {"type": "object"},
+    "artifacts": {"type": "object", "additionalProperties": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

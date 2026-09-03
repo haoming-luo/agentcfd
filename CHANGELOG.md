@@ -16,6 +16,10 @@ machine-readable capability catalog.
 - add bounded external-process execution that remains scientifically unaccepted
   until field conservation and pressure-loss recovery are implemented;
 - add AgentFEM interoperability records and versioned JSON schemas;
+- align results with AgentFEM semantics for quantities, fields, histories,
+  artifacts, scientific-input fingerprints, evidence claims, and trust levels;
+- add solver-neutral `agentcae.simulation-result` and AgentFEM-compatible
+  `agentcae.scientific-sample` records, with schemas included in release wheels;
 - document concepts, workflow, validation, licensing, roadmap, market strategy,
   and PyPI trusted publishing;
 - test Python 3.11–3.13 across Linux, macOS, and Windows in CI.

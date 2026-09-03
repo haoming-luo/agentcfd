@@ -1,30 +1,95 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/simulation-result.schema.json",
-  "title": "AgentCFD SimulationResult 0.1",
+  "title": "AgentCFD SimulationResult 0.1.0",
   "type": "object",
-  "required": ["schema", "status", "converged", "accepted", "provider", "quantities", "checks", "provenance"],
+  "required": [
+    "schema", "schema_version", "name", "status", "converged", "accepted",
+    "trust_level", "provider", "quantities", "fields", "histories", "artifacts",
+    "provenance", "quantity_records", "field_records", "history_records",
+    "artifact_records", "checks", "arrays", "scientific_inputs", "messages"
+  ],
   "properties": {
-    "schema": {"const": "agentcfd.simulation-result/0.1"},
+    "schema": {"const": "agentcfd.simulation-result"},
+    "schema_version": {"const": "0.1.0"},
+    "name": {"type": "string", "minLength": 1},
     "status": {"type": "string"},
     "converged": {"type": "boolean"},
     "accepted": {"type": "boolean"},
-    "provider": {"type": "string"},
-    "quantities": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "object",
-        "required": ["value", "unit"],
-        "properties": {
-          "value": {"type": "number"},
-          "unit": {"type": "string"}
-        }
-      }
+    "trust_level": {
+      "enum": ["not_computed", "computed", "converged", "verified", "validated"]
     },
-    "checks": {"type": "array"},
-    "arrays": {"type": "object"},
+    "provider": {"type": "string", "minLength": 1},
+    "quantities": {"type": "object", "additionalProperties": {"$ref": "#/$defs/quantity"}},
+    "fields": {"type": "object"},
+    "histories": {"type": "object"},
+    "artifacts": {"type": "object", "additionalProperties": {"type": "string"}},
     "provenance": {"type": "object"},
+    "quantity_records": {"type": "array", "items": {"$ref": "#/$defs/named_quantity"}},
+    "field_records": {"type": "array", "items": {"type": "object"}},
+    "history_records": {"type": "array", "items": {"type": "object"}},
+    "artifact_records": {"type": "object", "additionalProperties": {"type": "object"}},
+    "checks": {"type": "array", "items": {"$ref": "#/$defs/check"}},
+    "arrays": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "items": {"type": "number"}}
+    },
+    "scientific_inputs": {"$ref": "#/$defs/scientific_inputs"},
     "messages": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "quantity": {
+      "type": "object",
+      "required": ["value", "unit", "kind", "description"],
+      "properties": {
+        "value": {"type": "number"},
+        "unit": {"type": ["string", "null"]},
+        "kind": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "named_quantity": {
+      "type": "object",
+      "required": ["name", "shape", "value", "unit", "kind", "description"],
+      "properties": {
+        "name": {"type": "string"},
+        "shape": {"type": "array", "maxItems": 0},
+        "value": {"type": "number"},
+        "unit": {"type": ["string", "null"]},
+        "kind": {"type": "string"},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "required": ["name", "passed", "status", "kind", "message", "observable", "evidence"],
+      "properties": {
+        "name": {"type": "string"},
+        "passed": {"type": "boolean"},
+        "status": {"enum": ["passed", "failed"]},
+        "kind": {"enum": ["runtime", "verification", "validation"]},
+        "value": {"type": ["number", "string", "null"]},
+        "limit": {"type": ["number", "string", "null"]},
+        "message": {"type": "string"},
+        "observable": {"type": "string"},
+        "evidence": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "scientific_inputs": {
+      "type": "object",
+      "required": ["schema", "schema_version", "complete", "missing", "record", "fingerprint"],
+      "properties": {
+        "schema": {"const": "agentcae.scientific-input-manifest"},
+        "schema_version": {"const": "0.1.0"},
+        "complete": {"type": "boolean"},
+        "missing": {"type": "array"},
+        "record": {},
+        "fingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
   },
   "additionalProperties": false
 }

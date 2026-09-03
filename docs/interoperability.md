@@ -39,9 +39,15 @@ heat flux.
 
 ## Learning continuity
 
-`SimulationResult.to_sample()` emits `agentcae.scientific-sample/0.1`, a small
-framework-neutral record. It can feed a future common dataset layer without
-requiring PyTorch, JAX, PINNs, or neural operators in the core CFD package.
+`SimulationResult.to_sample()` emits `agentcae.scientific-sample` version
+`0.1.0`. Its numeric `inputs` and `outputs` map directly onto AgentFEM's
+`datasets.Sample` contract, while `quantity_schema` retains names, units,
+shapes, and semantic kinds. `SimulationResult.to_exchange()` preserves the
+larger result as `agentcae.simulation-result` for coupling and audit tools.
+
+The products share semantics, not Python imports. AgentCFD therefore remains
+installable without AgentFEM, and either product can evolve its solver stack
+behind the stable `agentcae.*` records.
 
 The intended sequence is:
 

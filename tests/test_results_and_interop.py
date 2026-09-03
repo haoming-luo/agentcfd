@@ -1,9 +1,11 @@
 import hashlib
 import json
+from pathlib import Path
 
+import jsonschema
 import pytest
 
-from agentcfd import Model, boundaries, fluids, geometry, interoperability, studies
+from agentcfd import Check, Model, Quantity, SimulationResult, boundaries, fluids, geometry, interoperability, studies
 
 
 def pipe_model() -> Model:
@@ -23,16 +25,53 @@ def test_result_round_trip_and_learning_sample(tmp_path):
     result = pipe_model().step().run()
     path = result.write(tmp_path / "result.json")
     payload = json.loads(path.read_text())
-    assert payload["schema"] == "agentcfd.simulation-result/0.1"
+    assert payload["schema"] == "agentcfd.simulation-result"
+    assert payload["schema_version"] == "0.1.0"
     assert payload["accepted"] is True
+    assert payload["trust_level"] == "verified"
+    assert payload["scientific_inputs"]["complete"] is True
+    assert len(payload["scientific_inputs"]["fingerprint"]) == 71
+    assert payload["history_records"][0]["abscissa_name"] == "radius"
 
     sample = result.to_sample(
         parameters={"diameter": 0.05},
         responses=("flow.pressure_drop",),
     )
-    assert sample["schema"] == "agentcae.scientific-sample/0.1"
-    assert sample["source"] == "agentcfd"
-    assert sample["responses"]["flow.pressure_drop"]["unit"] == "Pa"
+    assert sample["schema"] == "agentcae.scientific-sample"
+    assert sample["schema_version"] == "0.1.0"
+    assert sample["source"]["product"] == "agentcfd"
+    assert isinstance(sample["outputs"]["flow.pressure_drop"], float)
+    assert sample["quantity_schema"][0]["unit"] == "Pa"
+    assert sample["trust_level"] == "verified"
+
+    exchange = result.to_exchange(include_histories=True)
+    assert exchange["schema"] == "agentcae.simulation-result"
+    assert exchange["source"]["product"] == "agentcfd"
+
+    schema_root = Path(__file__).parents[1] / "schemas"
+    jsonschema.Draft202012Validator(
+        json.loads((schema_root / "simulation-result.schema.json").read_text())
+    ).validate(payload)
+    jsonschema.Draft202012Validator(
+        json.loads((schema_root / "scientific-sample.schema.json").read_text())
+    ).validate(sample)
+    jsonschema.Draft202012Validator(
+        json.loads((schema_root / "result-exchange.schema.json").read_text())
+    ).validate(exchange)
+
+
+def test_execution_acceptance_and_trust_are_separate():
+    result = SimulationResult(
+        status="completed",
+        converged=True,
+        provider="test",
+        quantities={"flow.pressure_drop": Quantity(1.0, "Pa")},
+        checks=(Check("process", True, kind="runtime"),),
+    )
+    assert result.accepted is True
+    assert result.trust_level == "converged"
+    with pytest.raises(RuntimeError, match="verified"):
+        result.require_trust("verified")
 
 
 def test_cfd_to_fem_manifest_is_explicit_and_versioned():

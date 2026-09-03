@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/result-exchange.schema.json",
+  "title": "AgentCAE Simulation Result Exchange 0.1.0",
+  "type": "object",
+  "required": [
+    "schema", "schema_version", "source", "name", "status", "converged",
+    "accepted", "trust_level", "provider", "quantities", "fields", "histories",
+    "artifacts", "provenance", "quantity_records", "field_records",
+    "history_records", "artifact_records", "checks", "arrays",
+    "scientific_inputs", "messages"
+  ],
+  "properties": {
+    "schema": {"const": "agentcae.simulation-result"},
+    "schema_version": {"const": "0.1.0"},
+    "source": {
+      "type": "object",
+      "required": ["product", "version", "provider"],
+      "properties": {
+        "product": {"type": "string"},
+        "version": {"type": "string"},
+        "provider": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "name": {"type": "string"},
+    "status": {"type": "string"},
+    "converged": {"type": "boolean"},
+    "accepted": {"type": "boolean"},
+    "trust_level": {
+      "enum": ["not_computed", "computed", "converged", "verified", "validated"]
+    },
+    "provider": {"type": "string"},
+    "quantities": {"type": "object"},
+    "fields": {"type": "object"},
+    "histories": {"type": "object"},
+    "artifacts": {"type": "object"},
+    "provenance": {"type": "object"},
+    "quantity_records": {"type": "array"},
+    "field_records": {"type": "array"},
+    "history_records": {"type": "array"},
+    "artifact_records": {"type": "object"},
+    "checks": {"type": "array"},
+    "arrays": {"type": "object"},
+    "scientific_inputs": {"type": "object"},
+    "messages": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

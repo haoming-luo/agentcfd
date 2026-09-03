@@ -21,7 +21,7 @@ from typing import Any
 from .. import boundaries
 from .._version import __version__
 from ..errors import ProviderUnavailableError, UnsupportedCaseError
-from ..results import Check, Quantity, SimulationResult
+from ..results import Artifact, Check, Quantity, SimulationResult
 from .base import ProviderDescriptor
 
 
@@ -194,6 +194,13 @@ class OpenFOAMProvider:
         solver_log = logs.get("simpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
         reference_drop = self._reference_pressure_drop(step)
+        artifact_paths = {
+            "case_manifest": prepared.directory / "agentcfd-case.json",
+            **{
+                f"log_{name}": prepared.directory / f"log.{name}"
+                for name in logs
+            },
+        }
         return SimulationResult(
             status="completed" if process_ok else "failed",
             converged=reached_end,
@@ -207,12 +214,16 @@ class OpenFOAMProvider:
                     passed=process_ok,
                     value=json.dumps(return_codes, sort_keys=True),
                     limit="all return codes equal zero",
+                    kind="runtime",
+                    observable="provider.process",
                 ),
                 Check(
                     name="solver-end-marker",
                     passed=reached_end,
                     value="found" if reached_end else "missing",
                     limit="OpenFOAM log ends with End",
+                    kind="runtime",
+                    observable="provider.convergence_marker",
                 ),
                 Check(
                     name="field-conservation-recovery",
@@ -223,8 +234,20 @@ class OpenFOAMProvider:
                         "The experimental provider does not yet recover mesh-field mass balance "
                         "and pressure loss; execution is therefore not an accepted CFD result."
                     ),
+                    kind="verification",
+                    observable="flow.mass_balance_and_pressure_drop",
                 ),
             ),
+            artifacts={
+                name: Artifact.from_path(path, role="execution-evidence", media_type="text/plain")
+                for name, path in artifact_paths.items()
+            },
+            scientific_inputs={
+                "model": step.model.to_dict(),
+                "procedure": step.procedure.to_dict(),
+                "output_request": step.output.to_dict(),
+                "lowered_case_sha256": prepared.case_sha256,
+            },
             provenance={
                 "agentcfd_version": __version__,
                 "model_sha256": step.model.fingerprint(),

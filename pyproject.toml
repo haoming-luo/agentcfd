@@ -38,13 +38,16 @@ Issues = "https://github.com/haoming-luo/agentcfd/issues"
 agentcfd = "agentcfd.cli:main"
 
 [project.optional-dependencies]
-dev = ["build", "pytest", "ruff", "twine"]
+dev = ["build", "jsonschema>=4.20", "pytest", "ruff", "twine"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
 agentcfd = ["py.typed"]
+
+[tool.setuptools.data-files]
+"share/agentcfd/schemas" = ["schemas/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -144,6 +144,8 @@ mechanics and deterministic numerical computation remain authoritative.
 - [Roadmap](ROADMAP.md)
 - [Product and market strategy](docs/product-strategy.md)
 - [AgentFEM, CFD, and AI interoperability](docs/interoperability.md)
+- [Results, evidence, and AI exchange](docs/results-and-ai.md)
+- [Installation and solver runtime](docs/installation.md)
 - [Dependency and license policy](docs/licensing.md)
 - [OpenFOAM provider boundary](docs/openfoam-provider.md)
 - [Publishing and PyPI name status](docs/publishing.md)

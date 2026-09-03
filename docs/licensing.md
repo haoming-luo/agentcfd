@@ -14,6 +14,7 @@ review.
 | NumPy | arrays and reference profiles | BSD-3-Clause | only runtime dependency |
 | setuptools | build backend | MIT | source-build dependency only |
 | wheel | wheel build | MIT | source-build dependency only |
+| jsonschema | development-time schema validation | MIT | development dependency only |
 
 The core must not acquire a mandatory solver, mesher, GUI, LLM SDK, or machine-
 learning framework dependency. Optional integrations import lazily at their

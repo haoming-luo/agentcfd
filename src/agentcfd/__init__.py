@@ -3,10 +3,13 @@
 from . import boundaries, capabilities, fluids, geometry, interoperability, outputs, procedures, providers, studies
 from ._version import __version__
 from .model import Model, Step
-from .results import Check, Quantity, SimulationResult
+from .results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
 
 __all__ = [
+    "Artifact",
     "Check",
+    "FieldRecord",
+    "History",
     "Model",
     "Quantity",
     "SimulationResult",

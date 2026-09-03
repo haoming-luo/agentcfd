@@ -8,7 +8,10 @@ import math
 from pathlib import Path
 from typing import Mapping
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - exercised by installed-wheel smoke tests
+    np = None
 
 
 def file_sha256(path: str | Path) -> str:
@@ -48,12 +51,12 @@ def scientific_input_manifest(value: object) -> dict[str, object]:
 def _scientific_record(value: object, *, path: str, missing: list[dict[str, str]]) -> object:
     if value is None or isinstance(value, (str, bool, int)):
         return value
-    if isinstance(value, (float, np.floating)):
+    if isinstance(value, float) or (np is not None and isinstance(value, np.floating)):
         selected = float(value)
         if not math.isfinite(selected):
             raise ValueError(f"{path} contains a non-finite value.")
         return selected
-    if isinstance(value, np.integer):
+    if np is not None and isinstance(value, np.integer):
         return int(value)
     if isinstance(value, Path):
         if not value.is_file():
@@ -66,7 +69,7 @@ def _scientific_record(value: object, *, path: str, missing: list[dict[str, str]
             "size_bytes": value.stat().st_size,
             "sha256": file_sha256(value),
         }
-    if isinstance(value, np.ndarray):
+    if np is not None and isinstance(value, np.ndarray):
         contiguous = np.ascontiguousarray(value)
         if not np.all(np.isfinite(contiguous)):
             raise ValueError(f"{path} contains non-finite array values.")

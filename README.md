@@ -142,16 +142,30 @@ OpenCFD container directly (Docker remains externally managed):
 ```bash
 agentcfd run openfoam-pipe openfoam-pipe \
   --fully-developed \
+  --cross-section-cells 16 \
+  --axial-cells 400 \
   --container-image opencfd/openfoam-run:2606 \
   --json
 ```
 
-Three-grid studies can use `agentcfd.verification.grid_convergence_index` to
-record Richardson extrapolation, observed order, GCI, and the asymptotic ratio.
+Three-grid studies can use `agentcfd.verification.grid_convergence_index` or
+consume three serialized results directly:
+
+```bash
+agentcfd verify grid-convergence coarse.json medium.json fine.json \
+  --quantity flow.pressure_drop \
+  --json
+```
+
+The result workflow checks that all runs completed, converged, share one model
+identity, and contain distinct positive mesh cell counts before it records
+Richardson extrapolation, observed order, GCI, the asymptotic ratio, and hashes
+of all three source files.
 Common pipe checks are available under `agentcfd.engineering`: hydraulic
 diameter, Reynolds number, laminar or iterated Colebrook--White Darcy friction,
-straight-run pressure loss, and local-loss pressure drop. The transitional
-Reynolds range is deliberately rejected rather than silently interpolated.
+straight-run pressure loss, local-loss pressure drop, and one auditable
+`pipe_pressure_loss` record combining them. The transitional Reynolds range is
+deliberately rejected rather than silently interpolated.
 
 ## Architecture
 
@@ -174,9 +188,11 @@ Study -> Model -> Domain/Regions -> Fluids -> Boundaries/Sources
       AgentFEM / experiments / NN / PINN / neural operators
 ```
 
-The core package has no mandatory LLM and does not treat successful execution
-as scientific acceptance. AI is a first-class operator of the workflow; fluid
-mechanics and deterministic numerical computation remain authoritative.
+The core package has no mandatory third-party runtime dependency or LLM and
+does not treat successful execution as scientific acceptance. NumPy support is
+available through the optional `arrays` extra. AI is a first-class operator of
+the workflow; fluid mechanics and deterministic numerical computation remain
+authoritative.
 
 ## Documentation
 

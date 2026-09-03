@@ -218,6 +218,10 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         abs=1.0e-14,
     )
     assert result.quantities["mesh.cell_count"].value == 1000
+    assert result.scientific_inputs["mesh_controls"] == {
+        "cross_section_cells": 8,
+        "axial_cells": None,
+    }
     assert set(result.fields) == {"U", "p"}
     assert len(result.histories["flow.pressure_drop"].values) == 1
     assert all(check.passed for check in result.checks)

@@ -60,6 +60,7 @@ _CAPABILITIES = (
         evidence=(
             "synthetic equal-ratio and unequal-ratio order-recovery tests",
             "fail-closed oscillatory-sequence tests",
+            "same-model converged-result ingestion and source-hash tests",
         ),
         limitations=(
             "Requires exactly three monotonically converging scalar solutions.",

@@ -22,3 +22,19 @@ jobs:
       - run: python -m pytest -q
       - run: python -m build
       - run: agentcfd doctor
+
+  offline-wheel-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install build
+      - run: python -m build
+      - run: python -m venv wheel-test
+      - run: wheel-test/bin/python -m pip install --no-index dist/*.whl
+      - run: wheel-test/bin/python -c "import importlib.util; assert importlib.util.find_spec('numpy') is None"
+      - run: wheel-test/bin/agentcfd doctor --json
+      - run: wheel-test/bin/agentcfd demo pipe --output pipe-result.json
+      - run: wheel-test/bin/agentcfd prepare openfoam-pipe openfoam-pipe --fully-developed --cross-section-cells 4 --axial-cells 20 --json

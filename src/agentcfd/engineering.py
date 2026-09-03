@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import asdict, dataclass
 
 
 def _positive(value: float, name: str) -> float:
@@ -121,4 +122,76 @@ def minor_pressure_loss(
         * 0.5
         * _positive(density, "density")
         * _positive(mean_velocity, "mean_velocity") ** 2
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class PipeLossEstimate:
+    """Auditable straight-pipe and fitting loss estimate."""
+
+    reynolds_number: float
+    regime: str
+    relative_roughness: float
+    darcy_friction_factor: float
+    major_pressure_loss: float
+    minor_pressure_loss: float
+    total_pressure_loss: float
+
+    def to_dict(self) -> dict[str, float | str]:
+        return asdict(self)
+
+
+def pipe_pressure_loss(
+    *,
+    density: float,
+    dynamic_viscosity: float,
+    mean_velocity: float,
+    length: float,
+    hydraulic_diameter: float,
+    roughness: float = 0.0,
+    loss_coefficient: float = 0.0,
+) -> PipeLossEstimate:
+    """Return a complete incompressible pipe-loss screening calculation.
+
+    The function combines the bulk Reynolds number, Darcy friction factor,
+    distributed loss, and an optional sum of local loss coefficients. The
+    transitional regime remains an explicit error through
+    :func:`darcy_friction_factor`.
+    """
+
+    diameter = _positive(hydraulic_diameter, "hydraulic_diameter")
+    selected_roughness = float(roughness)
+    if not math.isfinite(selected_roughness) or selected_roughness < 0.0:
+        raise ValueError("roughness must be non-negative and finite.")
+    reynolds = reynolds_number(
+        density=density,
+        mean_velocity=mean_velocity,
+        hydraulic_diameter=diameter,
+        dynamic_viscosity=dynamic_viscosity,
+    )
+    relative_roughness = selected_roughness / diameter
+    friction = darcy_friction_factor(
+        reynolds,
+        relative_roughness=relative_roughness,
+    )
+    major = darcy_weisbach_pressure_loss(
+        friction_factor=friction,
+        length=length,
+        hydraulic_diameter=diameter,
+        density=density,
+        mean_velocity=mean_velocity,
+    )
+    minor = minor_pressure_loss(
+        loss_coefficient=loss_coefficient,
+        density=density,
+        mean_velocity=mean_velocity,
+    )
+    return PipeLossEstimate(
+        reynolds_number=reynolds,
+        regime="laminar" if reynolds < 2300.0 else "turbulent",
+        relative_roughness=relative_roughness,
+        darcy_friction_factor=friction,
+        major_pressure_loss=major,
+        minor_pressure_loss=minor,
+        total_pressure_loss=major + minor,
     )

@@ -21,6 +21,10 @@ stores the public model SHA-256, every generated file SHA-256, the combined case
 identity, provider name, process boundary, and license posture.
 Its machine contract is `schemas/openfoam-case.schema.json`.
 
+The CLI exposes `--cross-section-cells` and `--axial-cells` on both `prepare`
+and `run`. The exact controls are retained in the result's scientific inputs;
+changing resolution therefore changes the case identity and remains auditable.
+
 ## Safety and failure behavior
 
 The provider validates the public model before lowering and rejects energy,

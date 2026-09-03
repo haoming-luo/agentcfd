@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
-from typing import Iterable
+from typing import Iterable, Mapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,3 +135,85 @@ def grid_convergence_index(
         converging=True,
         safety_factor=safety_factor,
     )
+
+
+def grid_convergence_from_result_records(
+    records: Iterable[Mapping[str, object]],
+    *,
+    quantity: str,
+    cell_count_quantity: str = "mesh.cell_count",
+    safety_factor: float = 1.25,
+) -> GridConvergenceResult:
+    """Build a three-grid GCI study from serialized AgentCFD results.
+
+    Each result must be a completed, converged run of the same public model and
+    contain both the requested scalar quantity and a positive cell count.
+    ``N**(-1/3)`` is used as relative characteristic grid size; for one fixed
+    three-dimensional domain this preserves all refinement ratios.
+    """
+
+    selected = tuple(records)
+    if len(selected) != 3:
+        raise ValueError("Exactly three AgentCFD result records are required.")
+    if not str(quantity).strip():
+        raise ValueError("quantity must not be empty.")
+
+    identities: set[str] = set()
+    solutions: list[GridSolution] = []
+    for index, record in enumerate(selected, start=1):
+        if record.get("status") != "completed" or record.get("converged") is not True:
+            raise ValueError(f"Result {index} must be completed and converged.")
+        provenance = record.get("provenance")
+        if not isinstance(provenance, Mapping):
+            raise ValueError(f"Result {index} is missing provenance.")
+        identity = provenance.get("model_sha256")
+        if (
+            not isinstance(identity, str)
+            or len(identity) != 64
+            or any(character not in "0123456789abcdef" for character in identity.lower())
+        ):
+            raise ValueError(f"Result {index} is missing a model SHA-256 identity.")
+        identities.add(identity)
+
+        quantities = record.get("quantities")
+        if not isinstance(quantities, Mapping):
+            raise ValueError(f"Result {index} is missing quantities.")
+        value = _record_quantity_value(quantities, quantity, index=index)
+        cell_count = _record_quantity_value(
+            quantities,
+            cell_count_quantity,
+            index=index,
+        )
+        if cell_count <= 0.0:
+            raise ValueError(f"Result {index} cell count must be positive.")
+        if not cell_count.is_integer():
+            raise ValueError(f"Result {index} cell count must be an integer value.")
+        solutions.append(
+            GridSolution(
+                characteristic_size=cell_count ** (-1.0 / 3.0),
+                value=value,
+                label=f"result-{index}",
+            )
+        )
+
+    if len(identities) != 1:
+        raise ValueError("Grid convergence results must share one model SHA-256 identity.")
+    return grid_convergence_index(solutions, safety_factor=safety_factor)
+
+
+def _record_quantity_value(
+    quantities: Mapping[object, object],
+    name: str,
+    *,
+    index: int,
+) -> float:
+    entry = quantities.get(name)
+    if not isinstance(entry, Mapping) or "value" not in entry:
+        raise ValueError(f"Result {index} is missing quantity {name!r}.")
+    try:
+        value = float(entry["value"])
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Result {index} quantity {name!r} must be numeric.") from error
+    if not math.isfinite(value):
+        raise ValueError(f"Result {index} quantity {name!r} must be finite.")
+    return value

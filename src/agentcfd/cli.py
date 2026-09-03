@@ -7,25 +7,30 @@ import json
 import platform
 import shutil
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-
-import numpy as np
 
 from . import boundaries, capabilities, fluids, geometry, outputs, procedures, studies
 from ._version import __version__
 from .model import Model
-from .providers import OpenFOAMProvider
+from .provenance import file_sha256
+from .providers import OpenFOAMMeshControls, OpenFOAMProvider
+from .verification import grid_convergence_from_result_records
 
 
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
+    try:
+        numpy_version: str | None = version("numpy")
+    except PackageNotFoundError:
+        numpy_version = None
     return {
         "schema": "agentcfd.doctor/0.1",
         "healthy": True,
         "agentcfd": __version__,
         "python": platform.python_version(),
         "platform": platform.platform(),
-        "numpy": np.__version__,
+        "numpy": numpy_version,
         "executables": {
             "blockMesh": shutil.which("blockMesh"),
             "checkMesh": shutil.which("checkMesh"),
@@ -66,12 +71,18 @@ def _prepare_openfoam_pipe(
     case_directory: Path,
     *,
     fully_developed: bool = False,
+    cross_section_cells: int = 8,
+    axial_cells: int | None = None,
 ) -> dict[str, object]:
     step = _pipe_model(fully_developed=fully_developed).step(
         procedure=procedures.steady(),
         output=outputs.standard(),
     )
-    return OpenFOAMProvider(case_directory=case_directory).prepare(step).to_dict()
+    mesh = OpenFOAMMeshControls(
+        cross_section_cells=cross_section_cells,
+        axial_cells=axial_cells,
+    )
+    return OpenFOAMProvider(case_directory=case_directory, mesh=mesh).prepare(step).to_dict()
 
 
 def _run_openfoam_pipe(
@@ -80,6 +91,8 @@ def _run_openfoam_pipe(
     result_path: Path | None,
     fully_developed: bool,
     container_image: str | None,
+    cross_section_cells: int,
+    axial_cells: int | None,
 ):
     step = _pipe_model(fully_developed=fully_developed).step(
         procedure=procedures.steady(),
@@ -88,6 +101,10 @@ def _run_openfoam_pipe(
     result = OpenFOAMProvider(
         case_directory=case_directory,
         container_image=container_image,
+        mesh=OpenFOAMMeshControls(
+            cross_section_cells=cross_section_cells,
+            axial_cells=axial_cells,
+        ),
     ).run(step)
     target = result_path or case_directory / "agentcfd-result.json"
     result.write(target)
@@ -123,6 +140,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use a declared analytic laminar inlet profile.",
     )
+    openfoam.add_argument(
+        "--cross-section-cells",
+        type=int,
+        default=8,
+        help="Cells along each O-grid block direction (default: 8).",
+    )
+    openfoam.add_argument(
+        "--axial-cells",
+        type=int,
+        help="Cells along the pipe; defaults to a bounded geometry-based value.",
+    )
 
     run = subparsers.add_parser("run", help="Prepare, execute, and recover a provider result.")
     run_subparsers = run.add_subparsers(dest="provider", required=True)
@@ -142,6 +170,27 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use a declared analytic laminar inlet profile.",
     )
+    run_openfoam.add_argument(
+        "--cross-section-cells",
+        type=int,
+        default=8,
+        help="Cells along each O-grid block direction (default: 8).",
+    )
+    run_openfoam.add_argument(
+        "--axial-cells",
+        type=int,
+        help="Cells along the pipe; defaults to a bounded geometry-based value.",
+    )
+
+    verify = subparsers.add_parser("verify", help="Create numerical verification evidence.")
+    verify_subparsers = verify.add_subparsers(dest="verification", required=True)
+    grid = verify_subparsers.add_parser(
+        "grid-convergence",
+        help="Compute a three-result Richardson extrapolation and GCI.",
+    )
+    grid.add_argument("results", nargs=3, type=Path)
+    grid.add_argument("--quantity", required=True)
+    grid.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -173,6 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         manifest = _prepare_openfoam_pipe(
             args.case_directory,
             fully_developed=args.fully_developed,
+            cross_section_cells=args.cross_section_cells,
+            axial_cells=args.axial_cells,
         )
         if args.as_json:
             print(json.dumps(manifest, indent=2, sort_keys=True))
@@ -187,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
             result_path=args.result,
             fully_developed=args.fully_developed,
             container_image=args.container_image,
+            cross_section_cells=args.cross_section_cells,
+            axial_cells=args.axial_cells,
         )
         if args.as_json:
             print(json.dumps(result.summary(), indent=2, sort_keys=True))
@@ -197,6 +250,27 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(target)
         return 0 if result.status == "completed" else 1
+    if args.command == "verify" and args.verification == "grid-convergence":
+        records = [json.loads(path.read_text(encoding="utf-8")) for path in args.results]
+        study = grid_convergence_from_result_records(records, quantity=args.quantity)
+        payload = {
+            "schema": "agentcfd.grid-convergence/0.1",
+            "quantity": args.quantity,
+            "sources": [
+                {"path": str(path), "sha256": file_sha256(path)} for path in args.results
+            ],
+            **study.to_dict(),
+        }
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            relative = study.fine_grid_relative_gci
+            relative_text = "undefined" if relative is None else f"{relative:.6g}"
+            print(
+                f"GCI {args.quantity} | observed order {study.observed_order:.6g} | "
+                f"fine relative GCI {relative_text}"
+            )
+        return 0
     return 2
 
 

@@ -8,6 +8,12 @@ import pytest
 from agentcfd import Check, Model, Quantity, SimulationResult, boundaries, fluids, geometry, interoperability, studies
 
 
+def test_all_published_json_schemas_are_valid():
+    schema_root = Path(__file__).parents[1] / "schemas"
+    for path in schema_root.glob("*.json"):
+        jsonschema.Draft202012Validator.check_schema(json.loads(path.read_text()))
+
+
 def pipe_model() -> Model:
     return Model(
         name="test-pipe",

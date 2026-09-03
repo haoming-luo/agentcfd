@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from ._validation import positive_float
+
 
 @dataclass(frozen=True, slots=True)
 class NewtonianFluid:
@@ -16,14 +18,31 @@ class NewtonianFluid:
     def __post_init__(self) -> None:
         if not self.name.strip():
             raise ValueError("Fluid name cannot be empty.")
-        if self.density <= 0.0:
-            raise ValueError("Density must be positive.")
-        if self.dynamic_viscosity <= 0.0:
-            raise ValueError("Dynamic viscosity must be positive.")
-        if self.specific_heat is not None and self.specific_heat <= 0.0:
-            raise ValueError("Specific heat must be positive.")
-        if self.thermal_conductivity is not None and self.thermal_conductivity <= 0.0:
-            raise ValueError("Thermal conductivity must be positive.")
+        object.__setattr__(
+            self,
+            "density",
+            positive_float(self.density, name="Density"),
+        )
+        object.__setattr__(
+            self,
+            "dynamic_viscosity",
+            positive_float(self.dynamic_viscosity, name="Dynamic viscosity"),
+        )
+        if self.specific_heat is not None:
+            object.__setattr__(
+                self,
+                "specific_heat",
+                positive_float(self.specific_heat, name="Specific heat"),
+            )
+        if self.thermal_conductivity is not None:
+            object.__setattr__(
+                self,
+                "thermal_conductivity",
+                positive_float(
+                    self.thermal_conductivity,
+                    name="Thermal conductivity",
+                ),
+            )
 
     @property
     def kinematic_viscosity(self) -> float:

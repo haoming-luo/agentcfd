@@ -20,6 +20,7 @@ from typing import Any
 
 from .. import boundaries
 from .._version import __version__
+from .._validation import integer_at_least, positive_float
 from ..errors import ProviderUnavailableError, UnsupportedCaseError
 from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
 from .base import ProviderDescriptor
@@ -292,10 +293,25 @@ class OpenFOAMMeshControls:
     axial_cells: int | None = None
 
     def __post_init__(self) -> None:
-        if self.cross_section_cells < 2:
-            raise ValueError("cross_section_cells must be at least 2.")
-        if self.axial_cells is not None and self.axial_cells < 2:
-            raise ValueError("axial_cells must be at least 2 when supplied.")
+        object.__setattr__(
+            self,
+            "cross_section_cells",
+            integer_at_least(
+                self.cross_section_cells,
+                name="cross_section_cells",
+                minimum=2,
+            ),
+        )
+        if self.axial_cells is not None:
+            object.__setattr__(
+                self,
+                "axial_cells",
+                integer_at_least(
+                    self.axial_cells,
+                    name="axial_cells",
+                    minimum=2,
+                ),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,11 +358,9 @@ class OpenFOAMProvider:
         timeout_seconds: float = 3600.0,
         container_image: str | None = None,
     ) -> None:
-        if timeout_seconds <= 0.0:
-            raise ValueError("timeout_seconds must be positive.")
         self.case_directory = Path(case_directory) if case_directory is not None else None
         self.mesh = mesh or OpenFOAMMeshControls()
-        self.timeout_seconds = timeout_seconds
+        self.timeout_seconds = positive_float(timeout_seconds, name="timeout_seconds")
         self.container_image = str(container_image).strip() if container_image else None
 
     def _commands(self) -> dict[str, str | None]:
@@ -592,6 +606,7 @@ class OpenFOAMProvider:
                 "model": step.model.to_dict(),
                 "procedure": step.procedure.to_dict(),
                 "output_request": step.output.to_dict(),
+                "mesh_controls": asdict(self.mesh),
                 "lowered_case_sha256": prepared.case_sha256,
             },
             provenance={

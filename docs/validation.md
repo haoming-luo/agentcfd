@@ -51,6 +51,12 @@ non-converging triples. This is numerical solution verification, not validation
 against physical data. Geometric similarity and membership in the asymptotic
 range remain explicit engineering responsibilities.
 
+`agentcfd verify grid-convergence` accepts three serialized AgentCFD results.
+It fails closed unless they are completed, numerically converged, share the
+same model SHA-256, and expose a finite target quantity plus distinct positive
+cell counts. Its versioned JSON evidence includes the observed order,
+extrapolated value, fine/medium GCI, asymptotic ratio, and source-file hashes.
+
 For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
 are different scientific problems. Total inlet-to-outlet static pressure from
 the uniform case includes an entrance contribution and is not promoted as a

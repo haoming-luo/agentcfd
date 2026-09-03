@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import asdict, dataclass
+
+import math
+
+from ._validation import nonnegative_float, positive_float
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,12 +17,23 @@ class CircularPipe:
     name: str = "pipe"
 
     def __post_init__(self) -> None:
-        if self.length <= 0.0:
-            raise ValueError("Pipe length must be positive.")
-        if self.diameter <= 0.0:
-            raise ValueError("Pipe diameter must be positive.")
-        if self.roughness < 0.0:
-            raise ValueError("Pipe roughness cannot be negative.")
+        object.__setattr__(
+            self,
+            "length",
+            positive_float(self.length, name="Pipe length"),
+        )
+        object.__setattr__(
+            self,
+            "diameter",
+            positive_float(self.diameter, name="Pipe diameter"),
+        )
+        object.__setattr__(
+            self,
+            "roughness",
+            nonnegative_float(self.roughness, name="Pipe roughness"),
+        )
+        if not str(self.name).strip():
+            raise ValueError("Pipe name cannot be empty.")
 
     @property
     def area(self) -> float:

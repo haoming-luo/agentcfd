@@ -15,6 +15,11 @@ not replace a CFD model and are not silently substituted for one.
 - Darcy--Weisbach straight-run loss, `Delta p = f (L/D_h) rho U^2 / 2`;
 - local loss, `Delta p = K rho U^2 / 2`.
 
+`pipe_pressure_loss` combines these steps into one auditable record containing
+the Reynolds number, declared regime, relative roughness, Darcy factor, major
+loss, minor loss, and total pressure loss. Individual functions remain public
+so an agent never has to reverse-engineer a bundled calculation.
+
 The interval `2300 <= Re < 4000` is rejected. AgentCFD will not turn a regime
 choice into an undocumented interpolation. Density and viscosity are treated
 as constant, and all returned pressure losses are positive magnitudes.

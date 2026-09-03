@@ -17,7 +17,16 @@ machine-readable capability catalog.
   unequal-ratio support and fail-closed oscillatory-convergence handling.
 - add dependency-free hydraulic diameter, Reynolds number, Darcy--Weisbach,
   bracketed Colebrook--White, and local-loss engineering functions; transitional
-  flow is rejected instead of silently interpolated.
+  flow is rejected instead of silently interpolated;
+- add an auditable composite pipe-loss estimate for laminar and turbulent
+  incompressible screening calculations;
+- reject non-finite physical inputs and non-integral solver/mesh controls at the
+  public boundary;
+- expose auditable cross-section and axial mesh resolution controls in the CLI;
+- add a CLI workflow and JSON schema that computes GCI directly from three
+  converged same-model AgentCFD result files and hashes every source;
+- make the core runtime dependency-free while retaining NumPy array support as
+  an optional `arrays` extra.
 
 ## 0.1.0a1 — 2026-09-03
 

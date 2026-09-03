@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from ._validation import finite_float, nonnegative_float, positive_float
+
 
 @dataclass(frozen=True, slots=True)
 class MassFlowInlet:
     mass_flow_rate: float
 
     def __post_init__(self) -> None:
-        if self.mass_flow_rate <= 0.0:
-            raise ValueError("Mass-flow rate must be positive.")
+        object.__setattr__(
+            self,
+            "mass_flow_rate",
+            positive_float(self.mass_flow_rate, name="Mass-flow rate"),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {"type": "mass-flow-inlet", **asdict(self)}
@@ -22,8 +27,11 @@ class MeanVelocityInlet:
     velocity: float
 
     def __post_init__(self) -> None:
-        if self.velocity <= 0.0:
-            raise ValueError("Inlet velocity must be positive.")
+        object.__setattr__(
+            self,
+            "velocity",
+            positive_float(self.velocity, name="Inlet velocity"),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {"type": "mean-velocity-inlet", **asdict(self)}
@@ -36,8 +44,11 @@ class FullyDevelopedVelocityInlet:
     velocity: float
 
     def __post_init__(self) -> None:
-        if self.velocity <= 0.0:
-            raise ValueError("Inlet velocity must be positive.")
+        object.__setattr__(
+            self,
+            "velocity",
+            positive_float(self.velocity, name="Inlet velocity"),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {"type": "fully-developed-velocity-inlet", **asdict(self)}
@@ -46,6 +57,13 @@ class FullyDevelopedVelocityInlet:
 @dataclass(frozen=True, slots=True)
 class PressureOutlet:
     gauge_pressure: float = 0.0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "gauge_pressure",
+            finite_float(self.gauge_pressure, name="Outlet gauge pressure"),
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {"type": "pressure-outlet", **asdict(self)}
@@ -56,8 +74,12 @@ class NoSlipWall:
     roughness: float | None = None
 
     def __post_init__(self) -> None:
-        if self.roughness is not None and self.roughness < 0.0:
-            raise ValueError("Wall roughness cannot be negative.")
+        if self.roughness is not None:
+            object.__setattr__(
+                self,
+                "roughness",
+                nonnegative_float(self.roughness, name="Wall roughness"),
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {"type": "no-slip-wall", **asdict(self)}

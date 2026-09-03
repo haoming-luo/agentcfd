@@ -11,20 +11,22 @@ review.
 | Component | Role | License | Distribution rule |
 |---|---|---|---|
 | AgentCFD | workflow and scientific contracts | Apache-2.0 | core |
-| NumPy | arrays and reference profiles | BSD-3-Clause | only runtime dependency |
+| NumPy | optional array hashing/interchange | BSD-3-Clause | optional `arrays` extra; development dependency |
 | setuptools | build backend | MIT | source-build dependency only |
 | wheel | wheel build | MIT | source-build dependency only |
 | jsonschema | development-time schema validation | MIT | development dependency only |
 
-The core must not acquire a mandatory solver, mesher, GUI, LLM SDK, or machine-
-learning framework dependency. Optional integrations import lazily at their
-capability boundary.
+The core has no mandatory third-party runtime dependency and must not acquire a
+mandatory solver, mesher, GUI, LLM SDK, or machine-learning framework
+dependency. Optional integrations import lazily at their capability boundary.
 
 ## Planned and optional providers
 
 | Component | Intended role | License posture | Integration rule |
 |---|---|---|---|
 | meshio | mesh interchange | MIT | optional Python dependency |
+| PyVista | interactive result inspection | MIT | optional visualization dependency |
+| VTK | field and mesh visualization backend | BSD-3-Clause | transitive optional dependency through PyVista |
 | Kratos Multiphysics | candidate CFD/CHT engine | BSD-4-Clause core; applications can differ | optional provider; audit every selected application |
 | Cantera | thermochemistry | BSD-3-Clause | optional chemistry provider |
 | CoolProp | fluid and steam properties, including IF97 | MIT | optional property provider |
@@ -48,5 +50,10 @@ capability boundary.
   package metadata, before every release.
 
 License references were reviewed on 2026-09-03 against the upstream project
-license files and official OpenFOAM licensing pages. Pinning an implementation
-version remains part of each provider's future release gate.
+license files and official OpenFOAM licensing pages. The current review links
+to the upstream [meshio](https://github.com/nschloe/meshio),
+[PyVista](https://github.com/pyvista/pyvista),
+[Cantera](https://github.com/Cantera/cantera/blob/main/License.txt),
+[CoolProp](https://github.com/CoolProp/CoolProp), and
+[CoolProp IF97](https://github.com/CoolProp/IF97) records. Pinning an
+implementation version remains part of each provider's future release gate.

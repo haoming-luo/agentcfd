@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/grid-convergence.schema.json",
+  "title": "AgentCFD grid convergence evidence 0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "quantity",
+    "sources",
+    "observed_order",
+    "extrapolated_value",
+    "fine_grid_absolute_gci",
+    "fine_grid_relative_gci",
+    "medium_grid_absolute_gci",
+    "asymptotic_ratio",
+    "refinement_ratio_fine_medium",
+    "refinement_ratio_medium_coarse",
+    "converging",
+    "safety_factor"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.grid-convergence/0.1"},
+    "quantity": {"type": "string", "minLength": 1},
+    "sources": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "observed_order": {"type": "number", "exclusiveMinimum": 0},
+    "extrapolated_value": {"type": "number"},
+    "fine_grid_absolute_gci": {"type": "number", "minimum": 0},
+    "fine_grid_relative_gci": {"type": ["number", "null"], "minimum": 0},
+    "medium_grid_absolute_gci": {"type": "number", "minimum": 0},
+    "asymptotic_ratio": {"type": "number", "minimum": 0},
+    "refinement_ratio_fine_medium": {"type": "number", "exclusiveMinimum": 1},
+    "refinement_ratio_medium_coarse": {"type": "number", "exclusiveMinimum": 1},
+    "converging": {"const": true},
+    "safety_factor": {"type": "number", "minimum": 1}
+  },
+  "additionalProperties": false
+}

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
-
 from .. import boundaries, engineering
 from .._version import __version__
 from ..errors import UnsupportedCaseError
@@ -71,17 +69,22 @@ class ReferencePipeProvider:
                 f"Re={reynolds:.6g} is outside the declared laminar reference range Re < 2300."
             )
 
-        darcy_friction = engineering.darcy_friction_factor(reynolds)
-        pressure_drop = engineering.darcy_weisbach_pressure_loss(
-            friction_factor=darcy_friction,
-            length=length,
-            hydraulic_diameter=diameter,
+        loss = engineering.pipe_pressure_loss(
             density=rho,
+            dynamic_viscosity=mu,
             mean_velocity=mean_velocity,
+            hydraulic_diameter=diameter,
+            length=length,
+            roughness=model.domain.roughness,
         )
+        darcy_friction = loss.darcy_friction_factor
+        pressure_drop = loss.total_pressure_loss
         wall_shear = pressure_drop * diameter / (4.0 * length)
-        radius = np.linspace(0.0, diameter / 2.0, 41)
-        axial_velocity = 2.0 * mean_velocity * (1.0 - (2.0 * radius / diameter) ** 2)
+        radius = tuple(diameter * index / 80.0 for index in range(41))
+        axial_velocity = tuple(
+            2.0 * mean_velocity * (1.0 - (2.0 * position / diameter) ** 2)
+            for position in radius
+        )
 
         reconstructed = pressure_drop / (0.5 * rho * mean_velocity**2)
         expected = darcy_friction * length / diameter
@@ -128,8 +131,8 @@ class ReferencePipeProvider:
                 ),
             ),
             arrays={
-                "profile.radius": radius.tolist(),
-                "profile.axial_velocity": axial_velocity.tolist(),
+                "profile.radius": list(radius),
+                "profile.axial_velocity": list(axial_velocity),
             },
             histories={
                 "profile.axial_velocity": History(

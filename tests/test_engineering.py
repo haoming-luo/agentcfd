@@ -60,3 +60,36 @@ def test_minor_loss_uses_dynamic_pressure():
         density=1000.0,
         mean_velocity=3.0,
     ) == pytest.approx(9000.0)
+
+
+def test_pipe_pressure_loss_combines_major_and_minor_losses():
+    estimate = engineering.pipe_pressure_loss(
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+        mean_velocity=0.01,
+        length=2.0,
+        hydraulic_diameter=0.1,
+        loss_coefficient=2.0,
+    )
+
+    assert estimate.regime == "laminar"
+    assert estimate.reynolds_number == pytest.approx(1000.0)
+    assert estimate.major_pressure_loss == pytest.approx(0.064)
+    assert estimate.minor_pressure_loss == pytest.approx(0.1)
+    assert estimate.total_pressure_loss == pytest.approx(0.164)
+    assert estimate.to_dict()["darcy_friction_factor"] == pytest.approx(0.064)
+
+
+def test_pipe_pressure_loss_reports_turbulent_rough_pipe_regime():
+    estimate = engineering.pipe_pressure_loss(
+        density=1000.0,
+        dynamic_viscosity=1.0e-3,
+        mean_velocity=1.0,
+        length=10.0,
+        hydraulic_diameter=0.1,
+        roughness=1.0e-4,
+    )
+
+    assert estimate.regime == "turbulent"
+    assert estimate.relative_roughness == pytest.approx(1.0e-3)
+    assert estimate.total_pressure_loss == pytest.approx(1108.726795, rel=1.0e-6)

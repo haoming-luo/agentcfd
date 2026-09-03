@@ -105,6 +105,11 @@ machine-readable capability catalog.
   numerical, input, experimental, and coverage-factor uncertainty components.
 - expose validation-point assessment through the CLI and an installed JSON
   Schema with fail-closed scientific exit status.
+- reject boolean values consistently across public engineering correlations,
+  including roughness and local-loss inputs.
+- reject boolean numeric quantities and non-boolean result/check state before
+  computing scientific acceptance or trust.
+- enforce unused-import linting in the default quality gate.
 
 ## 0.1.0a1 — 2026-09-03
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 from .. import boundaries, engineering
 from .._version import __version__
 from ..errors import UnsupportedCaseError

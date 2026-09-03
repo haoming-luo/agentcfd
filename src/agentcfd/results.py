@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from ._validation import finite_float
 from .jsonio import strict_json_object
 
 
@@ -23,10 +23,7 @@ _TRUST_ORDER = {
 
 
 def _finite(value: float, *, label: str) -> float:
-    selected = float(value)
-    if not math.isfinite(selected):
-        raise ValueError(f"{label} must be finite.")
-    return selected
+    return finite_float(value, name=label)
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,11 +62,17 @@ class Check:
         name = str(self.name).strip()
         if not name:
             raise ValueError("Check.name must not be empty.")
+        if not isinstance(self.passed, bool):
+            raise ValueError("Check.passed must be a boolean.")
         if self.kind not in _CLAIM_KINDS:
             raise ValueError(f"Unknown check kind {self.kind!r}.")
-        if isinstance(self.value, float):
+        if isinstance(self.value, bool):
+            raise ValueError(f"Check {name!r} value must not be a boolean.")
+        if isinstance(self.value, (int, float)):
             _finite(self.value, label=f"Check {name!r} value")
-        if isinstance(self.limit, float):
+        if isinstance(self.limit, bool):
+            raise ValueError(f"Check {name!r} limit must not be a boolean.")
+        if isinstance(self.limit, (int, float)):
             _finite(self.limit, label=f"Check {name!r} limit")
         object.__setattr__(self, "name", name)
         object.__setattr__(self, "evidence", tuple(str(item) for item in self.evidence))
@@ -159,6 +162,8 @@ class Artifact:
             raise ValueError("Artifact.path must not be empty.")
         if self.sha256 is not None and not _is_sha256(self.sha256):
             raise ValueError("Artifact.sha256 must be a SHA-256 hex digest.")
+        if isinstance(self.size_bytes, bool):
+            raise ValueError("Artifact.size_bytes must be an integer.")
         if self.size_bytes is not None and self.size_bytes < 0:
             raise ValueError("Artifact.size_bytes must not be negative.")
 
@@ -220,6 +225,8 @@ class SimulationResult:
         self.provider = str(self.provider).strip()
         if not self.status or not self.provider:
             raise ValueError("Result status and provider must not be empty.")
+        if not isinstance(self.converged, bool):
+            raise ValueError("Result converged must be a boolean.")
         self.quantities = dict(self.quantities)
         self.checks = tuple(self.checks)
         self.arrays = {

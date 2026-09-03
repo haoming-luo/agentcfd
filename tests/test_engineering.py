@@ -5,6 +5,37 @@ import pytest
 from agentcfd import engineering
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: engineering.hydraulic_diameter(True, 1.0),
+        lambda: engineering.reynolds_number(
+            density=True,
+            mean_velocity=1.0,
+            hydraulic_diameter=1.0,
+            dynamic_viscosity=1.0,
+        ),
+        lambda: engineering.darcy_friction_factor(10_000.0, relative_roughness=True),
+        lambda: engineering.minor_pressure_loss(
+            loss_coefficient=True,
+            density=1.0,
+            mean_velocity=1.0,
+        ),
+        lambda: engineering.pipe_pressure_loss(
+            density=1.0,
+            dynamic_viscosity=1.0e-5,
+            mean_velocity=1.0,
+            length=1.0,
+            hydraulic_diameter=0.1,
+            roughness=True,
+        ),
+    ],
+)
+def test_engineering_functions_reject_boolean_numeric_inputs(call):
+    with pytest.raises(ValueError, match="finite number"):
+        call()
+
+
 def test_hydraulic_diameter_and_reynolds_number_for_circular_pipe():
     diameter = 0.1
     area = math.pi * diameter**2 / 4.0

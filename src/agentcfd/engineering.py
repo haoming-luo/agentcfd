@@ -5,19 +5,15 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
+from ._validation import nonnegative_float, positive_float
+
 
 def _positive(value: float, name: str) -> float:
-    selected = float(value)
-    if not math.isfinite(selected) or selected <= 0.0:
-        raise ValueError(f"{name} must be positive and finite.")
-    return selected
+    return positive_float(value, name=name)
 
 
 def _nonnegative(value: float, name: str) -> float:
-    selected = float(value)
-    if not math.isfinite(selected) or selected < 0.0:
-        raise ValueError(f"{name} must be non-negative and finite.")
-    return selected
+    return nonnegative_float(value, name=name)
 
 
 def hydraulic_diameter(area: float, wetted_perimeter: float) -> float:
@@ -60,9 +56,7 @@ def darcy_friction_factor(
     """
 
     reynolds = _positive(reynolds, "reynolds")
-    relative_roughness = float(relative_roughness)
-    if not math.isfinite(relative_roughness) or relative_roughness < 0.0:
-        raise ValueError("relative_roughness must be non-negative and finite.")
+    relative_roughness = _nonnegative(relative_roughness, "relative_roughness")
     tolerance = _positive(tolerance, "tolerance")
     if reynolds < 2300.0:
         return 64.0 / reynolds
@@ -121,9 +115,7 @@ def minor_pressure_loss(
 ) -> float:
     """Return a fitting/component pressure loss ``K rho U²/2`` in Pa."""
 
-    coefficient = float(loss_coefficient)
-    if not math.isfinite(coefficient) or coefficient < 0.0:
-        raise ValueError("loss_coefficient must be non-negative and finite.")
+    coefficient = _nonnegative(loss_coefficient, "loss_coefficient")
     return (
         coefficient
         * 0.5
@@ -167,9 +159,7 @@ def pipe_pressure_loss(
     """
 
     diameter = _positive(hydraulic_diameter, "hydraulic_diameter")
-    selected_roughness = float(roughness)
-    if not math.isfinite(selected_roughness) or selected_roughness < 0.0:
-        raise ValueError("roughness must be non-negative and finite.")
+    selected_roughness = _nonnegative(roughness, "roughness")
     reynolds = reynolds_number(
         density=density,
         mean_velocity=mean_velocity,

@@ -101,6 +101,23 @@ def test_execution_acceptance_and_trust_are_separate():
         result.require_trust("verified")
 
 
+def test_result_claims_reject_boolean_numeric_and_truthy_state_inputs():
+    with pytest.raises(ValueError, match="finite number"):
+        Quantity(True, "Pa")
+    with pytest.raises(ValueError, match="passed must be a boolean"):
+        Check("process", 1)
+    with pytest.raises(ValueError, match="must not be a boolean"):
+        Check("process", True, value=True)
+    with pytest.raises(ValueError, match="converged must be a boolean"):
+        SimulationResult(
+            status="completed",
+            converged=1,
+            provider="test",
+            quantities={"value": Quantity(1.0, None)},
+            checks=(Check("process", True),),
+        )
+
+
 def test_result_reader_verifies_derived_state_and_artifact_identity(tmp_path):
     evidence = tmp_path / "evidence.txt"
     evidence.write_text("immutable evidence")

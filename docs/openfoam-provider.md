@@ -96,6 +96,10 @@ count, and writes a content-addressed `agentcfd-mesh.json` over every native
 `polyMesh` file. Final `U` and `p` records carry that mesh SHA-256, preventing a
 field from being silently paired with another mesh in downstream AI or FEM
 workflows.
+In addition to OpenFOAM's `Mesh OK`, default explicit promotion limits require
+maximum non-orthogonality at most 65 degrees, skewness at most 4, and aspect
+ratio at most 50. Missing observables fail closed and all limits are recorded
+with the scientific inputs.
 
 `OpenFOAMValidationPolicy` makes the scientific thresholds auditable. Its
 defaults require relative mass imbalance no greater than `1e-6` (or ten times

@@ -656,6 +656,9 @@ class OpenFOAMValidationPolicy:
     maximum_relative_inlet_flow_error: float = 0.01
     maximum_relative_pressure_drop_drift: float = 1.0e-4
     minimum_steady_samples: int = 5
+    maximum_mesh_non_orthogonality: float = 65.0
+    maximum_mesh_skewness: float = 4.0
+    maximum_mesh_aspect_ratio: float = 50.0
     validated_runtime_versions: tuple[str, ...] = ("2606",)
 
     def __post_init__(self) -> None:
@@ -700,6 +703,16 @@ class OpenFOAMValidationPolicy:
                 minimum=2,
             ),
         )
+        for name in (
+            "maximum_mesh_non_orthogonality",
+            "maximum_mesh_skewness",
+            "maximum_mesh_aspect_ratio",
+        ):
+            object.__setattr__(
+                self,
+                name,
+                positive_float(getattr(self, name), name=name),
+            )
         try:
             versions = tuple(self.validated_runtime_versions)
         except TypeError as error:
@@ -749,6 +762,37 @@ def _pressure_drop_stability_check(
         ),
         kind="verification",
         observable="flow.pressure_drop",
+    )
+
+
+def _mesh_metric_checks(
+    quantities: dict[str, Quantity],
+    *,
+    policy: OpenFOAMValidationPolicy,
+) -> tuple[Check, ...]:
+    """Apply explicit limits to recovered checkMesh observables."""
+
+    specifications = (
+        (
+            "mesh.maximum_non_orthogonality",
+            policy.maximum_mesh_non_orthogonality,
+        ),
+        ("mesh.maximum_skewness", policy.maximum_mesh_skewness),
+        ("mesh.maximum_aspect_ratio", policy.maximum_mesh_aspect_ratio),
+    )
+    return tuple(
+        Check(
+            name=f"{observable.removeprefix('mesh.').replace('_', '-')}-limit",
+            passed=bool(
+                observable in quantities and quantities[observable].value <= limit
+            ),
+            value=(quantities[observable].value if observable in quantities else None),
+            limit=limit,
+            message="Explicit AgentCFD mesh-quality promotion limit.",
+            kind="verification",
+            observable=observable,
+        )
+        for observable, limit in specifications
     )
 
 
@@ -1259,7 +1303,12 @@ class OpenFOAMProvider:
             "s",
             kind="runtime_metric",
         )
-        quantities.update(_mesh_quality_quantities(logs.get("checkMesh", "")))
+        mesh_quality_quantities = _mesh_quality_quantities(logs.get("checkMesh", ""))
+        quantities.update(mesh_quality_quantities)
+        mesh_metric_checks = _mesh_metric_checks(
+            mesh_quality_quantities,
+            policy=self.validation,
+        )
         expected_cell_count = (
             5 * mesh_controls.cross_section_cells**2 * int(mesh_controls.axial_cells or 0)
         )
@@ -1404,6 +1453,7 @@ class OpenFOAMProvider:
                     kind="verification",
                     observable="mesh.quality",
                 ),
+                *mesh_metric_checks,
                 Check(
                     name="mesh-cell-count",
                     passed=mesh_count_matches,

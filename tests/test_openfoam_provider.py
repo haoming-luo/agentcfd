@@ -18,6 +18,7 @@ from agentcfd.providers import (
 from agentcfd.providers.openfoam import (
     _container_image_identity,
     _mesh_controls_from_case,
+    _mesh_metric_checks,
     _mesh_quality_quantities,
     _outer_residual_check,
     _pressure_drop_stability_check,
@@ -472,6 +473,9 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "maximum_relative_inlet_flow_error": 0.01,
         "maximum_relative_pressure_drop_drift": 1.0e-4,
         "minimum_steady_samples": 5,
+        "maximum_mesh_non_orthogonality": 65.0,
+        "maximum_mesh_skewness": 4.0,
+        "maximum_mesh_aspect_ratio": 50.0,
         "validated_runtime_versions": ("2606",),
     }
     assert set(result.fields) == {"U", "p"}
@@ -488,6 +492,11 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     jsonschema.Draft202012Validator(mesh_schema).validate(mesh_manifest)
     assert len(result.histories["flow.pressure_drop"].values) == 5
     assert all(check.passed for check in result.checks)
+    assert {
+        "maximum-non-orthogonality-limit",
+        "maximum-skewness-limit",
+        "maximum-aspect-ratio-limit",
+    }.issubset({check.name for check in result.checks})
     assert result.provenance["provider_version"] == "2606"
     assert next(
         check for check in result.checks if check.name == "requested-output-completeness"
@@ -702,6 +711,24 @@ def test_openfoam_checkmesh_metrics_are_structured():
     assert quantities["mesh.maximum_skewness"].value == pytest.approx(1.047)
 
 
+def test_openfoam_mesh_metric_policy_fails_high_or_missing_observables():
+    quantities = _mesh_quality_quantities(
+        """    Max aspect ratio = 80
+    Mesh non-orthogonality Max: 70 average: 20
+"""
+    )
+    checks = _mesh_metric_checks(
+        quantities,
+        policy=OpenFOAMValidationPolicy(),
+    )
+
+    assert {check.name for check in checks if not check.passed} == {
+        "maximum-non-orthogonality-limit",
+        "maximum-skewness-limit",
+        "maximum-aspect-ratio-limit",
+    }
+
+
 def test_openfoam_patch_recovery_computes_physical_quantities_and_checks(tmp_path):
     samples = {
         "agentcfd_inlet_flow": ("# Time sum(phi)\n1 -0.01\n2 -0.01\n"),
@@ -768,6 +795,8 @@ def test_openfoam_validation_policy_is_explicit_and_controls_acceptance(tmp_path
     assert all(check.passed for check in declared_checks)
     with pytest.raises(ValueError, match="maximum_relative_pressure_error"):
         OpenFOAMValidationPolicy(maximum_relative_pressure_error=math.nan)
+    with pytest.raises(ValueError, match="maximum_mesh_skewness"):
+        OpenFOAMValidationPolicy(maximum_mesh_skewness=math.nan)
     with pytest.raises(ValueError, match="unique non-empty"):
         OpenFOAMValidationPolicy(validated_runtime_versions=("2606", "v2606"))
     with pytest.raises(ValueError, match="unique non-empty"):

@@ -88,6 +88,8 @@ machine-readable capability catalog.
   algebraic residual convergence.
 - reject ambiguous or non-standard JSON in prepared OpenFOAM case and grid-study
   control records.
+- make non-orthogonality, skewness, and aspect-ratio mesh limits explicit
+  scientific acceptance inputs instead of relying only on `Mesh OK`.
 
 ## 0.1.0a1 — 2026-09-03
 

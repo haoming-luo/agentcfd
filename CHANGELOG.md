@@ -139,6 +139,8 @@ machine-readable capability catalog.
 - document agent-facing gas screening, IF97 state evaluation, and installed
   contract discovery in the primary quickstart.
 - exercise low-Mach screening in both offline-wheel CI and release smoke gates.
+- fail closed with domain errors when GCI receives malformed record, label,
+  policy, or solution types instead of leaking incidental attribute failures.
 
 ## 0.1.0a1 — 2026-09-03
 

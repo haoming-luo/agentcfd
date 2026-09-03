@@ -146,6 +146,10 @@ def test_grid_verification_rejects_boolean_numeric_inputs():
             ),
             safety_factor=True,
         )
+    with pytest.raises(TypeError, match="GridSolution records"):
+        grid_convergence_index((GridSolution(0.1, 1.0), object(), object()))
+    with pytest.raises(ValueError, match="label must be a string"):
+        GridSolution(0.1, 1.0, label=True)
 
 
 def _result_record(*, cells: int, value: float, model: str = "a" * 64):
@@ -202,3 +206,11 @@ def test_result_record_grid_convergence_rejects_mixed_models_and_unconverged_run
     records[2]["quantities"]["mesh.cell_count"]["unit"] = "cells"
     with pytest.raises(ValueError, match="must use unit '1'"):
         grid_convergence_from_result_records(records, quantity="flow.pressure_drop")
+
+    with pytest.raises(ValueError, match="quantity must be a non-empty string"):
+        grid_convergence_from_result_records(records, quantity=True)
+    with pytest.raises(ValueError, match="must be a mapping"):
+        grid_convergence_from_result_records(
+            (records[0], records[1], object()),
+            quantity="flow.pressure_drop",
+        )

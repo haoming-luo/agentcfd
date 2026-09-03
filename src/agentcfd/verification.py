@@ -28,7 +28,8 @@ class GridSolution:
             "value",
             finite_float(self.value, name="Grid solution value"),
         )
-        object.__setattr__(self, "label", str(self.label))
+        if not isinstance(self.label, str):
+            raise ValueError("Grid solution label must be a string.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,6 +156,10 @@ def assess_grid_convergence(
 ) -> dict[str, object]:
     """Apply explicit uncertainty and asymptotic-range promotion gates."""
 
+    if not isinstance(result, GridConvergenceResult):
+        raise TypeError("result must be a GridConvergenceResult.")
+    if policy is not None and not isinstance(policy, GridConvergencePolicy):
+        raise TypeError("policy must be a GridConvergencePolicy.")
     selected = policy or GridConvergencePolicy()
     relative_gci = result.fine_grid_relative_gci
     checks = [
@@ -246,9 +251,12 @@ def grid_convergence_index(
     than converted into a misleading uncertainty estimate.
     """
 
-    selected = sorted(tuple(solutions), key=lambda item: item.characteristic_size)
-    if len(selected) != 3:
+    supplied = tuple(solutions)
+    if len(supplied) != 3:
         raise ValueError("Exactly three grid solutions are required.")
+    if any(not isinstance(item, GridSolution) for item in supplied):
+        raise TypeError("Grid convergence inputs must be GridSolution records.")
+    selected = sorted(supplied, key=lambda item: item.characteristic_size)
     safety_factor = positive_float(safety_factor, name="GCI safety_factor")
     if safety_factor < 1.0:
         raise ValueError("GCI safety_factor must be finite and at least one.")
@@ -299,13 +307,17 @@ def grid_convergence_from_result_records(
     selected = tuple(records)
     if len(selected) != 3:
         raise ValueError("Exactly three AgentCFD result records are required.")
-    if not str(quantity).strip():
-        raise ValueError("quantity must not be empty.")
+    if not isinstance(quantity, str) or not quantity.strip():
+        raise ValueError("quantity must be a non-empty string.")
+    if not isinstance(cell_count_quantity, str) or not cell_count_quantity.strip():
+        raise ValueError("cell_count_quantity must be a non-empty string.")
 
     identities: set[str] = set()
     quantity_units: set[str | None] = set()
     solutions: list[GridSolution] = []
     for index, record in enumerate(selected, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"Result {index} must be a mapping.")
         if record.get("status") != "completed" or record.get("converged") is not True:
             raise ValueError(f"Result {index} must be completed and converged.")
         provenance = record.get("provenance")

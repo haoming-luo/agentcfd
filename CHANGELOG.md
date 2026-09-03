@@ -4,6 +4,21 @@ All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the
 machine-readable capability catalog.
 
+## Unreleased
+
+- recover OpenFOAM inlet/outlet flow and pressure histories automatically;
+- add `checkMesh` execution, structured mesh-quality observables, physical-Pa
+  pressure drop, mass balance, final native fields, and runtime provenance;
+- add an explicit non-compiling fully developed circular-pipe velocity inlet;
+- add end-to-end OpenFOAM execution to the CLI;
+- add explicit Docker-backed OpenFOAM execution for macOS and CI without
+  wrapper scripts;
+- add solver-neutral three-grid Richardson extrapolation and GCI utilities with
+  unequal-ratio support and fail-closed oscillatory-convergence handling.
+- add dependency-free hydraulic diameter, Reynolds number, Darcy--Weisbach,
+  bracketed Colebrook--White, and local-loss engineering functions; transitional
+  flow is rejected instead of silently interpolated.
+
 ## 0.1.0a1 — 2026-09-03
 
 - establish the Apache-2.0 AI-native CFD engineering workflow;

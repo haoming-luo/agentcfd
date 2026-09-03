@@ -28,6 +28,7 @@ def _doctor() -> dict[str, object]:
         "numpy": np.__version__,
         "executables": {
             "blockMesh": shutil.which("blockMesh"),
+            "checkMesh": shutil.which("checkMesh"),
             "simpleFoam": shutil.which("simpleFoam"),
         },
         "providers": {
@@ -37,14 +38,19 @@ def _doctor() -> dict[str, object]:
     }
 
 
-def _pipe_model() -> Model:
+def _pipe_model(*, fully_developed: bool = False) -> Model:
+    inlet = (
+        boundaries.fully_developed_velocity_inlet(0.02)
+        if fully_developed
+        else boundaries.mean_velocity_inlet(0.02)
+    )
     return Model(
         name="laminar-water-pipe",
         study=studies.internal_flow(),
         domain=geometry.circular_pipe(length=10.0, diameter=0.05),
         fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
     ).boundaries(
-        inlet=boundaries.mean_velocity_inlet(0.02),
+        inlet=inlet,
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
@@ -56,9 +62,36 @@ def _pipe_demo(output_path: Path) -> dict[str, object]:
     return result.to_dict()
 
 
-def _prepare_openfoam_pipe(case_directory: Path) -> dict[str, object]:
-    step = _pipe_model().step(procedure=procedures.steady(), output=outputs.standard())
+def _prepare_openfoam_pipe(
+    case_directory: Path,
+    *,
+    fully_developed: bool = False,
+) -> dict[str, object]:
+    step = _pipe_model(fully_developed=fully_developed).step(
+        procedure=procedures.steady(),
+        output=outputs.standard(),
+    )
     return OpenFOAMProvider(case_directory=case_directory).prepare(step).to_dict()
+
+
+def _run_openfoam_pipe(
+    case_directory: Path,
+    *,
+    result_path: Path | None,
+    fully_developed: bool,
+    container_image: str | None,
+):
+    step = _pipe_model(fully_developed=fully_developed).step(
+        procedure=procedures.steady(),
+        output=outputs.standard(),
+    )
+    result = OpenFOAMProvider(
+        case_directory=case_directory,
+        container_image=container_image,
+    ).run(step)
+    target = result_path or case_directory / "agentcfd-result.json"
+    result.write(target)
+    return result, target
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,6 +118,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     openfoam.add_argument("case_directory", type=Path)
     openfoam.add_argument("--json", action="store_true", dest="as_json")
+    openfoam.add_argument(
+        "--fully-developed",
+        action="store_true",
+        help="Use a declared analytic laminar inlet profile.",
+    )
+
+    run = subparsers.add_parser("run", help="Prepare, execute, and recover a provider result.")
+    run_subparsers = run.add_subparsers(dest="provider", required=True)
+    run_openfoam = run_subparsers.add_parser(
+        "openfoam-pipe",
+        help="Run and recover the experimental OpenFOAM laminar-pipe case.",
+    )
+    run_openfoam.add_argument("case_directory", type=Path)
+    run_openfoam.add_argument("--result", type=Path)
+    run_openfoam.add_argument(
+        "--container-image",
+        help="Run OpenFOAM through Docker, for example opencfd/openfoam-run:2606.",
+    )
+    run_openfoam.add_argument("--json", action="store_true", dest="as_json")
+    run_openfoam.add_argument(
+        "--fully-developed",
+        action="store_true",
+        help="Use a declared analytic laminar inlet profile.",
+    )
     return parser
 
 
@@ -113,7 +170,10 @@ def main(argv: list[str] | None = None) -> int:
         print(args.output)
         return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe":
-        manifest = _prepare_openfoam_pipe(args.case_directory)
+        manifest = _prepare_openfoam_pipe(
+            args.case_directory,
+            fully_developed=args.fully_developed,
+        )
         if args.as_json:
             print(json.dumps(manifest, indent=2, sort_keys=True))
         else:
@@ -121,6 +181,22 @@ def main(argv: list[str] | None = None) -> int:
             print(args.case_directory)
             print(f"case sha256: {manifest['case_sha256']}")
         return 0
+    if args.command == "run" and args.provider == "openfoam-pipe":
+        result, target = _run_openfoam_pipe(
+            args.case_directory,
+            result_path=args.result,
+            fully_developed=args.fully_developed,
+            container_image=args.container_image,
+        )
+        if args.as_json:
+            print(json.dumps(result.summary(), indent=2, sort_keys=True))
+        else:
+            print(
+                f"OpenFOAM run {result.status} | trust {result.trust_level} | "
+                f"accepted {str(result.accepted).lower()}"
+            )
+            print(target)
+        return 0 if result.status == "completed" else 1
     return 2
 
 

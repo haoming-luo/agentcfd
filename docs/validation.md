@@ -40,3 +40,19 @@ Numerical capabilities will add, as appropriate:
 - y-plus and wall-treatment checks;
 - installed-runtime and parallel reproducibility evidence;
 - documented counterexamples and unsupported regimes.
+
+## Grid convergence
+
+`agentcfd.verification.grid_convergence_index` implements a solver-neutral
+three-grid Richardson extrapolation and Grid Convergence Index workflow. It
+sorts grids by characteristic size, supports unequal refinement ratios,
+reports the observed order and asymptotic ratio, and rejects oscillatory or
+non-converging triples. This is numerical solution verification, not validation
+against physical data. Geometric similarity and membership in the asymptotic
+range remain explicit engineering responsibilities.
+
+For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
+are different scientific problems. Total inlet-to-outlet static pressure from
+the uniform case includes an entrance contribution and is not promoted as a
+Hagen--Poiseuille validation observable. The declared fully developed profile
+is the canonical path for isolating spatial discretization error.

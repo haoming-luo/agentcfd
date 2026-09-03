@@ -11,6 +11,10 @@
 - explicit circular arcs on the eight outer end-face edges, avoiding the
   inscribed-square geometry produced when projected vertices are used alone;
 - `simpleFoam` dictionaries with kinematic pressure and SI properties.
+- uniform mean-velocity, mass-flow-derived mean-velocity, or an explicitly
+  declared fully developed laminar profile inlet;
+- in-run `surfaceFieldValue` histories for both patch flows and both
+  area-averaged patch pressures.
 
 Case generation is deterministic and does not require OpenFOAM. The manifest
 stores the public model SHA-256, every generated file SHA-256, the combined case
@@ -24,15 +28,26 @@ compressibility, turbulence, reaction, wall roughness, invalid OpenFOAM patch
 names, and multiple wall patches. It refuses to write into a non-empty
 directory. Unsupported physics is never silently simplified.
 
-Execution requires both `blockMesh` and `simpleFoam` on `PATH`. Commands are
+Execution requires `blockMesh`, `checkMesh`, and `simpleFoam` on `PATH`. Commands are
 passed as argument lists without a shell. Their combined output is retained as
-`log.blockMesh` and `log.simpleFoam`.
+`log.blockMesh`, `log.checkMesh`, and `log.simpleFoam`.
 
-The initial execution result is deliberately not accepted. Process success and
-the solver end marker are useful evidence, but mesh-field mass balance and
-pressure-loss recovery are still mandatory. The analytical pressure drop is
-reported only under `reference.flow.pressure_drop`, never as an OpenFOAM field
-result.
+Native commands and an explicit Docker image are both supported. Container
+mode mounts only the selected case at `/case`; it does not infer, download, or
+silently switch images. This makes the same provider usable from Linux,
+macOS, CI, and future remote workers while preserving runtime provenance.
+
+Result recovery reads the four independent patch histories, converts OpenFOAM
+kinematic pressure to Pa, checks relative mass imbalance, compares pressure
+drop with Hagen--Poiseuille at the recovered flow rate, and attaches the final
+native `U` and `p` fields. `checkMesh` observables are also structured. A normal
+`End` proves completion only; numerical convergence still requires OpenFOAM's
+explicit SIMPLE convergence marker.
+
+`mean_velocity_inlet` remains uniform and therefore includes entrance effects.
+The separate `fully_developed_velocity_inlet` uses OpenCFD's non-compiling
+expression parser to prescribe the radial Hagen--Poiseuille profile. It is
+explicit in the model fingerprint and is never selected by backend guesswork.
 
 An OpenCFD v2606 container execution has been completed on Linux/arm64. Its
 machine-readable evidence is retained in `docs/openfoam-v2606-validation.json`.
@@ -44,10 +59,7 @@ post-processed; it does not promote the provider beyond experimental status.
 Before this provider advances beyond experimental maturity it must add:
 
 1. OpenFOAM Foundation and OpenCFD dialect/version detection;
-2. mesh checks from an actual `blockMesh` run;
-3. patch-integrated inlet/outlet mass-flow recovery;
-4. area-averaged pressure loss in physical Pa;
-5. comparison with the independent Hagen–Poiseuille reference;
-6. mesh-convergence evidence and a documented entrance-length policy;
-7. installed-runtime tests on Linux and macOS, plus Windows through WSL2;
-8. restart, failure taxonomy, and bounded log/result artifacts.
+2. three-grid convergence evidence for the fully developed profile case;
+3. a documented uniform-inlet entrance-length policy;
+4. installed-runtime tests on Linux and macOS, plus Windows through WSL2;
+5. restart, failure taxonomy, and bounded log/result artifacts.

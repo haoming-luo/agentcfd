@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 
-from .. import boundaries
+from .. import boundaries, engineering
 from .._version import __version__
 from ..errors import UnsupportedCaseError
 from ..results import Check, History, Quantity, SimulationResult
@@ -37,7 +37,14 @@ class ReferencePipeProvider:
         inlet = next(
             value
             for value in model.boundary_conditions.values()
-            if isinstance(value, (boundaries.MassFlowInlet, boundaries.MeanVelocityInlet))
+            if isinstance(
+                value,
+                (
+                    boundaries.MassFlowInlet,
+                    boundaries.MeanVelocityInlet,
+                    boundaries.FullyDevelopedVelocityInlet,
+                ),
+            )
         )
         diameter = model.domain.diameter
         length = model.domain.length
@@ -53,15 +60,26 @@ class ReferencePipeProvider:
             mass_flow = rho * area * mean_velocity
 
         volume_flow = mean_velocity * area
-        reynolds = rho * mean_velocity * diameter / mu
+        reynolds = engineering.reynolds_number(
+            density=rho,
+            mean_velocity=mean_velocity,
+            hydraulic_diameter=diameter,
+            dynamic_viscosity=mu,
+        )
         if reynolds >= 2300.0:
             raise UnsupportedCaseError(
                 f"Re={reynolds:.6g} is outside the declared laminar reference range Re < 2300."
             )
 
-        pressure_drop = 32.0 * mu * length * mean_velocity / diameter**2
+        darcy_friction = engineering.darcy_friction_factor(reynolds)
+        pressure_drop = engineering.darcy_weisbach_pressure_loss(
+            friction_factor=darcy_friction,
+            length=length,
+            hydraulic_diameter=diameter,
+            density=rho,
+            mean_velocity=mean_velocity,
+        )
         wall_shear = pressure_drop * diameter / (4.0 * length)
-        darcy_friction = 64.0 / reynolds
         radius = np.linspace(0.0, diameter / 2.0, 41)
         axial_velocity = 2.0 * mean_velocity * (1.0 - (2.0 * radius / diameter) ** 2)
 

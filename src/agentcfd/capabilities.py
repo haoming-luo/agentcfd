@@ -33,6 +33,20 @@ _CAPABILITIES = (
         limitations=("Re < 2300", "constant properties", "straight circular pipe"),
     ),
     Capability(
+        name="engineering.pipe-loss",
+        maturity="experimental",
+        scope="Hydraulic diameter, Reynolds number, Darcy friction, and major/minor pressure loss.",
+        evidence=(
+            "Hagen--Poiseuille identity test",
+            "Colebrook--White equation residual test",
+            "transition-regime rejection test",
+        ),
+        limitations=(
+            "Single-phase incompressible engineering correlations only.",
+            "Reynolds numbers from 2300 up to 4000 require an explicit regime-specific model.",
+        ),
+    ),
+    Capability(
         name="interoperability.agentcae-exchange",
         maturity="experimental",
         scope="Provider-neutral field exchange contract for AgentCFD, AgentFEM, learning, and coupling tools.",
@@ -40,23 +54,47 @@ _CAPABILITIES = (
         limitations=("No conservative mesh mapper or coupled time integrator is released yet.",),
     ),
     Capability(
+        name="verification.grid-convergence-index",
+        maturity="experimental",
+        scope="Solver-neutral three-grid Richardson extrapolation and Grid Convergence Index.",
+        evidence=(
+            "synthetic equal-ratio and unequal-ratio order-recovery tests",
+            "fail-closed oscillatory-sequence tests",
+        ),
+        limitations=(
+            "Requires exactly three monotonically converging scalar solutions.",
+            "Users must establish that the grids are geometrically similar and in the asymptotic range.",
+        ),
+    ),
+    Capability(
         name="provider.openfoam",
         maturity="experimental",
         scope="Deterministic external OpenFOAM case lowering and bounded process execution.",
-        evidence=("golden case-generation tests", "runtime discovery", "external-process boundary"),
+        evidence=(
+            "golden case-generation tests",
+            "runtime discovery",
+            "external-process boundary",
+            "automatic patch-history and mesh-quality recovery tests",
+        ),
         limitations=(
             "Only steady incompressible isothermal laminar flow in a smooth circular pipe is lowered.",
-            "Mesh-field result recovery and scientific acceptance are not released.",
+            "OpenCFD v2606 is the currently exercised runtime dialect.",
+            "Mesh-convergence evidence remains a promotion gate.",
         ),
     ),
     Capability(
         name="openfoam.steady-laminar-circular-pipe",
         maturity="experimental",
         scope="OpenFOAM simpleFoam case generation for a full three-dimensional O-grid circular pipe.",
-        evidence=("deterministic content hashes", "generated-case contract tests"),
+        evidence=(
+            "deterministic content hashes",
+            "generated-case contract tests",
+            "checkMesh, flow-balance, pressure-drop, convergence, and field-artifact recovery",
+        ),
         limitations=(
-            "Targets installations exposing blockMesh and simpleFoam.",
-            "A generated or completed case is not yet an accepted CFD result.",
+            "Targets installations exposing blockMesh, checkMesh, and simpleFoam.",
+            "The fully developed expression inlet is currently OpenCFD-dialect specific.",
+            "Scientific acceptance also requires every per-run validation check to pass.",
         ),
     ),
 )

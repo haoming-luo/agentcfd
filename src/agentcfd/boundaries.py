@@ -30,6 +30,20 @@ class MeanVelocityInlet:
 
 
 @dataclass(frozen=True, slots=True)
+class FullyDevelopedVelocityInlet:
+    """Mean velocity for an analytic fully developed circular-pipe profile."""
+
+    velocity: float
+
+    def __post_init__(self) -> None:
+        if self.velocity <= 0.0:
+            raise ValueError("Inlet velocity must be positive.")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "fully-developed-velocity-inlet", **asdict(self)}
+
+
+@dataclass(frozen=True, slots=True)
 class PressureOutlet:
     gauge_pressure: float = 0.0
 
@@ -49,7 +63,13 @@ class NoSlipWall:
         return {"type": "no-slip-wall", **asdict(self)}
 
 
-Boundary = MassFlowInlet | MeanVelocityInlet | PressureOutlet | NoSlipWall
+Boundary = (
+    MassFlowInlet
+    | MeanVelocityInlet
+    | FullyDevelopedVelocityInlet
+    | PressureOutlet
+    | NoSlipWall
+)
 
 
 def mass_flow_inlet(value: float) -> MassFlowInlet:
@@ -58,6 +78,10 @@ def mass_flow_inlet(value: float) -> MassFlowInlet:
 
 def mean_velocity_inlet(value: float) -> MeanVelocityInlet:
     return MeanVelocityInlet(velocity=value)
+
+
+def fully_developed_velocity_inlet(value: float) -> FullyDevelopedVelocityInlet:
+    return FullyDevelopedVelocityInlet(velocity=value)
 
 
 def pressure_outlet(value: float = 0.0) -> PressureOutlet:

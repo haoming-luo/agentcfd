@@ -15,9 +15,9 @@ principles established through AgentFEM, but it is a separate codebase with its
 own fluid-mechanics language, providers, validation evidence, and release cycle.
 
 > **Project status:** pre-alpha. The public workflow and circular-pipe reference
-> solution are executable. Deterministic OpenFOAM circular-pipe case generation
-> is experimental; OpenFOAM field recovery and accepted numerical results are
-> not yet released capabilities.
+> solution are executable. Deterministic OpenFOAM circular-pipe generation,
+> execution, mesh checks, patch-history recovery, and pressure-loss validation
+> are experimental capabilities; every run must still earn acceptance.
 
 ## Why AgentCFD
 
@@ -114,9 +114,44 @@ print(case.case_sha256)
 
 The generated manifest binds every case file to its content hash and the public
 model fingerprint. Execution currently targets installations that provide
-`blockMesh` and `simpleFoam`. Even when both commands finish, AgentCFD refuses
-to call the result scientifically accepted until mesh-field mass balance and
-pressure-loss recovery are implemented.
+`blockMesh`, `checkMesh`, and `simpleFoam`. AgentCFD recovers inlet/outlet flow,
+area-averaged pressure, pressure drop, mass imbalance, mesh-quality metrics,
+convergence evidence, and final native fields. Process completion alone never
+implies scientific acceptance.
+
+For the canonical fully developed validation case, declare the physical inlet
+profile instead of silently changing a mean-velocity boundary:
+
+```python
+model.boundaries(
+    inlet=boundaries.fully_developed_velocity_inlet(0.02),
+    outlet=boundaries.pressure_outlet(),
+    wall=boundaries.no_slip_wall(),
+)
+```
+
+Or run the bundled case end to end against an installed runtime:
+
+```bash
+agentcfd run openfoam-pipe openfoam-pipe --fully-developed --json
+```
+
+On macOS or another host without native OpenFOAM commands, use the official
+OpenCFD container directly (Docker remains externally managed):
+
+```bash
+agentcfd run openfoam-pipe openfoam-pipe \
+  --fully-developed \
+  --container-image opencfd/openfoam-run:2606 \
+  --json
+```
+
+Three-grid studies can use `agentcfd.verification.grid_convergence_index` to
+record Richardson extrapolation, observed order, GCI, and the asymptotic ratio.
+Common pipe checks are available under `agentcfd.engineering`: hydraulic
+diameter, Reynolds number, laminar or iterated Colebrook--White Darcy friction,
+straight-run pressure loss, and local-loss pressure drop. The transitional
+Reynolds range is deliberately rejected rather than silently interpolated.
 
 ## Architecture
 
@@ -158,6 +193,8 @@ mechanics and deterministic numerical computation remain authoritative.
 - [OpenFOAM provider boundary](docs/openfoam-provider.md)
 - [Publishing and PyPI name status](docs/publishing.md)
 - [Validation policy](docs/validation.md)
+- [Engineering correlations](docs/engineering-correlations.md)
+- [Benchmark catalog](docs/benchmark-catalog.md)
 - [OpenFOAM v2606 execution evidence](docs/openfoam-v2606-validation.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 

@@ -41,7 +41,14 @@ class Model:
 
     def validate(self) -> None:
         inlet_count = sum(
-            isinstance(value, (boundary_types.MassFlowInlet, boundary_types.MeanVelocityInlet))
+            isinstance(
+                value,
+                (
+                    boundary_types.MassFlowInlet,
+                    boundary_types.MeanVelocityInlet,
+                    boundary_types.FullyDevelopedVelocityInlet,
+                ),
+            )
             for value in self._boundaries.values()
         )
         outlet_count = sum(isinstance(value, boundary_types.PressureOutlet) for value in self._boundaries.values())

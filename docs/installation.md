@@ -22,13 +22,26 @@ environment. Editable-source success alone is not a release gate.
 ## OpenFOAM numerical plane
 
 OpenFOAM is an external solver runtime, not a Python dependency. AgentCFD first
-looks for `blockMesh` and `simpleFoam` on `PATH`. Keeping this as a filesystem
+looks for `blockMesh`, `checkMesh`, and `simpleFoam` on `PATH`. Keeping this as a filesystem
 and subprocess boundary makes generated cases inspectable and preserves the
 license identity of both projects.
 
 On macOS, a Linux container or remote Linux worker is generally the most
 predictable route for production OpenFOAM. The current pre-alpha provider can
-generate a case without OpenFOAM, but execution requires those commands and is
-not scientifically accepted until field recovery and conservation checks ship.
+generate a case without OpenFOAM. Execution recovers conservation, pressure,
+mesh, convergence, and final-field evidence; scientific acceptance is decided
+from those checks rather than the process exit code.
+
+Docker can be selected explicitly without wrapper scripts:
+
+```bash
+agentcfd run openfoam-pipe openfoam-pipe \
+  --fully-developed \
+  --container-image opencfd/openfoam-run:2606
+```
+
+The provider mounts only the selected case directory at `/case`, passes every
+argument without a shell, and records both the image identity and the actual
+OpenFOAM version reported by the runtime.
 
 Use `agentcfd doctor --json` to inspect the exact local capability state.

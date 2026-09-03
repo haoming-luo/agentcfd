@@ -1,0 +1,40 @@
+# Engineering correlations
+
+These functions are setup checks and low-order engineering references. They do
+not replace a CFD model and are not silently substituted for one.
+
+## Pipe loss
+
+`agentcfd.engineering` provides:
+
+- hydraulic diameter, `D_h = 4 A / P_w`;
+- bulk Reynolds number, `Re = rho U D_h / mu`;
+- the laminar Darcy factor, `f = 64 / Re`;
+- a bracketed solution of the implicit Colebrook--White relation for
+  `Re >= 4000`;
+- Darcy--Weisbach straight-run loss, `Delta p = f (L/D_h) rho U^2 / 2`;
+- local loss, `Delta p = K rho U^2 / 2`.
+
+The interval `2300 <= Re < 4000` is rejected. AgentCFD will not turn a regime
+choice into an undocumented interpolation. Density and viscosity are treated
+as constant, and all returned pressure losses are positive magnitudes.
+
+The Darcy--Weisbach form and a worked CFD comparison are documented by
+[NASA NTRS](https://ntrs.nasa.gov/api/citations/20050209950/downloads/20050209950.pdf).
+The implicit Colebrook--White residual is solved directly rather than replaced
+by an unlabelled approximation. These correlations remain empirical
+engineering evidence; their domain of applicability must travel with any
+decision that uses them.
+
+## Numerical verification
+
+`agentcfd.verification.grid_convergence_index` implements the monotonic
+three-grid Richardson/GCI workflow described in NASA's
+[spatial-convergence tutorial](https://www.grc.nasa.gov/www/wind/valid/tutorial/spatconv.html?force_isolation=true).
+ASME V&V 20 describes the broader CFD and heat-transfer accuracy framework;
+the standard's current scope is summarized by
+[ASME](https://www.asme.org/codes-standards/find-codes-standards/standard-for-verification-and-validation-in-computational-fluid-dynamics-and-heat-transfer/2009).
+
+GCI estimates ordered discretization uncertainty only. It does not cover
+iterative error, uncertain inputs, geometry error, model-form error, or
+experimental uncertainty.

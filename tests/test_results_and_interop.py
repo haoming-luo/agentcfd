@@ -235,6 +235,9 @@ def test_cfd_to_fem_manifest_is_explicit_and_versioned():
         "thermal.temperature",
     }
     assert all(item["direction"] == "cfd-to-fem" for item in payload["fields"])
+    jsonschema.Draft202012Validator(
+        contracts.load("coupling-manifest.schema.json")
+    ).validate(payload)
 
 
 def test_manifest_rejects_unstable_identity():
@@ -250,4 +253,20 @@ def test_manifest_rejects_unstable_identity():
                     "fluid.pressure", "cfd-to-fem", "facet", "Pa", conservative=True
                 ),
             ),
+        )
+    with pytest.raises(ValueError, match="must be a boolean"):
+        interoperability.ExchangeField(
+            "fluid.pressure", "cfd-to-fem", "facet", "Pa", conservative=1
+        )
+    field = interoperability.ExchangeField(
+        "fluid.pressure", "cfd-to-fem", "facet", "Pa", conservative=True
+    )
+    with pytest.raises(ValueError, match="duplicate canonical names"):
+        interoperability.CouplingManifest(
+            interface="wall",
+            source_model_sha256="1" * 64,
+            target="agentfem:model",
+            coordinate_frame="global",
+            mesh_sha256="2" * 64,
+            fields=(field, field),
         )

@@ -123,6 +123,8 @@ machine-readable capability catalog.
 - add an explicit, auditable low-Mach incompressible-model screening result.
 - reject ambiguous non-string array and learning-sample names, and duplicate
   requested outputs, before AgentCAE serialization.
+- fail closed on malformed or duplicate CFD-to-FEM coupling fields and validate
+  emitted coupling manifests against the installed contract.
 
 ## 0.1.0a1 — 2026-09-03
 

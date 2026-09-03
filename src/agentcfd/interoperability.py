@@ -36,8 +36,10 @@ class ExchangeField:
             raise ValueError(f"Unknown exchange direction {self.direction!r}.")
         if self.location not in _LOCATIONS:
             raise ValueError(f"Unknown field location {self.location!r}.")
-        if not self.unit:
+        if not isinstance(self.unit, str) or not self.unit.strip():
             raise ValueError("Exchange fields require an explicit unit.")
+        if not isinstance(self.conservative, bool):
+            raise ValueError("Exchange field conservative must be a boolean.")
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -55,13 +57,33 @@ class CouplingManifest:
     schema: str = "agentcae.coupling-manifest/0.1"
 
     def __post_init__(self) -> None:
-        if not self.interface or not self.target or not self.coordinate_frame:
-            raise ValueError("Interface, target, and coordinate frame are required.")
-        for digest in (self.source_model_sha256, self.mesh_sha256):
-            if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest.lower()):
-                raise ValueError("Model and mesh identities must be SHA-256 hex digests.")
+        for name in ("interface", "target", "coordinate_frame", "time_coordinate"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(
+                    "Interface, target, coordinate frame, and time coordinate are required."
+                )
+        if self.schema != "agentcae.coupling-manifest/0.1":
+            raise ValueError("Unsupported coupling-manifest schema.")
+        if not isinstance(self.fields, tuple) or any(
+            not isinstance(field, ExchangeField) for field in self.fields
+        ):
+            raise ValueError("Coupling fields must be ExchangeField records.")
         if not self.fields:
             raise ValueError("At least one exchange field is required.")
+        for digest in (self.source_model_sha256, self.mesh_sha256):
+            if (
+                not isinstance(digest, str)
+                or len(digest) != 64
+                or any(
+                    character not in "0123456789abcdef"
+                    for character in digest.lower()
+                )
+            ):
+                raise ValueError("Model and mesh identities must be SHA-256 hex digests.")
+        names = tuple(field.name for field in self.fields)
+        if len(set(names)) != len(names):
+            raise ValueError("Coupling fields must not contain duplicate canonical names.")
 
     def to_dict(self) -> dict[str, object]:
         return {

@@ -16,7 +16,8 @@
     "refinement_ratio_fine_medium",
     "refinement_ratio_medium_coarse",
     "converging",
-    "safety_factor"
+    "safety_factor",
+    "acceptance"
   ],
   "properties": {
     "schema": {"const": "agentcfd.grid-convergence/0.1"},
@@ -44,7 +45,40 @@
     "refinement_ratio_fine_medium": {"type": "number", "exclusiveMinimum": 1},
     "refinement_ratio_medium_coarse": {"type": "number", "exclusiveMinimum": 1},
     "converging": {"const": true},
-    "safety_factor": {"type": "number", "minimum": 1}
+    "safety_factor": {"type": "number", "minimum": 1},
+    "acceptance": {
+      "type": "object",
+      "required": ["accepted", "policy", "checks"],
+      "properties": {
+        "accepted": {"type": "boolean"},
+        "policy": {
+          "type": "object",
+          "required": ["maximum_fine_relative_gci", "maximum_asymptotic_ratio_deviation"],
+          "properties": {
+            "maximum_fine_relative_gci": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_asymptotic_ratio_deviation": {"type": "number", "exclusiveMinimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["name", "passed", "value", "limit"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "passed": {"type": "boolean"},
+              "value": {"type": ["number", "null"]},
+              "limit": {"type": "number", "exclusiveMinimum": 0}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

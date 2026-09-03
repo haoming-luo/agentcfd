@@ -73,6 +73,12 @@ result beside each case, and emits `agentcfd-grid-convergence.json`. A case
 containing prior mesh, time, log, or post-processing output is rejected so two
 executions cannot be silently mixed into one evidence record.
 
+The emitted evidence applies an explicit `GridConvergencePolicy`: by default,
+fine-grid relative GCI must be at most 2% and the GCI asymptotic ratio must lie
+within 10% of unity. These are promotion gates rather than universal physical
+constants. A completed study that misses them is still written for diagnosis,
+but the CLI returns the completed-unaccepted exit status `3`.
+
 For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
 are different scientific problems. Total inlet-to-outlet static pressure from
 the uniform case includes an entrance contribution and is not promoted as a

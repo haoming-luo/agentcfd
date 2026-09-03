@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-mesh.schema.json",
+  "title": "AgentCFD content-addressed OpenFOAM mesh 0.1",
+  "type": "object",
+  "required": ["schema", "mesh_sha256", "root", "files"],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-mesh/0.1"},
+    "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "root": {"const": "constant/polyMesh"},
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -13,6 +13,7 @@ _SCHEMAS = (
     "grid-convergence.schema.json",
     "openfoam-case.schema.json",
     "openfoam-grid-study.schema.json",
+    "openfoam-mesh.schema.json",
     "result-exchange.schema.json",
     "scientific-sample.schema.json",
     "simulation-result.schema.json",

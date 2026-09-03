@@ -6,6 +6,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Iterable, Mapping
 
+from ._validation import finite_float, positive_float
+
 
 @dataclass(frozen=True, slots=True)
 class GridSolution:
@@ -16,10 +18,17 @@ class GridSolution:
     label: str = ""
 
     def __post_init__(self) -> None:
-        if not math.isfinite(self.characteristic_size) or self.characteristic_size <= 0.0:
-            raise ValueError("Grid characteristic_size must be positive and finite.")
-        if not math.isfinite(self.value):
-            raise ValueError("Grid solution value must be finite.")
+        object.__setattr__(
+            self,
+            "characteristic_size",
+            positive_float(self.characteristic_size, name="Grid characteristic_size"),
+        )
+        object.__setattr__(
+            self,
+            "value",
+            finite_float(self.value, name="Grid solution value"),
+        )
+        object.__setattr__(self, "label", str(self.label))
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +48,61 @@ class GridConvergenceResult:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class GridConvergencePolicy:
+    """Explicit promotion limits for a three-grid convergence result."""
+
+    maximum_fine_relative_gci: float = 0.02
+    maximum_asymptotic_ratio_deviation: float = 0.10
+
+    def __post_init__(self) -> None:
+        for name in (
+            "maximum_fine_relative_gci",
+            "maximum_asymptotic_ratio_deviation",
+        ):
+            value = positive_float(getattr(self, name), name=name)
+            object.__setattr__(self, name, value)
+
+    def to_dict(self) -> dict[str, float]:
+        return asdict(self)
+
+
+def assess_grid_convergence(
+    result: GridConvergenceResult,
+    *,
+    policy: GridConvergencePolicy | None = None,
+) -> dict[str, object]:
+    """Apply explicit uncertainty and asymptotic-range promotion gates."""
+
+    selected = policy or GridConvergencePolicy()
+    relative_gci = result.fine_grid_relative_gci
+    checks = [
+        {
+            "name": "fine-grid-relative-gci",
+            "passed": bool(
+                relative_gci is not None
+                and relative_gci <= selected.maximum_fine_relative_gci
+            ),
+            "value": relative_gci,
+            "limit": selected.maximum_fine_relative_gci,
+        },
+        {
+            "name": "asymptotic-ratio",
+            "passed": bool(
+                abs(result.asymptotic_ratio - 1.0)
+                <= selected.maximum_asymptotic_ratio_deviation
+            ),
+            "value": result.asymptotic_ratio,
+            "limit": selected.maximum_asymptotic_ratio_deviation,
+        },
+    ]
+    return {
+        "accepted": all(check["passed"] for check in checks),
+        "policy": selected.to_dict(),
+        "checks": checks,
+    }
 
 
 def _observed_order(
@@ -106,7 +170,8 @@ def grid_convergence_index(
     selected = sorted(tuple(solutions), key=lambda item: item.characteristic_size)
     if len(selected) != 3:
         raise ValueError("Exactly three grid solutions are required.")
-    if safety_factor < 1.0 or not math.isfinite(safety_factor):
+    safety_factor = positive_float(safety_factor, name="GCI safety_factor")
+    if safety_factor < 1.0:
         raise ValueError("GCI safety_factor must be finite and at least one.")
     fine, medium, coarse = selected
     if len({item.characteristic_size for item in selected}) != 3:
@@ -217,3 +282,13 @@ def _record_quantity_value(
     if not math.isfinite(value):
         raise ValueError(f"Result {index} quantity {name!r} must be finite.")
     return value
+
+
+__all__ = [
+    "GridConvergencePolicy",
+    "GridConvergenceResult",
+    "GridSolution",
+    "assess_grid_convergence",
+    "grid_convergence_from_result_records",
+    "grid_convergence_index",
+]

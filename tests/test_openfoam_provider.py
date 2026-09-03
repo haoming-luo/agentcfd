@@ -434,6 +434,15 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     assert set(result.fields) == {"U", "p"}
     assert result.fields["U"].mesh_sha256 == result.provenance["mesh_sha256"]
     assert result.artifacts["mesh_manifest"].media_type == "application/json"
+    mesh_manifest = json.loads(
+        (case_directory / "agentcfd-mesh.json").read_text(encoding="utf-8")
+    )
+    mesh_schema = json.loads(
+        (
+            Path(__file__).parents[1] / "schemas" / "openfoam-mesh.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    jsonschema.Draft202012Validator(mesh_schema).validate(mesh_manifest)
     assert len(result.histories["flow.pressure_drop"].values) == 1
     assert all(check.passed for check in result.checks)
 

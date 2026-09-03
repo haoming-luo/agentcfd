@@ -178,7 +178,7 @@ def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monk
     root = tmp_path / "grid-study"
     assert main(["prepare", "openfoam-pipe-grid", str(root), "--json"]) == 0
     capsys.readouterr()
-    values = {4: 3.56, 8: 1.64, 16: 1.16}
+    values = {4: 1.0256, 8: 1.0064, 16: 1.0016}
 
     def fake_run_prepared(self, step, directory=None):
         cross = self.mesh.cross_section_cells
@@ -201,6 +201,7 @@ def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monk
 
     assert payload["observed_order"] == pytest.approx(2.0)
     assert payload["extrapolated_value"] == pytest.approx(1.0)
+    assert payload["acceptance"]["accepted"] is True
     assert (root / "agentcfd-grid-convergence.json").is_file()
     assert all((root / case / "agentcfd-result.json").is_file() for case in (
         "grid-1-c4-a20",
@@ -211,7 +212,9 @@ def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monk
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     paths = []
-    for index, (cells, value) in enumerate(((64, 3.56), (512, 1.64), (4096, 1.16))):
+    for index, (cells, value) in enumerate(
+        ((64, 1.0256), (512, 1.0064), (4096, 1.0016))
+    ):
         path = tmp_path / f"result-{index}.json"
         SimulationResult(
             status="completed",
@@ -241,6 +244,7 @@ def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     )
     payload = json.loads(capsys.readouterr().out)
     assert payload["observed_order"] == pytest.approx(2.0)
+    assert payload["acceptance"]["accepted"] is True
     assert payload["schema"] == "agentcfd.grid-convergence/0.1"
     assert all(len(item["sha256"]) == 64 for item in payload["sources"])
 
@@ -248,6 +252,41 @@ def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     verification = json.loads(capsys.readouterr().out)
     assert verification["verified"] is True
     assert verification["trust_level"] == "verified"
+
+
+def test_cli_rejects_grid_study_above_uncertainty_limit(tmp_path, capsys):
+    paths = []
+    for index, (cells, value) in enumerate(((64, 3.56), (512, 1.64), (4096, 1.16))):
+        path = tmp_path / f"result-{index}.json"
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="synthetic",
+            quantities={
+                "mesh.cell_count": Quantity(cells, "1"),
+                "flow.pressure_drop": Quantity(value, "Pa"),
+            },
+            checks=(Check("synthetic-convergence", True, kind="verification"),),
+            provenance={"model_sha256": "a" * 64},
+        ).write(path)
+        paths.append(path)
+
+    assert (
+        main(
+            [
+                "verify",
+                "grid-convergence",
+                *(str(path) for path in paths),
+                "--quantity",
+                "flow.pressure_drop",
+                "--json",
+            ]
+        )
+        == 3
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["acceptance"]["accepted"] is False
+    assert payload["acceptance"]["checks"][0]["name"] == "fine-grid-relative-gci"
 
 
 def test_cli_openfoam_run_is_nonzero_when_scientific_checks_fail(

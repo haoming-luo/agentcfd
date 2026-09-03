@@ -17,7 +17,7 @@ from .model import Model
 from .provenance import file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
 from .results import read_result_record
-from .verification import grid_convergence_from_result_records
+from .verification import assess_grid_convergence, grid_convergence_from_result_records
 
 
 def _doctor() -> dict[str, object]:
@@ -162,6 +162,7 @@ def _grid_convergence_payload(
         "quantity": quantity,
         "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
         **study.to_dict(),
+        "acceptance": assess_grid_convergence(study),
     }
 
 
@@ -515,7 +516,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{payload['observed_order']:.6g}"
             )
             print(target)
-        return 0
+        return 0 if payload["acceptance"]["accepted"] else 3
     if args.command == "verify" and args.verification == "grid-convergence":
         payload = _grid_convergence_payload(args.results, quantity=args.quantity)
         if args.as_json:
@@ -527,7 +528,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"GCI {args.quantity} | observed order {payload['observed_order']:.6g} | "
                 f"fine relative GCI {relative_text}"
             )
-        return 0
+        return 0 if payload["acceptance"]["accepted"] else 3
     if args.command == "verify" and args.verification == "result":
         record = read_result_record(args.result)
         report = {

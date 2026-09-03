@@ -53,6 +53,8 @@ Installed tools can discover these contracts through
 `agentcfd.contracts.available()`, `path()`, and `load()`, or with
 `agentcfd contracts --json`. This avoids repository-relative paths and does not
 require a JSON-schema validation library at runtime.
+The catalog includes `openfoam-mesh.schema.json`, which fixes the identity
+contract used to bind native CFD fields to their exact mesh.
 
 The intended sequence is:
 

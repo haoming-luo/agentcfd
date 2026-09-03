@@ -71,6 +71,10 @@ machine-readable capability catalog.
   pressure into flow without hiding laminar, transitional, or turbulent choice.
 - expose forward pipe loss and inverse pressure-to-flow calculations through a
   dependency-free JSON CLI for engineers and agents.
+- publish the content-addressed OpenFOAM mesh manifest as an installed,
+  versioned JSON Schema contract.
+- add an explicit GCI promotion policy for fine-grid uncertainty and
+  asymptotic-range evidence, with fail-closed CLI status.
 
 ## 0.1.0a1 — 2026-09-03
 

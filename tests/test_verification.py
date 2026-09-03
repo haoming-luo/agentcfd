@@ -1,7 +1,9 @@
 import pytest
 
 from agentcfd.verification import (
+    GridConvergencePolicy,
     GridSolution,
+    assess_grid_convergence,
     grid_convergence_from_result_records,
     grid_convergence_index,
 )
@@ -21,6 +23,25 @@ def test_grid_convergence_recovers_second_order_sequence():
     assert result.fine_grid_absolute_gci == pytest.approx(0.00625)
     assert result.fine_grid_relative_gci == pytest.approx(0.00625 / 1.005)
     assert result.asymptotic_ratio == pytest.approx(1.0)
+
+
+def test_grid_convergence_promotion_policy_is_explicit():
+    accepted = assess_grid_convergence(
+        grid_convergence_index(
+            GridSolution(size, 1.0 + 0.01 * size**2)
+            for size in (0.4, 0.2, 0.1)
+        )
+    )
+    rejected = assess_grid_convergence(
+        grid_convergence_index(
+            GridSolution(size, 1.0 + 10.0 * size**2)
+            for size in (0.4, 0.2, 0.1)
+        )
+    )
+
+    assert accepted["accepted"] is True
+    assert rejected["accepted"] is False
+    assert rejected["policy"] == GridConvergencePolicy().to_dict()
 
 
 def test_grid_convergence_supports_unequal_refinement_ratios():
@@ -53,6 +74,22 @@ def test_grid_convergence_supports_unequal_refinement_ratios():
 def test_grid_convergence_rejects_invalid_studies(solutions, message):
     with pytest.raises(ValueError, match=message):
         grid_convergence_index(solutions)
+
+
+def test_grid_verification_rejects_boolean_numeric_inputs():
+    with pytest.raises(ValueError, match="finite number"):
+        GridSolution(True, 1.0)
+    with pytest.raises(ValueError, match="finite number"):
+        GridConvergencePolicy(maximum_fine_relative_gci=True)
+    with pytest.raises(ValueError, match="finite number"):
+        grid_convergence_index(
+            (
+                GridSolution(0.1, 1.0),
+                GridSolution(0.2, 1.1),
+                GridSolution(0.4, 1.3),
+            ),
+            safety_factor=True,
+        )
 
 
 def _result_record(*, cells: int, value: float, model: str = "a" * 64):

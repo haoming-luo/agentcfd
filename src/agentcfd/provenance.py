@@ -80,9 +80,11 @@ def _scientific_record(value: object, *, path: str, missing: list[dict[str, str]
             "sha256": hashlib.sha256(contiguous.tobytes(order="C")).hexdigest(),
         }
     if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise ValueError(f"{path} contains a non-string mapping key.")
         return {
-            str(key): _scientific_record(value[key], path=f"{path}.{key}", missing=missing)
-            for key in sorted(value, key=lambda item: str(item))
+            key: _scientific_record(value[key], path=f"{path}.{key}", missing=missing)
+            for key in sorted(value)
         }
     if isinstance(value, (tuple, list)):
         return [

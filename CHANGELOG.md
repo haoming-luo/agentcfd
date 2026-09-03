@@ -114,6 +114,10 @@ machine-readable capability catalog.
   before reopening result evidence or computing GCI.
 - validate serialized check names/kinds and reject boolean artifact sizes during
   result evidence reopening.
+- reject non-string mapping keys before model or scientific-input fingerprinting
+  to prevent JSON key-normalization collisions.
+- require identical quantity units and dimensionless cell counts across all
+  serialized results in a GCI study.
 
 ## 0.1.0a1 — 2026-09-03
 

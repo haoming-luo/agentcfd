@@ -303,6 +303,7 @@ def grid_convergence_from_result_records(
         raise ValueError("quantity must not be empty.")
 
     identities: set[str] = set()
+    quantity_units: set[str | None] = set()
     solutions: list[GridSolution] = []
     for index, record in enumerate(selected, start=1):
         if record.get("status") != "completed" or record.get("converged") is not True:
@@ -323,11 +324,21 @@ def grid_convergence_from_result_records(
         if not isinstance(quantities, Mapping):
             raise ValueError(f"Result {index} is missing quantities.")
         value = _record_quantity_value(quantities, quantity, index=index)
+        quantity_entry = quantities[quantity]
+        assert isinstance(quantity_entry, Mapping)
+        quantity_unit = quantity_entry.get("unit")
+        if quantity_unit is not None and not isinstance(quantity_unit, str):
+            raise ValueError(f"Result {index} quantity {quantity!r} has an invalid unit.")
+        quantity_units.add(quantity_unit)
         cell_count = _record_quantity_value(
             quantities,
             cell_count_quantity,
             index=index,
         )
+        cell_count_entry = quantities[cell_count_quantity]
+        assert isinstance(cell_count_entry, Mapping)
+        if cell_count_entry.get("unit") != "1":
+            raise ValueError(f"Result {index} cell count must use unit '1'.")
         if cell_count <= 0.0:
             raise ValueError(f"Result {index} cell count must be positive.")
         if not cell_count.is_integer():
@@ -342,6 +353,8 @@ def grid_convergence_from_result_records(
 
     if len(identities) != 1:
         raise ValueError("Grid convergence results must share one model SHA-256 identity.")
+    if len(quantity_units) != 1:
+        raise ValueError("Grid convergence quantity units must match exactly.")
     return grid_convergence_index(solutions, safety_factor=safety_factor)
 
 

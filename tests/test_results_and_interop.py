@@ -6,6 +6,7 @@ import jsonschema
 import pytest
 
 from agentcfd import Artifact, Check, Model, Quantity, SimulationResult, benchmarks, boundaries, contracts, fluids, geometry, interoperability, licensing, read_result_record, studies, verification
+from agentcfd.provenance import content_fingerprint
 
 
 def test_all_published_json_schemas_are_valid():
@@ -33,6 +34,11 @@ def test_machine_catalogs_validate_against_installed_contracts():
         ),
     ):
         jsonschema.Draft202012Validator(contracts.load(schema_name)).validate(payload)
+
+
+def test_scientific_fingerprint_rejects_non_string_mapping_keys():
+    with pytest.raises(ValueError, match="non-string mapping key"):
+        content_fingerprint({1: "ambiguous"})
 
 
 def pipe_model() -> Model:

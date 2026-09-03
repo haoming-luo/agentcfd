@@ -448,6 +448,11 @@ def read_result_record(
         or isinstance(quantity.get("value"), bool)
         or not isinstance(quantity.get("value"), (int, float))
         or not math.isfinite(float(quantity["value"]))
+        or (
+            quantity.get("unit") is not None
+            and not isinstance(quantity.get("unit"), str)
+        )
+        or not isinstance(quantity.get("kind"), str)
         for name, quantity in quantities.items()
     ):
         raise ValueError("AgentCFD result quantities are malformed.")

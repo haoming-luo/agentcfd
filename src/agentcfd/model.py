@@ -58,6 +58,19 @@ class Model:
         return dict(self._boundaries)
 
     def validate(self) -> None:
+        def require_string_keys(value: object, path: str) -> None:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    if not isinstance(key, str):
+                        raise ModelValidationError(
+                            f"Model metadata key at {path} must be a string."
+                        )
+                    require_string_keys(item, f"{path}.{key}")
+            elif isinstance(value, (list, tuple)):
+                for index, item in enumerate(value):
+                    require_string_keys(item, f"{path}[{index}]")
+
+        require_string_keys(self.metadata, "metadata")
         try:
             json.dumps(self.metadata, sort_keys=True, allow_nan=False)
         except (TypeError, ValueError) as error:

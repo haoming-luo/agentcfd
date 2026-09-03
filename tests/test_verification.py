@@ -192,3 +192,13 @@ def test_result_record_grid_convergence_rejects_mixed_models_and_unconverged_run
     records[2]["quantities"]["flow.pressure_drop"]["value"] = True
     with pytest.raises(ValueError, match="must be numeric"):
         grid_convergence_from_result_records(records, quantity="flow.pressure_drop")
+
+    records[2] = _result_record(cells=4096, value=1.16)
+    records[2]["quantities"]["flow.pressure_drop"]["unit"] = "kPa"
+    with pytest.raises(ValueError, match="units must match"):
+        grid_convergence_from_result_records(records, quantity="flow.pressure_drop")
+
+    records[2] = _result_record(cells=4096, value=1.16)
+    records[2]["quantities"]["mesh.cell_count"]["unit"] = "cells"
+    with pytest.raises(ValueError, match="must use unit '1'"):
+        grid_convergence_from_result_records(records, quantity="flow.pressure_drop")

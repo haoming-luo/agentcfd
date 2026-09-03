@@ -70,6 +70,10 @@ def test_model_rejects_unknown_boundaries_and_unstable_metadata():
     with pytest.raises(ModelValidationError, match="finite, JSON-serializable"):
         model.fingerprint()
 
+    model.metadata = {"nested": {1: "ambiguous"}}
+    with pytest.raises(ModelValidationError, match="must be a string"):
+        model.fingerprint()
+
 
 def test_study_flags_and_output_names_are_runtime_validated():
     with pytest.raises(ValueError, match="steady must be a boolean"):

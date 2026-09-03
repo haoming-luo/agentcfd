@@ -29,6 +29,12 @@ class Model:
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
             raise ValueError("Model name cannot be empty.")
+        if not isinstance(self.study, Study):
+            raise TypeError("Model study must be an AgentCFD Study.")
+        if not isinstance(self.domain, CircularPipe):
+            raise TypeError("Model domain must be an AgentCFD CircularPipe.")
+        if not isinstance(self.fluid, NewtonianFluid):
+            raise TypeError("Model fluid must be an AgentCFD NewtonianFluid.")
         if not isinstance(self.metadata, dict):
             raise ValueError("Model metadata must be a dictionary.")
         self.metadata = dict(self.metadata)
@@ -139,6 +145,14 @@ class Step:
     model: Model
     procedure: procedure_types.SteadyProcedure
     output: output_types.OutputRequest
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.model, Model):
+            raise TypeError("Step model must be an AgentCFD Model.")
+        if not isinstance(self.procedure, procedure_types.SteadyProcedure):
+            raise TypeError("Step procedure must be an AgentCFD SteadyProcedure.")
+        if not isinstance(self.output, output_types.OutputRequest):
+            raise TypeError("Step output must be an AgentCFD OutputRequest.")
 
     def run(self, *, provider: str | object = "reference") -> SimulationResult:
         self.model.validate()

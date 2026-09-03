@@ -128,6 +128,8 @@ machine-readable capability catalog.
 - expose low-Mach model screening through the human- and agent-facing CLI.
 - publish a capability-catalog JSON contract and advertise gas screening and
   single-observable validation with explicit maturity boundaries.
+- enforce runtime types for model/step components and non-empty string names
+  for physical geometry and fluid assets.
 
 ## 0.1.0a1 — 2026-09-03
 

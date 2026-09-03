@@ -32,8 +32,8 @@ class CircularPipe:
             "roughness",
             nonnegative_float(self.roughness, name="Pipe roughness"),
         )
-        if not str(self.name).strip():
-            raise ValueError("Pipe name cannot be empty.")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Pipe name must be a non-empty string.")
 
     @property
     def area(self) -> float:

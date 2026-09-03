@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from agentcfd import Model, boundaries, fluids, geometry, outputs, procedures, studies
+from agentcfd import Model, Step, boundaries, fluids, geometry, outputs, procedures, studies
 from agentcfd.errors import ModelValidationError
 from agentcfd.providers import OpenFOAMMeshControls, OpenFOAMProvider
 
@@ -83,3 +83,26 @@ def test_study_flags_and_output_names_are_runtime_validated():
             fields=("fluid.velocity", "fluid.velocity"),
             histories=(),
         )
+
+
+@pytest.mark.parametrize("invalid_name", [None, True, 1, ""])
+def test_physical_asset_names_require_non_empty_strings(invalid_name):
+    with pytest.raises(ValueError, match="Pipe name must be a non-empty string"):
+        geometry.circular_pipe(length=1.0, diameter=0.1, name=invalid_name)
+    with pytest.raises(ValueError, match="Fluid name must be a non-empty string"):
+        fluids.newtonian(
+            invalid_name,
+            density=1000.0,
+            dynamic_viscosity=0.001,
+        )
+
+
+def test_model_and_step_components_are_runtime_typed():
+    pipe = geometry.circular_pipe(length=1.0, diameter=0.1)
+    water = fluids.newtonian("water", density=1000.0, dynamic_viscosity=0.001)
+    study = studies.internal_flow()
+    with pytest.raises(TypeError, match="Model study"):
+        Model(study={}, domain=pipe, fluid=water)
+    model = Model(study=study, domain=pipe, fluid=water)
+    with pytest.raises(TypeError, match="Step procedure"):
+        Step(model=model, procedure={}, output=outputs.standard())

@@ -16,8 +16,8 @@ class NewtonianFluid:
     thermal_conductivity: float | None = None
 
     def __post_init__(self) -> None:
-        if not self.name.strip():
-            raise ValueError("Fluid name cannot be empty.")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Fluid name must be a non-empty string.")
         object.__setattr__(
             self,
             "density",

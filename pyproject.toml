@@ -39,6 +39,7 @@ agentcfd = "agentcfd.cli:main"
 
 [project.optional-dependencies]
 arrays = ["numpy>=1.24"]
+properties = ["CoolProp>=7,<9"]
 dev = ["build", "jsonschema>=4.20", "numpy>=1.24", "pytest", "ruff", "twine"]
 
 [tool.setuptools.packages.find]

@@ -3,11 +3,16 @@ import math
 import subprocess
 from pathlib import Path
 
+import jsonschema
 import pytest
 
 from agentcfd import Model, boundaries, fluids, geometry, studies
 from agentcfd.errors import ProviderUnavailableError, UnsupportedCaseError
-from agentcfd.providers import OpenFOAMMeshControls, OpenFOAMProvider
+from agentcfd.providers import (
+    OpenFOAMMeshControls,
+    OpenFOAMProvider,
+    prepare_pipe_grid_study,
+)
 from agentcfd.providers.openfoam import (
     _mesh_quality_quantities,
     _read_scalar_series,
@@ -53,6 +58,53 @@ def test_openfoam_case_lowering_is_deterministic_and_content_addressed(tmp_path)
     manifest = json.loads((first.directory / "agentcfd-case.json").read_text())
     assert manifest["case_sha256"] == first.case_sha256
     assert manifest["provider"]["execution_boundary"] == "filesystem-and-subprocess"
+
+
+def test_openfoam_grid_study_prepares_same_model_geometrically_similar_cases(tmp_path):
+    study = prepare_pipe_grid_study(
+        pipe_model(fully_developed=True).step(),
+        tmp_path / "study",
+    )
+    payload = study.to_dict()
+
+    assert payload["refinement_ratio"] == 2.0
+    assert [case["expected_cell_count"] for case in payload["cases"]] == [
+        1600,
+        12800,
+        102400,
+    ]
+    assert len({case["case_sha256"] for case in payload["cases"]}) == 3
+    identities = {
+        json.loads(
+            (study.directory / case["directory"] / "agentcfd-case.json").read_text()
+        )["model_sha256"]
+        for case in payload["cases"]
+    }
+    assert identities == {study.model_sha256}
+    assert (study.directory / "agentcfd-grid-study.json").is_file()
+    schema = json.loads(
+        (Path(__file__).parents[1] / "schemas" / "openfoam-grid-study.schema.json").read_text()
+    )
+    jsonschema.Draft202012Validator(schema).validate(payload)
+
+
+def test_openfoam_grid_study_rejects_non_similar_or_nonempty_plans(tmp_path):
+    with pytest.raises(ValueError, match="one refinement ratio"):
+        prepare_pipe_grid_study(
+            pipe_model(fully_developed=True).step(),
+            tmp_path / "invalid",
+            cross_section_cells=(4, 8, 12),
+        )
+
+    occupied = tmp_path / "occupied"
+    occupied.mkdir()
+    (occupied / "keep.txt").write_text("user data")
+    with pytest.raises(FileExistsError, match="not empty"):
+        prepare_pipe_grid_study(
+            pipe_model(fully_developed=True).step(),
+            occupied,
+        )
+    assert (occupied / "keep.txt").read_text() == "user data"
 
 
 def test_openfoam_case_has_physical_pipe_and_expected_boundary_semantics(tmp_path):

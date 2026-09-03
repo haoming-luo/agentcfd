@@ -24,6 +24,9 @@ Its machine contract is `schemas/openfoam-case.schema.json`.
 The CLI exposes `--cross-section-cells` and `--axial-cells` on both `prepare`
 and `run`. The exact controls are retained in the result's scientific inputs;
 changing resolution therefore changes the case identity and remains auditable.
+For formal refinement work, `prepare openfoam-pipe-grid` creates three
+same-model cases and a versioned `agentcfd-grid-study.json` plan; it prevents
+manual boundary edits from being mistaken for a valid GCI family.
 
 ## Safety and failure behavior
 

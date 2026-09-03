@@ -47,6 +47,22 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="properties.coolprop",
+        maturity="experimental",
+        scope="Optional pressure-temperature thermophysical states, including IF97 water/steam.",
+        evidence=(
+            "lazy optional-provider tests",
+            "SI state-record contract tests",
+            "upstream CoolProp pressure-temperature and IF97 documentation",
+            "CoolProp 8.0.0 installed-runtime IF97 evidence at 101325 Pa and 500 K",
+        ),
+        limitations=(
+            "Property evaluation is not a CFD solver.",
+            "The caller must select a valid fluid backend and state point.",
+            "Two-phase and near-saturation CFD remain unsupported.",
+        ),
+    ),
+    Capability(
         name="interoperability.agentcae-exchange",
         maturity="experimental",
         scope="Provider-neutral field exchange contract for AgentCFD, AgentFEM, learning, and coupling tools.",

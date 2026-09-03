@@ -152,12 +152,19 @@ Three-grid studies can use `agentcfd.verification.grid_convergence_index` or
 consume three serialized results directly:
 
 ```bash
+agentcfd prepare openfoam-pipe-grid pipe-grid \
+  --cross-section-cells 4 8 16 \
+  --base-axial-cells 20 \
+  --json
+
 agentcfd verify grid-convergence coarse.json medium.json fine.json \
   --quantity flow.pressure_drop \
   --json
 ```
 
-The result workflow checks that all runs completed, converged, share one model
+The preparation workflow creates a 0.5 m by 0.1 m benchmark with one declared
+fully developed inlet model, isotropic refinement ratios, per-case hashes, and
+an explicit plan. The result workflow checks that all runs completed, converged, share one model
 identity, and contain distinct positive mesh cell counts before it records
 Richardson extrapolation, observed order, GCI, the asymptotic ratio, and hashes
 of all three source files.
@@ -206,6 +213,7 @@ authoritative.
 - [Results, evidence, and AI exchange](docs/results-and-ai.md)
 - [Installation and solver runtime](docs/installation.md)
 - [Dependency and license policy](docs/licensing.md)
+- [Thermophysical properties](docs/properties.md)
 - [OpenFOAM provider boundary](docs/openfoam-provider.md)
 - [Publishing and PyPI name status](docs/publishing.md)
 - [Validation policy](docs/validation.md)

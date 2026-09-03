@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from agentcfd import capabilities
+from agentcfd import benchmarks, capabilities
 from agentcfd.cli import main
 
 
@@ -27,6 +27,18 @@ def test_cli_doctor_json(capsys):
     assert payload["healthy"] is True
     assert payload["providers"]["reference-pipe"] is True
     assert "checkMesh" in payload["executables"]
+
+
+def test_benchmark_catalog_is_machine_readable_and_cli_visible(capsys):
+    report = benchmarks.as_dict()
+    ids = {case["id"] for case in report["cases"]}
+    assert "laminar-fully-developed-pipe" in ids
+    assert "fda-benchmark-nozzle" in ids
+    assert "single-phase-if97-steam-pipe" in ids
+    assert all(case["source_url"].startswith("https://") for case in report["cases"])
+
+    assert main(["benchmarks", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == report
 
 
 def test_cli_prepares_openfoam_case_without_runtime(tmp_path, capsys):
@@ -62,6 +74,36 @@ def test_cli_prepares_declared_fully_developed_openfoam_case(tmp_path, capsys):
     assert "type expression;" in velocity
     mesh = (case_directory / "system" / "blockMeshDict").read_text()
     assert mesh.count("(4 4 20) simpleGrading") == 5
+
+
+def test_cli_prepares_same_model_openfoam_grid_family(tmp_path, capsys):
+    root = tmp_path / "grid-study"
+    assert (
+        main(
+            [
+                "prepare",
+                "openfoam-pipe-grid",
+                str(root),
+                "--cross-section-cells",
+                "4",
+                "8",
+                "16",
+                "--base-axial-cells",
+                "20",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == "agentcfd.openfoam-grid-study/0.1"
+    assert payload["scientific_inputs"]["model"]["domain"]["length"] == 0.5
+    assert payload["scientific_inputs"]["model"]["domain"]["diameter"] == 0.1
+    assert [case["expected_cell_count"] for case in payload["cases"]] == [
+        1600,
+        12800,
+        102400,
+    ]
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

@@ -26,7 +26,11 @@ machine-readable capability catalog.
 - add a CLI workflow and JSON schema that computes GCI directly from three
   converged same-model AgentCFD result files and hashes every source;
 - make the core runtime dependency-free while retaining NumPy array support as
-  an optional `arrays` extra.
+  an optional `arrays` extra;
+- add ideal-gas/Mach screening functions and a lazy optional CoolProp property
+  provider with structured IF97 water/steam state records;
+- add a fail-closed same-model OpenFOAM three-grid preparation workflow with
+  isotropic resolution scaling, per-case identities, and a JSON study schema.
 
 ## 0.1.0a1 — 2026-09-03
 

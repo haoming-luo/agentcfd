@@ -1,0 +1,47 @@
+{
+  "schema": "agentcfd.property-validation/0.1",
+  "date": "2026-09-03",
+  "provider": {
+    "name": "coolprop-properties",
+    "version": "8.0.0",
+    "license": "MIT",
+    "backend": "IF97"
+  },
+  "inputs": {
+    "fluid": "IF97::Water",
+    "absolute_pressure_Pa": 101325.0,
+    "temperature_K": 500.0
+  },
+  "outputs": {
+    "phase": "gas",
+    "density_kg_per_m3": 0.4409206435977277,
+    "dynamic_viscosity_Pa_s": 0.00001729872292280411,
+    "specific_heat_J_per_kg_K": 1981.5422965970472,
+    "thermal_conductivity_W_per_m_K": 0.03603516779821917,
+    "speed_of_sound_m_per_s": 548.2844932155958,
+    "prandtl_number": 0.9512416132093949
+  },
+  "checks": [
+    {
+      "name": "upstream-density-example",
+      "status": "passed",
+      "expected": 0.4409206435977277,
+      "actual": 0.4409206435977277
+    },
+    {
+      "name": "upstream-specific-heat-example",
+      "status": "passed",
+      "expected": 1981.5422965970472,
+      "actual": 1981.5422965970472
+    },
+    {
+      "name": "positive-finite-transport-state",
+      "status": "passed"
+    }
+  ],
+  "sources": [
+    "https://coolprop.org/coolprop/HighLevelAPI.html",
+    "https://coolprop.org/fluid_properties/IF97.html",
+    "https://github.com/CoolProp/CoolProp"
+  ]
+}

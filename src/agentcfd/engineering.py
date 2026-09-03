@@ -13,6 +13,13 @@ def _positive(value: float, name: str) -> float:
     return selected
 
 
+def _nonnegative(value: float, name: str) -> float:
+    selected = float(value)
+    if not math.isfinite(selected) or selected < 0.0:
+        raise ValueError(f"{name} must be non-negative and finite.")
+    return selected
+
+
 def hydraulic_diameter(area: float, wetted_perimeter: float) -> float:
     """Return ``4A/P`` for a fully wetted duct cross-section."""
 
@@ -194,4 +201,45 @@ def pipe_pressure_loss(
         major_pressure_loss=major,
         minor_pressure_loss=minor,
         total_pressure_loss=major + minor,
+    )
+
+
+def ideal_gas_density(
+    *,
+    absolute_pressure: float,
+    temperature: float,
+    specific_gas_constant: float,
+) -> float:
+    """Return ideal-gas density ``rho = p/(R T)`` in SI-compatible units."""
+
+    return _positive(absolute_pressure, "absolute_pressure") / (
+        _positive(specific_gas_constant, "specific_gas_constant")
+        * _positive(temperature, "temperature")
+    )
+
+
+def ideal_gas_speed_of_sound(
+    *,
+    temperature: float,
+    specific_heat_ratio: float,
+    specific_gas_constant: float,
+) -> float:
+    """Return calorically perfect-gas sound speed ``sqrt(gamma R T)``."""
+
+    gamma = _positive(specific_heat_ratio, "specific_heat_ratio")
+    if gamma <= 1.0:
+        raise ValueError("specific_heat_ratio must be greater than one.")
+    return math.sqrt(
+        gamma
+        * _positive(specific_gas_constant, "specific_gas_constant")
+        * _positive(temperature, "temperature")
+    )
+
+
+def mach_number(*, velocity: float, speed_of_sound: float) -> float:
+    """Return flow speed divided by local thermodynamic speed of sound."""
+
+    return _nonnegative(velocity, "velocity") / _positive(
+        speed_of_sound,
+        "speed_of_sound",
     )

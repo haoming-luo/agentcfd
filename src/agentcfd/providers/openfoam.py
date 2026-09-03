@@ -340,6 +340,118 @@ class PreparedOpenFOAMCase:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedOpenFOAMGridStudy:
+    """A geometrically similar three-case OpenFOAM refinement plan."""
+
+    directory: Path
+    model_sha256: str
+    cases: tuple[dict[str, object], ...]
+    refinement_ratio: float
+    scientific_inputs: dict[str, object]
+    schema: str = "agentcfd.openfoam-grid-study/0.1"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "model_sha256": self.model_sha256,
+            "quantity": "flow.pressure_drop",
+            "refinement_ratio": self.refinement_ratio,
+            "scientific_inputs": self.scientific_inputs,
+            "cases": list(self.cases),
+        }
+
+    def write(self) -> Path:
+        target = self.directory / "agentcfd-grid-study.json"
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+        return target
+
+
+def prepare_pipe_grid_study(
+    step,
+    directory: str | Path,
+    *,
+    cross_section_cells: tuple[int, int, int] = (4, 8, 16),
+    base_axial_cells: int = 20,
+) -> PreparedOpenFOAMGridStudy:
+    """Prepare three same-model, geometrically similar circular-pipe cases."""
+
+    selected = tuple(
+        integer_at_least(value, name="cross_section_cells", minimum=2)
+        for value in cross_section_cells
+    )
+    if len(selected) != 3:
+        raise ValueError("Exactly three cross-section cell counts are required.")
+    if not (selected[0] < selected[1] < selected[2]):
+        raise ValueError("Cross-section cell counts must be strictly increasing.")
+    ratio_21 = selected[1] / selected[0]
+    ratio_32 = selected[2] / selected[1]
+    if not math.isclose(ratio_21, ratio_32, rel_tol=1.0e-12):
+        raise ValueError("Cross-section cell counts must use one refinement ratio.")
+    base_axial = integer_at_least(
+        base_axial_cells,
+        name="base_axial_cells",
+        minimum=2,
+    )
+    axial_counts: list[int] = []
+    for cross_cells in selected:
+        scaled = base_axial * cross_cells / selected[0]
+        if not scaled.is_integer():
+            raise ValueError("Axial cell counts must scale integrally with cross-section cells.")
+        axial_counts.append(int(scaled))
+
+    root = Path(directory)
+    if root.exists() and any(root.iterdir()):
+        raise FileExistsError(f"OpenFOAM grid-study directory is not empty: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+    model_sha256 = step.model.fingerprint()
+    cases: list[dict[str, object]] = []
+    for index, (cross_cells, axial_cells) in enumerate(
+        zip(selected, axial_counts),
+        start=1,
+    ):
+        relative = Path(f"grid-{index}-c{cross_cells}-a{axial_cells}")
+        prepared = OpenFOAMProvider(
+            case_directory=root / relative,
+            mesh=OpenFOAMMeshControls(
+                cross_section_cells=cross_cells,
+                axial_cells=axial_cells,
+            ),
+        ).prepare(step)
+        if prepared.model_sha256 != model_sha256:
+            raise RuntimeError("Prepared grid cases do not share one model identity.")
+        cases.append(
+            {
+                "index": index,
+                "label": ("coarse", "medium", "fine")[index - 1],
+                "directory": str(relative),
+                "cross_section_cells": cross_cells,
+                "axial_cells": axial_cells,
+                "expected_cell_count": 5 * cross_cells**2 * axial_cells,
+                "case_sha256": prepared.case_sha256,
+                "result": str(relative / "agentcfd-result.json"),
+            }
+        )
+    study = PreparedOpenFOAMGridStudy(
+        directory=root,
+        model_sha256=model_sha256,
+        cases=tuple(cases),
+        refinement_ratio=ratio_21,
+        scientific_inputs={
+            "model": step.model.to_dict(),
+            "procedure": step.procedure.to_dict(),
+            "output_request": step.output.to_dict(),
+        },
+    )
+    study.write()
+    return study
+
+
 class OpenFOAMProvider:
     """Lower a bounded model to an external ``simpleFoam`` workflow.
 

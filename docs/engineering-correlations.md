@@ -31,6 +31,15 @@ by an unlabelled approximation. These correlations remain empirical
 engineering evidence; their domain of applicability must travel with any
 decision that uses them.
 
+## Gas screening
+
+The ideal-gas density, calorically perfect-gas speed of sound, and Mach number
+are available for preliminary regime screening. They use explicit pressure,
+temperature, specific gas constant, and heat-capacity ratio inputs. Steam near
+saturation and non-ideal gases require a property backend such as the optional
+CoolProp IF97 provider; AgentCFD does not silently substitute the ideal-gas
+relations.
+
 ## Numerical verification
 
 `agentcfd.verification.grid_convergence_index` implements the monotonic

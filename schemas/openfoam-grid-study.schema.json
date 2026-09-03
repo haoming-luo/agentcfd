@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-grid-study.schema.json",
+  "title": "AgentCFD OpenFOAM three-grid study plan 0.1",
+  "type": "object",
+  "required": ["schema", "model_sha256", "quantity", "refinement_ratio", "scientific_inputs", "cases"],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-grid-study/0.1"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "quantity": {"const": "flow.pressure_drop"},
+    "refinement_ratio": {"type": "number", "exclusiveMinimum": 1},
+    "scientific_inputs": {
+      "type": "object",
+      "required": ["model", "procedure", "output_request"],
+      "properties": {
+        "model": {"type": "object"},
+        "procedure": {"type": "object"},
+        "output_request": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "label",
+          "directory",
+          "cross_section_cells",
+          "axial_cells",
+          "expected_cell_count",
+          "case_sha256",
+          "result"
+        ],
+        "properties": {
+          "index": {"type": "integer", "minimum": 1, "maximum": 3},
+          "label": {"enum": ["coarse", "medium", "fine"]},
+          "directory": {"type": "string", "minLength": 1},
+          "cross_section_cells": {"type": "integer", "minimum": 2},
+          "axial_cells": {"type": "integer", "minimum": 2},
+          "expected_cell_count": {"type": "integer", "minimum": 1},
+          "case_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "result": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

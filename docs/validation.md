@@ -57,6 +57,13 @@ same model SHA-256, and expose a finite target quantity plus distinct positive
 cell counts. Its versioned JSON evidence includes the observed order,
 extrapolated value, fine/medium GCI, asymptotic ratio, and source-file hashes.
 
+`agentcfd prepare openfoam-pipe-grid` creates the matching input side of this
+workflow. It uses one fully developed public model for all three cases, scales
+cross-section and axial counts by the same ratio, records each case hash and
+expected cell count, and refuses a non-empty destination. The default bounded
+benchmark is 0.5 m long and 0.1 m in diameter so the 4/8/16 by 20/40/80 family
+contains 1,600, 12,800, and 102,400 cells without extreme axial aspect ratios.
+
 For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
 are different scientific problems. Total inlet-to-outlet static pressure from
 the uniform case includes an entrance contribution and is not promoted as a

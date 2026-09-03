@@ -11,6 +11,7 @@ is not called validated merely because a solver tutorial exists.
 | Unit | Lid-driven cavity | centreline velocity and vortex location | trusted numerical reference and grid study | planned |
 | Benchmark | Pitz--Daily backward-facing step | reattachment length, wall pressure, velocity profiles | experiment with turbulence-model sensitivity | planned |
 | Benchmark | Laminar cylinder, Re 150 | drag, lift amplitude, Strouhal number | experimental comparison and temporal/spatial studies | planned |
+| Benchmark | FDA benchmark nozzle | pressure, velocity, wall shear | FDA experimental dataset plus spatial/model studies | planned |
 | Component | Conical diffuser | pressure recovery, separation | experimental data and model sensitivity | planned |
 | Component | Bend, tee, and manifold | loss coefficient, branch balance, uniformity | published data plus conservation | planned |
 | Thermal | Heated pipe / conjugate wall | bulk temperature, Nusselt number, heat balance | analytical correlation and mesh/time studies | planned |
@@ -26,3 +27,15 @@ runtime details, and comparison data. The official
 [OpenFOAM v2606 quickstart](https://doc.openfoam.com/2606/quickstart/) supplies
 the Pitz--Daily setup as an implementation cross-check, not as experimental
 truth.
+
+The US FDA also publishes a
+[benchmark nozzle dataset](https://www.origin-cdrh-rst.fda.gov/benchmark-dataset-validating-computational-fluid-dynamic-cfd-simulation-blood-flow-through)
+with geometry, flow conditions, properties, pressure, and velocity validation
+data. Its nozzle is relevant beyond medical devices because it exercises an
+industrial sequence of contraction, jet, expansion, and recirculation.
+
+The same roadmap is available to agents and automation as
+`agentcfd benchmarks --json`. Each record carries a stable identifier,
+physics, observables, authoritative source, implementation status, and the next
+evidence gate. Source data are linked, not copied, until redistribution terms
+have been reviewed.

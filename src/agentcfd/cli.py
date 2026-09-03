@@ -10,16 +10,17 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from . import boundaries, capabilities, fluids, geometry, outputs, procedures, studies
+from . import benchmarks, boundaries, capabilities, fluids, geometry, outputs, procedures, properties, studies
 from ._version import __version__
 from .model import Model
 from .provenance import file_sha256
-from .providers import OpenFOAMMeshControls, OpenFOAMProvider
+from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
 from .verification import grid_convergence_from_result_records
 
 
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
+    coolprop = properties.CoolPropPropertyProvider().descriptor()
     try:
         numpy_version: str | None = version("numpy")
     except PackageNotFoundError:
@@ -39,6 +40,7 @@ def _doctor() -> dict[str, object]:
         "providers": {
             "reference-pipe": True,
             "openfoam-runtime": openfoam.available,
+            "coolprop-properties": coolprop.available,
         },
     }
 
@@ -56,6 +58,21 @@ def _pipe_model(*, fully_developed: bool = False) -> Model:
         fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
     ).boundaries(
         inlet=inlet,
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+
+
+def _pipe_grid_benchmark_model() -> Model:
+    """Return the bounded, aspect-ratio-conscious three-grid pipe benchmark."""
+
+    return Model(
+        name="laminar-water-pipe-grid-benchmark",
+        study=studies.internal_flow(),
+        domain=geometry.circular_pipe(length=0.5, diameter=0.1),
+        fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
+    ).boundaries(
+        inlet=boundaries.fully_developed_velocity_inlet(0.01),
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
@@ -111,6 +128,24 @@ def _run_openfoam_pipe(
     return result, target
 
 
+def _prepare_openfoam_pipe_grid(
+    directory: Path,
+    *,
+    cross_section_cells: tuple[int, int, int],
+    base_axial_cells: int,
+) -> dict[str, object]:
+    step = _pipe_grid_benchmark_model().step(
+        procedure=procedures.steady(),
+        output=outputs.standard(),
+    )
+    return prepare_pipe_grid_study(
+        step,
+        directory,
+        cross_section_cells=cross_section_cells,
+        base_axial_cells=base_axial_cells,
+    ).to_dict()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="agentcfd", description="AI-native CFD for humans and agents.")
     parser.add_argument("--version", action="version", version=f"AgentCFD {__version__}")
@@ -121,6 +156,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     catalog = subparsers.add_parser("capabilities", help="Show truthful capability boundaries.")
     catalog.add_argument("--json", action="store_true", dest="as_json")
+
+    benchmark_catalog = subparsers.add_parser(
+        "benchmarks",
+        help="Show the evidence-gated benchmark roadmap.",
+    )
+    benchmark_catalog.add_argument("--json", action="store_true", dest="as_json")
 
     demo = subparsers.add_parser("demo", help="Run a bundled verified workflow.")
     demo_subparsers = demo.add_subparsers(dest="demo", required=True)
@@ -151,6 +192,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Cells along the pipe; defaults to a bounded geometry-based value.",
     )
+    grid_prepare = prepare_subparsers.add_parser(
+        "openfoam-pipe-grid",
+        help="Prepare a same-model three-grid fully developed pipe study.",
+    )
+    grid_prepare.add_argument("directory", type=Path)
+    grid_prepare.add_argument(
+        "--cross-section-cells",
+        nargs=3,
+        type=int,
+        default=(4, 8, 16),
+        metavar=("COARSE", "MEDIUM", "FINE"),
+    )
+    grid_prepare.add_argument("--base-axial-cells", type=int, default=20)
+    grid_prepare.add_argument("--json", action="store_true", dest="as_json")
 
     run = subparsers.add_parser("run", help="Prepare, execute, and recover a provider result.")
     run_subparsers = run.add_subparsers(dest="provider", required=True)
@@ -212,6 +267,14 @@ def main(argv: list[str] | None = None) -> int:
             for item in capabilities.all():
                 print(f"{item.name}: {item.maturity}")
         return 0
+    if args.command == "benchmarks":
+        report = benchmarks.as_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            for case in benchmarks.all():
+                print(f"{case.id}: {case.status} | next: {case.next_gate}")
+        return 0
     if args.command == "demo" and args.demo == "pipe":
         result = _pipe_demo(args.output)
         pressure_drop = result["quantities"]["flow.pressure_drop"]
@@ -231,6 +294,18 @@ def main(argv: list[str] | None = None) -> int:
             print("Prepared experimental OpenFOAM circular-pipe case")
             print(args.case_directory)
             print(f"case sha256: {manifest['case_sha256']}")
+        return 0
+    if args.command == "prepare" and args.provider == "openfoam-pipe-grid":
+        plan = _prepare_openfoam_pipe_grid(
+            args.directory,
+            cross_section_cells=tuple(args.cross_section_cells),
+            base_axial_cells=args.base_axial_cells,
+        )
+        if args.as_json:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+        else:
+            print("Prepared same-model three-grid OpenFOAM pipe study")
+            print(args.directory / "agentcfd-grid-study.json")
         return 0
     if args.command == "run" and args.provider == "openfoam-pipe":
         result, target = _run_openfoam_pipe(

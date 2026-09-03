@@ -4,7 +4,7 @@ AgentCFD has two deliberately separate runtime layers.
 
 ## Python control plane
 
-Python 3.11 or newer and NumPy are sufficient for the core API, reference
+Python 3.11 or newer is sufficient for the dependency-free core API, reference
 provider, case generation, result contracts, and command-line tools:
 
 ```bash
@@ -18,6 +18,14 @@ python -m pytest -q
 
 Release candidates must also be installed from the built wheel into a clean
 environment. Editable-source success alone is not a release gate.
+
+NumPy array interoperability and CoolProp thermophysical properties are
+separate permissively licensed extras:
+
+```bash
+python -m pip install "agentcfd[arrays]"
+python -m pip install "agentcfd[properties]"
+```
 
 ## OpenFOAM numerical plane
 

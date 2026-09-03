@@ -1,6 +1,6 @@
 """AgentCFD public engineering language."""
 
-from . import boundaries, capabilities, engineering, fluids, geometry, interoperability, outputs, procedures, providers, studies, verification
+from . import benchmarks, boundaries, capabilities, engineering, fluids, geometry, interoperability, outputs, procedures, properties, providers, studies, verification
 from ._version import __version__
 from .model import Model, Step
 from .results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
@@ -15,6 +15,7 @@ __all__ = [
     "SimulationResult",
     "Step",
     "__version__",
+    "benchmarks",
     "boundaries",
     "capabilities",
     "engineering",
@@ -23,6 +24,7 @@ __all__ = [
     "interoperability",
     "outputs",
     "procedures",
+    "properties",
     "providers",
     "studies",
     "verification",

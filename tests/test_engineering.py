@@ -93,3 +93,33 @@ def test_pipe_pressure_loss_reports_turbulent_rough_pipe_regime():
     assert estimate.regime == "turbulent"
     assert estimate.relative_roughness == pytest.approx(1.0e-3)
     assert estimate.total_pressure_loss == pytest.approx(1108.726795, rel=1.0e-6)
+
+
+def test_ideal_gas_state_and_mach_screening_for_air():
+    density = engineering.ideal_gas_density(
+        absolute_pressure=101325.0,
+        temperature=300.0,
+        specific_gas_constant=287.05,
+    )
+    sound_speed = engineering.ideal_gas_speed_of_sound(
+        temperature=300.0,
+        specific_heat_ratio=1.4,
+        specific_gas_constant=287.05,
+    )
+
+    assert density == pytest.approx(1.176624, rel=1.0e-6)
+    assert sound_speed == pytest.approx(347.219, rel=1.0e-6)
+    assert engineering.mach_number(velocity=100.0, speed_of_sound=sound_speed) == pytest.approx(
+        0.2880027,
+        rel=1.0e-6,
+    )
+    assert engineering.mach_number(velocity=0.0, speed_of_sound=sound_speed) == 0.0
+
+
+def test_ideal_gas_speed_of_sound_requires_physical_heat_capacity_ratio():
+    with pytest.raises(ValueError, match="greater than one"):
+        engineering.ideal_gas_speed_of_sound(
+            temperature=300.0,
+            specific_heat_ratio=1.0,
+            specific_gas_constant=287.05,
+        )

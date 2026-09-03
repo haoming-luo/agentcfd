@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-case.schema.json",
+  "title": "AgentCFD OpenFOAM case manifest 0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "capability",
+    "model_sha256",
+    "case_sha256",
+    "files",
+    "provider"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-case/0.1"},
+    "capability": {"const": "openfoam.steady-laminar-circular-pipe"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "case_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^(0|constant|system)/"},
+      "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+    },
+    "provider": {
+      "type": "object",
+      "required": ["name", "execution_boundary", "license"],
+      "properties": {
+        "name": {"const": "openfoam"},
+        "execution_boundary": {"const": "filesystem-and-subprocess"},
+        "license": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

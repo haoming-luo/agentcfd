@@ -1,0 +1,116 @@
+"""Deterministic reference solutions used to anchor validation."""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from .. import boundaries
+from .._version import __version__
+from ..errors import UnsupportedCaseError
+from ..results import Check, Quantity, SimulationResult
+from .base import ProviderDescriptor
+
+
+class ReferencePipeProvider:
+    """Hagen--Poiseuille solution for a fully developed circular pipe."""
+
+    def descriptor(self) -> ProviderDescriptor:
+        return ProviderDescriptor(
+            name="reference-pipe",
+            version=__version__,
+            license="Apache-2.0",
+            available=True,
+            execution_boundary="in-process",
+            capabilities=("reference.hagen-poiseuille",),
+        )
+
+    def run(self, step) -> SimulationResult:
+        model = step.model
+        study = model.study
+        if not study.steady or study.compressible or study.energy or study.reacting or not study.laminar:
+            raise UnsupportedCaseError(
+                "The reference provider supports steady, incompressible, isothermal laminar internal flow only."
+            )
+
+        inlet = next(
+            value
+            for value in model.boundary_conditions.values()
+            if isinstance(value, (boundaries.MassFlowInlet, boundaries.MeanVelocityInlet))
+        )
+        diameter = model.domain.diameter
+        length = model.domain.length
+        area = model.domain.area
+        rho = model.fluid.density
+        mu = model.fluid.dynamic_viscosity
+
+        if isinstance(inlet, boundaries.MassFlowInlet):
+            mass_flow = inlet.mass_flow_rate
+            mean_velocity = mass_flow / (rho * area)
+        else:
+            mean_velocity = inlet.velocity
+            mass_flow = rho * area * mean_velocity
+
+        volume_flow = mean_velocity * area
+        reynolds = rho * mean_velocity * diameter / mu
+        if reynolds >= 2300.0:
+            raise UnsupportedCaseError(
+                f"Re={reynolds:.6g} is outside the declared laminar reference range Re < 2300."
+            )
+
+        pressure_drop = 32.0 * mu * length * mean_velocity / diameter**2
+        wall_shear = pressure_drop * diameter / (4.0 * length)
+        darcy_friction = 64.0 / reynolds
+        radius = np.linspace(0.0, diameter / 2.0, 41)
+        axial_velocity = 2.0 * mean_velocity * (1.0 - (2.0 * radius / diameter) ** 2)
+
+        reconstructed = pressure_drop / (0.5 * rho * mean_velocity**2)
+        expected = darcy_friction * length / diameter
+        identity_error = abs(reconstructed - expected) / max(abs(expected), 1.0e-30)
+
+        return SimulationResult(
+            status="completed",
+            converged=True,
+            provider="reference-pipe",
+            quantities={
+                "flow.reynolds_number": Quantity(reynolds, "1"),
+                "flow.mean_velocity": Quantity(mean_velocity, "m/s"),
+                "flow.mass_flow_rate": Quantity(mass_flow, "kg/s"),
+                "flow.volumetric_flow_rate": Quantity(volume_flow, "m^3/s"),
+                "flow.pressure_drop": Quantity(pressure_drop, "Pa"),
+                "flow.darcy_friction_factor": Quantity(darcy_friction, "1"),
+                "wall.shear_stress": Quantity(wall_shear, "Pa"),
+            },
+            checks=(
+                Check(
+                    name="laminar-applicability",
+                    passed=reynolds < 2300.0,
+                    value=reynolds,
+                    limit="Re < 2300",
+                ),
+                Check(
+                    name="darcy-weisbach-identity",
+                    passed=identity_error < 1.0e-12,
+                    value=identity_error,
+                    limit=1.0e-12,
+                ),
+                Check(
+                    name="mass-balance",
+                    passed=True,
+                    value=0.0,
+                    limit=1.0e-12,
+                    message="Fully developed reference flow has identical inlet and outlet mass flow.",
+                ),
+            ),
+            arrays={
+                "profile.radius": radius.tolist(),
+                "profile.axial_velocity": axial_velocity.tolist(),
+            },
+            provenance={
+                "agentcfd_version": __version__,
+                "model_sha256": model.fingerprint(),
+                "provider": self.descriptor().name,
+                "formulation": "Hagen-Poiseuille circular-pipe solution",
+            },
+        )

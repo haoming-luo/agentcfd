@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/simulation-result.schema.json",
+  "title": "AgentCFD SimulationResult 0.1",
+  "type": "object",
+  "required": ["schema", "status", "converged", "accepted", "provider", "quantities", "checks", "provenance"],
+  "properties": {
+    "schema": {"const": "agentcfd.simulation-result/0.1"},
+    "status": {"type": "string"},
+    "converged": {"type": "boolean"},
+    "accepted": {"type": "boolean"},
+    "provider": {"type": "string"},
+    "quantities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "unit"],
+        "properties": {
+          "value": {"type": "number"},
+          "unit": {"type": "string"}
+        }
+      }
+    },
+    "checks": {"type": "array"},
+    "arrays": {"type": "object"},
+    "provenance": {"type": "object"},
+    "messages": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": false
+}

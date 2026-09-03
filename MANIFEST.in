@@ -1,0 +1,12 @@
+include AGENT_GUIDE.md
+include AGENTS.md
+include CHANGELOG.md
+include CITATION.cff
+include CONTRIBUTING.md
+include CONCEPTS.md
+include ROADMAP.md
+include WORKFLOW.md
+recursive-include docs *.md
+recursive-include examples *.py *.md
+recursive-include schemas *.json
+recursive-include skills *.md

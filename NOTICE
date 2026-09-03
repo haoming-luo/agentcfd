@@ -1,0 +1,7 @@
+AgentCFD
+Copyright 2026 Haoming Luo
+
+This product includes software developed by AgentCFD contributors.
+
+Optional third-party numerical engines and libraries are not part of AgentCFD
+core. Their names and licenses are documented in docs/licensing.md.

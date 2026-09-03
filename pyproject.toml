@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentcfd"
+version = "0.1.0a1"
+description = "AI-native computational fluid dynamics for humans and agents."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Haoming Luo" }]
+keywords = [
+  "computational-fluid-dynamics",
+  "cfd",
+  "CAE",
+  "AI-native",
+  "scientific-computing",
+  "OpenFOAM",
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "Intended Audience :: Manufacturing",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering",
+]
+dependencies = ["numpy>=1.24"]
+
+[project.urls]
+Homepage = "https://github.com/haoming-luo/agentcfd"
+Repository = "https://github.com/haoming-luo/agentcfd"
+Issues = "https://github.com/haoming-luo/agentcfd/issues"
+
+[project.scripts]
+agentcfd = "agentcfd.cli:main"
+
+[project.optional-dependencies]
+dev = ["build", "pytest", "ruff", "twine"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+agentcfd = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82", "B023"]

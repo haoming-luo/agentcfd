@@ -5,13 +5,34 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Artifact, Check, Model, Quantity, SimulationResult, boundaries, fluids, geometry, interoperability, read_result_record, studies
+from agentcfd import Artifact, Check, Model, Quantity, SimulationResult, benchmarks, boundaries, contracts, fluids, geometry, interoperability, licensing, read_result_record, studies, verification
 
 
 def test_all_published_json_schemas_are_valid():
     schema_root = Path(__file__).parents[1] / "schemas"
     for path in schema_root.glob("*.json"):
         jsonschema.Draft202012Validator.check_schema(json.loads(path.read_text()))
+
+
+def test_machine_catalogs_validate_against_installed_contracts():
+    for schema_name, payload in (
+        ("benchmark-catalog.schema.json", benchmarks.as_dict()),
+        ("license-catalog.schema.json", licensing.as_dict()),
+        (
+            "validation-point.schema.json",
+            {
+                "schema": "agentcfd.validation-point/0.1",
+                **verification.assess_validation_point(
+                    1.0,
+                    1.0,
+                    numerical_standard_uncertainty=0.0,
+                    input_standard_uncertainty=0.0,
+                    experimental_standard_uncertainty=0.0,
+                ).to_dict(),
+            },
+        ),
+    ):
+        jsonschema.Draft202012Validator(contracts.load(schema_name)).validate(payload)
 
 
 def pipe_model() -> Model:

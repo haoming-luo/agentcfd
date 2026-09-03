@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/license-catalog.schema.json",
+  "title": "AgentCFD license boundary catalog 0.1",
+  "type": "object",
+  "required": ["schema", "core_has_mandatory_third_party_runtime_dependencies", "components"],
+  "properties": {
+    "schema": {"const": "agentcfd.license-catalog/0.1"},
+    "core_has_mandatory_third_party_runtime_dependencies": {"const": false},
+    "components": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "role", "license_expression", "relationship",
+          "mandatory_runtime", "redistribution_policy"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "license_expression": {"type": "string", "minLength": 1},
+          "relationship": {"type": "string", "minLength": 1},
+          "mandatory_runtime": {"type": "boolean"},
+          "redistribution_policy": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

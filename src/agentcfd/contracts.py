@@ -9,14 +9,17 @@ from typing import Any
 
 
 _SCHEMAS = (
+    "benchmark-catalog.schema.json",
     "coupling-manifest.schema.json",
     "grid-convergence.schema.json",
+    "license-catalog.schema.json",
     "openfoam-case.schema.json",
     "openfoam-grid-study.schema.json",
     "openfoam-mesh.schema.json",
     "result-exchange.schema.json",
     "scientific-sample.schema.json",
     "simulation-result.schema.json",
+    "validation-point.schema.json",
 )
 
 

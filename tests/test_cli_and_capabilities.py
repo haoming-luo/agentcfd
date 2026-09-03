@@ -276,6 +276,30 @@ def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):
     assert verification["trust_level"] == "verified"
 
 
+def test_cli_validation_point_uses_completed_unaccepted_status(capsys):
+    common = [
+        "verify",
+        "validation-point",
+        "--reference",
+        "100",
+        "--numerical-uncertainty",
+        "0.3",
+        "--input-uncertainty",
+        "0.4",
+        "--experimental-uncertainty",
+        "0.5",
+        "--json",
+    ]
+    assert main([*common, "--simulation", "101"]) == 0
+    accepted = json.loads(capsys.readouterr().out)
+    assert accepted["schema"] == "agentcfd.validation-point/0.1"
+    assert accepted["accepted"] is True
+
+    assert main([*common, "--simulation", "102"]) == 3
+    rejected = json.loads(capsys.readouterr().out)
+    assert rejected["accepted"] is False
+
+
 def test_cli_rejects_grid_study_above_uncertainty_limit(tmp_path, capsys):
     paths = []
     for index, (cells, value) in enumerate(((64, 3.56), (512, 1.64), (4096, 1.16))):

@@ -18,7 +18,7 @@ from .model import Model
 from .provenance import file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
 from .results import read_result_record
-from .verification import assess_grid_convergence, grid_convergence_from_result_records
+from .verification import assess_grid_convergence, assess_validation_point, grid_convergence_from_result_records
 
 
 def _doctor() -> dict[str, object]:
@@ -404,6 +404,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     result_check.add_argument("result", type=Path)
     result_check.add_argument("--json", action="store_true", dest="as_json")
+    validation_point = verify_subparsers.add_parser(
+        "validation-point",
+        help="Compare one simulated observable with reference data and uncertainty.",
+    )
+    validation_point.add_argument("--simulation", type=float, required=True)
+    validation_point.add_argument("--reference", type=float, required=True)
+    validation_point.add_argument("--numerical-uncertainty", type=float, required=True)
+    validation_point.add_argument("--input-uncertainty", type=float, required=True)
+    validation_point.add_argument("--experimental-uncertainty", type=float, required=True)
+    validation_point.add_argument("--coverage-factor", type=float, default=2.0)
+    validation_point.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -589,6 +600,28 @@ def main(argv: list[str] | None = None) -> int:
                 f"artifacts {report['artifact_count']}"
             )
         return 0
+    if args.command == "verify" and args.verification == "validation-point":
+        assessment = assess_validation_point(
+            args.simulation,
+            args.reference,
+            numerical_standard_uncertainty=args.numerical_uncertainty,
+            input_standard_uncertainty=args.input_uncertainty,
+            experimental_standard_uncertainty=args.experimental_uncertainty,
+            coverage_factor=args.coverage_factor,
+        )
+        payload = {
+            "schema": "agentcfd.validation-point/0.1",
+            **assessment.to_dict(),
+        }
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Validation point accepted {str(assessment.accepted).lower()} | "
+                f"error {assessment.absolute_error:.6g} | expanded uncertainty "
+                f"{assessment.expanded_validation_uncertainty:.6g}"
+            )
+        return 0 if assessment.accepted else 3
     return 2
 
 

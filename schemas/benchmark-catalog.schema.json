@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/benchmark-catalog.schema.json",
+  "title": "AgentCFD benchmark catalog 0.1",
+  "type": "object",
+  "required": ["schema", "cases"],
+  "properties": {
+    "schema": {"const": "agentcfd.benchmarks/0.1"},
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id", "stage", "physics", "observables", "source", "source_url",
+          "status", "next_gate", "redistribution_status"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"},
+          "stage": {"type": "string", "minLength": 1},
+          "physics": {"type": "string", "minLength": 1},
+          "observables": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "source": {"type": "string", "minLength": 1},
+          "source_url": {"type": "string", "format": "uri"},
+          "status": {"type": "string", "minLength": 1},
+          "next_gate": {"type": "string", "minLength": 1},
+          "redistribution_status": {"const": "link-only-pending-terms-review"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

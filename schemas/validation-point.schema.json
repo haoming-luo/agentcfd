@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/validation-point.schema.json",
+  "title": "AgentCFD validation-point assessment 0.1",
+  "type": "object",
+  "required": [
+    "schema", "simulation_value", "reference_value", "absolute_error",
+    "relative_error", "numerical_standard_uncertainty", "input_standard_uncertainty",
+    "experimental_standard_uncertainty", "combined_standard_uncertainty",
+    "coverage_factor", "expanded_validation_uncertainty", "normalized_error", "accepted"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.validation-point/0.1"},
+    "simulation_value": {"type": "number"},
+    "reference_value": {"type": "number"},
+    "absolute_error": {"type": "number", "minimum": 0},
+    "relative_error": {"type": ["number", "null"], "minimum": 0},
+    "numerical_standard_uncertainty": {"type": "number", "minimum": 0},
+    "input_standard_uncertainty": {"type": "number", "minimum": 0},
+    "experimental_standard_uncertainty": {"type": "number", "minimum": 0},
+    "combined_standard_uncertainty": {"type": "number", "minimum": 0},
+    "coverage_factor": {"type": "number", "exclusiveMinimum": 0},
+    "expanded_validation_uncertainty": {"type": "number", "minimum": 0},
+    "normalized_error": {"type": ["number", "null"], "minimum": 0},
+    "accepted": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

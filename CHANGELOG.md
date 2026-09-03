@@ -100,6 +100,11 @@ machine-readable capability catalog.
   permissive license expression rather than reducing it to one top-level label.
 - expose a dependency-free machine-readable license catalog for core, optional
   Python extras, and the external OpenFOAM process boundary.
+- publish installed JSON Schema contracts for benchmark and license catalogs.
+- add a solver-neutral single-point validation assessment with explicit
+  numerical, input, experimental, and coverage-factor uncertainty components.
+- expose validation-point assessment through the CLI and an installed JSON
+  Schema with fail-closed scientific exit status.
 
 ## 0.1.0a1 — 2026-09-03
 

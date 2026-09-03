@@ -3,10 +3,66 @@ import pytest
 from agentcfd.verification import (
     GridConvergencePolicy,
     GridSolution,
+    assess_validation_point,
     assess_grid_convergence,
     grid_convergence_from_result_records,
     grid_convergence_index,
 )
+
+
+def test_validation_point_combines_declared_uncertainties_transparently():
+    accepted = assess_validation_point(
+        101.0,
+        100.0,
+        numerical_standard_uncertainty=0.3,
+        input_standard_uncertainty=0.4,
+        experimental_standard_uncertainty=0.5,
+        coverage_factor=2.0,
+    )
+    rejected = assess_validation_point(
+        102.0,
+        100.0,
+        numerical_standard_uncertainty=0.3,
+        input_standard_uncertainty=0.4,
+        experimental_standard_uncertainty=0.5,
+        coverage_factor=2.0,
+    )
+
+    assert accepted.combined_standard_uncertainty == pytest.approx(2**-0.5)
+    assert accepted.expanded_validation_uncertainty == pytest.approx(2**0.5)
+    assert accepted.normalized_error == pytest.approx(2**-0.5)
+    assert accepted.accepted is True
+    assert rejected.accepted is False
+    assert rejected.to_dict()["relative_error"] == pytest.approx(0.02)
+
+
+def test_validation_point_rejects_invalid_uncertainty_and_handles_zero_reference():
+    exact = assess_validation_point(
+        0.0,
+        0.0,
+        numerical_standard_uncertainty=0.0,
+        input_standard_uncertainty=0.0,
+        experimental_standard_uncertainty=0.0,
+    )
+    assert exact.accepted is True
+    assert exact.relative_error is None
+    assert exact.normalized_error == 0.0
+    with pytest.raises(ValueError, match="non-negative"):
+        assess_validation_point(
+            1.0,
+            1.0,
+            numerical_standard_uncertainty=-0.1,
+            input_standard_uncertainty=0.0,
+            experimental_standard_uncertainty=0.0,
+        )
+    with pytest.raises(ValueError, match="finite number"):
+        assess_validation_point(
+            True,
+            1.0,
+            numerical_standard_uncertainty=0.0,
+            input_standard_uncertainty=0.0,
+            experimental_standard_uncertainty=0.0,
+        )
 
 
 def test_grid_convergence_recovers_second_order_sequence():

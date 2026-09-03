@@ -80,6 +80,16 @@ within 10% of unity. These are promotion gates rather than universal physical
 constants. A completed study that misses them is still written for diagnosis,
 but the CLI returns the completed-unaccepted exit status `3`.
 
+`agentcfd.verification.assess_validation_point` provides a dependency-free
+single-observable screening calculation for later experimental benchmarks. It
+combines declared numerical, input, and experimental standard uncertainties by
+root-sum-square, applies an explicit coverage factor, and reports both absolute
+and normalized discrepancy. Correlation and model-form uncertainty remain
+study-specific; the helper does not claim full ASME V&V 20 conformity.
+The same calculation is available as `agentcfd verify validation-point`; its
+versioned contract is installed with the package and an outside-uncertainty
+comparison returns the completed-but-unaccepted exit status `3`.
+
 For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
 are different scientific problems. Total inlet-to-outlet static pressure from
 the uniform case includes an entrance contribution and is not promoted as a

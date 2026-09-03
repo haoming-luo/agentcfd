@@ -69,6 +69,85 @@ class GridConvergencePolicy:
         return asdict(self)
 
 
+@dataclass(frozen=True, slots=True)
+class ValidationPointAssessment:
+    """Transparent comparison of one simulation observable with reference data."""
+
+    simulation_value: float
+    reference_value: float
+    absolute_error: float
+    relative_error: float | None
+    numerical_standard_uncertainty: float
+    input_standard_uncertainty: float
+    experimental_standard_uncertainty: float
+    combined_standard_uncertainty: float
+    coverage_factor: float
+    expanded_validation_uncertainty: float
+    normalized_error: float | None
+    accepted: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
+def assess_validation_point(
+    simulation_value: float,
+    reference_value: float,
+    *,
+    numerical_standard_uncertainty: float,
+    input_standard_uncertainty: float,
+    experimental_standard_uncertainty: float,
+    coverage_factor: float = 2.0,
+) -> ValidationPointAssessment:
+    """Combine declared independent standard uncertainties by root-sum-square.
+
+    This is a solver-neutral screening calculation, not a claim of complete
+    ASME V&V 20 conformity. Correlations and model-form uncertainty require a
+    study-specific treatment.
+    """
+
+    simulation = finite_float(simulation_value, name="simulation_value")
+    reference = finite_float(reference_value, name="reference_value")
+    uncertainties: dict[str, float] = {}
+    for name, value in (
+        ("numerical_standard_uncertainty", numerical_standard_uncertainty),
+        ("input_standard_uncertainty", input_standard_uncertainty),
+        ("experimental_standard_uncertainty", experimental_standard_uncertainty),
+    ):
+        selected = finite_float(value, name=name)
+        if selected < 0.0:
+            raise ValueError(f"{name} must be non-negative.")
+        uncertainties[name] = selected
+    factor = positive_float(coverage_factor, name="coverage_factor")
+    combined = math.sqrt(sum(value**2 for value in uncertainties.values()))
+    expanded = factor * combined
+    absolute_error = abs(simulation - reference)
+    relative_error = None if reference == 0.0 else absolute_error / abs(reference)
+    normalized_error = (
+        absolute_error / expanded
+        if expanded > 0.0
+        else 0.0
+        if absolute_error == 0.0
+        else None
+    )
+    return ValidationPointAssessment(
+        simulation_value=simulation,
+        reference_value=reference,
+        absolute_error=absolute_error,
+        relative_error=relative_error,
+        numerical_standard_uncertainty=uncertainties["numerical_standard_uncertainty"],
+        input_standard_uncertainty=uncertainties["input_standard_uncertainty"],
+        experimental_standard_uncertainty=uncertainties[
+            "experimental_standard_uncertainty"
+        ],
+        combined_standard_uncertainty=combined,
+        coverage_factor=factor,
+        expanded_validation_uncertainty=expanded,
+        normalized_error=normalized_error,
+        accepted=absolute_error <= expanded,
+    )
+
+
 def assess_grid_convergence(
     result: GridConvergenceResult,
     *,
@@ -288,6 +367,8 @@ __all__ = [
     "GridConvergencePolicy",
     "GridConvergenceResult",
     "GridSolution",
+    "ValidationPointAssessment",
+    "assess_validation_point",
     "assess_grid_convergence",
     "grid_convergence_from_result_records",
     "grid_convergence_index",

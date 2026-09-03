@@ -8,6 +8,8 @@
 - one smooth circular pipe;
 - one velocity or mass-flow inlet, one pressure outlet, and one no-slip wall;
 - a full three-dimensional five-block O-grid generated with `blockMesh`;
+- explicit circular arcs on the eight outer end-face edges, avoiding the
+  inscribed-square geometry produced when projected vertices are used alone;
 - `simpleFoam` dictionaries with kinematic pressure and SI properties.
 
 Case generation is deterministic and does not require OpenFOAM. The manifest
@@ -31,6 +33,11 @@ the solver end marker are useful evidence, but mesh-field mass balance and
 pressure-loss recovery are still mandatory. The analytical pressure drop is
 reported only under `reference.flow.pressure_drop`, never as an OpenFOAM field
 result.
+
+An OpenCFD v2606 container execution has been completed on Linux/arm64. Its
+machine-readable evidence is retained in `docs/openfoam-v2606-validation.json`.
+This proves the generated case can be meshed, checked, solved, and manually
+post-processed; it does not promote the provider beyond experimental status.
 
 ## Promotion gate
 

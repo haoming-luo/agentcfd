@@ -1,0 +1,70 @@
+{
+  "schema": "agentcfd.validation-evidence/0.1",
+  "recorded_at": "2026-09-03",
+  "agentcfd_commit": "1adcd1c",
+  "case": {
+    "case_sha256": "015c132660783338e0e7d31db0336fc71aac24da1d8761f926943300da2b6559",
+    "diameter_m": 0.05,
+    "length_m": 10.0,
+    "mean_velocity_m_per_s": 0.02,
+    "density_kg_per_m3": 998.2,
+    "dynamic_viscosity_pa_s": 0.001002
+  },
+  "runtime": {
+    "distribution": "OpenCFD OpenFOAM",
+    "version": "2606",
+    "container_image": "opencfd/openfoam-run:2606",
+    "container_digest": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb",
+    "platform": "linux/arm64"
+  },
+  "mesh": {
+    "block_mesh_exit_code": 0,
+    "check_mesh_result": "Mesh OK",
+    "bounding_box_m": [[-0.025, -0.025, 0.0], [0.025, 0.025, 10.0]],
+    "points": 135137,
+    "hex_cells": 128000,
+    "faces": 390720,
+    "volume_m3": 0.0195090322,
+    "maximum_non_orthogonality_deg": 28.3185,
+    "maximum_skewness": 0.8523,
+    "maximum_aspect_ratio": 25.4834
+  },
+  "solver": {
+    "application": "simpleFoam",
+    "exit_code": 0,
+    "end_marker": true,
+    "configured_iterations": 500,
+    "completed_iterations": 500,
+    "configured_outer_residual_target": 1e-8,
+    "outer_residual_control_triggered": false,
+    "final_linear_residuals": {
+      "Ux": 1.686669886e-9,
+      "Uy": 1.612389406e-9,
+      "Uz": 2.400798389e-9,
+      "p": 7.403055188e-9
+    },
+    "final_global_continuity_error": -9.609566506e-13,
+    "cumulative_continuity_error": 4.018469236e-6,
+    "wall_clock_seconds": 432
+  },
+  "postprocessing": {
+    "patch_area_m2": 0.00195090322,
+    "inlet_volume_flow_m3_per_s": -3.90180644e-5,
+    "outlet_volume_flow_m3_per_s": 3.901806439e-5,
+    "relative_volume_flow_imbalance": 2.56291453463e-10,
+    "inlet_area_average_kinematic_pressure_m2_per_s2": 0.002839507366,
+    "outlet_area_average_kinematic_pressure_m2_per_s2": 0.0,
+    "pressure_drop_pa": 2.83439625274,
+    "hagen_poiseuille_reference_pressure_drop_pa": 2.56512,
+    "relative_pressure_drop_difference": 0.104976084059
+  },
+  "acceptance": {
+    "scientifically_accepted": false,
+    "reasons": [
+      "Field recovery is not yet automated by the provider.",
+      "The configured outer residual-control target did not stop the run early.",
+      "Mesh-convergence evidence is not yet available.",
+      "The uniform-inlet developing-flow entrance policy is not yet validated."
+    ]
+  }
+}

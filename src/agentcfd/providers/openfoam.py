@@ -28,6 +28,12 @@ from .base import ProviderDescriptor
 _FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+def _solver_converged(log: str) -> bool:
+    """Return true only for an explicit OpenFOAM convergence statement."""
+
+    return bool(re.search(r"(?mi)^.*solution converged in \d+ iterations\s*$", log))
+
+
 @dataclass(frozen=True, slots=True)
 class OpenFOAMMeshControls:
     """Provider-specific controls for the first circular-pipe mesh."""
@@ -153,10 +159,11 @@ class OpenFOAMProvider:
     def run(self, step) -> SimulationResult:
         """Prepare and execute the case through external OpenFOAM commands.
 
-        The initial result recovery is deliberately conservative.  A successful
-        process is reported as converged execution evidence, but the result is
-        not scientifically accepted until mesh-field conservation and pressure
-        loss recovery are implemented and checked.
+        The initial result recovery is deliberately conservative. A successful
+        process is reported as completed execution evidence. Numerical
+        convergence additionally requires OpenFOAM's explicit convergence
+        marker, and scientific acceptance remains blocked until mesh-field
+        conservation and pressure-loss recovery are implemented and checked.
         """
 
         prepared = self.prepare(step)
@@ -193,6 +200,7 @@ class OpenFOAMProvider:
         process_ok = return_codes.get("blockMesh") == 0 and return_codes.get("simpleFoam") == 0
         solver_log = logs.get("simpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
+        solver_converged = process_ok and _solver_converged(solver_log)
         reference_drop = self._reference_pressure_drop(step)
         artifact_paths = {
             "case_manifest": prepared.directory / "agentcfd-case.json",
@@ -203,7 +211,7 @@ class OpenFOAMProvider:
         }
         return SimulationResult(
             status="completed" if process_ok else "failed",
-            converged=reached_end,
+            converged=solver_converged,
             provider="openfoam",
             quantities={
                 "reference.flow.pressure_drop": Quantity(reference_drop, "Pa"),
@@ -224,6 +232,19 @@ class OpenFOAMProvider:
                     limit="OpenFOAM log ends with End",
                     kind="runtime",
                     observable="provider.convergence_marker",
+                ),
+                Check(
+                    name="solver-convergence-marker",
+                    passed=solver_converged,
+                    value="found" if solver_converged else "missing",
+                    limit="OpenFOAM reports solution converged",
+                    message=(
+                        "A normal End marker proves process completion, not numerical "
+                        "convergence; reaching the configured iteration limit remains "
+                        "unconverged."
+                    ),
+                    kind="verification",
+                    observable="provider.numerical_convergence",
                 ),
                 Check(
                     name="field-conservation-recovery",
@@ -261,7 +282,6 @@ class OpenFOAMProvider:
                 "OpenFOAM execution evidence is experimental and is not yet scientific acceptance.",
             ),
         )
-
     def _validate_supported(self, step) -> None:
         model = step.model
         study = model.study

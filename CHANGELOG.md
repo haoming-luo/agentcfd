@@ -13,6 +13,10 @@ machine-readable capability catalog.
   Darcy–Weisbach identity, and mass-balance checks;
 - add experimental content-addressed OpenFOAM `simpleFoam` case lowering for a
   full three-dimensional O-grid circular pipe;
+- preserve the circular pipe boundary with explicit `blockMesh` arc edges and
+  add a reproducible OpenCFD v2606 Linux/arm64 execution-evidence record;
+- distinguish normal solver completion from OpenFOAM's explicit numerical
+  convergence marker in structured result trust semantics;
 - add bounded external-process execution that remains scientifically unaccepted
   until field conservation and pressure-loss recovery are implemented;
 - add AgentFEM interoperability records and versioned JSON schemas;

@@ -5,6 +5,7 @@ import pytest
 from agentcfd import Model, boundaries, fluids, geometry, studies
 from agentcfd.errors import ProviderUnavailableError, UnsupportedCaseError
 from agentcfd.providers import OpenFOAMMeshControls, OpenFOAMProvider
+from agentcfd.providers.openfoam import _solver_converged
 
 
 def pipe_model(*, energy: bool = False, roughness: float = 0.0, velocity: float = 0.01) -> Model:
@@ -79,3 +80,8 @@ def test_openfoam_run_requires_external_runtime_after_preparing(tmp_path, monkey
     monkeypatch.setattr(provider, "_commands", lambda: {"blockMesh": None, "simpleFoam": None})
     with pytest.raises(ProviderUnavailableError, match="blockMesh, simpleFoam"):
         provider.run(pipe_model().step())
+
+
+def test_openfoam_convergence_requires_explicit_solver_marker():
+    assert not _solver_converged("Time = 500\nEnd\n")
+    assert _solver_converged("SIMPLE solution converged in 42 iterations\nEnd\n")

@@ -73,12 +73,21 @@ that the experimental RANS provider has been promoted.
 
 ## Gas screening
 
-The ideal-gas density, calorically perfect-gas speed of sound, and Mach number
-are available for preliminary regime screening. They use explicit pressure,
-temperature, specific gas constant, and heat-capacity ratio inputs. Steam near
-saturation and non-ideal gases require a property backend such as the optional
-CoolProp IF97 provider; AgentCFD does not silently substitute the ideal-gas
-relations.
+The ideal-gas density, calorically perfect-gas speed of sound, Mach number, and
+`screen_incompressible_flow` are available for preliminary regime screening.
+The screen records both the calculated Mach number and the explicit policy
+threshold; its default is Mach 0.3, below which NASA notes that compressibility
+effects are very small in ordinary aerodynamic flow. This is a model-selection
+warning rather than proof: large temperature or composition changes can still
+make density variation important at low Mach number. See NASA's
+[Mach-number guidance](https://www1.grc.nasa.gov/beginners-guide-to-aeronautics/role-of-the-mach-number/)
+and the supporting
+[low-speed assessment](https://ntrs.nasa.gov/api/citations/19960045736/downloads/19960045736.pdf).
+
+All gas functions use explicit pressure, temperature, specific gas constant,
+and heat-capacity-ratio inputs. Steam near saturation and non-ideal gases
+require a property backend such as the optional CoolProp IF97 provider;
+AgentCFD does not silently substitute ideal-gas relations.
 
 ## Numerical verification
 

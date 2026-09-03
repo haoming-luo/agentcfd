@@ -235,6 +235,45 @@ def mach_number(*, velocity: float, speed_of_sound: float) -> float:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class CompressibilityScreening:
+    """Traceable low-Mach screening result for model selection."""
+
+    mach_number: float
+    maximum_incompressible_mach: float
+    incompressible_model_appropriate: bool
+
+    def to_dict(self) -> dict[str, float | bool]:
+        return asdict(self)
+
+
+def screen_incompressible_flow(
+    *,
+    velocity: float,
+    speed_of_sound: float,
+    maximum_incompressible_mach: float = 0.3,
+) -> CompressibilityScreening:
+    """Screen whether a low-Mach incompressible model is appropriate.
+
+    The default Mach 0.3 boundary is an engineering screening convention, not
+    a proof that density variations are negligible for every thermal problem.
+    The threshold remains explicit so a workflow can record its own policy.
+    """
+
+    threshold = _positive(
+        maximum_incompressible_mach,
+        "maximum_incompressible_mach",
+    )
+    if threshold >= 1.0:
+        raise ValueError("maximum_incompressible_mach must be less than one.")
+    mach = mach_number(velocity=velocity, speed_of_sound=speed_of_sound)
+    return CompressibilityScreening(
+        mach_number=mach,
+        maximum_incompressible_mach=threshold,
+        incompressible_model_appropriate=mach < threshold,
+    )
+
+
 def laminar_hydrodynamic_entrance_length(
     *,
     reynolds: float,

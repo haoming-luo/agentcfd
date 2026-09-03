@@ -120,6 +120,7 @@ machine-readable capability catalog.
   serialized results in a GCI study.
 - validate typed quantity, field, history, artifact, and check collections when
   constructing a result instead of failing later during serialization.
+- add an explicit, auditable low-Mach incompressible-model screening result.
 
 ## 0.1.0a1 — 2026-09-03
 

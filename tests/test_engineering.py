@@ -156,6 +156,29 @@ def test_ideal_gas_speed_of_sound_requires_physical_heat_capacity_ratio():
         )
 
 
+def test_incompressible_screening_records_threshold_and_decision():
+    low_mach = engineering.screen_incompressible_flow(
+        velocity=100.0,
+        speed_of_sound=400.0,
+    )
+    assert low_mach.mach_number == pytest.approx(0.25)
+    assert low_mach.maximum_incompressible_mach == pytest.approx(0.3)
+    assert low_mach.incompressible_model_appropriate is True
+    assert low_mach.to_dict()["incompressible_model_appropriate"] is True
+
+    high_mach = engineering.screen_incompressible_flow(
+        velocity=140.0,
+        speed_of_sound=400.0,
+    )
+    assert high_mach.incompressible_model_appropriate is False
+    with pytest.raises(ValueError, match="less than one"):
+        engineering.screen_incompressible_flow(
+            velocity=100.0,
+            speed_of_sound=400.0,
+            maximum_incompressible_mach=1.0,
+        )
+
+
 def test_laminar_entrance_length_screen_is_explicit_and_bounded():
     assert engineering.laminar_hydrodynamic_entrance_length(
         reynolds=1000.0,

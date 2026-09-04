@@ -98,8 +98,9 @@ pressure residuals met the target, pressure drop was constant over the final
 window, and relative mass imbalance was approximately `1.15e-10`. The bounded
 axis-aligned pipe convergence route therefore gates axial residual, observable
 stability, conservation, process completion, and output recovery together.
-Transverse residuals remain in the result as diagnostics. This exception is
-not generalized to bends, tees, turbulence, or other providers.
+Their final linear residuals still gate convergence; only the ill-conditioned
+normalized outer initial values are treated as diagnostics. This exception is
+not generalized to bends, tees, or other providers.
 
 `agentcfd.verification.assess_validation_point` provides a dependency-free
 single-observable screening calculation for later experimental benchmarks. It
@@ -116,3 +117,36 @@ are different scientific problems. Total inlet-to-outlet static pressure from
 the uniform case includes an entrance contribution and is not promoted as a
 Hagen--Poiseuille validation observable. The declared fully developed profile
 is the canonical path for isolating spatial discretization error.
+
+## Turbulent smooth-pipe diagnostic
+
+The first OpenCFD v2606 k-omega SST run is retained in
+`docs/openfoam-v2606-turbulent-pipe-diagnostic.json`. It is a diagnostic
+integration milestone rather than a validated turbulent model. The 3 m by
+0.1 m smooth pipe used water at 1 m/s, Re 99,621, a 5% inlet turbulence
+intensity, and a 0.007 m length scale. Its 38,400-cell O-grid completed 300
+iterations in 14.86 s and satisfied:
+
+- relative inlet-flow error `3.25e-12` and mass imbalance `5.27e-7`;
+- final relevant initial residual at most `2.56e-4`;
+- final five-sample pressure-drop range `2.73e-4`, below the explicit RANS
+  stability limit `5e-4`;
+- wall y-plus minimum/average/maximum `66.77 / 86.55 / 94.42`, within the
+  declared wall-function regime;
+- immutable OpenCFD v2606 container and native mesh identities, all requested
+  fields, and complete runtime evidence.
+
+The recovered Darcy friction factor was `0.0160336`, 10.94% below the
+smooth-pipe Colebrook reference `0.0180040`. The result is `converged` but not
+`accepted`: the flow-rate inlet has not been proven fully developed, and no
+turbulent three-grid study yet separates entrance, discretization, iterative,
+and model-form effects. The explicit applicability failure is the desired
+behavior for autonomous AI use.
+
+An exploratory geometrically similar 4,800 / 38,400 / 307,200-cell sequence
+reduced the Colebrook difference from 14.46% to 10.94% and then 6.20%; total
+wall times were 2.51 s, 13.42 s, and 133.77 s. The pressure-drop increments
+grew from 9.48 Pa to 12.80 Pa, so the sequence was not in the asymptotic range
+and `grid_convergence_index` correctly rejected it. This negative result shows
+that finer mesh improves agreement but cannot yet support a GCI certificate;
+near-wall resolution and developed-inlet evidence must be redesigned together.

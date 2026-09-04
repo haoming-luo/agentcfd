@@ -13,6 +13,7 @@ class Study:
     energy: bool
     reacting: bool
     turbulence: str | None = None
+    wall_treatment: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("steady", "compressible", "energy", "reacting"):
@@ -25,13 +26,24 @@ class Study:
         allowed = {None, "k-epsilon", "k-omega-sst"}
         if self.turbulence not in allowed:
             raise ValueError(f"turbulence must be one of {sorted(v for v in allowed if v)} or None")
+        wall_treatments = {"blended-wall-functions", "wall-resolved"}
+        if self.turbulence is None and self.wall_treatment is not None:
+            raise ValueError("wall_treatment requires a turbulence model.")
+        if self.turbulence is not None and self.wall_treatment not in wall_treatments:
+            raise ValueError(
+                "A turbulent Study requires wall_treatment='blended-wall-functions' "
+                "or 'wall-resolved'."
+            )
 
     @property
     def laminar(self) -> bool:
         return self.turbulence is None
 
     def to_dict(self) -> dict[str, object]:
-        return asdict(self)
+        record = asdict(self)
+        if self.wall_treatment is None:
+            record.pop("wall_treatment")
+        return record
 
 
 def internal_flow(
@@ -41,6 +53,7 @@ def internal_flow(
     energy: bool = False,
     reacting: bool = False,
     turbulence: str | None = None,
+    wall_treatment: str | None = None,
 ) -> Study:
     """Describe flow inside pipes, ducts, valves, or connected equipment."""
 
@@ -51,4 +64,5 @@ def internal_flow(
         energy=energy,
         reacting=reacting,
         turbulence=turbulence,
+        wall_treatment=wall_treatment,
     )

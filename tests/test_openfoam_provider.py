@@ -24,6 +24,8 @@ from agentcfd.providers.openfoam import (
     _outer_residual_check,
     _pressure_drop_stability_check,
     _read_scalar_series,
+    _read_y_plus_series,
+    _recover_turbulence_data,
     _runtime_version,
     _runtime_version_key,
     _recover_patch_data,
@@ -31,7 +33,7 @@ from agentcfd.providers.openfoam import (
     _solver_residual_evidence,
     _unexpected_case_entries,
 )
-from agentcfd.results import Check, History
+from agentcfd.results import Check, History, Quantity
 
 
 def pipe_model(
@@ -53,6 +55,26 @@ def pipe_model(
         fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
     ).boundaries(
         inlet=inlet,
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+
+
+def turbulent_pipe_model(*, velocity: float = 1.0) -> Model:
+    return Model(
+        name="turbulent-openfoam-pipe",
+        study=studies.internal_flow(
+            turbulence="k-omega-sst",
+            wall_treatment="blended-wall-functions",
+        ),
+        domain=geometry.circular_pipe(length=3.0, diameter=0.1),
+        fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
+    ).boundaries(
+        inlet=boundaries.turbulent_mean_velocity_inlet(
+            velocity,
+            intensity=0.05,
+            length_scale=0.007,
+        ),
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
@@ -196,6 +218,64 @@ def test_openfoam_fully_developed_inlet_uses_non_compiling_radial_expression(tmp
 
     reference = pipe_model(fully_developed=True).step().run()
     assert reference.quantities["flow.mean_velocity"].value == pytest.approx(0.01)
+
+
+def test_openfoam_turbulent_pipe_lowering_is_explicit_and_auditable(tmp_path):
+    step = turbulent_pipe_model().step(
+        procedure=procedures.steady(relative_tolerance=1.0e-6),
+        output=outputs.turbulent_internal_flow(),
+    )
+    prepared = OpenFOAMProvider(
+        mesh=OpenFOAMMeshControls(cross_section_cells=16, axial_cells=120)
+    ).prepare(step, tmp_path / "case")
+
+    assert prepared.capability == "openfoam.steady-rans-smooth-circular-pipe"
+    assert set(prepared.files) >= {"0/U", "0/p", "0/k", "0/omega", "0/nut"}
+    velocity = (prepared.directory / "0/U").read_text()
+    turbulence = (prepared.directory / "constant/turbulenceProperties").read_text()
+    omega = (prepared.directory / "0/omega").read_text()
+    nut = (prepared.directory / "0/nut").read_text()
+    control = (prepared.directory / "system/controlDict").read_text()
+    solution = (prepared.directory / "system/fvSolution").read_text()
+
+    assert "type flowRateInletVelocity;" in velocity
+    assert "extrapolateProfile yes;" in velocity
+    assert "RASModel        kOmegaSST;" in turbulence
+    assert "type omegaWallFunction;" in omega
+    assert "blending binomial;" in omega
+    assert "type nutUBlendedWallFunction;" in nut
+    assert "type yPlus;" in control
+    assert '"(k|omega)"' in solution
+    manifest = json.loads((prepared.directory / "agentcfd-case.json").read_text())
+    schema = json.loads(
+        (Path(__file__).parents[1] / "schemas/openfoam-case.schema.json").read_text()
+    )
+    jsonschema.Draft202012Validator(schema).validate(manifest)
+
+
+def test_openfoam_turbulence_requires_matching_study_inlet_and_reynolds(tmp_path):
+    laminar_with_turbulent_inlet = Model(
+        study=studies.internal_flow(),
+        domain=geometry.circular_pipe(length=3.0, diameter=0.1),
+        fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
+    ).boundaries(
+        inlet=boundaries.turbulent_mean_velocity_inlet(
+            1.0,
+            intensity=0.05,
+            length_scale=0.007,
+        ),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+    with pytest.raises(UnsupportedCaseError, match="requires a turbulent Study"):
+        OpenFOAMProvider().prepare(laminar_with_turbulent_inlet.step(), tmp_path / "a")
+    with pytest.raises(UnsupportedCaseError, match="turbulent provider range"):
+        OpenFOAMProvider().prepare(
+            turbulent_pipe_model(velocity=0.02).step(
+                output=outputs.turbulent_internal_flow()
+            ),
+            tmp_path / "b",
+        )
 
 
 @pytest.mark.parametrize(
@@ -370,6 +450,36 @@ def test_openfoam_timeout_stops_exact_container_and_removes_cidfile(tmp_path, mo
     ).read_text()
 
 
+def test_openfoam_keyboard_interrupt_stops_exact_container(tmp_path, monkeypatch):
+    provider = OpenFOAMProvider(
+        case_directory=tmp_path / "case",
+        container_image="opencfd/openfoam-run:2606",
+    )
+    monkeypatch.setattr("agentcfd.providers.openfoam.shutil.which", lambda name: "/docker")
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        if argv[1] == "run":
+            cidfile = Path(argv[argv.index("--cidfile") + 1])
+            cidfile.write_text("c" * 64)
+            raise KeyboardInterrupt
+        if argv[1:3] == ["rm", "--force"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="removed", stderr="")
+        raise AssertionError(argv)
+
+    monkeypatch.setattr("agentcfd.providers.openfoam.subprocess.run", fake_run)
+
+    with pytest.raises(KeyboardInterrupt):
+        provider.run(pipe_model(fully_developed=True).step())
+
+    assert any(
+        argv[1:3] == ["rm", "--force"] and argv[3] == "c" * 64
+        for argv in calls
+    )
+    assert not (tmp_path / "case" / ".agentcfd-blockMesh.cid").exists()
+
+
 def test_openfoam_container_image_identity_is_immutable_and_structured(monkeypatch):
     digest = "a" * 64
     payload = [
@@ -491,10 +601,15 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "maximum_relative_pressure_error": 0.02,
         "maximum_relative_inlet_flow_error": 0.01,
         "maximum_relative_pressure_drop_drift": 1.0e-4,
+        "maximum_relative_turbulent_pressure_drop_drift": 5.0e-4,
         "minimum_steady_samples": 5,
         "maximum_mesh_non_orthogonality": 65.0,
         "maximum_mesh_skewness": 4.0,
         "maximum_mesh_aspect_ratio": 50.0,
+        "minimum_wall_y_plus": 30.0,
+        "maximum_wall_y_plus": 300.0,
+        "maximum_relative_turbulent_friction_error": 0.15,
+        "maximum_turbulent_outer_residual": 1.0e-3,
         "validated_runtime_versions": ("2606",),
     }
     assert set(result.fields) == {"U", "p"}
@@ -691,7 +806,7 @@ GAMG: Solving for p, Initial residual = 3e-7, Final residual = 1e-9, No Iteratio
     ).passed is False
 
 
-def test_axis_aligned_pipe_residual_check_ignores_zero_transverse_components():
+def test_axis_aligned_pipe_uses_final_residuals_for_zero_transverse_components():
     quantities, _ = _solver_residual_evidence(
         """
 Time = 500
@@ -705,13 +820,21 @@ GAMG: Solving for p, Initial residual = 9e-9, Final residual = 9e-9, No Iteratio
     generic = _outer_residual_check(quantities, tolerance=1.0e-8)
     pipe = _outer_residual_check(
         quantities,
-        tolerance=1.0e-8,
+        tolerance=1.0e-6,
         axial_velocity_component="Uz",
     )
 
     assert generic.passed is False
     assert pipe.passed is True
-    assert pipe.value == pytest.approx(9.0e-9)
+    assert pipe.value == pytest.approx(4.0e-7)
+    assert (
+        _outer_residual_check(
+            quantities,
+            tolerance=1.0e-8,
+            axial_velocity_component="Uz",
+        ).passed
+        is False
+    )
 
 
 def test_bounded_pipe_convergence_requires_independent_evidence_without_marker():
@@ -752,6 +875,24 @@ def test_pressure_drop_stability_requires_enough_stable_tail_samples():
     assert _pressure_drop_stability_check(None, policy=policy).passed is False
 
 
+def test_turbulent_pressure_drop_stability_uses_explicit_rans_limit():
+    policy = OpenFOAMValidationPolicy(
+        maximum_relative_pressure_drop_drift=1.0e-4,
+        maximum_relative_turbulent_pressure_drop_drift=5.0e-4,
+    )
+    history = History(
+        (296.0, 297.0, 298.0, 299.0, 300.0),
+        (240.05, 240.10, 240.11, 240.09, 240.08),
+        unit="Pa",
+    )
+
+    assert _pressure_drop_stability_check(history, policy=policy).passed is False
+    assert (
+        _pressure_drop_stability_check(history, policy=policy, turbulent=True).passed
+        is True
+    )
+
+
 def test_openfoam_scalar_history_recovery_merges_restart_directories(tmp_path):
     first = tmp_path / "postProcessing" / "agentcfd_inlet_flow" / "0"
     second = tmp_path / "postProcessing" / "agentcfd_inlet_flow" / "50"
@@ -765,6 +906,52 @@ def test_openfoam_scalar_history_recovery_merges_restart_directories(tmp_path):
         50.0: -0.21,
         60.0: -0.3,
     }
+
+
+def test_openfoam_y_plus_recovery_reads_patch_statistics_and_restarts(tmp_path):
+    first = tmp_path / "postProcessing" / "agentcfd_y_plus" / "0"
+    second = tmp_path / "postProcessing" / "agentcfd_y_plus" / "100"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    (first / "yPlus.dat").write_text(
+        "# Time patch min max average\n"
+        "1 wall 35 90 70\n"
+        "100 wall 40 95 75\n"
+    )
+    (second / "yPlus.dat").write_text(
+        "# Time patch min max average\n"
+        "100 wall 41 96 76\n"
+        "101 wall 42 97 77\n"
+    )
+
+    assert _read_y_plus_series(tmp_path) == {
+        "minimum": {1.0: 35.0, 100.0: 41.0, 101.0: 42.0},
+        "maximum": {1.0: 90.0, 100.0: 96.0, 101.0: 97.0},
+        "average": {1.0: 70.0, 100.0: 76.0, 101.0: 77.0},
+    }
+
+
+def test_turbulent_wall_gate_checks_full_patch_range_not_only_mean(tmp_path):
+    directory = tmp_path / "postProcessing" / "agentcfd_y_plus" / "0"
+    directory.mkdir(parents=True)
+    (directory / "yPlus.dat").write_text(
+        "# Time patch min max average\n1 wall 20 100 70\n"
+    )
+
+    _, _, checks = _recover_turbulence_data(
+        tmp_path,
+        density=998.2,
+        dynamic_viscosity=1.002e-3,
+        mean_velocity=1.0,
+        diameter=0.1,
+        length=3.0,
+        pressure_drop=Quantity(250.0, "Pa"),
+        policy=OpenFOAMValidationPolicy(),
+    )
+
+    wall_check = next(check for check in checks if check.name == "wall-y-plus-range")
+    assert wall_check.passed is False
+    assert wall_check.value == 70.0
 
 
 def test_openfoam_checkmesh_metrics_are_structured():
@@ -887,6 +1074,8 @@ def test_openfoam_validation_policy_is_explicit_and_controls_acceptance(tmp_path
         OpenFOAMValidationPolicy(maximum_relative_pressure_error=math.nan)
     with pytest.raises(ValueError, match="maximum_mesh_skewness"):
         OpenFOAMValidationPolicy(maximum_mesh_skewness=math.nan)
+    with pytest.raises(ValueError, match="minimum_wall_y_plus must be below"):
+        OpenFOAMValidationPolicy(minimum_wall_y_plus=300, maximum_wall_y_plus=30)
     with pytest.raises(ValueError, match="unique non-empty"):
         OpenFOAMValidationPolicy(validated_runtime_versions=("2606", "v2606"))
     with pytest.raises(ValueError, match="unique non-empty"):

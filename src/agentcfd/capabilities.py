@@ -129,11 +129,13 @@ _CAPABILITIES = (
             "runtime discovery",
             "external-process boundary",
             "automatic patch-history and mesh-quality recovery tests",
+            "OpenCFD v2606 k-omega SST execution evidence",
         ),
         limitations=(
-            "Only steady incompressible isothermal laminar flow in a smooth circular pipe is lowered.",
+            "Only steady incompressible isothermal flow in a smooth circular pipe is lowered.",
+            "Turbulence is limited to the explicitly declared k-omega SST slice.",
             "OpenCFD v2606 is the currently exercised runtime dialect.",
-            "Mesh-convergence evidence remains a promotion gate.",
+            "Each laminar or turbulent slice has its own validation and grid-evidence gate.",
         ),
     ),
     Capability(
@@ -149,6 +151,24 @@ _CAPABILITIES = (
             "Targets installations exposing blockMesh, checkMesh, and simpleFoam.",
             "The fully developed expression inlet is currently OpenCFD-dialect specific.",
             "Scientific acceptance also requires every per-run validation check to pass.",
+        ),
+    ),
+    Capability(
+        name="openfoam.steady-rans-smooth-circular-pipe",
+        maturity="experimental",
+        scope=(
+            "OpenCFD v2606 steady incompressible smooth circular-pipe flow "
+            "with the k-omega SST RANS model."
+        ),
+        evidence=(
+            "deterministic turbulence-field and wall-treatment lowering tests",
+            "explicit inlet intensity and length-scale identity",
+            "runtime y-plus, mass-balance, pressure-loss, and friction-factor checks",
+        ),
+        limitations=(
+            "Only a flow-rate-constrained mean-velocity inlet is supported.",
+            "The first slice uses automatic blended wall treatment on a smooth wall.",
+            "One real run is diagnostic until grid and benchmark validation pass.",
         ),
     ),
 )

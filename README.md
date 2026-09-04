@@ -15,9 +15,10 @@ principles established through AgentFEM, but it is a separate codebase with its
 own fluid-mechanics language, providers, validation evidence, and release cycle.
 
 > **Project status:** pre-alpha. The public workflow and circular-pipe reference
-> solution are executable. Deterministic OpenFOAM circular-pipe generation,
-> execution, mesh checks, patch-history recovery, and pressure-loss validation
-> are experimental capabilities; every run must still earn acceptance.
+> solution are executable. Deterministic OpenFOAM laminar and k-omega SST
+> smooth-pipe generation, execution, mesh checks, result recovery, and
+> pressure-loss evidence are experimental capabilities; every run must still
+> earn acceptance.
 
 ## Why AgentCFD
 
@@ -72,7 +73,7 @@ Darcy–Weisbach identity check.
 Install the published alpha from PyPI with Python 3.11 or newer:
 
 ```bash
-python -m pip install agentcfd==0.1.0a2
+python -m pip install agentcfd==0.1.0a3
 agentcfd doctor
 agentcfd demo pipe
 ```
@@ -198,6 +199,42 @@ completed, converged, share model and analysis identities, use the same quantity
 unit, and contain distinct positive dimensionless mesh cell counts before it records
 Richardson extrapolation, observed order, GCI, the asymptotic ratio, and hashes
 of all three source files.
+
+The first RANS workflow is explicit about both turbulence and evidence:
+
+```python
+turbulent = Model(
+    name="water-pipe-rans",
+    study=studies.internal_flow(
+        turbulence="k-omega-sst",
+        wall_treatment="blended-wall-functions",
+    ),
+    domain=geometry.circular_pipe(length=3.0, diameter=0.1),
+    fluid=fluids.newtonian(
+        "water", density=998.2, dynamic_viscosity=1.002e-3
+    ),
+).boundaries(
+    inlet=boundaries.turbulent_mean_velocity_inlet(
+        1.0, intensity=0.05, length_scale=0.007
+    ),
+    outlet=boundaries.pressure_outlet(),
+    wall=boundaries.no_slip_wall(),
+)
+```
+
+Prepare or execute the same model from the CLI:
+
+```bash
+agentcfd prepare openfoam-turbulent-pipe turbulent-pipe --json
+agentcfd run openfoam-turbulent-pipe turbulent-pipe \
+  --container-image opencfd/openfoam-run:2606 --json
+```
+
+AgentCFD lowers this to `flowRateInletVelocity`, `kOmegaSST`, explicit `k` and
+`omega` inputs, blended wall functions, and in-run `yPlus` recovery. A completed
+and converged run remains unaccepted until its inlet/reference applicability and
+grid evidence pass; the trust state is intended to be safe for unattended AI
+workflows.
 The rationale for analytical, flow-rate, and `boundaryFoam` inlets, measured
 resolution/runtime tiers, and the staged turbulence and steam plan is recorded
 in [the numerical strategy](docs/numerical-strategy.md).
@@ -257,6 +294,7 @@ authoritative.
 - [Benchmark catalog](docs/benchmark-catalog.md)
 - [OpenFOAM v2606 execution evidence](docs/openfoam-v2606-validation.json)
 - [OpenFOAM v2606 grid-validation evidence](docs/openfoam-v2606-grid-validation.json)
+- [OpenFOAM v2606 turbulent-pipe diagnostic evidence](docs/openfoam-v2606-turbulent-pipe-diagnostic.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

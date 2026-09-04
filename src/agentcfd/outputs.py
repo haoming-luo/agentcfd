@@ -28,3 +28,22 @@ def standard() -> OutputRequest:
         fields=("fluid.velocity", "fluid.pressure"),
         histories=("flow.mass_balance", "flow.pressure_drop"),
     )
+
+
+def turbulent_internal_flow() -> OutputRequest:
+    """Request the minimum auditable field set for two-equation RANS flow."""
+
+    return OutputRequest(
+        fields=(
+            "fluid.velocity",
+            "fluid.pressure",
+            "turbulence.kinetic_energy",
+            "turbulence.specific_dissipation_rate",
+            "turbulence.kinematic_eddy_viscosity",
+        ),
+        histories=(
+            "flow.mass_balance",
+            "flow.pressure_drop",
+            "wall.y_plus",
+        ),
+    )

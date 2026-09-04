@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-case.schema.json",
-  "title": "AgentCFD OpenFOAM case manifest 0.2",
+  "title": "AgentCFD OpenFOAM case manifest 0.3",
   "type": "object",
   "required": [
     "schema",
@@ -13,8 +13,13 @@
     "provider"
   ],
   "properties": {
-    "schema": {"const": "agentcfd.openfoam-case/0.2"},
-    "capability": {"const": "openfoam.steady-laminar-circular-pipe"},
+    "schema": {"const": "agentcfd.openfoam-case/0.3"},
+    "capability": {
+      "enum": [
+        "openfoam.steady-laminar-circular-pipe",
+        "openfoam.steady-rans-smooth-circular-pipe"
+      ]
+    },
     "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "analysis_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "case_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

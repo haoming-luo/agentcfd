@@ -43,6 +43,13 @@ The parser also rejects duplicate JSON keys and non-standard `NaN`/`Infinity`
 values so different downstream languages cannot interpret one record
 differently.
 
+Provider-run CLI JSON adds a non-persistent `decision` view containing only the
+failed checks, their values and limits, and explicit guidance not to promote an
+unaccepted result. This keeps the durable simulation-result schema stable while
+giving an AI agent or GUI a small, actionable surface instead of requiring it
+to infer failure from a long solver log. Human output prints the same failed
+gate names after the trust state.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

@@ -17,7 +17,7 @@ from .jsonio import strict_json_object
 from .model import Model
 from .provenance import file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
-from .results import read_result_record
+from .results import SimulationResult, read_result_record
 from .verification import assess_grid_convergence, assess_validation_point, grid_convergence_from_result_records
 
 
@@ -48,6 +48,24 @@ def _doctor() -> dict[str, object]:
     }
 
 
+def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
+    """Add a compact decision surface without changing the result contract."""
+
+    payload = result.summary()
+    failed = [check.as_dict() for check in result.checks if not check.passed]
+    payload["decision"] = {
+        "accepted": result.accepted,
+        "failed_check_count": len(failed),
+        "failed_checks": failed,
+        "guidance": (
+            "Result is accepted for its declared capability and policy."
+            if result.accepted
+            else "Resolve the failed checks; do not promote this result to training or design evidence."
+        ),
+    }
+    return payload
+
+
 def _pipe_model(*, fully_developed: bool = False) -> Model:
     inlet = (
         boundaries.fully_developed_velocity_inlet(0.02)
@@ -76,6 +94,33 @@ def _pipe_grid_benchmark_model() -> Model:
         fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
     ).boundaries(
         inlet=boundaries.fully_developed_velocity_inlet(0.01),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+
+
+def _turbulent_pipe_model(
+    *,
+    velocity: float = 1.0,
+    turbulence_intensity: float = 0.05,
+    turbulence_length_scale: float = 0.007,
+) -> Model:
+    """Return the explicit smooth-pipe k-omega SST development benchmark."""
+
+    return Model(
+        name="turbulent-water-pipe",
+        study=studies.internal_flow(
+            turbulence="k-omega-sst",
+            wall_treatment="blended-wall-functions",
+        ),
+        domain=geometry.circular_pipe(length=3.0, diameter=0.1),
+        fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
+    ).boundaries(
+        inlet=boundaries.turbulent_mean_velocity_inlet(
+            velocity,
+            intensity=turbulence_intensity,
+            length_scale=turbulence_length_scale,
+        ),
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
@@ -133,6 +178,44 @@ def _run_openfoam_pipe(
     target = result_path or case_directory / "agentcfd-result.json"
     result.write(target)
     return result, target
+
+
+def _turbulent_pipe_step(
+    *,
+    velocity: float,
+    turbulence_intensity: float,
+    turbulence_length_scale: float,
+):
+    return _turbulent_pipe_model(
+        velocity=velocity,
+        turbulence_intensity=turbulence_intensity,
+        turbulence_length_scale=turbulence_length_scale,
+    ).step(
+        procedure=procedures.steady(
+            relative_tolerance=1.0e-4,
+            maximum_iterations=300,
+        ),
+        output=outputs.turbulent_internal_flow(),
+    )
+
+
+def _turbulent_openfoam_provider(
+    case_directory: Path,
+    *,
+    cross_section_cells: int,
+    axial_cells: int,
+    container_image: str | None = None,
+    timeout_seconds: float = 3600.0,
+) -> OpenFOAMProvider:
+    return OpenFOAMProvider(
+        case_directory=case_directory,
+        container_image=container_image,
+        timeout_seconds=timeout_seconds,
+        mesh=OpenFOAMMeshControls(
+            cross_section_cells=cross_section_cells,
+            axial_cells=axial_cells,
+        ),
+    )
 
 
 def _prepare_openfoam_pipe_grid(
@@ -360,6 +443,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Cells along the pipe; defaults to a bounded geometry-based value.",
     )
+    turbulent_prepare = prepare_subparsers.add_parser(
+        "openfoam-turbulent-pipe",
+        help="Generate the experimental OpenFOAM k-omega SST smooth-pipe case.",
+    )
+    turbulent_prepare.add_argument("case_directory", type=Path)
+    turbulent_prepare.add_argument("--velocity", type=float, default=1.0)
+    turbulent_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
+    turbulent_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    turbulent_prepare.add_argument("--cross-section-cells", type=int, default=8)
+    turbulent_prepare.add_argument("--axial-cells", type=int, default=120)
+    turbulent_prepare.add_argument("--json", action="store_true", dest="as_json")
     grid_prepare = prepare_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Prepare a same-model three-grid fully developed pipe study.",
@@ -421,6 +515,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Cells along the pipe; defaults to a bounded geometry-based value.",
     )
+    turbulent_run = run_subparsers.add_parser(
+        "openfoam-turbulent-pipe",
+        help="Run the experimental OpenFOAM k-omega SST smooth-pipe case.",
+    )
+    turbulent_run.add_argument("case_directory", type=Path)
+    turbulent_run.add_argument("--result", type=Path)
+    turbulent_run.add_argument("--velocity", type=float, default=1.0)
+    turbulent_run.add_argument("--turbulence-intensity", type=float, default=0.05)
+    turbulent_run.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    turbulent_run.add_argument("--cross-section-cells", type=int, default=8)
+    turbulent_run.add_argument("--axial-cells", type=int, default=120)
+    turbulent_run.add_argument("--container-image")
+    turbulent_run.add_argument("--timeout-seconds", type=float, default=3600.0)
+    turbulent_run.add_argument("--prepared", action="store_true")
+    turbulent_run.add_argument("--json", action="store_true", dest="as_json")
     run_grid = run_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Execute a prepared three-grid pipe study and compute GCI.",
@@ -605,6 +714,24 @@ def main(argv: list[str] | None = None) -> int:
             print(args.case_directory)
             print(f"case sha256: {manifest['case_sha256']}")
         return 0
+    if args.command == "prepare" and args.provider == "openfoam-turbulent-pipe":
+        step = _turbulent_pipe_step(
+            velocity=args.velocity,
+            turbulence_intensity=args.turbulence_intensity,
+            turbulence_length_scale=args.turbulence_length_scale,
+        )
+        manifest = _turbulent_openfoam_provider(
+            args.case_directory,
+            cross_section_cells=args.cross_section_cells,
+            axial_cells=args.axial_cells,
+        ).prepare(step).to_dict()
+        if args.as_json:
+            print(json.dumps(manifest, indent=2, sort_keys=True))
+        else:
+            print("Prepared experimental OpenFOAM k-omega SST pipe case")
+            print(args.case_directory)
+            print(f"case sha256: {manifest['case_sha256']}")
+        return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe-grid":
         plan = _prepare_openfoam_pipe_grid(
             args.directory,
@@ -629,12 +756,49 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
         )
         if args.as_json:
-            print(json.dumps(result.summary(), indent=2, sort_keys=True))
+            print(json.dumps(_result_cli_payload(result), indent=2, sort_keys=True))
         else:
             print(
                 f"OpenFOAM run {result.status} | trust {result.trust_level} | "
                 f"accepted {str(result.accepted).lower()}"
             )
+            failed = [check.name for check in result.checks if not check.passed]
+            if failed:
+                print("blocked by: " + ", ".join(failed))
+            print(target)
+        if result.accepted:
+            return 0
+        return 1 if result.status != "completed" else 3
+    if args.command == "run" and args.provider == "openfoam-turbulent-pipe":
+        step = _turbulent_pipe_step(
+            velocity=args.velocity,
+            turbulence_intensity=args.turbulence_intensity,
+            turbulence_length_scale=args.turbulence_length_scale,
+        )
+        provider = _turbulent_openfoam_provider(
+            args.case_directory,
+            cross_section_cells=args.cross_section_cells,
+            axial_cells=args.axial_cells,
+            container_image=args.container_image,
+            timeout_seconds=args.timeout_seconds,
+        )
+        result = provider.run_prepared(step) if args.prepared else provider.run(step)
+        target = args.result or args.case_directory / "agentcfd-result.json"
+        result.write(target)
+        if args.as_json:
+            print(json.dumps(_result_cli_payload(result), indent=2, sort_keys=True))
+        else:
+            friction = result.quantities.get("flow.darcy_friction_factor")
+            detail = ""
+            if friction is not None:
+                detail = f" | Darcy f {friction.value:.6g}"
+            print(
+                f"OpenFOAM turbulent pipe {result.status} | trust "
+                f"{result.trust_level} | accepted {str(result.accepted).lower()}{detail}"
+            )
+            failed = [check.name for check in result.checks if not check.passed]
+            if failed:
+                print("blocked by: " + ", ".join(failed))
             print(target)
         if result.accepted:
             return 0

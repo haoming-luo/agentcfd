@@ -57,10 +57,13 @@ reference remains a separate validation question.
 
 ## Turbulent internal-flow promotion sequence
 
-The next incompressible provider slice is deliberately staged:
+The incompressible provider slice is deliberately staged:
 
-1. add explicit RANS procedure and turbulence-field contracts;
-2. lower `kOmegaSST` with a declared near-wall strategy and report wall `y+`;
+1. **implemented:** add explicit RANS study, turbulence-inlet, field, history,
+   capability, and result contracts;
+2. **implemented diagnostically:** lower `kOmegaSST` with blended wall
+   functions and report wall `y+`, residuals, friction, conservation, runtime,
+   and native turbulence fields;
 3. verify developed turbulent pipe friction over documented Reynolds-number
    and roughness ranges, including grid and iterative sensitivity;
 4. validate a public separated-flow case before promoting bends and tees;
@@ -70,6 +73,24 @@ The next incompressible provider slice is deliberately staged:
 No laminar convergence exception carries into this sequence. All velocity and
 turbulence equations, mass balance, stable engineering observables, wall
 treatment, and output recovery must pass together.
+
+The first 38,400-cell diagnostic at Re 99,621 completed 300 iterations in
+14.86 s. Its mean y-plus was 86.55, mass imbalance was `5.27e-7`, and final
+relevant outer residual was `2.56e-4`. The flow-rate inlet reduced setup
+ambiguity and exactly met bulk flow, but the 10.94% Colebrook friction
+difference cannot yet be divided into entrance, grid, and model-form effects.
+It therefore proves the integration and evidence pipeline, not turbulent
+accuracy. The next performance target is a reusable `boundaryFoam` precursor
+whose developed velocity, `k`, `omega`, flow rate, mesh, and provider identity
+are content-addressed and reused across a three-grid family.
+
+The first exploratory 4,800 / 38,400 / 307,200-cell family moved smooth-pipe
+friction error from 14.46% to 10.94% to 6.20%, but failed the GCI monotonic-
+increment requirement because the pressure-drop increments grew with
+refinement. Its y-plus range also moved substantially (mean 168.06 to 86.55 to
+43.92), confirming that a wall-function grid family must control near-wall
+strategy rather than treating indiscriminate refinement as one unchanged
+numerical problem.
 
 ## Steam and compressible-flow promotion sequence
 
@@ -83,4 +104,3 @@ Promotion proceeds from an adiabatic compressible pipe to a heated pipe and a
 nozzle benchmark. Only after those gates pass should the product expose steam
 networks, throttling equipment, heat exchangers, or conjugate AgentFEM coupling.
 Phase change remains out of scope for this single-phase milestone.
-

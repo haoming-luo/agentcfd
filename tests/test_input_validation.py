@@ -13,6 +13,11 @@ def test_public_physical_inputs_reject_non_finite_values(invalid):
         lambda: boundaries.mass_flow_inlet(invalid),
         lambda: boundaries.mean_velocity_inlet(invalid),
         lambda: boundaries.fully_developed_velocity_inlet(invalid),
+        lambda: boundaries.turbulent_mean_velocity_inlet(
+            1.0,
+            intensity=invalid,
+            length_scale=0.01,
+        ),
         lambda: boundaries.pressure_outlet(invalid),
         lambda: boundaries.no_slip_wall(roughness=invalid),
         lambda: geometry.circular_pipe(length=invalid, diameter=0.1),
@@ -53,6 +58,26 @@ def test_numeric_inputs_are_normalized_for_stable_serialization():
     assert inlet.to_dict()["velocity"] == 2.0
 
 
+def test_turbulent_inlet_is_explicit_and_fractional():
+    inlet = boundaries.turbulent_mean_velocity_inlet(
+        2,
+        intensity=0.05,
+        length_scale=0.01,
+    )
+    assert inlet.to_dict() == {
+        "type": "turbulent-mean-velocity-inlet",
+        "velocity": 2.0,
+        "turbulence_intensity": 0.05,
+        "turbulence_length_scale": 0.01,
+    }
+    with pytest.raises(ValueError, match="fraction below one"):
+        boundaries.turbulent_mean_velocity_inlet(
+            1.0,
+            intensity=5.0,
+            length_scale=0.01,
+        )
+
+
 def test_model_rejects_unknown_boundaries_and_unstable_metadata():
     model = Model(
         study=studies.internal_flow(),
@@ -83,6 +108,15 @@ def test_study_flags_and_output_names_are_runtime_validated():
             fields=("fluid.velocity", "fluid.velocity"),
             histories=(),
         )
+    with pytest.raises(ValueError, match="requires wall_treatment"):
+        studies.internal_flow(turbulence="k-omega-sst")
+    with pytest.raises(ValueError, match="requires a turbulence model"):
+        studies.internal_flow(wall_treatment="blended-wall-functions")
+    turbulent = studies.internal_flow(
+        turbulence="k-omega-sst",
+        wall_treatment="blended-wall-functions",
+    )
+    assert turbulent.to_dict()["wall_treatment"] == "blended-wall-functions"
 
 
 @pytest.mark.parametrize("invalid_name", [None, True, 1, ""])

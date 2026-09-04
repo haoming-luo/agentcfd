@@ -27,6 +27,7 @@ jobs:
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" calculate compressibility --velocity 100 --speed-of-sound 400 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" demo pipe --output pipe-result.json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-pipe openfoam-pipe --json
+          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-pipe openfoam-turbulent-pipe --cross-section-cells 4 --axial-cells 20 --json
       - uses: actions/upload-artifact@v7
         with:
           name: python-package-distributions

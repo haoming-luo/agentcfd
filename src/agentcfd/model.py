@@ -51,6 +51,7 @@ class Model:
                     boundary_types.MassFlowInlet,
                     boundary_types.MeanVelocityInlet,
                     boundary_types.FullyDevelopedVelocityInlet,
+                    boundary_types.TurbulentMeanVelocityInlet,
                     boundary_types.PressureOutlet,
                     boundary_types.NoSlipWall,
                 ),
@@ -90,6 +91,7 @@ class Model:
                     boundary_types.MassFlowInlet,
                     boundary_types.MeanVelocityInlet,
                     boundary_types.FullyDevelopedVelocityInlet,
+                    boundary_types.TurbulentMeanVelocityInlet,
                 ),
             )
             for value in self._boundaries.values()
@@ -97,7 +99,9 @@ class Model:
         outlet_count = sum(isinstance(value, boundary_types.PressureOutlet) for value in self._boundaries.values())
         wall_count = sum(isinstance(value, boundary_types.NoSlipWall) for value in self._boundaries.values())
         if inlet_count != 1:
-            raise ModelValidationError("Exactly one mass-flow or mean-velocity inlet is required.")
+            raise ModelValidationError(
+                "Exactly one mass-flow, mean-velocity, or turbulent mean-velocity inlet is required."
+            )
         if outlet_count != 1:
             raise ModelValidationError("Exactly one pressure outlet is required.")
         if wall_count < 1:

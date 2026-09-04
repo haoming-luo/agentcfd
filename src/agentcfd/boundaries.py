@@ -55,6 +55,44 @@ class FullyDevelopedVelocityInlet:
 
 
 @dataclass(frozen=True, slots=True)
+class TurbulentMeanVelocityInlet:
+    """Bulk velocity plus explicit two-equation RANS inlet assumptions.
+
+    ``turbulence_intensity`` is a fraction, not a percentage.  The length scale
+    is an engineering model input in metres; it is never inferred by a provider.
+    """
+
+    velocity: float
+    turbulence_intensity: float
+    turbulence_length_scale: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "velocity",
+            positive_float(self.velocity, name="Inlet velocity"),
+        )
+        intensity = positive_float(
+            self.turbulence_intensity,
+            name="Turbulence intensity",
+        )
+        if intensity >= 1.0:
+            raise ValueError("Turbulence intensity must be a fraction below one.")
+        object.__setattr__(self, "turbulence_intensity", intensity)
+        object.__setattr__(
+            self,
+            "turbulence_length_scale",
+            positive_float(
+                self.turbulence_length_scale,
+                name="Turbulence length scale",
+            ),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "turbulent-mean-velocity-inlet", **asdict(self)}
+
+
+@dataclass(frozen=True, slots=True)
 class PressureOutlet:
     gauge_pressure: float = 0.0
 
@@ -89,6 +127,7 @@ Boundary = (
     MassFlowInlet
     | MeanVelocityInlet
     | FullyDevelopedVelocityInlet
+    | TurbulentMeanVelocityInlet
     | PressureOutlet
     | NoSlipWall
 )
@@ -104,6 +143,21 @@ def mean_velocity_inlet(value: float) -> MeanVelocityInlet:
 
 def fully_developed_velocity_inlet(value: float) -> FullyDevelopedVelocityInlet:
     return FullyDevelopedVelocityInlet(velocity=value)
+
+
+def turbulent_mean_velocity_inlet(
+    value: float,
+    *,
+    intensity: float,
+    length_scale: float,
+) -> TurbulentMeanVelocityInlet:
+    """Declare a flow-rate-constrained RANS inlet using SI values."""
+
+    return TurbulentMeanVelocityInlet(
+        velocity=value,
+        turbulence_intensity=intensity,
+        turbulence_length_scale=length_scale,
+    )
 
 
 def pressure_outlet(value: float = 0.0) -> PressureOutlet:

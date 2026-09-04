@@ -1,0 +1,84 @@
+{
+  "schema": "agentcfd.validation-evidence/0.1",
+  "recorded_at": "2026-09-04",
+  "agentcfd_version": "0.1.0a3",
+  "evidence_level": "converged-diagnostic",
+  "case": {
+    "model_sha256": "3c6e57d066f91dea59a39f0205401df58eab99305d9fcea39ffc10d5a209bbab",
+    "analysis_sha256": "b99655a4ae4e14d07d7160ca5a623d6e6af1918bc6749926545e9a4b0c16a024",
+    "case_sha256": "5651d13d0ef54e58a1bbca4546e4d2aa4fba8fa7ca9fd6f886c8387357fbe268",
+    "result_sha256": "ee105f18f7b6c536bbe025efd7c9f0defaeb2e405851e4eabdca2c53e75c3458",
+    "length_m": 3.0,
+    "diameter_m": 0.1,
+    "mean_velocity_m_per_s": 1.0,
+    "density_kg_per_m3": 998.2,
+    "dynamic_viscosity_pa_s": 0.001002,
+    "reynolds_number": 99620.75848303393,
+    "turbulence_model": "k-omega-sst",
+    "wall_treatment": "blended-wall-functions",
+    "turbulence_intensity_fraction": 0.05,
+    "turbulence_length_scale_m": 0.007
+  },
+  "runtime": {
+    "distribution": "OpenCFD OpenFOAM",
+    "version": "2606",
+    "container_image": "opencfd/openfoam-run:2606",
+    "container_digest": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb",
+    "platform": "linux/arm64",
+    "total_wall_seconds": 14.859242625010666,
+    "simple_foam_wall_seconds": 12.953451207999024
+  },
+  "mesh": {
+    "mesh_sha256": "ed279796e139d9e033452aa5bd27e94da27982f695fa13009650fff80f5b3b41",
+    "hex_cells": 38400,
+    "cross_section_cells": 8,
+    "axial_cells": 120,
+    "maximum_non_orthogonality_deg": 28.31852142,
+    "maximum_skewness": 0.8522758054,
+    "maximum_aspect_ratio": 12.74172336,
+    "check_mesh_result": "Mesh OK"
+  },
+  "solver": {
+    "application": "simpleFoam",
+    "configured_iterations": 300,
+    "completed_iterations": 300,
+    "converged": true,
+    "convergence_route": "axial-residual-pressure-stability-and-conservation",
+    "maximum_relevant_final_initial_residual": 0.0002556306486,
+    "pressure_drop_tail_relative_range": 0.0002732868385025376,
+    "rans_pressure_drop_stability_limit": 0.0005
+  },
+  "postprocessing": {
+    "requested_volume_flow_m3_per_s": 0.007853981633974483,
+    "inlet_volume_flow_m3_per_s": 0.007853981634,
+    "outlet_volume_flow_m3_per_s": 0.0078539774949,
+    "relative_inlet_flow_error": 3.2488040840032543e-12,
+    "relative_mass_imbalance": 5.270065799907399e-7,
+    "pressure_drop_pa": 240.07055292353,
+    "darcy_friction_factor": 0.016033563943333332,
+    "smooth_pipe_colebrook_friction_factor": 0.018004046043388334,
+    "relative_friction_difference": 0.1094466263475607,
+    "wall_y_plus_minimum": 66.77151614,
+    "wall_y_plus_average": 86.5509377,
+    "wall_y_plus_maximum": 94.420804558
+  },
+  "acceptance": {
+    "status": "completed",
+    "trust_level": "converged",
+    "scientifically_accepted": false,
+    "passed_gates": [
+      "process and solver completion",
+      "bounded RANS convergence evidence",
+      "pressure-drop tail stability",
+      "mass balance and target inlet flow",
+      "wall-function y-plus range",
+      "mesh quality and identity",
+      "requested output completeness",
+      "runtime version and immutable container identity"
+    ],
+    "blocking_gates": [
+      "A developed turbulent inlet has not yet established pressure-reference applicability.",
+      "A turbulent three-grid study has not yet separated discretization sensitivity."
+    ]
+  }
+}

@@ -6,6 +6,31 @@ machine-readable capability catalog.
 
 ## Unreleased
 
+## 0.1.0a3 — 2026-09-04
+
+- add an explicit `k-omega-sst` smooth circular-pipe model, declared wall
+  treatment, and a typed turbulence-intensity/length-scale inlet that all
+  remain part of model identity;
+- lower the turbulent slice to OpenCFD v2606 `simpleFoam` using an exact
+  flow-rate inlet, `kOmegaSST`, `k`, `omega`, and blended wall functions;
+- recover native `U`, `p`, `k`, `omega`, and `nut` fields plus per-iteration
+  y-plus, flow, pressure, residual, and linear-iteration histories;
+- add explicit wall-y-plus, turbulent residual, observable-stability, friction,
+  runtime-version, mesh, conservation, and output-completeness gates;
+- keep the smooth-pipe friction comparison diagnostic and fail reference
+  applicability closed until developed-inlet and turbulent grid evidence pass;
+- add human- and agent-facing `prepare` and `run openfoam-turbulent-pipe`
+  commands with deterministic manifests, stable completed-unaccepted status,
+  and compact failed-gate guidance in both JSON and human output;
+- reduce the measured 38,400-cell benchmark solve from a multi-minute strict
+  linear-solver configuration to about 15 seconds while preserving explicit
+  RANS convergence evidence;
+- stop the exact Docker container on keyboard interruption as well as timeout,
+  avoiding orphaned OpenFOAM work;
+- validate the first real OpenCFD v2606 arm64 run at Re 99,621: converged,
+  relative mass imbalance `5.27e-7`, average y-plus `86.55`, and intentionally
+  unaccepted 10.94% smooth-pipe friction difference.
+
 ## 0.1.0a2 — 2026-09-03
 
 - validate the fully developed OpenCFD v2606 pipe workflow with an accepted

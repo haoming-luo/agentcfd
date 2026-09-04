@@ -28,9 +28,12 @@ python -m pytest -q
 
 ## Current boundary
 
-The laminar circular-pipe reference workflow is released. In 0.1.0a2, the
-bounded OpenCFD v2606 fully developed pipe workflow has accepted 8/16/32
-three-grid evidence, while the OpenFOAM provider remains experimental as a
-general capability. Do not extend that evidence to uniform developing inlets,
-other OpenFOAM dialects, turbulence, heat transfer, or general geometry. A
-generated case or a zero process exit code is never a broader CFD claim.
+The laminar circular-pipe reference workflow is released. The bounded OpenCFD
+v2606 fully developed laminar pipe has accepted 8/16/32 three-grid evidence.
+Version 0.1.0a3 also exposes a diagnostic k-omega SST smooth-pipe slice with
+explicit inlet turbulence inputs, wall functions, y-plus, friction, residual,
+mass-balance, mesh, field, and runtime evidence. Its first real run converges
+but is intentionally unaccepted because a developed inlet and turbulent grid
+study have not passed. Do not extend either evidence record to another inlet,
+OpenFOAM dialect, geometry, heat transfer, or rough wall. A generated case or a
+zero process exit code is never a broader CFD claim.

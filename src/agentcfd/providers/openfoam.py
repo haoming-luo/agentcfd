@@ -32,11 +32,26 @@ _FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _OUTPUT_FIELD_KEYS = {
     "fluid.velocity": "U",
     "fluid.pressure": "p",
+    "turbulence.kinetic_energy": "k",
+    "turbulence.specific_dissipation_rate": "omega",
+    "turbulence.kinematic_eddy_viscosity": "nut",
 }
 _OUTPUT_HISTORY_KEYS = {
     "flow.mass_balance": "flow.relative_mass_imbalance",
     "flow.pressure_drop": "flow.pressure_drop",
+    "wall.y_plus": "wall.y_plus.average",
 }
+
+_LAMINAR_CAPABILITY = "openfoam.steady-laminar-circular-pipe"
+_TURBULENT_CAPABILITY = "openfoam.steady-rans-smooth-circular-pipe"
+
+
+def _is_turbulent_step(step) -> bool:
+    return step.model.study.turbulence == "k-omega-sst"
+
+
+def _case_capability(step) -> str:
+    return _TURBULENT_CAPABILITY if _is_turbulent_step(step) else _LAMINAR_CAPABILITY
 
 
 def _analysis_sha256(step) -> str:
@@ -136,6 +151,7 @@ def _outer_residual_check(
     *,
     tolerance: float,
     axial_velocity_component: str | None = None,
+    additional_fields: tuple[str, ...] = (),
 ) -> Check:
     """Require relevant pressure/velocity outer residuals below the target.
 
@@ -161,9 +177,22 @@ def _outer_residual_check(
         velocity_names = tuple(
             name for name in (axial_velocity_component, "U") if name in residuals
         )
+    transverse_final: dict[str, float] = {}
+    if axial_velocity_component is not None:
+        final_prefix = "solver.final_residual."
+        transverse_final = {
+            name.removeprefix(final_prefix): quantity.value
+            for name, quantity in quantities.items()
+            if name.startswith(final_prefix)
+            and name.removeprefix(final_prefix).startswith("U")
+            and name.removeprefix(final_prefix) not in {axial_velocity_component, "U"}
+        }
     has_velocity = bool(velocity_names)
-    selected_names = (("p",) if has_pressure else ()) + velocity_names
-    selected = tuple(residuals[name] for name in selected_names)
+    present_additional = tuple(name for name in additional_fields if name in residuals)
+    selected_names = (("p",) if has_pressure else ()) + velocity_names + present_additional
+    selected = tuple(residuals[name] for name in selected_names) + tuple(
+        transverse_final.values()
+    )
     maximum = max(selected) if selected else None
     passed = bool(
         has_pressure
@@ -176,20 +205,22 @@ def _outer_residual_check(
         missing.append("pressure")
     if not has_velocity:
         missing.append("velocity")
+    missing.extend(name for name in additional_fields if name not in residuals)
     return Check(
         name="outer-residual-target",
         passed=passed,
         value=maximum,
         limit=tolerance,
         message=(
-            "Final recorded relevant outer initial residuals satisfy the configured target."
+            "Relevant outer initial residuals and zero-target transverse final "
+            "linear residuals satisfy the configured target."
             if passed
             else "Missing equations: " + ", ".join(missing)
             if missing
-            else "Final recorded outer initial residual exceeds the configured target."
+            else "A relevant outer or zero-target transverse residual exceeds the configured target."
         ),
         kind="verification",
-        observable="solver.initial_residual",
+        observable="solver.residual",
     )
 
 
@@ -224,6 +255,43 @@ def _read_scalar_series(case_directory: Path, function_name: str) -> dict[float,
             if math.isfinite(time) and math.isfinite(value):
                 samples[time] = value
     return samples
+
+
+def _read_y_plus_series(
+    case_directory: Path,
+    function_name: str = "agentcfd_y_plus",
+) -> dict[str, dict[float, float]]:
+    """Read patch min/max/average columns written by OpenFOAM ``yPlus``."""
+
+    root = case_directory / "postProcessing" / function_name
+    series: dict[str, dict[float, float]] = {
+        "minimum": {},
+        "maximum": {},
+        "average": {},
+    }
+    if not root.is_dir():
+        return series
+    for path in sorted(root.rglob("*.dat"), key=str):
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            columns = stripped.replace("(", " ").replace(")", " ").split()
+            if len(columns) < 4:
+                continue
+            try:
+                selected_time = float(columns[0])
+                minimum, maximum, average = (float(value) for value in columns[-3:])
+            except ValueError:
+                continue
+            if all(
+                math.isfinite(value) and value >= 0.0
+                for value in (selected_time, minimum, maximum, average)
+            ):
+                series["minimum"][selected_time] = minimum
+                series["maximum"][selected_time] = maximum
+                series["average"][selected_time] = average
+    return series
 
 
 def _mesh_quality_quantities(log: str) -> dict[str, Quantity]:
@@ -455,6 +523,7 @@ def _recover_patch_data(
     mass_balance_limit: float = 1.0e-6,
     inlet_flow_error_limit: float = 0.01,
     pressure_reference_applicable: bool = True,
+    pressure_reference_requirement: str = "fully developed inlet boundary",
     validation_message: str = "Pressure drop is compared with Hagen--Poiseuille at recovered flow.",
 ) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...], str]:
     if not isinstance(pressure_reference_applicable, bool):
@@ -667,10 +736,10 @@ def _recover_patch_data(
             name="pressure-reference-applicability",
             passed=pressure_reference_applicable,
             value=("applicable" if pressure_reference_applicable else "not applicable"),
-            limit="fully developed inlet boundary",
+            limit=pressure_reference_requirement,
             message=(
-                "Hagen--Poiseuille validates total pipe pressure drop only for the "
-                "declared fully developed inlet case."
+                "The selected pressure-loss reference applies only after its declared "
+                "inlet and grid-evidence requirements are met."
             ),
             kind="validation",
             observable="boundary.inlet_profile",
@@ -682,6 +751,129 @@ def _recover_patch_data(
         histories,
         checks,
         "OpenFOAM patch flow and pressure histories were recovered automatically.",
+    )
+
+
+def _recover_turbulence_data(
+    case_directory: Path,
+    *,
+    density: float,
+    dynamic_viscosity: float,
+    mean_velocity: float,
+    diameter: float,
+    length: float,
+    pressure_drop: Quantity | None,
+    policy: OpenFOAMValidationPolicy,
+) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...]]:
+    """Recover wall resolution and bulk friction evidence for the RANS slice."""
+
+    raw = _read_y_plus_series(case_directory)
+    common_times = sorted(set.intersection(*(set(values) for values in raw.values())))
+    quantities: dict[str, Quantity] = {}
+    histories: dict[str, History] = {}
+    if common_times:
+        for statistic in ("minimum", "maximum", "average"):
+            values = tuple(raw[statistic][selected] for selected in common_times)
+            name = f"wall.y_plus.{statistic}"
+            histories[name] = History(
+                tuple(common_times),
+                values,
+                unit="1",
+                abscissa_name="iteration",
+                abscissa_unit="1",
+                description=f"Wall y-plus {statistic} reported by OpenFOAM.",
+            )
+            quantities[name] = Quantity(
+                values[-1],
+                "1",
+                kind="verification_metric",
+            )
+    mean_y_plus = quantities.get("wall.y_plus.average")
+    minimum_y_plus = quantities.get("wall.y_plus.minimum")
+    maximum_y_plus = quantities.get("wall.y_plus.maximum")
+    y_plus_value = mean_y_plus.value if mean_y_plus is not None else None
+    y_plus_ok = bool(
+        minimum_y_plus is not None
+        and maximum_y_plus is not None
+        and minimum_y_plus.value >= policy.minimum_wall_y_plus
+        and maximum_y_plus.value <= policy.maximum_wall_y_plus
+    )
+
+    reynolds = engineering.reynolds_number(
+        density=density,
+        mean_velocity=mean_velocity,
+        hydraulic_diameter=diameter,
+        dynamic_viscosity=dynamic_viscosity,
+    )
+    reference_friction = engineering.darcy_friction_factor(reynolds)
+    quantities["reference.flow.darcy_friction_factor"] = Quantity(
+        reference_friction,
+        "1",
+    )
+    friction_value: float | None = None
+    friction_error: float | None = None
+    if pressure_drop is not None:
+        friction_value = (
+            2.0
+            * pressure_drop.value
+            * diameter
+            / (density * length * mean_velocity**2)
+        )
+        friction_error = abs(friction_value - reference_friction) / reference_friction
+        quantities["flow.darcy_friction_factor"] = Quantity(friction_value, "1")
+        quantities["flow.darcy_friction_factor_relative_error"] = Quantity(
+            friction_error,
+            "1",
+            kind="diagnostic",
+            description=(
+                "Difference from the smooth-pipe Colebrook relation; inlet development "
+                "and RANS model-form effects are not separated in this first slice."
+            ),
+        )
+
+    return (
+        quantities,
+        histories,
+        (
+            Check(
+                name="wall-y-plus-recovery",
+                passed=bool(common_times),
+                value=(len(common_times) if common_times else 0),
+                limit="at least one complete wall y-plus sample",
+                kind="verification",
+                observable="wall.y_plus",
+            ),
+            Check(
+                name="wall-y-plus-range",
+                passed=y_plus_ok,
+                value=y_plus_value,
+                limit=(
+                    f"all wall y+ in [{policy.minimum_wall_y_plus:g}, "
+                    f"{policy.maximum_wall_y_plus:g}]"
+                ),
+                message=(
+                    "The full recovered wall range, not only its mean, must match "
+                    "the declared wall-function strategy."
+                ),
+                kind="verification",
+                observable="wall.y_plus.average",
+            ),
+            Check(
+                name="turbulent-friction-diagnostic",
+                passed=bool(
+                    friction_error is not None
+                    and friction_error <= policy.maximum_relative_turbulent_friction_error
+                ),
+                value=friction_error,
+                limit=policy.maximum_relative_turbulent_friction_error,
+                message=(
+                    "This comparison is diagnostic until a developed inlet and grid "
+                    "sensitivity establish reference applicability."
+                ),
+                kind="verification",
+                observable="flow.darcy_friction_factor_relative_error",
+            ),
+        ),
     )
 
 
@@ -722,10 +914,15 @@ class OpenFOAMValidationPolicy:
     maximum_relative_pressure_error: float = 0.02
     maximum_relative_inlet_flow_error: float = 0.01
     maximum_relative_pressure_drop_drift: float = 1.0e-4
+    maximum_relative_turbulent_pressure_drop_drift: float = 5.0e-4
     minimum_steady_samples: int = 5
     maximum_mesh_non_orthogonality: float = 65.0
     maximum_mesh_skewness: float = 4.0
     maximum_mesh_aspect_ratio: float = 50.0
+    minimum_wall_y_plus: float = 30.0
+    maximum_wall_y_plus: float = 300.0
+    maximum_relative_turbulent_friction_error: float = 0.15
+    maximum_turbulent_outer_residual: float = 1.0e-3
     validated_runtime_versions: tuple[str, ...] = ("2606",)
 
     def __post_init__(self) -> None:
@@ -763,6 +960,14 @@ class OpenFOAMValidationPolicy:
         )
         object.__setattr__(
             self,
+            "maximum_relative_turbulent_pressure_drop_drift",
+            positive_float(
+                self.maximum_relative_turbulent_pressure_drop_drift,
+                name="maximum_relative_turbulent_pressure_drop_drift",
+            ),
+        )
+        object.__setattr__(
+            self,
             "minimum_steady_samples",
             integer_at_least(
                 self.minimum_steady_samples,
@@ -774,11 +979,19 @@ class OpenFOAMValidationPolicy:
             "maximum_mesh_non_orthogonality",
             "maximum_mesh_skewness",
             "maximum_mesh_aspect_ratio",
+            "minimum_wall_y_plus",
+            "maximum_wall_y_plus",
+            "maximum_relative_turbulent_friction_error",
+            "maximum_turbulent_outer_residual",
         ):
             object.__setattr__(
                 self,
                 name,
                 positive_float(getattr(self, name), name=name),
+            )
+        if self.minimum_wall_y_plus >= self.maximum_wall_y_plus:
+            raise ValueError(
+                "minimum_wall_y_plus must be below maximum_wall_y_plus."
             )
         try:
             versions = tuple(self.validated_runtime_versions)
@@ -802,6 +1015,7 @@ def _pressure_drop_stability_check(
     history: History | None,
     *,
     policy: OpenFOAMValidationPolicy,
+    turbulent: bool = False,
 ) -> Check:
     """Assess engineering-observable stability over the requested tail window."""
 
@@ -813,19 +1027,26 @@ def _pressure_drop_stability_check(
         tail = history.values[-policy.minimum_steady_samples :]
         scale = max(abs(tail[-1]), 1.0e-300)
         relative_drift = (max(tail) - min(tail)) / scale
-    passed = bool(
-        relative_drift is not None
-        and relative_drift <= policy.maximum_relative_pressure_drop_drift
+    limit = (
+        policy.maximum_relative_turbulent_pressure_drop_drift
+        if turbulent
+        else policy.maximum_relative_pressure_drop_drift
     )
+    passed = bool(relative_drift is not None and relative_drift <= limit)
     return Check(
         name="pressure-drop-tail-stability",
         passed=passed,
         value=relative_drift,
-        limit=policy.maximum_relative_pressure_drop_drift,
+        limit=limit,
         message=(
             f"Requires {policy.minimum_steady_samples} final pressure-drop samples."
             if not enough_samples
-            else "Relative range over the final pressure-drop samples."
+            else (
+                "Relative range over the final pressure-drop samples; the RANS "
+                "limit is intentionally separate from the laminar validation limit."
+                if turbulent
+                else "Relative range over the final pressure-drop samples."
+            )
         ),
         kind="verification",
         observable="flow.pressure_drop",
@@ -904,8 +1125,8 @@ class PreparedOpenFOAMCase:
     analysis_sha256: str
     case_sha256: str
     files: dict[str, str]
-    capability: str = "openfoam.steady-laminar-circular-pipe"
-    schema: str = "agentcfd.openfoam-case/0.2"
+    capability: str = _LAMINAR_CAPABILITY
+    schema: str = "agentcfd.openfoam-case/0.3"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1038,11 +1259,11 @@ def prepare_pipe_grid_study(
 class OpenFOAMProvider:
     """Lower a bounded model to an external ``simpleFoam`` workflow.
 
-    The supported case is intentionally narrow: steady, incompressible,
-    isothermal, Newtonian, laminar flow through a smooth circular pipe.  Case
-    generation is deterministic and testable without an OpenFOAM installation.
-    Execution additionally requires ``blockMesh``, ``checkMesh``, and
-    ``simpleFoam`` on PATH.
+    The supported cases are intentionally narrow: steady, incompressible,
+    isothermal, Newtonian flow through a smooth circular pipe, either laminar
+    or the explicitly declared k-omega SST RANS slice. Case generation is
+    deterministic and testable without an OpenFOAM installation. Execution
+    additionally requires ``blockMesh``, ``checkMesh``, and ``simpleFoam``.
     """
 
     def __init__(
@@ -1117,7 +1338,7 @@ class OpenFOAMProvider:
                 if self.container_image
                 else "filesystem-and-subprocess"
             ),
-            capabilities=("openfoam.steady-laminar-circular-pipe",),
+            capabilities=(_LAMINAR_CAPABILITY, _TURBULENT_CAPABILITY),
         )
 
     def prepare(self, step, directory: str | Path | None = None) -> PreparedOpenFOAMCase:
@@ -1154,6 +1375,7 @@ class OpenFOAMProvider:
             analysis_sha256=_analysis_sha256(step),
             case_sha256=case_identity,
             files=hashes,
+            capability=_case_capability(step),
         )
         manifest = target / "agentcfd-case.json"
         manifest.write_bytes(
@@ -1228,8 +1450,13 @@ class OpenFOAMProvider:
             raise CaseIntegrityError(
                 f"Prepared OpenFOAM case manifest is missing or invalid: {manifest_path}"
             ) from error
-        if manifest.get("schema") != "agentcfd.openfoam-case/0.2":
+        if manifest.get("schema") != "agentcfd.openfoam-case/0.3":
             raise CaseIntegrityError("Prepared OpenFOAM case schema is unsupported.")
+        capability = _case_capability(step)
+        if manifest.get("capability") != capability:
+            raise CaseIntegrityError(
+                "Prepared OpenFOAM case belongs to a different provider capability."
+            )
         model_sha256 = step.model.fingerprint()
         if manifest.get("model_sha256") != model_sha256:
             raise CaseIntegrityError(
@@ -1278,6 +1505,7 @@ class OpenFOAMProvider:
             analysis_sha256=analysis_sha256,
             case_sha256=case_sha256,
             files=verified_files,
+            capability=capability,
         )
 
     def _execute_prepared(
@@ -1333,6 +1561,10 @@ class OpenFOAMProvider:
                         cidfile,
                     ) + "\n"
                 return_codes[name] = -124
+            except KeyboardInterrupt:
+                if cidfile is not None:
+                    _stop_timed_out_container(str(commands[name]), cidfile)
+                raise
             finally:
                 command_wall_seconds[name] = time.monotonic() - started_at
                 if cidfile is not None:
@@ -1371,6 +1603,7 @@ class OpenFOAMProvider:
                     observable="provider.container_identity",
                 ),
             )
+        turbulent = _is_turbulent_step(step)
         reference_drop = self._reference_pressure_drop(step)
         mean_velocity = self._mean_velocity(step.model)
         requested_volume_flow = (
@@ -1386,7 +1619,9 @@ class OpenFOAMProvider:
             reference_pressure_drop=reference_drop,
             solver_tolerance=step.procedure.relative_tolerance,
             reference_pressure_drop_per_flow=(
-                128.0
+                None
+                if turbulent
+                else 128.0
                 * step.model.fluid.dynamic_viscosity
                 * step.model.domain.length
                 / (math.pi * step.model.domain.diameter**4)
@@ -1396,12 +1631,55 @@ class OpenFOAMProvider:
             mass_balance_limit=self.validation.maximum_relative_mass_imbalance,
             inlet_flow_error_limit=self.validation.maximum_relative_inlet_flow_error,
             pressure_reference_applicable=fully_developed_inlet,
+            pressure_reference_requirement=(
+                "developed turbulent inlet and grid evidence"
+                if turbulent
+                else "fully developed laminar inlet boundary"
+            ),
             validation_message=(
                 "The fully developed profile isolates spatial and outlet-boundary error."
                 if fully_developed_inlet
+                else "Turbulent friction is diagnostic until developed-inlet and grid evidence pass."
+                if turbulent
                 else "The uniform inlet includes developing-flow effects in the total pressure drop."
             ),
         )
+        turbulence_checks: tuple[Check, ...] = ()
+        if turbulent:
+            turbulence_quantities, turbulence_histories, turbulence_checks = (
+                _recover_turbulence_data(
+                    prepared.directory,
+                    density=step.model.fluid.density,
+                    dynamic_viscosity=step.model.fluid.dynamic_viscosity,
+                    mean_velocity=mean_velocity,
+                    diameter=step.model.domain.diameter,
+                    length=step.model.domain.length,
+                    pressure_drop=quantities.get("flow.pressure_drop"),
+                    policy=self.validation,
+                )
+            )
+            quantities.update(turbulence_quantities)
+            histories.update(turbulence_histories)
+            inlet = next(
+                value
+                for value in step.model.boundary_conditions.values()
+                if isinstance(value, boundaries.TurbulentMeanVelocityInlet)
+            )
+            inlet_estimate = engineering.turbulence_inlet_from_intensity(
+                mean_velocity=mean_velocity,
+                intensity=inlet.turbulence_intensity,
+                length_scale=inlet.turbulence_length_scale,
+            )
+            quantities["turbulence.inlet.kinetic_energy"] = Quantity(
+                inlet_estimate.turbulent_kinetic_energy,
+                "m^2/s^2",
+                kind="scientific_input",
+            )
+            quantities["turbulence.inlet.specific_dissipation_rate"] = Quantity(
+                inlet_estimate.specific_dissipation_rate,
+                "1/s",
+                kind="scientific_input",
+            )
         for name, duration in command_wall_seconds.items():
             quantities[f"runtime.{name}.wall_seconds"] = Quantity(
                 duration,
@@ -1438,12 +1716,18 @@ class OpenFOAMProvider:
         histories.update(residual_histories)
         residual_check = _outer_residual_check(
             residual_quantities,
-            tolerance=step.procedure.relative_tolerance,
+            tolerance=(
+                self.validation.maximum_turbulent_outer_residual
+                if turbulent
+                else step.procedure.relative_tolerance
+            ),
             axial_velocity_component=(None if explicit_solver_converged else "Uz"),
+            additional_fields=(("k", "omega") if turbulent else ()),
         )
         pressure_stability_check = _pressure_drop_stability_check(
             histories.get("flow.pressure_drop"),
             policy=self.validation,
+            turbulent=turbulent,
         )
         solver_converged, convergence_route = _bounded_pipe_convergence(
             process_ok=process_ok,
@@ -1492,7 +1776,16 @@ class OpenFOAMProvider:
         fields: dict[str, FieldRecord] = {}
         latest_time = _latest_time_directory(prepared.directory)
         if latest_time is not None:
-            for name, unit in (("U", "m/s"), ("p", "m^2/s^2")):
+            field_units = (
+                ("U", "m/s"),
+                ("p", "m^2/s^2"),
+                *((
+                    ("k", "m^2/s^2"),
+                    ("omega", "1/s"),
+                    ("nut", "m^2/s"),
+                ) if turbulent else ()),
+            )
+            for name, unit in field_units:
                 path = latest_time / name
                 if path.is_file():
                     fields[name] = FieldRecord(
@@ -1551,8 +1844,8 @@ class OpenFOAMProvider:
                         "and conservation evidence"
                     ),
                     message=(
-                        "Transverse residuals are retained as diagnostics but do not gate "
-                        "this axis-aligned pipe because its physical transverse velocity is zero."
+                        "Zero-target transverse components gate on final linear residuals "
+                        "instead of ill-conditioned normalized outer initial residuals."
                         if solver_converged and not explicit_solver_converged
                         else "A normal End marker alone does not prove numerical convergence."
                     ),
@@ -1622,6 +1915,7 @@ class OpenFOAMProvider:
                 ),
                 *container_checks,
                 *recovery_checks,
+                *turbulence_checks,
             ),
             artifacts={
                 name: Artifact.from_path(
@@ -1672,10 +1966,19 @@ class OpenFOAMProvider:
             raise UnsupportedCaseError(
                 f"The OpenFOAM pipe provider cannot recover requested outputs: {unsupported}."
             )
-        if not study.steady or study.compressible or study.energy or study.reacting or not study.laminar:
+        if not study.steady or study.compressible or study.energy or study.reacting:
             raise UnsupportedCaseError(
-                "The initial OpenFOAM provider supports steady, incompressible, "
-                "isothermal, Newtonian, laminar internal flow only."
+                "The OpenFOAM pipe provider supports steady, incompressible, "
+                "isothermal, Newtonian internal flow only."
+            )
+        if study.turbulence not in (None, "k-omega-sst"):
+            raise UnsupportedCaseError(
+                "The OpenFOAM pipe provider supports laminar or k-omega-sst flow only."
+            )
+        if not study.laminar and study.wall_treatment != "blended-wall-functions":
+            raise UnsupportedCaseError(
+                "The k-omega-sst pipe slice currently supports only the explicitly "
+                "declared blended-wall-functions treatment."
             )
         if model.domain.roughness != 0.0:
             raise UnsupportedCaseError("The initial OpenFOAM provider requires a smooth pipe.")
@@ -1694,9 +1997,53 @@ class OpenFOAMProvider:
             * model.domain.diameter
             / model.fluid.dynamic_viscosity
         )
-        if reynolds >= 2300.0:
+        turbulent_inlets = [
+            value
+            for value in model.boundary_conditions.values()
+            if isinstance(value, boundaries.TurbulentMeanVelocityInlet)
+        ]
+        if study.laminar and turbulent_inlets:
+            raise UnsupportedCaseError(
+                "A turbulent inlet requires a turbulent Study."
+            )
+        if not study.laminar and len(turbulent_inlets) != 1:
+            raise UnsupportedCaseError(
+                "The k-omega-sst pipe slice requires exactly one turbulent mean-velocity inlet."
+            )
+        if not study.laminar and any(
+            isinstance(
+                value,
+                (
+                    boundaries.MassFlowInlet,
+                    boundaries.MeanVelocityInlet,
+                    boundaries.FullyDevelopedVelocityInlet,
+                ),
+            )
+            for value in model.boundary_conditions.values()
+        ):
+            raise UnsupportedCaseError(
+                "The k-omega-sst pipe slice requires the explicit turbulent inlet boundary."
+            )
+        if study.laminar and reynolds >= 2300.0:
             raise UnsupportedCaseError(
                 f"Re={reynolds:.6g} is outside the declared laminar provider range Re < 2300."
+            )
+        if not study.laminar and reynolds < 4000.0:
+            raise UnsupportedCaseError(
+                f"Re={reynolds:.6g} is outside the declared turbulent provider range Re >= 4000."
+            )
+        turbulence_fields = {
+            "turbulence.kinetic_energy",
+            "turbulence.specific_dissipation_rate",
+            "turbulence.kinematic_eddy_viscosity",
+        }
+        turbulence_histories = {"wall.y_plus"}
+        if study.laminar and (
+            set(step.output.fields) & turbulence_fields
+            or set(step.output.histories) & turbulence_histories
+        ):
+            raise UnsupportedCaseError(
+                "Laminar flow cannot produce turbulence fields or wall y-plus."
             )
         for name in model.boundary_conditions:
             if not _FOAM_WORD.fullmatch(name):
@@ -1715,6 +2062,7 @@ class OpenFOAMProvider:
                     boundaries.MassFlowInlet,
                     boundaries.MeanVelocityInlet,
                     boundaries.FullyDevelopedVelocityInlet,
+                    boundaries.TurbulentMeanVelocityInlet,
                 ),
             )
         )
@@ -1736,7 +2084,8 @@ class OpenFOAMProvider:
         if axial_cells is None:
             axial_cells = max(20, min(800, math.ceil(2.0 * model.domain.length / model.domain.diameter)))
 
-        return {
+        turbulent = _is_turbulent_step(step)
+        files = {
             "0/U": _velocity_field(
                 inlet_name,
                 outlet_name,
@@ -1744,10 +2093,14 @@ class OpenFOAMProvider:
                 mean_velocity,
                 radius=model.domain.diameter / 2.0,
                 fully_developed=isinstance(inlet, boundaries.FullyDevelopedVelocityInlet),
+                flow_rate_constrained=isinstance(
+                    inlet,
+                    boundaries.TurbulentMeanVelocityInlet,
+                ),
             ),
             "0/p": _pressure_field(inlet_name, outlet_name, wall_names, outlet_kinematic_pressure),
             "constant/transportProperties": _transport_properties(model.fluid.kinematic_viscosity),
-            "constant/turbulenceProperties": _turbulence_properties(),
+            "constant/turbulenceProperties": _turbulence_properties(turbulent=turbulent),
             "system/blockMeshDict": _block_mesh_dict(
                 length=model.domain.length,
                 radius=model.domain.diameter / 2.0,
@@ -1761,10 +2114,30 @@ class OpenFOAMProvider:
                 step.procedure.maximum_iterations,
                 inlet=inlet_name,
                 outlet=outlet_name,
+                turbulent=turbulent,
             ),
-            "system/fvSchemes": _fv_schemes(),
-            "system/fvSolution": _fv_solution(step.procedure.relative_tolerance),
+            "system/fvSchemes": _fv_schemes(turbulent=turbulent),
+            "system/fvSolution": _fv_solution(
+                step.procedure.relative_tolerance,
+                turbulent=turbulent,
+            ),
         }
+        if turbulent:
+            estimate = engineering.turbulence_inlet_from_intensity(
+                mean_velocity=mean_velocity,
+                intensity=inlet.turbulence_intensity,
+                length_scale=inlet.turbulence_length_scale,
+            )
+            files.update(
+                _turbulence_fields(
+                    inlet_name,
+                    outlet_name,
+                    wall_names,
+                    kinetic_energy=estimate.turbulent_kinetic_energy,
+                    specific_dissipation_rate=estimate.specific_dissipation_rate,
+                )
+            )
+        return files
 
     @staticmethod
     def _reference_pressure_drop(step) -> float:
@@ -1778,6 +2151,7 @@ class OpenFOAMProvider:
                     boundaries.MassFlowInlet,
                     boundaries.MeanVelocityInlet,
                     boundaries.FullyDevelopedVelocityInlet,
+                    boundaries.TurbulentMeanVelocityInlet,
                 ),
             )
         )
@@ -1785,12 +2159,27 @@ class OpenFOAMProvider:
             velocity = inlet.mass_flow_rate / (model.fluid.density * model.domain.area)
         else:
             velocity = inlet.velocity
-        return (
-            32.0
-            * model.fluid.dynamic_viscosity
-            * model.domain.length
-            * velocity
-            / model.domain.diameter**2
+        if model.study.laminar:
+            return (
+                32.0
+                * model.fluid.dynamic_viscosity
+                * model.domain.length
+                * velocity
+                / model.domain.diameter**2
+            )
+        reynolds = engineering.reynolds_number(
+            density=model.fluid.density,
+            mean_velocity=velocity,
+            hydraulic_diameter=model.domain.diameter,
+            dynamic_viscosity=model.fluid.dynamic_viscosity,
+        )
+        friction = engineering.darcy_friction_factor(reynolds)
+        return engineering.darcy_weisbach_pressure_loss(
+            friction_factor=friction,
+            length=model.domain.length,
+            hydraulic_diameter=model.domain.diameter,
+            density=model.fluid.density,
+            mean_velocity=velocity,
         )
 
     @staticmethod
@@ -1804,6 +2193,7 @@ class OpenFOAMProvider:
                     boundaries.MassFlowInlet,
                     boundaries.MeanVelocityInlet,
                     boundaries.FullyDevelopedVelocityInlet,
+                    boundaries.TurbulentMeanVelocityInlet,
                 ),
             )
         )
@@ -1834,10 +2224,13 @@ def _velocity_field(
     *,
     radius: float,
     fully_developed: bool,
+    flow_rate_constrained: bool = False,
 ) -> str:
     wall_blocks = "\n".join(
         f"    {name}\n    {{\n        type noSlip;\n    }}" for name in walls
     )
+    if fully_developed and flow_rate_constrained:
+        raise ValueError("An inlet cannot use both analytic and flow-rate-constrained profiles.")
     if fully_developed:
         target_volume_flow = math.pi * radius**2 * velocity
         radial_profile = (
@@ -1850,6 +2243,12 @@ def _velocity_field(
             type expression;
             expression "vector(0, 0, ({target_volume_flow:.17g})*{radial_profile}/weightSum({radial_profile}))";
         }}"""
+    elif flow_rate_constrained:
+        target_volume_flow = math.pi * radius**2 * velocity
+        inlet_block = f"""        type flowRateInletVelocity;
+        volumetricFlowRate constant {target_volume_flow:.17g};
+        extrapolateProfile yes;
+        value uniform (0 0 {velocity:.17g});"""
     else:
         inlet_block = f"""        type fixedValue;
         value uniform (0 0 {velocity:.17g});"""
@@ -1898,9 +2297,107 @@ nu              [0 2 -1 0 0 0 0] {nu:.17g};
 """
 
 
-def _turbulence_properties() -> str:
-    return _header(object_name="turbulenceProperties", class_name="dictionary", location="constant") + """simulationType laminar;
+def _turbulence_properties(*, turbulent: bool = False) -> str:
+    body = """simulationType RAS;
+
+RAS
+{
+    RASModel        kOmegaSST;
+    turbulence      on;
+    printCoeffs     on;
+}
+""" if turbulent else """simulationType laminar;
 """
+    return _header(
+        object_name="turbulenceProperties",
+        class_name="dictionary",
+        location="constant",
+    ) + body
+
+
+def _turbulence_fields(
+    inlet: str,
+    outlet: str,
+    walls: tuple[str, ...],
+    *,
+    kinetic_energy: float,
+    specific_dissipation_rate: float,
+) -> dict[str, str]:
+    wall_k = "\n".join(
+        f"""    {name}
+    {{
+        type kqRWallFunction;
+        value uniform {kinetic_energy:.17g};
+    }}"""
+        for name in walls
+    )
+    wall_omega = "\n".join(
+        f"""    {name}
+    {{
+        type omegaWallFunction;
+        blending binomial;
+        value uniform {specific_dissipation_rate:.17g};
+    }}"""
+        for name in walls
+    )
+    wall_nut = "\n".join(
+        f"""    {name}
+    {{
+        type nutUBlendedWallFunction;
+        value uniform 0;
+    }}"""
+        for name in walls
+    )
+    k = _header(object_name="k", class_name="volScalarField", location="0") + f"""dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform {kinetic_energy:.17g};
+boundaryField
+{{
+    {inlet}
+    {{
+        type fixedValue;
+        value uniform {kinetic_energy:.17g};
+    }}
+    {outlet}
+    {{
+        type zeroGradient;
+    }}
+{wall_k}
+}}
+"""
+    omega = _header(object_name="omega", class_name="volScalarField", location="0") + f"""dimensions      [0 0 -1 0 0 0 0];
+internalField   uniform {specific_dissipation_rate:.17g};
+boundaryField
+{{
+    {inlet}
+    {{
+        type fixedValue;
+        value uniform {specific_dissipation_rate:.17g};
+    }}
+    {outlet}
+    {{
+        type zeroGradient;
+    }}
+{wall_omega}
+}}
+"""
+    nut = _header(object_name="nut", class_name="volScalarField", location="0") + f"""dimensions      [0 2 -1 0 0 0 0];
+internalField   uniform 0;
+boundaryField
+{{
+    {inlet}
+    {{
+        type calculated;
+        value uniform 0;
+    }}
+    {outlet}
+    {{
+        type calculated;
+        value uniform 0;
+    }}
+{wall_nut}
+}}
+"""
+    return {"0/k": k, "0/omega": omega, "0/nut": nut}
 
 
 def _block_mesh_dict(
@@ -2012,7 +2509,27 @@ boundary
 """
 
 
-def _control_dict(maximum_iterations: int, *, inlet: str, outlet: str) -> str:
+def _control_dict(
+    maximum_iterations: int,
+    *,
+    inlet: str,
+    outlet: str,
+    turbulent: bool = False,
+) -> str:
+    y_plus = """
+    agentcfd_y_plus
+    {
+        type yPlus;
+        libs (fieldFunctionObjects);
+        executeControl timeStep;
+        executeInterval 1;
+        writeControl timeStep;
+        writeInterval 1;
+        writeToFile true;
+        writeFields false;
+        log true;
+    }
+""" if turbulent else ""
     return _header(object_name="controlDict", class_name="dictionary", location="system") + f"""application     simpleFoam;
 startFrom       startTime;
 startTime       0;
@@ -2076,52 +2593,76 @@ functions
         operation areaAverage;
         fields (p);
     }}
+{y_plus}
 }}
 """
 
 
-def _fv_schemes() -> str:
-    return _header(object_name="fvSchemes", class_name="dictionary", location="system") + """ddtSchemes
-{
+def _fv_schemes(*, turbulent: bool = False) -> str:
+    turbulence_divergence = """
+    div(phi,k) bounded Gauss upwind;
+    div(phi,omega) bounded Gauss upwind;
+""" if turbulent else ""
+    return _header(object_name="fvSchemes", class_name="dictionary", location="system") + f"""ddtSchemes
+{{
     default steadyState;
-}
+}}
 gradSchemes
-{
+{{
     default Gauss linear;
-}
+}}
 divSchemes
-{
+{{
     default none;
     div(phi,U) bounded Gauss linearUpwind grad(U);
     div((nuEff*dev2(T(grad(U))))) Gauss linear;
-}
+{turbulence_divergence}
+}}
 laplacianSchemes
-{
+{{
     default Gauss linear corrected;
-}
+}}
 interpolationSchemes
-{
+{{
     default linear;
-}
+}}
 snGradSchemes
-{
+{{
     default corrected;
-}
+}}
 wallDist
-{
+{{
     method meshWave;
-}
+}}
 """
 
 
-def _fv_solution(relative_tolerance: float) -> str:
+def _fv_solution(relative_tolerance: float, *, turbulent: bool = False) -> str:
+    pressure_relative_tolerance = 0.1 if turbulent else 0.01
+    turbulence_solvers = f"""
+    \"(k|omega)\"
+    {{
+        solver smoothSolver;
+        smoother symGaussSeidel;
+        tolerance {relative_tolerance:.17g};
+        relTol 0.1;
+    }}
+""" if turbulent else ""
+    turbulence_residuals = f"""
+        k {relative_tolerance:.17g};
+        omega {relative_tolerance:.17g};
+""" if turbulent else ""
+    turbulence_relaxation = """
+        k 0.7;
+        omega 0.7;
+""" if turbulent else ""
     return _header(object_name="fvSolution", class_name="dictionary", location="system") + f"""solvers
 {{
     p
     {{
         solver GAMG;
         tolerance {relative_tolerance:.17g};
-        relTol 0.01;
+        relTol {pressure_relative_tolerance:.17g};
         smoother GaussSeidel;
     }}
     U
@@ -2131,6 +2672,7 @@ def _fv_solution(relative_tolerance: float) -> str:
         tolerance {relative_tolerance:.17g};
         relTol 0.1;
     }}
+{turbulence_solvers}
 }}
 
 SIMPLE
@@ -2141,6 +2683,7 @@ SIMPLE
     {{
         p {relative_tolerance:.17g};
         U {relative_tolerance:.17g};
+{turbulence_residuals}
     }}
 }}
 
@@ -2153,6 +2696,7 @@ relaxationFactors
     equations
     {{
         U 0.7;
+{turbulence_relaxation}
     }}
 }}
 """

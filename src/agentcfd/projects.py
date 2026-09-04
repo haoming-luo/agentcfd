@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
 import tomllib
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -42,6 +43,7 @@ class ProjectManifest:
     factory: str
     default_provider: str
     run_directory: str
+    run_mode: str
     openfoam: Mapping[str, object]
 
     @classmethod
@@ -56,6 +58,7 @@ class ProjectManifest:
             "factory",
             "default_provider",
             "run_directory",
+            "run_mode",
             "openfoam",
         }
         unknown = sorted(set(payload) - allowed)
@@ -75,11 +78,15 @@ class ProjectManifest:
         openfoam = payload.get("openfoam", {})
         if not isinstance(openfoam, dict):
             raise ProjectError("Project [openfoam] settings must be a table.")
+        run_mode = payload.get("run_mode", "campaign")
+        if run_mode not in {"replace", "campaign"}:
+            raise ProjectError("Project run_mode must be 'replace' or 'campaign'.")
         return cls(
             entrypoint=str(strings["entrypoint"]).strip(),
             factory=str(strings["factory"]).strip(),
             default_provider=provider,
             run_directory=str(strings["run_directory"]).strip(),
+            run_mode=str(run_mode),
             openfoam=dict(openfoam),
         )
 
@@ -92,11 +99,14 @@ class ProjectRun:
     result_path: Path
     plan_path: Path
     field_bundle: data_exchange.FieldBundle | None = None
+    mode: str = "replace"
+    solver_workspace: Path | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
             "schema": "agentcfd.project-run/0.1",
             "run_id": self.run_id,
+            "mode": self.mode,
             "directory": str(self.directory),
             "result": str(self.result_path),
             "plan": str(self.plan_path),
@@ -107,6 +117,9 @@ class ProjectRun:
             "provider": self.result.provider,
             "field_bundle": (
                 self.field_bundle.to_dict() if self.field_bundle is not None else None
+            ),
+            "solver_workspace": (
+                None if self.solver_workspace is None else str(self.solver_workspace)
             ),
         }
 
@@ -130,11 +143,14 @@ def _load_module(path: Path, root: Path) -> ModuleType:
         raise ProjectError(f"Cannot load project entrypoint {path}.")
     module = importlib.util.module_from_spec(spec)
     sys.path.insert(0, str(root))
+    previous_bytecode_policy = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
     try:
         spec.loader.exec_module(module)
     except Exception as error:
         raise ProjectError(f"Project entrypoint failed to import: {error}") from error
     finally:
+        sys.dont_write_bytecode = previous_bytecode_policy
         if sys.path and sys.path[0] == str(root):
             sys.path.pop(0)
     return module
@@ -219,6 +235,7 @@ class Project:
             "axial_cells",
             "nominal_wall_cell_fraction",
             "export_fields",
+            "keep_workspace",
         }
         unknown = sorted(set(settings) - allowed)
         if unknown:
@@ -341,7 +358,7 @@ class Project:
                 ProjectIssue(
                     "PORTABLE_IO_UNAVAILABLE",
                     "error",
-                    "Standard XDMF/H5/NPZ output dependencies are unavailable.",
+                    "Standard XDMF/H5 output dependencies are unavailable.",
                     "runtime:io",
                     "Install `agentcfd[io]` in the execution environment.",
                 )
@@ -356,7 +373,15 @@ class Project:
             "mesh_strategy": "structured-circular-pipe-o-grid" if selected_name == "openfoam" else "analytical",
             "solver": "simpleFoam" if selected_name == "openfoam" else "Hagen-Poiseuille",
             "portable_field_bundle": export_fields,
-            "portable_formats": ["xdmf", "hdf5", "npz"] if export_fields else [],
+            "portable_formats": (
+                [
+                    "xdmf",
+                    "hdf5",
+                    *(["npz"] if "npz" in step.output.portable_formats else []),
+                ]
+                if export_fields
+                else []
+            ),
         }
         plan: dict[str, object] = {
             "schema": "agentcfd.solution-plan/0.1",
@@ -393,14 +418,26 @@ class Project:
     def inspect(self) -> dict[str, object]:
         plan = self.plan()
         runs = []
-        if self.run_root.is_dir():
-            for path in sorted(self.run_root.glob("*/run.json"), reverse=True):
-                try:
-                    record = json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    continue
-                if isinstance(record, dict):
-                    runs.append(record)
+        candidates = [self.run_root / "run.json"]
+        campaign_root = self.root / "campaigns"
+        if campaign_root.is_dir():
+            candidates.extend(sorted(campaign_root.glob("*/run.json"), reverse=True))
+        # Backward-compatible discovery for 0.1 projects whose run_directory
+        # already contains immutable run-id subdirectories.
+        if self.manifest.run_mode == "campaign" and self.run_root.is_dir():
+            candidates.extend(sorted(self.run_root.glob("*/run.json"), reverse=True))
+        seen: set[Path] = set()
+        for path in candidates:
+            if path in seen or not path.is_file():
+                continue
+            seen.add(path)
+            try:
+                record = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(record, dict):
+                runs.append(record)
+        runs.sort(key=lambda record: str(record.get("completed_at", "")), reverse=True)
         return {
             "schema": "agentcfd.project-inspection/0.1",
             "root": str(self.root),
@@ -416,6 +453,8 @@ class Project:
         *,
         provider: str | None = None,
         container_image: str | None = None,
+        campaign: bool = False,
+        keep_workspace: bool = False,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
         step = self.load_step()
@@ -432,11 +471,26 @@ class Project:
         now = datetime.now(UTC)
         model_sha = step.model.fingerprint()
         run_id = f"{now.strftime('%Y%m%dT%H%M%S%fZ')}-{model_sha[:8]}"
-        run_directory = self.run_root / run_id
-        run_directory.mkdir(parents=True, exist_ok=False)
+        campaign_mode = campaign or self.manifest.run_mode == "campaign"
+        run_directory = (
+            self.root / "campaigns" / run_id if campaign_mode else self.run_root
+        )
+        if not campaign_mode and run_directory.exists() and any(run_directory.iterdir()):
+            marker = run_directory / "run.json"
+            try:
+                owned = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                owned = None
+            if not isinstance(owned, dict) or owned.get("schema") != "agentcfd.project-run/0.1":
+                raise ProjectError(
+                    f"Refusing to replace unmanaged output directory: {run_directory}"
+                )
+            shutil.rmtree(run_directory)
+        run_directory.mkdir(parents=True, exist_ok=not campaign_mode)
         plan_path = run_directory / "plan.json"
         plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        case_directory = run_directory / "openfoam-case"
+        workspace_root = self.root / ".agentcfd" / "work" / run_id
+        case_directory = workspace_root / "openfoam"
         selected = self._provider(
             selected_name,
             case_directory=case_directory if selected_name == "openfoam" else None,
@@ -470,13 +524,18 @@ class Project:
                 },
                 profile=step.output.portable_profile,
                 fields=step.output.fields,
+                formats=step.output.portable_formats,
             )
-            for name, path, media_type in (
+            portable_artifacts = [
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),
                 ("fields.hdf5", bundle.hdf5, "application/x-hdf5"),
-                ("fields.npz", bundle.npz, "application/x-npz"),
                 ("fields.manifest", bundle.manifest, "application/json"),
-            ):
+            ]
+            if bundle.npz is not None:
+                portable_artifacts.insert(
+                    2, ("fields.npz", bundle.npz, "application/x-npz")
+                )
+            for name, path, media_type in portable_artifacts:
                 result.artifacts[name] = Artifact.from_path(
                     path,
                     role="portable-field-bundle",
@@ -494,6 +553,44 @@ class Project:
                     description=record["description"],
                     processing={"operation": record["processing"]},
                 )
+        retained_workspace = keep_workspace or bool(
+            self._openfoam_settings().get("keep_workspace", False)
+        )
+        if selected_name == "openfoam":
+            evidence_directory = run_directory / "evidence"
+            copied_paths: dict[str, Path] = {}
+            for name, artifact in tuple(result.artifacts.items()):
+                source_path = Path(artifact.path)
+                try:
+                    source_path.resolve().relative_to(workspace_root.resolve())
+                except ValueError:
+                    continue
+                if name.startswith("log_"):
+                    target_name = f"{name.removeprefix('log_')}.log"
+                elif source_path.suffix == ".json":
+                    target_name = f"{name}.json"
+                else:
+                    target_name = name
+                target_path = evidence_directory / target_name
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_path, target_path)
+                copied_paths[str(source_path)] = target_path
+                result.artifacts[name] = Artifact.from_path(
+                    target_path,
+                    role=artifact.role,
+                    media_type=artifact.media_type,
+                )
+            for name, field in tuple(result.fields.items()):
+                copied = copied_paths.get(field.artifact)
+                if copied is not None:
+                    result.fields[name] = replace(field, artifact=str(copied))
+            if not retained_workspace and workspace_root.is_dir():
+                shutil.rmtree(workspace_root)
+                for empty_parent in (workspace_root.parent, workspace_root.parent.parent):
+                    try:
+                        empty_parent.rmdir()
+                    except OSError:
+                        pass
         result_path = result.write(run_directory / "result.json")
         completed = ProjectRun(
             run_id=run_id,
@@ -502,6 +599,8 @@ class Project:
             result_path=result_path,
             plan_path=plan_path,
             field_bundle=bundle,
+            mode="campaign" if campaign_mode else "replace",
+            solver_workspace=workspace_root if retained_workspace else None,
         )
         run_record = completed.to_dict()
         run_record["plan_sha256"] = plan["plan_sha256"]
@@ -557,27 +656,35 @@ def init_project(
 entrypoint = "case.py"
 factory = "build"
 default_provider = "{provider}"
-run_directory = "runs"
+run_directory = "output"
+run_mode = "replace"
 
 [openfoam]
 container_image = "opencfd/openfoam-run:2606"
 cross_section_cells = 8
 axial_cells = 120
 export_fields = true
+keep_workspace = false
 '''
     (root / "agentcfd.toml").write_text(manifest, encoding="utf-8")
     (root / "case.py").write_text(_CASE_TEMPLATE, encoding="utf-8")
     (root / "README.md").write_text(
         "# AgentCFD industrial pipe\n\n"
         "Edit `case.py`, then use `agentcfd check`, `agentcfd plan`, "
-        "`agentcfd run`, and `agentcfd inspect`.\n",
+        "`agentcfd run`, and `agentcfd inspect`. Ordinary runs replace the managed "
+        "`output/` directory. Use `agentcfd run . --campaign` to preserve an "
+        "immutable run, or `--keep-workspace` to retain generated OpenFOAM files.\n",
         encoding="utf-8",
     )
     (root / "AGENTS.md").write_text(
         "# Agent instructions\n\n"
         "Treat `case.py` as the modeling source of truth. Run `agentcfd check . --json` "
         "before execution. Do not edit generated OpenFOAM dictionaries to change scientific intent. "
-        "Preserve plan, result, XDMF/H5/NPZ, and failed checks together.\n",
+        "Preserve plan, result, XDMF/H5, selected NPZ, and failed checks together.\n",
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text(
+        "output/\ncampaigns/\n.agentcfd/\n__pycache__/\n",
         encoding="utf-8",
     )
     return Project(root)

@@ -1,8 +1,8 @@
 """Portable field bundles for visualization, coupling, and learned workflows.
 
-XDMF/HDF5 is the durable mesh-and-field representation.  NPZ mirrors the same
-arrays without Python pickles so NumPy, PyTorch, JAX, and dataset tooling can
-consume a bundle without understanding an OpenFOAM case directory.
+XDMF/HDF5 is the durable mesh-and-field representation.  NPZ is an explicit
+optional mirror for NumPy, PyTorch, JAX, and dataset tooling; visualization
+workflows do not pay its storage or memory cost unless they request it.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class FieldBundle:
     directory: Path
     xdmf: Path
     hdf5: Path
-    npz: Path
+    npz: Path | None
     manifest: Path
     frame_count: int
     times: tuple[float, ...]
@@ -45,7 +45,7 @@ class FieldBundle:
             "directory": str(self.directory),
             "xdmf": str(self.xdmf),
             "hdf5": str(self.hdf5),
-            "npz": str(self.npz),
+            "npz": None if self.npz is None else str(self.npz),
             "manifest": str(self.manifest),
             "frame_count": self.frame_count,
             "times": list(self.times),
@@ -457,8 +457,9 @@ def export_vtu_series(
     source: Mapping[str, object] | None = None,
     profile: str = "both",
     fields: Iterable[str] | None = None,
+    formats: Iterable[str] = ("xdmf",),
 ) -> FieldBundle:
-    """Write one canonical XDMF/HDF5/NPZ bundle from a fixed-mesh VTU series."""
+    """Write a canonical XDMF/HDF5 bundle and, when selected, an NPZ mirror."""
 
     meshio, np = _io_modules()
     files = tuple(Path(path) for path in vtu_files)
@@ -489,6 +490,19 @@ def export_vtu_series(
         or len(set(selected_fields)) != len(selected_fields)
     ):
         raise ValueError("Selected fields must be a non-empty sequence of unique names.")
+    selected_formats = tuple(str(name).strip().lower() for name in formats)
+    if (
+        not selected_formats
+        or any(not name for name in selected_formats)
+        or len(set(selected_formats)) != len(selected_formats)
+    ):
+        raise ValueError("Portable formats must be a non-empty sequence of unique names.")
+    unsupported_formats = sorted(set(selected_formats) - {"xdmf", "npz"})
+    if unsupported_formats:
+        raise ValueError(f"Unsupported portable formats: {unsupported_formats}.")
+    if "xdmf" not in selected_formats:
+        raise ValueError("Portable formats must include 'xdmf' as the bundle foundation.")
+    write_npz = "npz" in selected_formats
     source_root = Path(case_directory) if case_directory is not None else files[0].parents[2]
     axis_record = dict(axis or _axis_from_result(source_root))
     required_axis = {"name", "unit", "physical_time", "description"}
@@ -503,7 +517,7 @@ def export_vtu_series(
     target.mkdir(parents=True, exist_ok=True)
     xdmf_path = target / "fields.xdmf"
     hdf5_path = target / "fields.h5"
-    npz_path = target / "fields.npz"
+    npz_path = target / "fields.npz" if write_npz else None
     manifest_path = target / "manifest.json"
 
     first = meshio.read(files[0])
@@ -578,10 +592,13 @@ def export_vtu_series(
             ]:
                 raise ValueError("All frames must expose the same canonical fields.")
             writer.write_data(time, point_data=point_data, cell_data=cell_data)
-            for name, values in point_data.items():
-                point_frames.setdefault(name, []).append(np.asarray(values))
-            for name, blocks in cell_data.items():
-                cell_frames.setdefault(name, []).append([np.asarray(block) for block in blocks])
+            if write_npz:
+                for name, values in point_data.items():
+                    point_frames.setdefault(name, []).append(np.asarray(values))
+                for name, blocks in cell_data.items():
+                    cell_frames.setdefault(name, []).append(
+                        [np.asarray(block) for block in blocks]
+                    )
     except BaseException:
         writer.h5_file.close()
         raise
@@ -597,34 +614,38 @@ def export_vtu_series(
         h5.attrs["point_count"] = int(points.shape[0])
         h5.attrs["cell_block_count"] = len(topology)
 
-    arrays: dict[str, Any] = {
-        "axis": np.asarray(times, dtype=float),
-        "points": points,
-    }
-    array_records: list[dict[str, object]] = [
-        {"key": "axis", "role": "coordinate", "unit": str(axis_record["unit"])},
-        {"key": "points", "role": "geometry", "unit": "m"},
-    ]
-    for index, (cell_type, data) in enumerate(topology):
-        key = _array_key("cells", index, cell_type)
-        arrays[key] = data
-        array_records.append({"key": key, "role": "topology", "cell_type": cell_type})
-    for name, frames in sorted(point_frames.items()):
-        key = _array_key("point", name)
-        arrays[key] = np.stack(frames)
-        array_records.append({"key": key, "role": "field", "export_name": name})
-    for name, frames in sorted(cell_frames.items()):
-        for block_index in range(len(frames[0])):
-            key = _array_key("cell", name, block_index)
-            arrays[key] = np.stack([frame[block_index] for frame in frames])
+    arrays: dict[str, Any] = {}
+    array_records: list[dict[str, object]] = []
+    if write_npz:
+        arrays.update({"axis": np.asarray(times, dtype=float), "points": points})
+        array_records.extend(
+            [
+                {"key": "axis", "role": "coordinate", "unit": str(axis_record["unit"])},
+                {"key": "points", "role": "geometry", "unit": "m"},
+            ]
+        )
+        for index, (cell_type, data) in enumerate(topology):
+            key = _array_key("cells", index, cell_type)
+            arrays[key] = data
             array_records.append(
-                {
-                    "key": key,
-                    "role": "field",
-                    "export_name": name,
-                    "cell_block": block_index,
-                }
+                {"key": key, "role": "topology", "cell_type": cell_type}
             )
+        for name, frames in sorted(point_frames.items()):
+            key = _array_key("point", name)
+            arrays[key] = np.stack(frames)
+            array_records.append({"key": key, "role": "field", "export_name": name})
+        for name, frames in sorted(cell_frames.items()):
+            for block_index in range(len(frames[0])):
+                key = _array_key("cell", name, block_index)
+                arrays[key] = np.stack([frame[block_index] for frame in frames])
+                array_records.append(
+                    {
+                        "key": key,
+                        "role": "field",
+                        "export_name": name,
+                        "cell_block": block_index,
+                    }
+                )
 
     metadata = {
         "schema": "agentcae.field-bundle",
@@ -648,11 +669,7 @@ def export_vtu_series(
         "fields": field_records or [],
         "arrays": array_records,
         "source": {**_source_context(source_root), **dict(source or {})},
-        "formats": {
-            "xdmf": "fields.xdmf",
-            "hdf5": "fields.h5",
-            "npz": "fields.npz",
-        },
+        "formats": {"xdmf": "fields.xdmf", "hdf5": "fields.h5"},
         "output_selection": {
             "profile": profile,
             "associations": list(associations),
@@ -662,16 +679,22 @@ def export_vtu_series(
                 else list(selected_fields)
             ),
         },
-        "npz": {"allow_pickle": False, "metadata_key": "metadata_json"},
     }
-    arrays["metadata_json"] = np.asarray(
-        json.dumps(metadata, sort_keys=True, separators=(",", ":"))
-    )
-    np.savez_compressed(npz_path, **arrays)
+    if write_npz:
+        assert npz_path is not None
+        metadata["formats"]["npz"] = "fields.npz"
+        metadata["npz"] = {"allow_pickle": False, "metadata_key": "metadata_json"}
+        arrays["metadata_json"] = np.asarray(
+            json.dumps(metadata, sort_keys=True, separators=(",", ":"))
+        )
+        np.savez_compressed(npz_path, **arrays)
 
+    artifact_paths = [xdmf_path, hdf5_path]
+    if npz_path is not None:
+        artifact_paths.append(npz_path)
     metadata["artifacts"] = {
         path.name: {"sha256": file_sha256(path), "size_bytes": path.stat().st_size}
-        for path in (xdmf_path, hdf5_path, npz_path)
+        for path in artifact_paths
     }
     manifest_path.write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
@@ -700,6 +723,7 @@ def export_openfoam_case(
     source: Mapping[str, object] | None = None,
     profile: str = "both",
     fields: Iterable[str] | None = None,
+    formats: Iterable[str] = ("xdmf",),
 ) -> FieldBundle:
     """Export all OpenFOAM time directories to the standard field bundle."""
 
@@ -723,6 +747,7 @@ def export_openfoam_case(
         source=source,
         profile=profile,
         fields=fields,
+        formats=formats,
     )
 
 
@@ -747,6 +772,11 @@ def export_agentfem_field_sample(
     root = Path(bundle_directory)
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if "npz" not in manifest.get("formats", {}):
+        raise ValueError(
+            "Field-sample export requires an NPZ-enabled parent bundle; "
+            "export it with formats=('xdmf', 'npz') or CLI --with-npz."
+        )
     if association not in {"point", "cell"}:
         raise ValueError("Field-sample association must be 'point' or 'cell'.")
     matches = [
@@ -855,7 +885,7 @@ def export_agentfem_field_sample(
 
 
 def verify_field_bundle(directory: str | Path) -> dict[str, object]:
-    """Open every portable representation and verify its frame identity."""
+    """Open every selected portable representation and verify frame identity."""
 
     meshio, np = _io_modules()
     root = Path(directory)
@@ -878,25 +908,30 @@ def verify_field_bundle(directory: str | Path) -> dict[str, object]:
     with meshio.xdmf.TimeSeriesReader(root / payload["formats"]["xdmf"]) as reader:
         points, cells = reader.read_points_cells()
         xdmf_times = [reader.read_data(index)[0] for index in range(reader.num_steps)]
-    try:
-        with np.load(root / payload["formats"]["npz"], allow_pickle=False) as arrays:
-            npz_times = arrays["axis"]
-            npz_points = arrays["points"]
-            embedded = json.loads(str(arrays["metadata_json"]))
-    except (KeyError, json.JSONDecodeError) as error:
-        raise ValueError("NPZ field bundle is missing its safe standard arrays or metadata.") from error
     expected = payload["axis"]["values"]
-    if not np.allclose(xdmf_times, expected) or not np.allclose(npz_times, expected):
-        raise ValueError("XDMF and NPZ time axes disagree with the manifest.")
-    if np.asarray(points).shape != npz_points.shape:
-        raise ValueError("XDMF and NPZ point geometry disagree.")
-    if embedded.get("schema") != payload.get("schema"):
-        raise ValueError("NPZ embedded metadata disagrees with the manifest.")
+    if not np.allclose(xdmf_times, expected):
+        raise ValueError("XDMF time axis disagrees with the manifest.")
+    if "npz" in payload["formats"]:
+        try:
+            with np.load(root / payload["formats"]["npz"], allow_pickle=False) as arrays:
+                npz_times = arrays["axis"]
+                npz_points = arrays["points"]
+                embedded = json.loads(str(arrays["metadata_json"]))
+        except (KeyError, json.JSONDecodeError) as error:
+            raise ValueError(
+                "NPZ field bundle is missing its safe standard arrays or metadata."
+            ) from error
+        if not np.allclose(npz_times, expected):
+            raise ValueError("NPZ time axis disagrees with the manifest.")
+        if np.asarray(points).shape != npz_points.shape:
+            raise ValueError("XDMF and NPZ point geometry disagree.")
+        if embedded.get("schema") != payload.get("schema"):
+            raise ValueError("NPZ embedded metadata disagrees with the manifest.")
     return {
         "schema": "agentcfd.field-bundle-verification/0.1",
         "verified": True,
         "frame_count": len(expected),
-        "point_count": int(npz_points.shape[0]),
+        "point_count": int(np.asarray(points).shape[0]),
         "cell_block_count": len(cells),
         "formats": sorted(payload["formats"]),
     }

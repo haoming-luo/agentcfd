@@ -14,8 +14,11 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     project = projects.init_project(root)
 
     assert project.manifest.default_provider == "reference"
+    assert project.manifest.run_mode == "replace"
+    assert project.run_root == root / "output"
     assert "def build" in (root / "case.py").read_text()
     assert (root / "AGENTS.md").is_file()
+    assert "output/" in (root / ".gitignore").read_text()
 
     plan = project.plan()
     assert plan["readiness"] == {
@@ -38,11 +41,56 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     assert completed.plan_path.is_file()
     assert completed.result_path.is_file()
     assert (completed.directory / "run.json").is_file()
+    assert completed.directory == root / "output"
+    assert completed.mode == "replace"
+    assert not (root / "__pycache__").exists()
 
     inspection = project.inspect()
     assert inspection["run_count"] == 1
     assert inspection["latest_run"]["run_id"] == completed.run_id
     assert inspection["latest_run"]["trust_level"] == "verified"
+
+
+def test_project_replace_mode_overwrites_only_managed_output(tmp_path):
+    root = tmp_path / "pipe"
+    project = projects.init_project(root)
+    first = project.run()
+    (first.directory / "obsolete.txt").write_text("old")
+
+    second = project.run()
+
+    assert second.directory == first.directory == root / "output"
+    assert second.run_id != first.run_id
+    assert not (second.directory / "obsolete.txt").exists()
+    inspection = project.inspect()
+    assert inspection["run_count"] == 1
+    assert inspection["latest_run"]["run_id"] == second.run_id
+
+
+def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
+    root = tmp_path / "pipe"
+    project = projects.init_project(root)
+    current = project.run()
+    archived = project.run(campaign=True)
+
+    assert current.directory == root / "output"
+    assert archived.mode == "campaign"
+    assert archived.directory.parent == root / "campaigns"
+    assert (current.directory / "run.json").is_file()
+    assert (archived.directory / "run.json").is_file()
+    assert project.inspect()["run_count"] == 2
+
+
+def test_project_replace_mode_refuses_unmanaged_output(tmp_path):
+    root = tmp_path / "pipe"
+    project = projects.init_project(root)
+    project.run_root.mkdir()
+    (project.run_root / "notes.txt").write_text("user-owned")
+
+    with pytest.raises(ProjectError, match="unmanaged output"):
+        project.run()
+
+    assert (project.run_root / "notes.txt").read_text() == "user-owned"
 
 
 def test_project_init_refuses_to_overwrite_user_directory(tmp_path):

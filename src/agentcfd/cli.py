@@ -209,11 +209,13 @@ def _turbulent_openfoam_provider(
     *,
     cross_section_cells: int,
     axial_cells: int,
+    precursor_case: Path | None = None,
     container_image: str | None = None,
     timeout_seconds: float = 3600.0,
 ) -> OpenFOAMProvider:
     return OpenFOAMProvider(
         case_directory=case_directory,
+        precursor_case=precursor_case,
         container_image=container_image,
         timeout_seconds=timeout_seconds,
         mesh=OpenFOAMMeshControls(
@@ -475,6 +477,11 @@ def build_parser() -> argparse.ArgumentParser:
     turbulent_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
     turbulent_prepare.add_argument("--cross-section-cells", type=int, default=8)
     turbulent_prepare.add_argument("--axial-cells", type=int, default=120)
+    turbulent_prepare.add_argument(
+        "--precursor-case",
+        type=Path,
+        help="Accepted periodic precursor case used for developed-field mapping.",
+    )
     turbulent_prepare.add_argument("--json", action="store_true", dest="as_json")
     precursor_prepare = prepare_subparsers.add_parser(
         "openfoam-turbulent-precursor",
@@ -559,6 +566,11 @@ def build_parser() -> argparse.ArgumentParser:
     turbulent_run.add_argument("--turbulence-length-scale", type=float, default=0.007)
     turbulent_run.add_argument("--cross-section-cells", type=int, default=8)
     turbulent_run.add_argument("--axial-cells", type=int, default=120)
+    turbulent_run.add_argument(
+        "--precursor-case",
+        type=Path,
+        help="Accepted periodic precursor case used for developed-field mapping.",
+    )
     turbulent_run.add_argument("--container-image")
     turbulent_run.add_argument("--timeout-seconds", type=float, default=3600.0)
     turbulent_run.add_argument("--prepared", action="store_true")
@@ -772,6 +784,7 @@ def main(argv: list[str] | None = None) -> int:
             args.case_directory,
             cross_section_cells=args.cross_section_cells,
             axial_cells=args.axial_cells,
+            precursor_case=args.precursor_case,
         ).prepare(step).to_dict()
         if args.as_json:
             print(json.dumps(manifest, indent=2, sort_keys=True))
@@ -845,6 +858,7 @@ def main(argv: list[str] | None = None) -> int:
             args.case_directory,
             cross_section_cells=args.cross_section_cells,
             axial_cells=args.axial_cells,
+            precursor_case=args.precursor_case,
             container_image=args.container_image,
             timeout_seconds=args.timeout_seconds,
         )

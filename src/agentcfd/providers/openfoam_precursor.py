@@ -645,7 +645,13 @@ class OpenFOAMTurbulentPrecursorProvider:
         actual_cells = quantities.get("mesh.cell_count")
         mesh_sha256, mesh_manifest = _write_mesh_manifest(prepared.directory)
         latest = _latest_time_directory(prepared.directory)
-        field_units = {"U": "m/s", "k": "m^2/s^2", "omega": "1/s", "nut": "m^2/s"}
+        field_units = {
+            "U": "m/s",
+            "p": "m^2/s^2",
+            "k": "m^2/s^2",
+            "omega": "1/s",
+            "nut": "m^2/s",
+        }
         fields: dict[str, FieldRecord] = {}
         artifact_paths: dict[str, Path] = {
             "case_manifest": prepared.directory / "agentcfd-case.json",
@@ -757,7 +763,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                 name="developed-field-completeness",
                 passed=len(fields) == len(field_units),
                 value=", ".join(sorted(fields)),
-                limit="U, k, omega, and nut are recovered",
+                limit="U, p, k, omega, and nut are recovered",
                 kind="runtime",
                 observable="result.outputs",
             ),

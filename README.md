@@ -238,11 +238,24 @@ agentcfd run openfoam-turbulent-precursor precursor \
   --container-image opencfd/openfoam-run:2606 --json
 ```
 
+Map that accepted, content-addressed developed field into a downstream pipe:
+
+```bash
+agentcfd run openfoam-turbulent-pipe mapped-pipe \
+  --precursor-case precursor \
+  --cross-section-cells 8 --axial-cells 120 \
+  --container-image opencfd/openfoam-run:2606 --json
+```
+
 AgentCFD lowers this to `flowRateInletVelocity`, `kOmegaSST`, explicit `k` and
 `omega` inputs, blended wall functions, and in-run `yPlus` recovery. A completed
 and converged run remains unaccepted until its inlet/reference applicability and
 grid evidence pass; the trust state is intended to be safe for unattended AI
 workflows.
+The mapping route rejects unaccepted, incompatible, incomplete, or modified
+precursors before execution. It records source result, case, mesh, runtime, and
+field identities in `agentcfd-precursor-map.json`; `mapFields` initializes the
+downstream internal field while target boundary semantics remain explicit.
 The rationale for analytical, flow-rate, and periodic developed inlets, measured
 resolution/runtime tiers, and the staged turbulence and steam plan is recorded
 in [the numerical strategy](docs/numerical-strategy.md).
@@ -304,6 +317,7 @@ authoritative.
 - [OpenFOAM v2606 grid-validation evidence](docs/openfoam-v2606-grid-validation.json)
 - [OpenFOAM v2606 turbulent-pipe diagnostic evidence](docs/openfoam-v2606-turbulent-pipe-diagnostic.json)
 - [OpenFOAM v2606 periodic precursor evidence](docs/openfoam-v2606-periodic-precursor-validation.json)
+- [OpenFOAM v2606 precursor-mapping evidence](docs/openfoam-v2606-precursor-mapping-validation.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

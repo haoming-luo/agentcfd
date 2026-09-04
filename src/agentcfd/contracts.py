@@ -17,6 +17,7 @@ _SCHEMAS = (
     "openfoam-case.schema.json",
     "openfoam-grid-study.schema.json",
     "openfoam-mesh.schema.json",
+    "openfoam-precursor-map.schema.json",
     "result-exchange.schema.json",
     "scientific-sample.schema.json",
     "simulation-result.schema.json",

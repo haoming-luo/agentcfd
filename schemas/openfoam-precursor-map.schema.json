@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-precursor-map.schema.json",
+  "title": "AgentCFD OpenFOAM precursor mapping contract 0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "source_result_sha256",
+    "source_case_sha256",
+    "source_case_manifest_sha256",
+    "source_mesh_sha256",
+    "source_mesh_manifest_sha256",
+    "source_model_sha256",
+    "source_runtime_version",
+    "source_pressure_gradient_pa_per_m",
+    "source_time",
+    "cross_section_cells",
+    "method",
+    "mapped_fields",
+    "boundary_policy"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-precursor-map/0.1"},
+    "source_result_sha256": {"$ref": "#/$defs/sha256"},
+    "source_case_sha256": {"$ref": "#/$defs/sha256"},
+    "source_case_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "source_mesh_sha256": {"$ref": "#/$defs/sha256"},
+    "source_mesh_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "source_model_sha256": {"$ref": "#/$defs/sha256"},
+    "source_runtime_version": {"type": "string", "minLength": 1},
+    "source_pressure_gradient_pa_per_m": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "source_time": {"type": "string", "pattern": "^[0-9]+(?:\\.[0-9]+)?$"},
+    "cross_section_cells": {"type": "integer", "minimum": 2},
+    "method": {"const": "mapNearest"},
+    "mapped_fields": {
+      "type": "object",
+      "required": ["U", "p", "k", "omega", "nut"],
+      "properties": {
+        "U": {"$ref": "#/$defs/field"},
+        "p": {"$ref": "#/$defs/field"},
+        "k": {"$ref": "#/$defs/field"},
+        "omega": {"$ref": "#/$defs/field"},
+        "nut": {"$ref": "#/$defs/field"}
+      },
+      "additionalProperties": false
+    },
+    "boundary_policy": {
+      "type": "object",
+      "required": ["U", "p", "k", "omega", "nut"],
+      "properties": {
+        "U": {"const": "flowRateInletVelocity with extrapolateProfile"},
+        "p": {"const": "mapped internal gauge with target outlet fixedValue"},
+        "k": {"const": "zeroGradient inlet from mapped internal field"},
+        "omega": {"const": "zeroGradient inlet from mapped internal field"},
+        "nut": {"const": "calculated"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "field": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^[^/]+/(U|p|k|omega|nut)$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

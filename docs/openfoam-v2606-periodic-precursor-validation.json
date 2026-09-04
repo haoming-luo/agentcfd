@@ -25,7 +25,7 @@
     "image_id": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb",
     "architecture": "arm64",
     "return_codes": {"blockMesh": 0, "checkMesh": 0, "simpleFoam": 0},
-    "wall_seconds": {"blockMesh": 0.3085, "checkMesh": 0.2794, "simpleFoam": 1.7045, "total": 2.2924}
+    "wall_seconds": {"blockMesh": 0.2522, "checkMesh": 0.2588, "simpleFoam": 1.4692, "total": 1.9802}
   },
   "mesh": {
     "cells": 320,
@@ -55,7 +55,7 @@
     "failed_checks": [],
     "limitations": [
       "This verifies the bounded precursor workflow; it is not physical validation across a Reynolds-number range.",
-      "A turbulent grid certificate and downstream cross-mesh field mapping remain open promotion gates.",
+      "Same-resolution downstream mapping is verified separately; cross-resolution mapping and a turbulent grid certificate remain open.",
       "The 8/12/16/20/24/32 scan was non-monotonic as y-plus crossed wall-treatment regimes, so no GCI is claimed."
     ]
   }

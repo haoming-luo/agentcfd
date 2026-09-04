@@ -84,7 +84,7 @@ ambiguity and exactly met bulk flow, but the 10.94% Colebrook friction
 difference cannot yet be divided into entrance, grid, and model-form effects.
 It therefore proves the integration and evidence pipeline, not turbulent
 accuracy. The implemented periodic precursor now content-addresses developed
-velocity, `k`, `omega`, `nut`, target flow, pressure gradient, mesh, runtime,
+velocity, pressure, `k`, `omega`, `nut`, target flow, pressure gradient, mesh, runtime,
 and provider identity. The next product gate is deterministic mapping of those
 fields to the main pipe inlet, followed by a wall-strategy-controlled grid
 family.
@@ -108,6 +108,14 @@ the declared y-plus 30 high-Re limit; it is diagnostic evidence, not a GCI
 family. The next numerical gate is either a constant-y-plus wall-function
 family or an explicitly declared wall-resolved SST family with graded
 near-wall cells.
+
+The c8 precursor is now mapped through a deterministic `mapFields` contract
+into the 3 m target. The target pressure loss differs by 1.05% from the source
+pressure gradient integrated over the target length, and all mapping,
+convergence, conservation, wall, mesh, field, runtime, and identity gates pass.
+This comparison isolates transfer consistency. The independent 3.81% smooth
+Colebrook difference remains a model-form diagnostic and cannot be relabeled as
+discretization or experimental validation.
 
 ## Steam and compressible-flow promotion sequence
 

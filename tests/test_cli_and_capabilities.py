@@ -82,6 +82,7 @@ def test_benchmark_catalog_is_machine_readable_and_cli_visible(capsys):
 
 def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "simulation-result.schema.json" in contracts.available()
+    assert "openfoam-precursor-map.schema.json" in contracts.available()
     result_schema = contracts.load("simulation-result.schema.json")
     assert result_schema["$schema"].endswith("2020-12/schema")
     assert contracts.path("simulation-result.schema.json").is_file()

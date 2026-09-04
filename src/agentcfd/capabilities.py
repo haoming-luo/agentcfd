@@ -164,11 +164,12 @@ _CAPABILITIES = (
             "deterministic turbulence-field and wall-treatment lowering tests",
             "explicit inlet intensity and length-scale identity",
             "runtime y-plus, mass-balance, pressure-loss, and friction-factor checks",
+            "verified same-resolution periodic-precursor mapping at Re 99,621",
         ),
         limitations=(
             "Only a flow-rate-constrained mean-velocity inlet is supported.",
             "The first slice uses automatic blended wall treatment on a smooth wall.",
-            "One real run is diagnostic until grid and benchmark validation pass.",
+            "Physical accuracy remains diagnostic until grid and Reynolds-range validation pass.",
         ),
     ),
     Capability(
@@ -185,7 +186,7 @@ _CAPABILITIES = (
         ),
         limitations=(
             "The current wall-function evidence point is Re 99,621 on the c8 O-grid.",
-            "Cross-mesh inlet mapping and a turbulent grid certificate remain open gates.",
+            "Cross-resolution inlet mapping and a turbulent grid certificate remain open gates.",
             "OpenFOAM boundaryFoam is not used because its implementation requires parallel planar walls.",
         ),
     ),

@@ -4,16 +4,21 @@
 
 - Add a content-addressed periodic `simpleFoam`/`meanVelocityForce` k-omega SST
   circular-pipe precursor with CLI prepare/run workflows.
-- Recover developed `U`, `k`, `omega`, and `nut`, pressure-gradient and friction
+- Recover developed `U`, `p`, `k`, `omega`, and `nut`, pressure-gradient and friction
   evidence, residuals, y-plus, mesh identity, and immutable container identity.
 - Record OpenCFD v2606 c8 execution evidence and the fail-closed rejection of
   `boundaryFoam` for circular geometry.
+- Add accepted-precursor mapping to downstream turbulent pipes with source,
+  mesh, runtime, and field identity checks before and after OpenFOAM `mapFields`.
+- Separate 1.05% precursor-to-target transfer verification from the 3.81%
+  smooth-Colebrook model-form diagnostic, and solve mapped velocity fields to
+  their absolute linear tolerance.
+- Publish the precursor-map JSON Schema and a verified 38,400-cell OpenCFD
+  v2606 execution record.
 
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the
 machine-readable capability catalog.
-
-## Unreleased
 
 ## 0.1.0a3 — 2026-09-04
 

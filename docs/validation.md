@@ -156,7 +156,9 @@ in `docs/openfoam-v2606-periodic-precursor-validation.json`. On the same c8
 cross-section at Re 99,621 it removed the developing-inlet ambiguity, completed
 in 2.29 s on 320 cells, held y-plus between 78.27 and 93.59, and reduced the
 smooth-Colebrook friction difference to 4.81%. All declared precursor checks
-passed and the developed `U`, `k`, `omega`, and `nut` fields are content
-addressed. This verifies the bounded precursor workflow; mapping those fields
-into a downstream case and controlling wall strategy across a grid family
-remain open validation gates.
+passed and the developed `U`, `p`, `k`, `omega`, and `nut` fields are content
+addressed. Same-resolution downstream mapping is now separately recorded in
+`docs/openfoam-v2606-precursor-mapping-validation.json`. The 38,400-cell target
+passed every declared gate with 1.05% pressure-gradient transfer difference
+and `trust_level="verified"`. Its 3.81% Colebrook difference remains diagnostic;
+wall-strategy-controlled grid and Reynolds-range validation remain open.

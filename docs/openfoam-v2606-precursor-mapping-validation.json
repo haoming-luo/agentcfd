@@ -1,0 +1,49 @@
+{
+  "schema": "agentcfd.validation-evidence/0.1",
+  "evidence_level": "verified-experimental-mapping",
+  "case": {
+    "capability": "openfoam.steady-rans-smooth-circular-pipe",
+    "reynolds": 99620.75848303393,
+    "cells": 38400,
+    "iterations": 300,
+    "openfoam_runtime": "2606",
+    "platform": "linux-arm64-container"
+  },
+  "result": {
+    "accepted": true,
+    "trust_level": "verified",
+    "pressure_drop_pa": 259.308632356774,
+    "precursor_reference_pressure_drop_pa": 256.61800523893805,
+    "precursor_transfer_relative_error": 0.010484950638326041,
+    "colebrook_pressure_drop_pa": 269.5745814076535,
+    "colebrook_model_difference": 0.038082036508313225,
+    "relative_mass_imbalance": 1.361918824193135e-6,
+    "wall_y_plus": {
+      "minimum": 78.319657963,
+      "average": 87.678911178,
+      "maximum": 94.329685158
+    },
+    "maximum_gated_final_residual": 9.380734296e-5,
+    "runtime_seconds": 12.725519001018256,
+    "all_declared_checks_passed": true
+  },
+  "identities": {
+    "case_sha256": "7589354d7f1c0ceb4dca1d7494a3ef6739dbbad17375a792358e274ae6704549",
+    "target_mesh_sha256": "ed279796e139d9e033452aa5bd27e94da27982f695fa13009650fff80f5b3b41",
+    "precursor_result_sha256": "a79f544859aa596cf7c4ecdc3e6e237f40df82c1525f93aaffdb705d904d84e8",
+    "precursor_mesh_sha256": "af69ccc14242d9e3777aab617d488279f84c49ca64e759fdd60b73dec0c6a9ce",
+    "precursor_case_manifest_sha256": "1cb796b386d40bead96a9bab2028f9d17a68297eeb5d76d7e3145bfecb28a0e9",
+    "precursor_mesh_manifest_sha256": "6a6734101e94fdb640fa9e2dac18e139a365491caa7663d57d585c051fc7db1c",
+    "container_image_id": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb"
+  },
+  "limits": {
+    "precursor_transfer_relative_error": 0.02,
+    "maximum_turbulent_outer_residual": 0.001,
+    "wall_y_plus": [30.0, 300.0]
+  },
+  "scope": [
+    "This verifies same-resolution deterministic precursor mapping at one operating point.",
+    "The Colebrook difference is a model-form diagnostic, not experimental validation.",
+    "Cross-resolution mapping, grid convergence, other Reynolds numbers, geometries, and OpenFOAM dialects remain unvalidated."
+  ]
+}

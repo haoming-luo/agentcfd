@@ -24,7 +24,15 @@ from .._version import __version__
 from .._validation import integer_at_least, positive_float
 from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from ..jsonio import strict_json_object
-from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
+from ..results import (
+    Artifact,
+    Check,
+    FieldRecord,
+    History,
+    Quantity,
+    SimulationResult,
+    read_result_record,
+)
 from .base import ProviderDescriptor
 
 
@@ -44,6 +52,8 @@ _OUTPUT_HISTORY_KEYS = {
 
 _LAMINAR_CAPABILITY = "openfoam.steady-laminar-circular-pipe"
 _TURBULENT_CAPABILITY = "openfoam.steady-rans-smooth-circular-pipe"
+_PRECURSOR_PROVIDER = "openfoam-periodic-precursor"
+_PRECURSOR_FIELDS = ("U", "p", "k", "omega", "nut")
 
 
 def _is_turbulent_step(step) -> bool:
@@ -69,6 +79,161 @@ def _analysis_sha256(step) -> str:
         allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _precursor_mapping_contract(
+    step,
+    source_directory: Path,
+    *,
+    cross_section_cells: int,
+) -> dict[str, Any]:
+    """Verify an accepted precursor and return a path-independent map contract."""
+
+    source = source_directory.resolve()
+    result_path = source / "agentcfd-result.json"
+    try:
+        result = read_result_record(result_path)
+    except (FileNotFoundError, ValueError) as error:
+        raise CaseIntegrityError(
+            "The precursor result failed AgentCFD evidence validation: " + str(error)
+        ) from error
+    if (
+        result.get("provider") != _PRECURSOR_PROVIDER
+        or result.get("status") != "completed"
+        or result.get("converged") is not True
+        or result.get("accepted") is not True
+        or result.get("trust_level") not in {"verified", "validated"}
+    ):
+        raise CaseIntegrityError(
+            "The precursor result must be accepted and have verified or validated trust."
+        )
+    provenance = result.get("provenance")
+    if not isinstance(provenance, dict):
+        raise CaseIntegrityError("The precursor result has no provenance record.")
+    if provenance.get("model_sha256") != step.model.fingerprint():
+        raise CaseIntegrityError("The precursor belongs to a different scientific model.")
+    mesh_sha256 = provenance.get("mesh_sha256")
+    if not isinstance(mesh_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", mesh_sha256) is None:
+        raise CaseIntegrityError("The precursor has no valid mesh identity.")
+
+    scientific = result.get("scientific_inputs")
+    record = scientific.get("record") if isinstance(scientific, dict) else None
+    precursor = record.get("precursor") if isinstance(record, dict) else None
+    if not isinstance(precursor, dict):
+        raise CaseIntegrityError("The precursor result has no declared numerical controls.")
+    if precursor.get("cross_section_cells") != cross_section_cells:
+        raise CaseIntegrityError(
+            "The precursor and downstream pipe must use the same cross-section resolution."
+        )
+    if precursor.get("axial_cells") != 1 or precursor.get("periodic_end_planes") is not True:
+        raise CaseIntegrityError("The source is not a one-layer periodic pipe precursor.")
+
+    artifacts = result.get("artifact_records")
+    if not isinstance(artifacts, dict):
+        raise CaseIntegrityError("The precursor result has no content-addressed artifacts.")
+
+    def verified_artifact(name: str) -> tuple[Path, str, str]:
+        artifact = artifacts.get(name)
+        if not isinstance(artifact, dict):
+            raise CaseIntegrityError(f"The precursor is missing its {name} artifact.")
+        relative = artifact.get("path")
+        digest = artifact.get("sha256")
+        if (
+            not isinstance(relative, str)
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            raise CaseIntegrityError(f"The precursor {name} artifact identity is malformed.")
+        candidate = source / relative
+        path = candidate.resolve()
+        try:
+            normalized = path.relative_to(source).as_posix()
+        except ValueError as error:
+            raise CaseIntegrityError(f"The precursor {name} artifact escapes its case.") from error
+        if candidate.is_symlink() or not path.is_file() or _file_sha256(path) != digest:
+            raise CaseIntegrityError(f"The precursor {name} artifact is missing or changed.")
+        return path, normalized, digest
+
+    case_manifest_path, _, case_manifest_digest = verified_artifact("case_manifest")
+    mesh_manifest_path, _, mesh_manifest_digest = verified_artifact("mesh_manifest")
+    try:
+        source_case_manifest = strict_json_object(
+            case_manifest_path.read_text(encoding="utf-8"),
+            label="precursor case manifest",
+        )
+        source_mesh_manifest = strict_json_object(
+            mesh_manifest_path.read_text(encoding="utf-8"),
+            label="precursor mesh manifest",
+        )
+    except ValueError as error:
+        raise CaseIntegrityError("A precursor case or mesh manifest is invalid.") from error
+    if source_case_manifest.get("case_sha256") != provenance.get("case_sha256"):
+        raise CaseIntegrityError("The precursor case manifest disagrees with result provenance.")
+    if source_mesh_manifest.get("mesh_sha256") != mesh_sha256:
+        raise CaseIntegrityError("The precursor mesh manifest disagrees with result provenance.")
+
+    selected: dict[str, dict[str, object]] = {}
+    field_time: str | None = None
+    for field in _PRECURSOR_FIELDS:
+        _, normalized, digest = verified_artifact(f"field_{field}")
+        parts = PurePosixPath(normalized).parts
+        if len(parts) != 2 or parts[1] != field or not _is_positive_time_name(parts[0]):
+            raise CaseIntegrityError(f"The precursor {field} artifact is not a final-time field.")
+        if field_time is None:
+            field_time = parts[0]
+        elif field_time != parts[0]:
+            raise CaseIntegrityError("The precursor fields do not share one solution time.")
+        selected[field] = {"path": normalized, "sha256": digest}
+
+    case_sha256 = provenance.get("case_sha256")
+    if not isinstance(case_sha256, str) or re.fullmatch(r"[0-9a-f]{64}", case_sha256) is None:
+        raise CaseIntegrityError("The precursor has no valid lowered-case identity.")
+    runtime_version = provenance.get("provider_version")
+    if not isinstance(runtime_version, str) or not runtime_version.strip():
+        raise CaseIntegrityError("The precursor has no OpenFOAM runtime version.")
+    quantities = result.get("quantities")
+    pressure_gradient = (
+        quantities.get("flow.pressure_gradient")
+        if isinstance(quantities, dict)
+        else None
+    )
+    pressure_gradient_value = (
+        pressure_gradient.get("value") if isinstance(pressure_gradient, dict) else None
+    )
+    if (
+        isinstance(pressure_gradient_value, bool)
+        or not isinstance(pressure_gradient_value, (int, float))
+        or not math.isfinite(pressure_gradient_value)
+        or pressure_gradient_value <= 0.0
+        or pressure_gradient.get("unit") != "Pa/m"
+    ):
+        raise CaseIntegrityError("The precursor has no valid physical pressure gradient.")
+    return {
+        "schema": "agentcfd.openfoam-precursor-map/0.1",
+        "source_result_sha256": _file_sha256(result_path),
+        "source_case_sha256": case_sha256,
+        "source_case_manifest_sha256": case_manifest_digest,
+        "source_mesh_sha256": mesh_sha256,
+        "source_mesh_manifest_sha256": mesh_manifest_digest,
+        "source_model_sha256": step.model.fingerprint(),
+        "source_runtime_version": runtime_version,
+        "source_pressure_gradient_pa_per_m": pressure_gradient_value,
+        "source_time": field_time,
+        "cross_section_cells": cross_section_cells,
+        "method": "mapNearest",
+        "mapped_fields": selected,
+        "boundary_policy": {
+            "U": "flowRateInletVelocity with extrapolateProfile",
+            "p": "mapped internal gauge with target outlet fixedValue",
+            "k": "zeroGradient inlet from mapped internal field",
+            "omega": "zeroGradient inlet from mapped internal field",
+            "nut": "calculated",
+        },
+    }
 
 
 def _solver_converged(log: str) -> bool:
@@ -523,11 +688,14 @@ def _recover_patch_data(
     mass_balance_limit: float = 1.0e-6,
     inlet_flow_error_limit: float = 0.01,
     pressure_reference_applicable: bool = True,
+    pressure_reference_kind: str = "validation",
     pressure_reference_requirement: str = "fully developed inlet boundary",
     validation_message: str = "Pressure drop is compared with Hagen--Poiseuille at recovered flow.",
 ) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...], str]:
     if not isinstance(pressure_reference_applicable, bool):
         raise ValueError("pressure_reference_applicable must be a boolean.")
+    if pressure_reference_kind not in {"verification", "validation"}:
+        raise ValueError("pressure_reference_kind must be verification or validation.")
     series = {
         name: _read_scalar_series(case_directory, name)
         for name in (
@@ -647,12 +815,12 @@ def _recover_patch_data(
                 relative_pressure_error,
                 "1",
                 kind=(
-                    "validation_metric"
-                    if pressure_reference_applicable
-                    else "diagnostic"
+                    f"{pressure_reference_kind}_metric"
+                    if pressure_reference_applicable else "diagnostic"
                 ),
                 description=(
-                    "Relative validation error against an applicable fully developed reference."
+                    f"Relative {pressure_reference_kind} error against an applicable "
+                    "fully developed reference."
                     if pressure_reference_applicable
                     else "Diagnostic difference from a non-applicable fully developed reference."
                 ),
@@ -729,7 +897,7 @@ def _recover_patch_data(
             value=relative_pressure_error,
             limit=pressure_error_limit,
             message=validation_message,
-            kind="validation",
+            kind=pressure_reference_kind,
             observable="flow.pressure_drop_relative_error",
         ),
         Check(
@@ -741,7 +909,7 @@ def _recover_patch_data(
                 "The selected pressure-loss reference applies only after its declared "
                 "inlet and grid-evidence requirements are met."
             ),
-            kind="validation",
+            kind=pressure_reference_kind,
             observable="boundary.inlet_profile",
         ),
         *inlet_flow_check,
@@ -1270,26 +1438,27 @@ class OpenFOAMProvider:
         self,
         *,
         case_directory: str | Path | None = None,
+        precursor_case: str | Path | None = None,
         mesh: OpenFOAMMeshControls | None = None,
         validation: OpenFOAMValidationPolicy | None = None,
         timeout_seconds: float = 3600.0,
         container_image: str | None = None,
     ) -> None:
         self.case_directory = Path(case_directory) if case_directory is not None else None
+        self.precursor_case = Path(precursor_case) if precursor_case is not None else None
         self.mesh = mesh or OpenFOAMMeshControls()
         self.validation = validation or OpenFOAMValidationPolicy()
         self.timeout_seconds = positive_float(timeout_seconds, name="timeout_seconds")
         self.container_image = str(container_image).strip() if container_image else None
 
     def _commands(self) -> dict[str, str | None]:
+        names = ["blockMesh", "checkMesh", "simpleFoam"]
+        if self.precursor_case is not None:
+            names.insert(2, "mapFields")
         if self.container_image is not None:
             docker = shutil.which("docker")
-            return {name: docker for name in ("blockMesh", "checkMesh", "simpleFoam")}
-        return {
-            "blockMesh": shutil.which("blockMesh"),
-            "checkMesh": shutil.which("checkMesh"),
-            "simpleFoam": shutil.which("simpleFoam"),
-        }
+            return {name: docker for name in names}
+        return {name: shutil.which(name) for name in names}
 
     def _execution_argv(
         self,
@@ -1300,6 +1469,19 @@ class OpenFOAMProvider:
         cidfile: Path | None = None,
     ) -> list[str]:
         if self.container_image is None:
+            if name == "mapFields":
+                if self.precursor_case is None:
+                    raise RuntimeError("mapFields requires a precursor case.")
+                return [
+                    command,
+                    str(self.precursor_case.resolve()),
+                    "-case",
+                    str(case_directory),
+                    "-sourceTime",
+                    "latestTime",
+                    "-mapMethod",
+                    "mapNearest",
+                ]
             return [command, "-case", str(case_directory)]
         argv = [
             command,
@@ -1308,18 +1490,34 @@ class OpenFOAMProvider:
         ]
         if cidfile is not None:
             argv.extend(("--cidfile", str(cidfile)))
+        if name == "mapFields":
+            if self.precursor_case is None:
+                raise RuntimeError("mapFields requires a precursor case.")
+            argv.extend(("-v", f"{self.precursor_case.resolve()}:/precursor:ro"))
         argv.extend(
             [
-            "-v",
-            f"{case_directory.resolve()}:/case",
-            "-w",
-            "/case",
-            self.container_image,
-            name,
-            "-case",
-            "/case",
+                "-v",
+                f"{case_directory.resolve()}:/case",
+                "-w",
+                "/case",
+                self.container_image,
+                name,
             ]
         )
+        if name == "mapFields":
+            argv.extend(
+                (
+                    "/precursor",
+                    "-case",
+                    "/case",
+                    "-sourceTime",
+                    "latestTime",
+                    "-mapMethod",
+                    "mapNearest",
+                )
+            )
+        else:
+            argv.extend(("-case", "/case"))
         return argv
 
     def descriptor(self) -> ProviderDescriptor:
@@ -1350,12 +1548,24 @@ class OpenFOAMProvider:
 
         step.model.validate()
         self._validate_supported(step)
+        mapping_contract = None
+        if self.precursor_case is not None:
+            mapping_contract = _precursor_mapping_contract(
+                step,
+                self.precursor_case,
+                cross_section_cells=self.mesh.cross_section_cells,
+            )
         target = Path(directory) if directory is not None else self.case_directory
         if target is None:
             raise ValueError("OpenFOAM case_directory is required for prepare or run.")
         if target.exists() and any(target.iterdir()):
             raise FileExistsError(f"OpenFOAM case directory is not empty: {target}")
         rendered = self._render_files(step)
+        if mapping_contract is not None:
+            rendered["system/mapFieldsDict"] = _map_fields_dict()
+            rendered["agentcfd-precursor-map.json"] = (
+                json.dumps(mapping_contract, indent=2, sort_keys=True) + "\n"
+            )
         target.mkdir(parents=True, exist_ok=True)
 
         hashes: dict[str, str] = {}
@@ -1428,7 +1638,48 @@ class OpenFOAMProvider:
                 f"execution: {', '.join(unexpected)}"
             )
         mesh_controls = _mesh_controls_from_case(prepared.directory)
+        self._verify_prepared_mapping(
+            step,
+            prepared,
+            cross_section_cells=mesh_controls.cross_section_cells,
+        )
         return self._execute_prepared(step, prepared, mesh_controls=mesh_controls)
+
+    def _verify_prepared_mapping(
+        self,
+        step,
+        prepared: PreparedOpenFOAMCase,
+        *,
+        cross_section_cells: int | None = None,
+    ) -> None:
+        mapping_path = prepared.directory / "agentcfd-precursor-map.json"
+        if self.precursor_case is None:
+            if mapping_path.exists():
+                raise CaseIntegrityError(
+                    "The prepared case requires a precursor, but none was supplied."
+                )
+            return
+        if not mapping_path.is_file():
+            raise CaseIntegrityError(
+                "The selected precursor was not recorded in the prepared target case."
+            )
+        expected = strict_json_object(
+            mapping_path.read_text(encoding="utf-8"),
+            label=f"OpenFOAM precursor mapping contract {mapping_path}",
+        )
+        actual = _precursor_mapping_contract(
+            step,
+            self.precursor_case,
+            cross_section_cells=(
+                self.mesh.cross_section_cells
+                if cross_section_cells is None
+                else cross_section_cells
+            ),
+        )
+        if expected != actual:
+            raise CaseIntegrityError(
+                "The precursor identity or mapping contract changed after target preparation."
+            )
 
     def _load_prepared_case(
         self,
@@ -1515,6 +1766,19 @@ class OpenFOAMProvider:
         *,
         mesh_controls: OpenFOAMMeshControls,
     ) -> SimulationResult:
+        self._verify_prepared_mapping(
+            step,
+            prepared,
+            cross_section_cells=mesh_controls.cross_section_cells,
+        )
+        mapping_contract: dict[str, Any] | None = None
+        if self.precursor_case is not None:
+            mapping_contract = strict_json_object(
+                (prepared.directory / "agentcfd-precursor-map.json").read_text(
+                    encoding="utf-8"
+                ),
+                label="prepared OpenFOAM precursor mapping contract",
+            )
         commands = self._commands()
         missing = [name for name, path in commands.items() if path is None]
         if missing:
@@ -1529,7 +1793,7 @@ class OpenFOAMProvider:
         logs: dict[str, str] = {}
         return_codes: dict[str, int] = {}
         command_wall_seconds: dict[str, float] = {}
-        for name in ("blockMesh", "checkMesh", "simpleFoam"):
+        for name in commands:
             cidfile = (
                 prepared.directory / f".agentcfd-{name}.cid"
                 if self.container_image is not None
@@ -1574,6 +1838,13 @@ class OpenFOAMProvider:
             if return_codes[name] != 0:
                 break
 
+        if return_codes.get("mapFields") == 0:
+            self._verify_prepared_mapping(
+                step,
+                prepared,
+                cross_section_cells=mesh_controls.cross_section_cells,
+            )
+
         process_ok = all(return_codes.get(name) == 0 for name in commands)
         solver_log = logs.get("simpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
@@ -1604,7 +1875,13 @@ class OpenFOAMProvider:
                 ),
             )
         turbulent = _is_turbulent_step(step)
-        reference_drop = self._reference_pressure_drop(step)
+        colebrook_reference_drop = self._reference_pressure_drop(step)
+        reference_drop = (
+            float(mapping_contract["source_pressure_gradient_pa_per_m"])
+            * step.model.domain.length
+            if mapping_contract is not None
+            else colebrook_reference_drop
+        )
         mean_velocity = self._mean_velocity(step.model)
         requested_volume_flow = (
             math.pi * step.model.domain.diameter**2 / 4.0 * mean_velocity
@@ -1612,7 +1889,7 @@ class OpenFOAMProvider:
         fully_developed_inlet = any(
             isinstance(value, boundaries.FullyDevelopedVelocityInlet)
             for value in step.model.boundary_conditions.values()
-        )
+        ) or mapping_contract is not None
         quantities, histories, recovery_checks, recovery_message = _recover_patch_data(
             prepared.directory,
             density=step.model.fluid.density,
@@ -1631,12 +1908,20 @@ class OpenFOAMProvider:
             mass_balance_limit=self.validation.maximum_relative_mass_imbalance,
             inlet_flow_error_limit=self.validation.maximum_relative_inlet_flow_error,
             pressure_reference_applicable=fully_developed_inlet,
+            pressure_reference_kind=(
+                "verification" if mapping_contract is not None else "validation"
+            ),
             pressure_reference_requirement=(
-                "developed turbulent inlet and grid evidence"
+                "accepted matching-resolution periodic precursor"
+                if mapping_contract is not None
+                else "developed turbulent inlet and grid evidence"
                 if turbulent
                 else "fully developed laminar inlet boundary"
             ),
             validation_message=(
+                "A content-addressed periodic precursor supplies the developed internal field."
+                if mapping_contract is not None
+                else
                 "The fully developed profile isolates spatial and outlet-boundary error."
                 if fully_developed_inlet
                 else "Turbulent friction is diagnostic until developed-inlet and grid evidence pass."
@@ -1644,6 +1929,17 @@ class OpenFOAMProvider:
                 else "The uniform inlet includes developing-flow effects in the total pressure drop."
             ),
         )
+        if mapping_contract is not None:
+            quantities["reference.flow.precursor_pressure_drop"] = Quantity(
+                reference_drop,
+                "Pa",
+                description="Periodic-precursor pressure gradient integrated over target length.",
+            )
+            quantities["reference.flow.colebrook_pressure_drop"] = Quantity(
+                colebrook_reference_drop,
+                "Pa",
+                description="Smooth-pipe Colebrook comparison retained as a model-form diagnostic.",
+            )
         turbulence_checks: tuple[Check, ...] = ()
         if turbulent:
             turbulence_quantities, turbulence_histories, turbulence_checks = (
@@ -1771,6 +2067,10 @@ class OpenFOAMProvider:
                 for name in logs
             },
         }
+        if mapping_contract is not None:
+            artifact_paths["precursor_mapping_contract"] = (
+                prepared.directory / "agentcfd-precursor-map.json"
+            )
         if mesh_manifest is not None:
             artifact_paths["mesh_manifest"] = mesh_manifest
         fields: dict[str, FieldRecord] = {}
@@ -1913,6 +2213,43 @@ class OpenFOAMProvider:
                     kind="runtime",
                     observable="result.outputs",
                 ),
+                *(
+                    (
+                        Check(
+                            name="precursor-field-mapping",
+                            passed=(
+                                return_codes.get("mapFields") == 0
+                                and bool(re.search(r"(?m)^End\s*$", logs.get("mapFields", "")))
+                            ),
+                            value=(
+                                "U,p,k,omega,nut mapped"
+                                if return_codes.get("mapFields") == 0
+                                else return_codes.get("mapFields")
+                            ),
+                            limit="mapFields succeeds and reports End",
+                            kind="verification",
+                            observable="boundary.precursor_mapping",
+                        ),
+                        Check(
+                            name="precursor-runtime-compatibility",
+                            passed=(
+                                _runtime_version_key(
+                                    str(mapping_contract["source_runtime_version"])
+                                )
+                                == _runtime_version_key(runtime_version)
+                            ),
+                            value=(
+                                f"source={mapping_contract['source_runtime_version']}, "
+                                f"target={runtime_version}"
+                            ),
+                            limit="source and target OpenFOAM runtime versions match",
+                            kind="runtime",
+                            observable="provider.version",
+                        ),
+                    )
+                    if mapping_contract is not None
+                    else ()
+                ),
                 *container_checks,
                 *recovery_checks,
                 *turbulence_checks,
@@ -1933,6 +2270,11 @@ class OpenFOAMProvider:
                 "validation_policy": asdict(self.validation),
                 "lowered_case_sha256": prepared.case_sha256,
                 "analysis_sha256": prepared.analysis_sha256,
+                **(
+                    {"precursor_mapping": mapping_contract}
+                    if mapping_contract is not None
+                    else {}
+                ),
             },
             provenance={
                 "agentcfd_version": __version__,
@@ -1950,6 +2292,19 @@ class OpenFOAMProvider:
                 "explicit_solver_convergence_marker": explicit_solver_converged,
                 "convergence_route": convergence_route,
                 "case_manifest": str(prepared.directory / "agentcfd-case.json"),
+                **(
+                    {
+                        "precursor_case": str(self.precursor_case.resolve()),
+                        "precursor_result_sha256": mapping_contract[
+                            "source_result_sha256"
+                        ],
+                        "precursor_mesh_sha256": mapping_contract[
+                            "source_mesh_sha256"
+                        ],
+                    }
+                    if mapping_contract is not None and self.precursor_case is not None
+                    else {}
+                ),
             },
             messages=(recovery_message,),
         )
@@ -2031,6 +2386,10 @@ class OpenFOAMProvider:
         if not study.laminar and reynolds < 4000.0:
             raise UnsupportedCaseError(
                 f"Re={reynolds:.6g} is outside the declared turbulent provider range Re >= 4000."
+            )
+        if self.precursor_case is not None and study.laminar:
+            raise UnsupportedCaseError(
+                "Periodic precursor mapping is available only for k-omega-sst turbulent flow."
             )
         turbulence_fields = {
             "turbulence.kinetic_energy",
@@ -2120,6 +2479,7 @@ class OpenFOAMProvider:
             "system/fvSolution": _fv_solution(
                 step.procedure.relative_tolerance,
                 turbulent=turbulent,
+                strict_velocity_solve=self.precursor_case is not None,
             ),
         }
         if turbulent:
@@ -2135,6 +2495,7 @@ class OpenFOAMProvider:
                     wall_names,
                     kinetic_energy=estimate.turbulent_kinetic_energy,
                     specific_dissipation_rate=estimate.specific_dissipation_rate,
+                    mapped_inlet=self.precursor_case is not None,
                 )
             )
         return files
@@ -2322,6 +2683,7 @@ def _turbulence_fields(
     *,
     kinetic_energy: float,
     specific_dissipation_rate: float,
+    mapped_inlet: bool = False,
 ) -> dict[str, str]:
     wall_k = "\n".join(
         f"""    {name}
@@ -2348,14 +2710,26 @@ def _turbulence_fields(
     }}"""
         for name in walls
     )
+    k_inlet = (
+        "        type zeroGradient;"
+        if mapped_inlet
+        else f"        type fixedValue;\n        value uniform {kinetic_energy:.17g};"
+    )
+    omega_inlet = (
+        "        type zeroGradient;"
+        if mapped_inlet
+        else (
+            "        type fixedValue;\n"
+            f"        value uniform {specific_dissipation_rate:.17g};"
+        )
+    )
     k = _header(object_name="k", class_name="volScalarField", location="0") + f"""dimensions      [0 2 -2 0 0 0 0];
 internalField   uniform {kinetic_energy:.17g};
 boundaryField
 {{
     {inlet}
     {{
-        type fixedValue;
-        value uniform {kinetic_energy:.17g};
+{k_inlet}
     }}
     {outlet}
     {{
@@ -2370,8 +2744,7 @@ boundaryField
 {{
     {inlet}
     {{
-        type fixedValue;
-        value uniform {specific_dissipation_rate:.17g};
+{omega_inlet}
     }}
     {outlet}
     {{
@@ -2398,6 +2771,18 @@ boundaryField
 }}
 """
     return {"0/k": k, "0/omega": omega, "0/nut": nut}
+
+
+def _map_fields_dict() -> str:
+    """Map internal precursor fields while preserving target patch semantics."""
+
+    return _header(
+        object_name="mapFieldsDict",
+        class_name="dictionary",
+        location="system",
+    ) + """patchMap       ();
+cuttingPatches ();
+"""
 
 
 def _block_mesh_dict(
@@ -2642,8 +3027,14 @@ wallDist
 """
 
 
-def _fv_solution(relative_tolerance: float, *, turbulent: bool = False) -> str:
+def _fv_solution(
+    relative_tolerance: float,
+    *,
+    turbulent: bool = False,
+    strict_velocity_solve: bool = False,
+) -> str:
     pressure_relative_tolerance = 0.1 if turbulent else 0.01
+    velocity_relative_tolerance = 0.0 if strict_velocity_solve else 0.1
     turbulence_solvers = f"""
     \"(k|omega)\"
     {{
@@ -2675,7 +3066,7 @@ def _fv_solution(relative_tolerance: float, *, turbulent: bool = False) -> str:
         solver smoothSolver;
         smoother symGaussSeidel;
         tolerance {relative_tolerance:.17g};
-        relTol 0.1;
+        relTol {velocity_relative_tolerance:.17g};
     }}
 {turbulence_solvers}
 }}

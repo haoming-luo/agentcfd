@@ -38,7 +38,10 @@ study have not passed. Do not extend either evidence record to another inlet,
 OpenFOAM dialect, geometry, heat transfer, or rough wall. A generated case or a
 zero process exit code is never a broader CFD claim.
 
-The next working milestone adds an experimental periodic circular-pipe
-precursor driven by OpenFOAM `meanVelocityForce`. Its c8 evidence verifies the
-precursor's developed fields and pressure gradient at one operating point; it
-does not yet prove downstream inlet mapping or Reynolds-range validation.
+The periodic circular-pipe precursor driven by OpenFOAM `meanVelocityForce`
+can now be mapped into the downstream pipe through a content-addressed
+`mapFields` contract. At the bounded c8 operating point, mapping transfer error
+against the precursor pressure gradient is 1.05% and the result is verified.
+The separate 3.81% Colebrook difference remains a model-form diagnostic; do
+not extend this evidence to another Reynolds number, wall strategy, geometry,
+or OpenFOAM dialect.

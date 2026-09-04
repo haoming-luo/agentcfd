@@ -30,8 +30,9 @@ Study -> Model -> Geometry/Mesh -> Regions -> Fluids
 
 Current checkpoint: the first OpenCFD v2606 k-omega SST smooth-pipe slice and a
 verified periodic `meanVelocityForce` developed-flow precursor are implemented.
-Cross-mesh inlet mapping and wall-strategy-controlled grid validation remain
-open, so the downstream turbulent pipe is not yet scientifically accepted.
+Same-resolution content-addressed inlet mapping is implemented and verified at
+one c8 operating point. Cross-resolution mapping, wall-strategy-controlled grid
+validation, and Reynolds-range validation remain open.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

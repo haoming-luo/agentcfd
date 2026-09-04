@@ -13,8 +13,10 @@ from agentcfd.providers import (
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     OpenFOAMValidationPolicy,
+    OpenFOAMTurbulentPrecursorProvider,
     prepare_pipe_grid_study,
 )
+from agentcfd.results import Artifact, Check, FieldRecord, SimulationResult
 from agentcfd.providers.openfoam import (
     _bounded_pipe_convergence,
     _container_image_identity,
@@ -78,6 +80,146 @@ def turbulent_pipe_model(*, velocity: float = 1.0) -> Model:
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
+
+
+def accepted_precursor(tmp_path: Path, step, *, cross_section_cells: int = 8) -> Path:
+    source = tmp_path / "precursor"
+    prepared = OpenFOAMTurbulentPrecursorProvider(
+        cross_section_cells=cross_section_cells,
+    ).prepare(step, source)
+    solution = source / "100"
+    solution.mkdir()
+    field_units = {
+        "U": "m/s",
+        "p": "m^2/s^2",
+        "k": "m^2/s^2",
+        "omega": "1/s",
+        "nut": "m^2/s",
+    }
+    fields = {}
+    artifacts = {}
+    mesh_sha256 = "a" * 64
+    mesh_manifest = source / "agentcfd-mesh.json"
+    mesh_manifest.write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.openfoam-mesh/0.1",
+                "mesh_sha256": mesh_sha256,
+                "root": "constant/polyMesh",
+                "files": {},
+            }
+        )
+    )
+    artifacts["case_manifest"] = Artifact.from_path(
+        source / "agentcfd-case.json", role="precursor-evidence"
+    )
+    artifacts["mesh_manifest"] = Artifact.from_path(
+        mesh_manifest, role="precursor-evidence"
+    )
+    for name, unit in field_units.items():
+        path = solution / name
+        path.write_text(f"deterministic {name} field\n")
+        fields[name] = FieldRecord(
+            unit=unit,
+            location="cell",
+            artifact=str(path),
+            mesh_sha256=mesh_sha256,
+        )
+        artifacts[f"field_{name}"] = Artifact.from_path(path, role="precursor-evidence")
+    result = SimulationResult(
+        name="test-precursor",
+        status="completed",
+        converged=True,
+        provider="openfoam-periodic-precursor",
+        quantities={"flow.pressure_gradient": Quantity(85.0, "Pa/m")},
+        checks=(
+            Check(
+                name="precursor-verified",
+                passed=True,
+                kind="verification",
+            ),
+        ),
+        fields=fields,
+        artifacts=artifacts,
+        scientific_inputs={
+            "precursor": {
+                "cross_section_cells": cross_section_cells,
+                "axial_cells": 1,
+                "periodic_end_planes": True,
+            }
+        },
+        provenance={
+            "model_sha256": step.model.fingerprint(),
+            "mesh_sha256": mesh_sha256,
+            "case_sha256": prepared.case_sha256,
+            "provider_version": "2606",
+        },
+    )
+    result.write(source / "agentcfd-result.json")
+    return source
+
+
+def test_turbulent_pipe_maps_only_an_accepted_content_addressed_precursor(tmp_path):
+    step = turbulent_pipe_model().step(
+        procedure=procedures.steady(relative_tolerance=1e-4, maximum_iterations=300),
+        output=outputs.turbulent_internal_flow(),
+    )
+    source = accepted_precursor(tmp_path, step)
+    provider = OpenFOAMProvider(
+        precursor_case=source,
+        mesh=OpenFOAMMeshControls(cross_section_cells=8, axial_cells=120),
+    )
+    prepared = provider.prepare(step, tmp_path / "target")
+
+    assert "agentcfd-precursor-map.json" in prepared.files
+    assert "system/mapFieldsDict" in prepared.files
+    contract = json.loads(
+        (prepared.directory / "agentcfd-precursor-map.json").read_text()
+    )
+    case_schema = json.loads(
+        (Path(__file__).parents[1] / "schemas/openfoam-case.schema.json").read_text()
+    )
+    mapping_schema = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "schemas/openfoam-precursor-map.schema.json"
+        ).read_text()
+    )
+    jsonschema.Draft202012Validator(case_schema).validate(
+        json.loads((prepared.directory / "agentcfd-case.json").read_text())
+    )
+    jsonschema.Draft202012Validator(mapping_schema).validate(contract)
+    assert contract["method"] == "mapNearest"
+    assert contract["source_time"] == "100"
+    assert set(contract["mapped_fields"]) == {"U", "p", "k", "omega", "nut"}
+    assert contract["source_model_sha256"] == step.model.fingerprint()
+    assert len(contract["source_case_manifest_sha256"]) == 64
+    assert len(contract["source_mesh_manifest_sha256"]) == 64
+    assert contract["source_pressure_gradient_pa_per_m"] == 85.0
+    assert "patchMap       ();" in (
+        prepared.directory / "system/mapFieldsDict"
+    ).read_text()
+    assert "type zeroGradient;" in (prepared.directory / "0/k").read_text()
+    assert "extrapolateProfile yes;" in (prepared.directory / "0/U").read_text()
+    assert "relTol 0;" in (prepared.directory / "system/fvSolution").read_text()
+
+    (source / "100/k").write_text("changed\n")
+    with pytest.raises(CaseIntegrityError, match="no longer matches"):
+        provider.run_prepared(step, prepared.directory)
+
+
+def test_turbulent_precursor_mapping_rejects_resolution_mismatch(tmp_path):
+    step = turbulent_pipe_model().step(
+        procedure=procedures.steady(relative_tolerance=1e-4, maximum_iterations=300),
+        output=outputs.turbulent_internal_flow(),
+    )
+    source = accepted_precursor(tmp_path, step, cross_section_cells=8)
+    provider = OpenFOAMProvider(
+        precursor_case=source,
+        mesh=OpenFOAMMeshControls(cross_section_cells=16, axial_cells=120),
+    )
+    with pytest.raises(CaseIntegrityError, match="same cross-section resolution"):
+        provider.prepare(step, tmp_path / "target")
 
 
 def test_openfoam_case_lowering_is_deterministic_and_content_addressed(tmp_path):

@@ -164,7 +164,7 @@ convergence, y-plus, conservation, and the diagnostic friction threshold pass.
 The developed circular-pipe precursor instead uses a periodic one-layer O-grid
 with `simpleFoam` and `meanVelocityForce`. Its case, analysis, mesh, and
 container identities, target flow, pressure gradient, wall treatment,
-turbulence model, and final `U`, `k`, `omega`, and `nut` fields are retained.
+turbulence model, and final `U`, `p`, `k`, `omega`, and `nut` fields are retained.
 OpenCFD v2606 `boundaryFoam` was tested and rejected for this geometry because
 its source requires at most two mutually parallel wall faces; silently using
 it for a circular perimeter would be operationally invalid.
@@ -176,6 +176,23 @@ container, and high-Re wall-function checks. Its y-plus range was 78.27 to
 Colebrook, versus 10.94% for the earlier developing-pipe run on the same
 cross-section. This verifies the experimental precursor workflow but does not
 replace a turbulent grid or Reynolds-range validation certificate.
+
+An accepted precursor can be supplied to the turbulent pipe provider through
+`--precursor-case`. AgentCFD verifies the source result, model, resolution,
+runtime, mesh, and SHA-256 identities of `U`, `p`, `k`, `omega`, and `nut`, then
+freezes them into `agentcfd-precursor-map.json`. Execution adds `mapFields`
+between mesh checking and `simpleFoam`; source identity is checked both before
+and after mapping. The target retains an exact flow-rate velocity boundary,
+uses zero-gradient `k` and `omega` to extend the mapped internal state, and
+solves velocity to its absolute linear tolerance.
+
+The final 38,400-cell mapped target completed in 12.73 s. Its pressure loss was
+259.31 Pa versus 256.62 Pa obtained by integrating the precursor gradient, a
+1.05% transfer difference below the 2% gate. The maximum gated final residual
+was `9.38e-5`, y-plus was 78.32 / 87.68 / 94.33, and every declared mapping
+check passed. Its 3.81% difference from smooth Colebrook is retained separately
+as model-form diagnostic evidence; this is verification of deterministic field
+transfer, not Reynolds-range physical validation.
 
 Prepared-case manifests bind the model, procedure, and output request through
 an analysis SHA-256 in addition to hashing every generated file. Reusing a case
@@ -205,5 +222,5 @@ Before this provider advances beyond experimental maturity it must add:
 3. a documented uniform-inlet entrance-length policy;
 4. installed-runtime tests on Linux and macOS, plus Windows through WSL2;
 5. restart, failure taxonomy, and bounded log/result artifacts.
-6. a developed k-omega SST inlet, turbulent three-grid study, and public
-   smooth-pipe friction benchmark across a declared Reynolds-number range.
+6. a wall-strategy-controlled turbulent three-grid study and public smooth-pipe
+   friction benchmark across a declared Reynolds-number range.

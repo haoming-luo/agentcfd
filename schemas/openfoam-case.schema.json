@@ -27,7 +27,9 @@
     "files": {
       "type": "object",
       "minProperties": 1,
-      "propertyNames": {"pattern": "^(0|constant|system)/"},
+      "propertyNames": {
+        "pattern": "^(0|constant|system)/|^agentcfd-precursor-map\\.json$"
+      },
       "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
     },
     "provider": {

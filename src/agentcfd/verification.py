@@ -461,6 +461,520 @@ def _record_quantity_value(
     return value
 
 
+def assess_turbulent_wall_study(
+    records: Iterable[Mapping[str, object]],
+    *,
+    maximum_mean_y_plus_spread: float = 0.05,
+    maximum_fine_relative_change: float = 0.02,
+) -> dict[str, object]:
+    """Assess fixed-wall-cell turbulent precursor results without misusing GCI.
+
+    A constant wall-cell height deliberately breaks geometric similarity as
+    the interior count changes.  The resulting family can certify consistent
+    wall-function sampling and reveal a pressure-gradient plateau, but it
+    cannot supply Richardson/GCI uncertainty.  That limitation is emitted as
+    data rather than hidden in prose.
+    """
+
+    selected = tuple(records)
+    if len(selected) < 3:
+        raise ValueError("At least three turbulent precursor results are required.")
+    y_spread_limit = positive_float(
+        maximum_mean_y_plus_spread,
+        name="maximum_mean_y_plus_spread",
+    )
+    fine_change_limit = positive_float(
+        maximum_fine_relative_change,
+        name="maximum_fine_relative_change",
+    )
+    model_identities: set[str] = set()
+    fractions: set[float] = set()
+    stability_windows: set[int] = set()
+    rows: list[dict[str, object]] = []
+    all_sources_accepted = True
+    for index, record in enumerate(selected, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"Result {index} must be a mapping.")
+        source_accepted = bool(
+            record.get("status") == "completed"
+            and record.get("converged") is True
+            and record.get("accepted") is True
+            and record.get("trust_level") in {"verified", "validated"}
+            and record.get("provider") == "openfoam-periodic-precursor"
+        )
+        all_sources_accepted = all_sources_accepted and source_accepted
+        provenance = record.get("provenance")
+        if not isinstance(provenance, Mapping):
+            raise ValueError(f"Result {index} is missing provenance.")
+        model_identity = provenance.get("model_sha256")
+        if (
+            not isinstance(model_identity, str)
+            or len(model_identity) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in model_identity.lower()
+            )
+        ):
+            raise ValueError(f"Result {index} is missing a model SHA-256 identity.")
+        model_identities.add(model_identity)
+
+        scientific = record.get("scientific_inputs")
+        if not isinstance(scientific, Mapping):
+            raise ValueError(f"Result {index} is missing scientific inputs.")
+        scientific_record = scientific.get("record", scientific)
+        precursor = (
+            scientific_record.get("precursor")
+            if isinstance(scientific_record, Mapping)
+            else None
+        )
+        if not isinstance(precursor, Mapping):
+            raise ValueError(f"Result {index} has no precursor controls.")
+        validation_policy = scientific_record.get("validation_policy")
+        if not isinstance(validation_policy, Mapping):
+            raise ValueError(f"Result {index} has no precursor validation policy.")
+        stability_window = validation_policy.get("minimum_precursor_steady_samples")
+        if (
+            isinstance(stability_window, bool)
+            or not isinstance(stability_window, int)
+            or stability_window < 10
+        ):
+            raise ValueError(f"Result {index} has an invalid precursor stability window.")
+        stability_windows.add(stability_window)
+        cross_cells = precursor.get("cross_section_cells")
+        if isinstance(cross_cells, bool) or not isinstance(cross_cells, int):
+            raise ValueError(f"Result {index} has an invalid cross-section cell count.")
+        fraction = precursor.get("nominal_wall_cell_fraction")
+        if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+            raise ValueError(
+                f"Result {index} must declare a numeric nominal wall-cell fraction."
+            )
+        normalized_fraction = positive_float(
+            fraction,
+            name=f"Result {index} nominal wall-cell fraction",
+        )
+        if normalized_fraction >= 1.0:
+            raise ValueError(f"Result {index} nominal wall-cell fraction must be below one.")
+        fractions.add(normalized_fraction)
+
+        quantities = record.get("quantities")
+        if not isinstance(quantities, Mapping):
+            raise ValueError(f"Result {index} is missing quantities.")
+        required = {
+            "flow.pressure_gradient": "Pa/m",
+            "flow.darcy_friction_factor_relative_error": "1",
+            "mesh.cell_count": "1",
+            "mesh.maximum_aspect_ratio": "1",
+            "mesh.nominal_wall_cell_height": "m",
+            "runtime.total_wall_seconds": "s",
+            "wall.y_plus.minimum": "1",
+            "wall.y_plus.average": "1",
+            "wall.y_plus.maximum": "1",
+        }
+        values: dict[str, float] = {}
+        for name, unit in required.items():
+            values[name] = _record_quantity_value(quantities, name, index=index)
+            entry = quantities[name]
+            assert isinstance(entry, Mapping)
+            if entry.get("unit") != unit:
+                raise ValueError(f"Result {index} quantity {name!r} must use unit {unit!r}.")
+        if values["mesh.cell_count"] <= 0.0 or not values["mesh.cell_count"].is_integer():
+            raise ValueError(f"Result {index} mesh cell count must be a positive integer.")
+        for name in (
+            "flow.pressure_gradient",
+            "mesh.nominal_wall_cell_height",
+        ):
+            if values[name] <= 0.0:
+                raise ValueError(f"Result {index} quantity {name!r} must be positive.")
+        for name in (
+            "flow.darcy_friction_factor_relative_error",
+            "mesh.maximum_aspect_ratio",
+            "runtime.total_wall_seconds",
+            "wall.y_plus.minimum",
+            "wall.y_plus.average",
+            "wall.y_plus.maximum",
+        ):
+            if values[name] < 0.0:
+                raise ValueError(f"Result {index} quantity {name!r} must be non-negative.")
+        if not (
+            values["wall.y_plus.minimum"]
+            <= values["wall.y_plus.average"]
+            <= values["wall.y_plus.maximum"]
+        ):
+            raise ValueError(f"Result {index} wall y-plus statistics are unordered.")
+        checks = record.get("checks")
+        if not isinstance(checks, list):
+            raise ValueError(f"Result {index} is missing checks.")
+        gradient_stability = next(
+            (
+                check
+                for check in checks
+                if isinstance(check, Mapping)
+                and check.get("name") == "pressure-gradient-tail-stability"
+            ),
+            None,
+        )
+        if not isinstance(gradient_stability, Mapping):
+            raise ValueError(f"Result {index} has no pressure-gradient stability check.")
+        gradient_tail_range = gradient_stability.get("value")
+        if (
+            isinstance(gradient_tail_range, bool)
+            or not isinstance(gradient_tail_range, (int, float))
+            or not math.isfinite(float(gradient_tail_range))
+            or float(gradient_tail_range) < 0.0
+        ):
+            raise ValueError(f"Result {index} has invalid pressure-gradient stability evidence.")
+        rows.append(
+            {
+                "cross_section_cells": cross_cells,
+                "cell_count": int(values["mesh.cell_count"]),
+                "nominal_wall_cell_height_m": values[
+                    "mesh.nominal_wall_cell_height"
+                ],
+                "pressure_gradient_pa_per_m": values["flow.pressure_gradient"],
+                "pressure_gradient_tail_relative_range": float(gradient_tail_range),
+                "stability_window_samples": stability_window,
+                "colebrook_relative_error": values[
+                    "flow.darcy_friction_factor_relative_error"
+                ],
+                "wall_y_plus": {
+                    "minimum": values["wall.y_plus.minimum"],
+                    "average": values["wall.y_plus.average"],
+                    "maximum": values["wall.y_plus.maximum"],
+                },
+                "maximum_aspect_ratio": values["mesh.maximum_aspect_ratio"],
+                "runtime_wall_seconds": values["runtime.total_wall_seconds"],
+                "source_accepted": source_accepted,
+            }
+        )
+
+    if len(model_identities) != 1:
+        raise ValueError("Wall-study results must share one model SHA-256 identity.")
+    if len(fractions) != 1:
+        raise ValueError("Wall-study results must share one nominal wall-cell fraction.")
+    if len(stability_windows) != 1:
+        raise ValueError("Wall-study results must share one precursor stability window.")
+    rows.sort(key=lambda item: int(item["cross_section_cells"]))
+    cross_counts = [int(item["cross_section_cells"]) for item in rows]
+    if len(set(cross_counts)) != len(cross_counts):
+        raise ValueError("Wall-study cross-section cell counts must be distinct.")
+
+    wall_heights = [float(item["nominal_wall_cell_height_m"]) for item in rows]
+    fixed_wall_height = all(
+        math.isclose(value, wall_heights[0], rel_tol=1.0e-12, abs_tol=1.0e-15)
+        for value in wall_heights[1:]
+    )
+    y_averages = [float(item["wall_y_plus"]["average"]) for item in rows]  # type: ignore[index]
+    mean_y_plus_spread = (max(y_averages) - min(y_averages)) / max(
+        abs(sum(y_averages) / len(y_averages)),
+        1.0e-300,
+    )
+    y_plus_in_wall_function_range = all(
+        float(item["wall_y_plus"]["minimum"]) >= 30.0  # type: ignore[index]
+        and float(item["wall_y_plus"]["maximum"]) <= 300.0  # type: ignore[index]
+        for item in rows
+    )
+    gradients = [float(item["pressure_gradient_pa_per_m"]) for item in rows]
+    differences = [right - left for left, right in zip(gradients, gradients[1:])]
+    monotonic = bool(
+        all(value > 0.0 for value in differences)
+        or all(value < 0.0 for value in differences)
+    )
+    fine_relative_change = abs(gradients[-1] - gradients[-2]) / max(
+        abs(gradients[-1]),
+        1.0e-300,
+    )
+    pressure_gradient_envelope = (max(gradients) - min(gradients)) / max(
+        abs(gradients[-1]),
+        1.0e-300,
+    )
+    wall_strategy_accepted = bool(
+        all_sources_accepted
+        and fixed_wall_height
+        and y_plus_in_wall_function_range
+        and mean_y_plus_spread <= y_spread_limit
+    )
+    discretization_plateau = fine_relative_change <= fine_change_limit
+    checks = [
+        {
+            "name": "accepted-source-results",
+            "passed": all_sources_accepted,
+            "value": all_sources_accepted,
+            "limit": True,
+        },
+        {
+            "name": "fixed-nominal-wall-cell-height",
+            "passed": fixed_wall_height,
+            "value": max(wall_heights) - min(wall_heights),
+            "limit": "equal within 1e-12 relative tolerance",
+        },
+        {
+            "name": "wall-function-y-plus-range",
+            "passed": y_plus_in_wall_function_range,
+            "value": {
+                "minimum": min(
+                    float(item["wall_y_plus"]["minimum"]) for item in rows  # type: ignore[index]
+                ),
+                "maximum": max(
+                    float(item["wall_y_plus"]["maximum"]) for item in rows  # type: ignore[index]
+                ),
+            },
+            "limit": {"minimum": 30.0, "maximum": 300.0},
+        },
+        {
+            "name": "mean-y-plus-spread",
+            "passed": mean_y_plus_spread <= y_spread_limit,
+            "value": mean_y_plus_spread,
+            "limit": y_spread_limit,
+        },
+        {
+            "name": "fine-pair-pressure-gradient-change",
+            "passed": discretization_plateau,
+            "value": fine_relative_change,
+            "limit": fine_change_limit,
+        },
+        {
+            "name": "monotonic-pressure-gradient",
+            "passed": monotonic,
+            "value": monotonic,
+            "limit": True,
+        },
+    ]
+    gci_reason = (
+        "The fixed physical wall-cell height changes radial grading with resolution, "
+        "so the family is not geometrically similar."
+    )
+    if not monotonic:
+        gci_reason += " The pressure-gradient sequence is also oscillatory."
+    return {
+        "schema": "agentcfd.turbulent-wall-study/0.1",
+        "model_sha256": next(iter(model_identities)),
+        "quantity": "flow.pressure_gradient",
+        "nominal_wall_cell_fraction": next(iter(fractions)),
+        "cases": rows,
+        "metrics": {
+            "mean_y_plus_relative_spread": mean_y_plus_spread,
+            "fine_pair_pressure_gradient_relative_change": fine_relative_change,
+            "pressure_gradient_relative_envelope": pressure_gradient_envelope,
+            "monotonic": monotonic,
+        },
+        "gci": {
+            "applicable": False,
+            "reason": gci_reason,
+        },
+        "acceptance": {
+            "wall_strategy_accepted": wall_strategy_accepted,
+            "discretization_plateau": discretization_plateau,
+            "uncertainty_promotion_accepted": False,
+            "checks": checks,
+        },
+    }
+
+
+def assess_turbulent_precursor_grid_study(
+    records: Iterable[Mapping[str, object]],
+    *,
+    maximum_fine_relative_change: float = 0.02,
+) -> dict[str, object]:
+    """Assess a geometrically similar, uniform precursor grid candidate.
+
+    The periodic precursor has one axial cell, so its cross-section resolution
+    supplies the characteristic size ``h/D = 1/N``.  Using total cell count
+    with a three-dimensional exponent would be incorrect for this extruded 2-D
+    convergence problem.
+    """
+
+    selected = tuple(records)
+    if len(selected) != 3:
+        raise ValueError("Exactly three turbulent precursor results are required.")
+    fine_change_limit = positive_float(
+        maximum_fine_relative_change,
+        name="maximum_fine_relative_change",
+    )
+    model_identities: set[str] = set()
+    stability_windows: set[int] = set()
+    rows: list[dict[str, object]] = []
+    all_sources_accepted = True
+    for index, record in enumerate(selected, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"Result {index} must be a mapping.")
+        source_accepted = bool(
+            record.get("status") == "completed"
+            and record.get("converged") is True
+            and record.get("accepted") is True
+            and record.get("trust_level") in {"verified", "validated"}
+            and record.get("provider") == "openfoam-periodic-precursor"
+        )
+        all_sources_accepted = all_sources_accepted and source_accepted
+        provenance = record.get("provenance")
+        identity = provenance.get("model_sha256") if isinstance(provenance, Mapping) else None
+        if (
+            not isinstance(identity, str)
+            or len(identity) != 64
+            or any(character not in "0123456789abcdef" for character in identity.lower())
+        ):
+            raise ValueError(f"Result {index} is missing a model SHA-256 identity.")
+        model_identities.add(identity)
+        scientific = record.get("scientific_inputs")
+        scientific_record = scientific.get("record", scientific) if isinstance(scientific, Mapping) else None
+        precursor = scientific_record.get("precursor") if isinstance(scientific_record, Mapping) else None
+        policy = scientific_record.get("validation_policy") if isinstance(scientific_record, Mapping) else None
+        if not isinstance(precursor, Mapping) or not isinstance(policy, Mapping):
+            raise ValueError(f"Result {index} has incomplete precursor controls.")
+        cross_cells = precursor.get("cross_section_cells")
+        if isinstance(cross_cells, bool) or not isinstance(cross_cells, int) or cross_cells < 2:
+            raise ValueError(f"Result {index} has an invalid cross-section cell count.")
+        if precursor.get("nominal_wall_cell_fraction") is not None:
+            raise ValueError(
+                "Geometrically similar precursor grids must use uniform wall-normal spacing."
+            )
+        stability_window = policy.get("minimum_precursor_steady_samples")
+        if (
+            isinstance(stability_window, bool)
+            or not isinstance(stability_window, int)
+            or stability_window < 10
+        ):
+            raise ValueError(f"Result {index} has an invalid precursor stability window.")
+        stability_windows.add(stability_window)
+        quantities = record.get("quantities")
+        if not isinstance(quantities, Mapping):
+            raise ValueError(f"Result {index} is missing quantities.")
+        names = (
+            "flow.pressure_gradient",
+            "flow.darcy_friction_factor_relative_error",
+            "mesh.maximum_aspect_ratio",
+            "runtime.total_wall_seconds",
+            "wall.y_plus.minimum",
+            "wall.y_plus.average",
+            "wall.y_plus.maximum",
+        )
+        units = ("Pa/m", "1", "1", "s", "1", "1", "1")
+        values: dict[str, float] = {}
+        for name, unit in zip(names, units):
+            values[name] = _record_quantity_value(quantities, name, index=index)
+            entry = quantities[name]
+            assert isinstance(entry, Mapping)
+            if entry.get("unit") != unit:
+                raise ValueError(f"Result {index} quantity {name!r} must use unit {unit!r}.")
+        if values["flow.pressure_gradient"] <= 0.0:
+            raise ValueError(f"Result {index} pressure gradient must be positive.")
+        for name in (
+            "flow.darcy_friction_factor_relative_error",
+            "mesh.maximum_aspect_ratio",
+            "runtime.total_wall_seconds",
+        ):
+            if values[name] < 0.0:
+                raise ValueError(f"Result {index} quantity {name!r} must be non-negative.")
+        if not (
+            0.0 <= values["wall.y_plus.minimum"]
+            <= values["wall.y_plus.average"]
+            <= values["wall.y_plus.maximum"]
+        ):
+            raise ValueError(f"Result {index} wall y-plus statistics are unordered.")
+        checks = record.get("checks")
+        stability = next(
+            (
+                check
+                for check in checks
+                if isinstance(check, Mapping)
+                and check.get("name") == "pressure-gradient-tail-stability"
+            ),
+            None,
+        ) if isinstance(checks, list) else None
+        if not isinstance(stability, Mapping) or stability.get("passed") is not True:
+            raise ValueError(f"Result {index} lacks passed gradient-stability evidence.")
+        drift = stability.get("value")
+        if (
+            isinstance(drift, bool)
+            or not isinstance(drift, (int, float))
+            or not math.isfinite(float(drift))
+            or float(drift) < 0.0
+        ):
+            raise ValueError(f"Result {index} has invalid gradient-stability evidence.")
+        rows.append(
+            {
+                "cross_section_cells": cross_cells,
+                "characteristic_size_over_diameter": 1.0 / cross_cells,
+                "pressure_gradient_pa_per_m": values["flow.pressure_gradient"],
+                "pressure_gradient_tail_relative_range": float(drift),
+                "stability_window_samples": stability_window,
+                "colebrook_relative_error": values[
+                    "flow.darcy_friction_factor_relative_error"
+                ],
+                "wall_y_plus": {
+                    "minimum": values["wall.y_plus.minimum"],
+                    "average": values["wall.y_plus.average"],
+                    "maximum": values["wall.y_plus.maximum"],
+                },
+                "maximum_aspect_ratio": values["mesh.maximum_aspect_ratio"],
+                "runtime_wall_seconds": values["runtime.total_wall_seconds"],
+                "source_accepted": source_accepted,
+            }
+        )
+    if len(model_identities) != 1:
+        raise ValueError("Precursor grid-study results must share one model identity.")
+    if len(stability_windows) != 1:
+        raise ValueError("Precursor grid-study results must share one stability window.")
+    rows.sort(key=lambda item: int(item["cross_section_cells"]))
+    counts = [int(item["cross_section_cells"]) for item in rows]
+    if len(set(counts)) != 3:
+        raise ValueError("Precursor grid-study resolutions must be distinct.")
+    ratio_21 = counts[1] / counts[0]
+    ratio_32 = counts[2] / counts[1]
+    geometrically_similar = math.isclose(ratio_21, ratio_32, rel_tol=1.0e-12)
+    if not geometrically_similar:
+        raise ValueError("Precursor cross-section counts must use one refinement ratio.")
+    y_plus_consistent = all(
+        float(item["wall_y_plus"]["minimum"]) >= 30.0  # type: ignore[index]
+        and float(item["wall_y_plus"]["maximum"]) <= 300.0  # type: ignore[index]
+        for item in rows
+    )
+    gradients = [float(item["pressure_gradient_pa_per_m"]) for item in rows]
+    fine_relative_change = abs(gradients[-1] - gradients[-2]) / abs(gradients[-1])
+    envelope = (max(gradients) - min(gradients)) / abs(gradients[-1])
+    try:
+        gci_result = grid_convergence_index(
+            GridSolution(
+                characteristic_size=float(item["characteristic_size_over_diameter"]),
+                value=float(item["pressure_gradient_pa_per_m"]),
+                label=f"c{item['cross_section_cells']}",
+            )
+            for item in rows
+        )
+    except ValueError as error:
+        gci: dict[str, object] = {"applicable": False, "reason": str(error)}
+        uncertainty_accepted = False
+        monotonic = False
+    else:
+        gci_acceptance = assess_grid_convergence(gci_result)
+        gci = {
+            "applicable": True,
+            "result": gci_result.to_dict(),
+            "acceptance": gci_acceptance,
+        }
+        uncertainty_accepted = bool(gci_acceptance["accepted"] and y_plus_consistent)
+        monotonic = True
+    return {
+        "schema": "agentcfd.turbulent-precursor-grid-study/0.1",
+        "model_sha256": next(iter(model_identities)),
+        "quantity": "flow.pressure_gradient",
+        "refinement_ratio": ratio_21,
+        "characteristic_size_definition": "h/D = 1/cross_section_cells",
+        "cases": rows,
+        "metrics": {
+            "fine_pair_pressure_gradient_relative_change": fine_relative_change,
+            "pressure_gradient_relative_envelope": envelope,
+            "monotonic": monotonic,
+        },
+        "gci": gci,
+        "acceptance": {
+            "source_results_accepted": all_sources_accepted,
+            "wall_model_consistent": y_plus_consistent,
+            "discretization_plateau": fine_relative_change <= fine_change_limit,
+            "uncertainty_promotion_accepted": uncertainty_accepted,
+        },
+    }
+
+
 __all__ = [
     "GridConvergencePolicy",
     "GridConvergenceResult",
@@ -468,6 +982,8 @@ __all__ = [
     "ValidationPointAssessment",
     "assess_validation_point",
     "assess_grid_convergence",
+    "assess_turbulent_wall_study",
+    "assess_turbulent_precursor_grid_study",
     "grid_convergence_from_result_records",
     "grid_convergence_index",
 ]

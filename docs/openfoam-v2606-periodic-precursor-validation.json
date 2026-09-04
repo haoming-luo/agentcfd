@@ -55,8 +55,8 @@
     "failed_checks": [],
     "limitations": [
       "This verifies the bounded precursor workflow; it is not physical validation across a Reynolds-number range.",
-      "Same-resolution downstream mapping is verified separately; cross-resolution mapping and a turbulent grid certificate remain open.",
-      "The 8/12/16/20/24/32 scan was non-monotonic as y-plus crossed wall-treatment regimes, so no GCI is claimed."
+      "Same-resolution downstream mapping and fixed-wall-cell resolution evidence are verified separately; cross-resolution mapping and formal turbulent GCI remain open.",
+      "The original uniform 8/12/16/20/24/32 scan crossed wall-treatment regimes; the later fixed-wall-height family controls y-plus but remains non-similar and therefore ineligible for GCI."
     ]
   }
 }

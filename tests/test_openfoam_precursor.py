@@ -5,7 +5,11 @@ import jsonschema
 import pytest
 
 from agentcfd import outputs, procedures
-from agentcfd.providers import OpenFOAMTurbulentPrecursorProvider
+from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
+from agentcfd.providers import (
+    OpenFOAMTurbulentPrecursorProvider,
+    prepare_turbulent_wall_study,
+)
 from agentcfd.providers.openfoam_precursor import (
     _precursor_residual_check,
     _precursor_series,
@@ -71,6 +75,81 @@ def test_precursor_case_is_periodic_content_addressed_and_schema_valid(tmp_path)
         (Path(__file__).parents[1] / "schemas/openfoam-case.schema.json").read_text()
     )
     jsonschema.Draft202012Validator(schema).validate(manifest)
+
+
+def test_precursor_declares_near_wall_grading(tmp_path):
+    prepared = OpenFOAMTurbulentPrecursorProvider(
+        cross_section_cells=16,
+        nominal_wall_cell_fraction=0.125,
+    ).prepare(turbulent_step(), tmp_path / "graded")
+    mesh = (prepared.directory / "system/blockMeshDict").read_text()
+    assert "// agentcfdNominalWallCellFraction 0.125" in mesh
+    assert "// agentcfdWallToCoreExpansionRatio" in mesh
+
+
+def test_fixed_wall_cell_study_prepares_three_content_addressed_cases(tmp_path):
+    study = prepare_turbulent_wall_study(turbulent_step(), tmp_path / "study")
+    payload = study.to_dict()
+
+    assert payload["schema"] == "agentcfd.openfoam-turbulent-wall-study/0.1"
+    assert payload["nominal_wall_cell_fraction"] == 0.0625
+    assert [case["cross_section_cells"] for case in payload["cases"]] == [8, 16, 32]
+    assert [case["maximum_iterations"] for case in payload["cases"]] == [
+        1000,
+        4000,
+        6000,
+    ]
+    schema = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "schemas/openfoam-turbulent-wall-study.schema.json"
+        ).read_text()
+    )
+    jsonschema.Draft202012Validator(schema).validate(payload)
+    for case in payload["cases"]:
+        mesh = (
+            study.directory / case["directory"] / "system/blockMeshDict"
+        ).read_text()
+        assert "// agentcfdNominalWallCellFraction 0.0625" in mesh
+
+    with pytest.raises(FileExistsError, match="not empty"):
+        prepare_turbulent_wall_study(turbulent_step(), study.directory)
+
+
+def test_prepared_precursor_binds_mesh_and_iteration_runtime_controls(tmp_path):
+    source = tmp_path / "source"
+    OpenFOAMTurbulentPrecursorProvider(
+        cross_section_cells=8,
+        nominal_wall_cell_fraction=0.0625,
+        maximum_iterations=1000,
+    ).prepare(turbulent_step(), source)
+
+    changed = OpenFOAMTurbulentPrecursorProvider(
+        case_directory=source,
+        cross_section_cells=16,
+        nominal_wall_cell_fraction=0.0625,
+        maximum_iterations=1000,
+    )
+    with pytest.raises(CaseIntegrityError, match="mesh resolution differs"):
+        changed.run_prepared(turbulent_step())
+
+    changed = OpenFOAMTurbulentPrecursorProvider(
+        case_directory=source,
+        cross_section_cells=8,
+        nominal_wall_cell_fraction=0.0625,
+        maximum_iterations=2000,
+    )
+    with pytest.raises(CaseIntegrityError, match="iteration limit differs"):
+        changed.run_prepared(turbulent_step())
+
+
+def test_precursor_rejects_extreme_cumulative_wall_grading_before_meshing(tmp_path):
+    provider = OpenFOAMTurbulentPrecursorProvider(
+        cross_section_cells=32,
+        nominal_wall_cell_fraction=0.125,
+    )
+    with pytest.raises(UnsupportedCaseError, match="estimated axial-to-smallest-radial"):
+        provider.prepare(turbulent_step(), tmp_path / "extreme")
 
 
 def test_precursor_rejects_laminar_or_changed_prepared_case(tmp_path):

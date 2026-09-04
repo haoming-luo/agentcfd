@@ -161,4 +161,31 @@ addressed. Same-resolution downstream mapping is now separately recorded in
 `docs/openfoam-v2606-precursor-mapping-validation.json`. The 38,400-cell target
 passed every declared gate with 1.05% pressure-gradient transfer difference
 and `trust_level="verified"`. Its 3.81% Colebrook difference remains diagnostic;
-wall-strategy-controlled grid and Reynolds-range validation remain open.
+formal turbulent discretization uncertainty and Reynolds-range validation
+remain open.
+
+## Fixed-wall-cell turbulent resolution evidence
+
+The first near-wall-controlled precursor family is recorded in
+`docs/openfoam-v2606-fixed-wall-cell-study.json`. At Re 99,621, c8/c16/c32 all
+used a nominal wall-cell fraction of 0.0625 and the same 1.65186 mm design
+height. Every source result was accepted and content verified. Mean y-plus was
+43.63, 44.01, and 44.39; the combined wall range was 38.46--47.86, safely within
+the declared 30--300 blended-wall-function policy. The fine-pair pressure-
+gradient change was 0.630% and all mesh-quality limits passed.
+
+Five-sample tail checks initially hid slow pressure-gradient drift. The final
+workflow instead requires 50 samples and uses 1000/4000/6000 iterations; its
+pressure-gradient sequence was 84.7583, 85.0938, and 85.6336 Pa/m. This is
+monotonic, but fixed wall height still makes the radial grids non-similar. The
+evidence therefore accepts the wall strategy and a fine-pair plateau, while
+setting both `gci.applicable` and `uncertainty_promotion_accepted` to false.
+
+The complementary geometrically similar c8/c12/c18 candidate is recorded in
+`docs/openfoam-v2606-turbulent-gci-candidate.json`. Its refinement ratio is
+1.5, its full y-plus range is 34.34--93.59, and all three accepted runs use the
+50-sample stability gate. Pressure gradient was 85.5393, 85.0416, and
+85.2219 Pa/m. Although the fine-pair change is only 0.212%, the direction
+reverses at the medium grid. The precursor-specific verifier therefore sets
+`gci.applicable=false` and returns completed-unaccepted status rather than
+manufacturing numerical uncertainty from an oscillatory sequence.

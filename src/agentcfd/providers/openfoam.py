@@ -90,6 +90,7 @@ def _precursor_mapping_contract(
     source_directory: Path,
     *,
     cross_section_cells: int,
+    nominal_wall_cell_fraction: float | None,
 ) -> dict[str, Any]:
     """Verify an accepted precursor and return a path-independent map contract."""
 
@@ -128,6 +129,10 @@ def _precursor_mapping_contract(
     if precursor.get("cross_section_cells") != cross_section_cells:
         raise CaseIntegrityError(
             "The precursor and downstream pipe must use the same cross-section resolution."
+        )
+    if precursor.get("nominal_wall_cell_fraction") != nominal_wall_cell_fraction:
+        raise CaseIntegrityError(
+            "The precursor and downstream pipe must use the same near-wall grading."
         )
     if precursor.get("axial_cells") != 1 or precursor.get("periodic_end_planes") is not True:
         raise CaseIntegrityError("The source is not a one-layer periodic pipe precursor.")
@@ -483,6 +488,33 @@ def _mesh_quality_quantities(log: str) -> dict[str, Quantity]:
     return quantities
 
 
+def _nominal_wall_fraction_from_block_mesh(content: str) -> float | None:
+    """Recover new or legacy-uniform near-wall intent from a blockMeshDict."""
+
+    fraction_match = re.search(
+        r"(?m)^// agentcfdNominalWallCellFraction\s+(auto|[0-9.eE+-]+)\s*$",
+        content,
+    )
+    if fraction_match is None:
+        legacy_gradings = re.findall(
+            r"simpleGrading\s+\(\s*([0-9.eE+-]+)\s+"
+            r"([0-9.eE+-]+)\s+([0-9.eE+-]+)\s*\)",
+            content,
+        )
+        if len(legacy_gradings) != 5 or any(
+            not all(math.isclose(float(value), 1.0) for value in grading)
+            for grading in legacy_gradings
+        ):
+            raise CaseIntegrityError(
+                "Prepared pipe case does not declare its nominal wall-cell strategy."
+            )
+        fraction = None
+    else:
+        encoded_fraction = fraction_match.group(1)
+        fraction = None if encoded_fraction == "auto" else float(encoded_fraction)
+    return fraction
+
+
 def _mesh_controls_from_case(case_directory: Path) -> OpenFOAMMeshControls:
     """Recover the generated five-block resolution without trusting CLI repetition."""
 
@@ -500,7 +532,12 @@ def _mesh_controls_from_case(case_directory: Path) -> OpenFOAMMeshControls:
     first, second, axial = counts.pop()
     if first != second:
         raise CaseIntegrityError("Prepared pipe cross-section block counts are inconsistent.")
-    return OpenFOAMMeshControls(cross_section_cells=first, axial_cells=axial)
+    fraction = _nominal_wall_fraction_from_block_mesh(content)
+    return OpenFOAMMeshControls(
+        cross_section_cells=first,
+        axial_cells=axial,
+        nominal_wall_cell_fraction=fraction,
+    )
 
 
 def _unexpected_case_entries(prepared: PreparedOpenFOAMCase) -> tuple[str, ...]:
@@ -1047,10 +1084,18 @@ def _recover_turbulence_data(
 
 @dataclass(frozen=True, slots=True)
 class OpenFOAMMeshControls:
-    """Provider-specific controls for the first circular-pipe mesh."""
+    """Provider-specific controls for the circular-pipe O-grid.
+
+    ``nominal_wall_cell_fraction`` is the wall-adjacent cell width divided by
+    the nominal outer-block wall-normal edge length.  Leaving it unset gives
+    uniform cells.  Holding it fixed while increasing ``cross_section_cells``
+    isolates an interior-resolution study without silently changing the
+    wall-function sampling distance.
+    """
 
     cross_section_cells: int = 8
     axial_cells: int | None = None
+    nominal_wall_cell_fraction: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -1072,6 +1117,14 @@ class OpenFOAMMeshControls:
                     minimum=2,
                 ),
             )
+        if self.nominal_wall_cell_fraction is not None:
+            fraction = positive_float(
+                self.nominal_wall_cell_fraction,
+                name="nominal_wall_cell_fraction",
+            )
+            if fraction >= 1.0:
+                raise ValueError("nominal_wall_cell_fraction must be below one.")
+            object.__setattr__(self, "nominal_wall_cell_fraction", fraction)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1084,6 +1137,7 @@ class OpenFOAMValidationPolicy:
     maximum_relative_pressure_drop_drift: float = 1.0e-4
     maximum_relative_turbulent_pressure_drop_drift: float = 5.0e-4
     minimum_steady_samples: int = 5
+    minimum_precursor_steady_samples: int = 50
     maximum_mesh_non_orthogonality: float = 65.0
     maximum_mesh_skewness: float = 4.0
     maximum_mesh_aspect_ratio: float = 50.0
@@ -1141,6 +1195,15 @@ class OpenFOAMValidationPolicy:
                 self.minimum_steady_samples,
                 name="minimum_steady_samples",
                 minimum=2,
+            ),
+        )
+        object.__setattr__(
+            self,
+            "minimum_precursor_steady_samples",
+            integer_at_least(
+                self.minimum_precursor_steady_samples,
+                name="minimum_precursor_steady_samples",
+                minimum=10,
             ),
         )
         for name in (
@@ -1554,6 +1617,7 @@ class OpenFOAMProvider:
                 step,
                 self.precursor_case,
                 cross_section_cells=self.mesh.cross_section_cells,
+                nominal_wall_cell_fraction=self.mesh.nominal_wall_cell_fraction,
             )
         target = Path(directory) if directory is not None else self.case_directory
         if target is None:
@@ -1642,6 +1706,7 @@ class OpenFOAMProvider:
             step,
             prepared,
             cross_section_cells=mesh_controls.cross_section_cells,
+            nominal_wall_cell_fraction=mesh_controls.nominal_wall_cell_fraction,
         )
         return self._execute_prepared(step, prepared, mesh_controls=mesh_controls)
 
@@ -1651,6 +1716,7 @@ class OpenFOAMProvider:
         prepared: PreparedOpenFOAMCase,
         *,
         cross_section_cells: int | None = None,
+        nominal_wall_cell_fraction: float | None = None,
     ) -> None:
         mapping_path = prepared.directory / "agentcfd-precursor-map.json"
         if self.precursor_case is None:
@@ -1674,6 +1740,11 @@ class OpenFOAMProvider:
                 self.mesh.cross_section_cells
                 if cross_section_cells is None
                 else cross_section_cells
+            ),
+            nominal_wall_cell_fraction=(
+                self.mesh.nominal_wall_cell_fraction
+                if cross_section_cells is None
+                else nominal_wall_cell_fraction
             ),
         )
         if expected != actual:
@@ -1770,6 +1841,7 @@ class OpenFOAMProvider:
             step,
             prepared,
             cross_section_cells=mesh_controls.cross_section_cells,
+            nominal_wall_cell_fraction=mesh_controls.nominal_wall_cell_fraction,
         )
         mapping_contract: dict[str, Any] | None = None
         if self.precursor_case is not None:
@@ -1843,6 +1915,7 @@ class OpenFOAMProvider:
                 step,
                 prepared,
                 cross_section_cells=mesh_controls.cross_section_cells,
+                nominal_wall_cell_fraction=mesh_controls.nominal_wall_cell_fraction,
             )
 
         process_ok = all(return_codes.get(name) == 0 for name in commands)
@@ -1989,6 +2062,27 @@ class OpenFOAMProvider:
         )
         mesh_quality_quantities = _mesh_quality_quantities(logs.get("checkMesh", ""))
         quantities.update(mesh_quality_quantities)
+        quantities["mesh.nominal_wall_cell_height"] = Quantity(
+            _nominal_wall_cell_height(
+                radius=step.model.domain.diameter / 2.0,
+                cross_cells=mesh_controls.cross_section_cells,
+                nominal_wall_cell_fraction=mesh_controls.nominal_wall_cell_fraction,
+            ),
+            "m",
+            kind="scientific_input",
+            description=(
+                "Design height on the O-grid corner-to-core radial edge; curved-face "
+                "cell-centre wall distance is recovered separately through y+."
+            ),
+        )
+        quantities["mesh.wall_to_core_expansion_ratio"] = Quantity(
+            _wall_normal_expansion_ratio(
+                mesh_controls.cross_section_cells,
+                mesh_controls.nominal_wall_cell_fraction,
+            ),
+            "1",
+            kind="scientific_input",
+        )
         mesh_metric_checks = _mesh_metric_checks(
             mesh_quality_quantities,
             policy=self.validation,
@@ -2468,6 +2562,7 @@ class OpenFOAMProvider:
                 inlet=inlet_name,
                 outlet=outlet_name,
                 walls=wall_names,
+                nominal_wall_cell_fraction=self.mesh.nominal_wall_cell_fraction,
             ),
             "system/controlDict": _control_dict(
                 step.procedure.maximum_iterations,
@@ -2785,6 +2880,74 @@ cuttingPatches ();
 """
 
 
+def _wall_normal_expansion_ratio(
+    cross_cells: int,
+    nominal_wall_cell_fraction: float | None,
+) -> float:
+    """Return blockMesh end/start grading from a wall-adjacent cell fraction.
+
+    The ratio is oriented from wall to core.  OpenFOAM defines simple grading
+    as end-cell width divided by start-cell width.  We solve the geometric
+    series instead of treating the block ratio as a per-cell growth factor.
+    """
+
+    cells = integer_at_least(cross_cells, name="cross_cells", minimum=2)
+    if nominal_wall_cell_fraction is None:
+        return 1.0
+    fraction = positive_float(
+        nominal_wall_cell_fraction,
+        name="nominal_wall_cell_fraction",
+    )
+    if fraction >= 1.0:
+        raise ValueError("nominal_wall_cell_fraction must be below one.")
+    uniform_fraction = 1.0 / cells
+    if math.isclose(fraction, uniform_fraction, rel_tol=1.0e-14, abs_tol=0.0):
+        return 1.0
+
+    target_sum = 1.0 / fraction
+
+    def geometric_sum(ratio: float) -> float:
+        total = 1.0
+        term = 1.0
+        for _ in range(1, cells):
+            term *= ratio
+            total += term
+            if not math.isfinite(total):
+                return math.inf
+        return total
+
+    lower = 0.0
+    upper = 1.0
+    if target_sum > cells:
+        while geometric_sum(upper) < target_sum:
+            upper *= 2.0
+    for _ in range(160):
+        midpoint = (lower + upper) / 2.0
+        if geometric_sum(midpoint) < target_sum:
+            lower = midpoint
+        else:
+            upper = midpoint
+    per_cell_ratio = (lower + upper) / 2.0
+    return per_cell_ratio ** (cells - 1)
+
+
+def _nominal_wall_cell_height(
+    *,
+    radius: float,
+    cross_cells: int,
+    nominal_wall_cell_fraction: float | None,
+) -> float:
+    """Return the design height on an O-grid corner-to-core radial edge."""
+
+    fraction = (
+        1.0 / cross_cells
+        if nominal_wall_cell_fraction is None
+        else nominal_wall_cell_fraction
+    )
+    outer_edge_length = radius * (1.0 - math.sqrt(2.0) / 3.0)
+    return outer_edge_length * fraction
+
+
 def _block_mesh_dict(
     *,
     length: float,
@@ -2795,8 +2958,19 @@ def _block_mesh_dict(
     outlet: str,
     walls: tuple[str, ...],
     cyclic_end_planes: bool = False,
+    nominal_wall_cell_fraction: float | None = None,
 ) -> str:
     inner = radius / 3.0
+    wall_to_core = _wall_normal_expansion_ratio(
+        cross_cells,
+        nominal_wall_cell_fraction,
+    )
+    core_to_wall = 1.0 / wall_to_core
+    encoded_fraction = (
+        "auto"
+        if nominal_wall_cell_fraction is None
+        else f"{nominal_wall_cell_fraction:.17g}"
+    )
     wall_name = walls[0]
     if len(walls) != 1:
         raise UnsupportedCaseError("The initial OpenFOAM pipe mesh requires exactly one wall boundary.")
@@ -2804,7 +2978,9 @@ def _block_mesh_dict(
     outlet_type = "cyclic" if cyclic_end_planes else "patch"
     inlet_neighbour = f"\n        neighbourPatch {outlet};" if cyclic_end_planes else ""
     outlet_neighbour = f"\n        neighbourPatch {inlet};" if cyclic_end_planes else ""
-    return _header(object_name="blockMeshDict", class_name="dictionary", location="system") + f"""convertToMeters 1;
+    return _header(object_name="blockMeshDict", class_name="dictionary", location="system") + f"""// agentcfdNominalWallCellFraction {encoded_fraction}
+// agentcfdWallToCoreExpansionRatio {wall_to_core:.17g}
+convertToMeters 1;
 
 geometry
 {{
@@ -2839,10 +3015,10 @@ vertices
 
 blocks
 (
-    hex (4 5 1 0 12 13 9 8) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 1 1)
-    hex (4 0 2 6 12 8 10 14) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 1 1)
-    hex (1 5 7 3 9 13 15 11) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 1 1)
-    hex (2 3 7 6 10 11 15 14) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 1 1)
+    hex (4 5 1 0 12 13 9 8) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 {wall_to_core:.17g} 1)
+    hex (4 0 2 6 12 8 10 14) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading ({wall_to_core:.17g} 1 1)
+    hex (1 5 7 3 9 13 15 11) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading ({core_to_wall:.17g} 1 1)
+    hex (2 3 7 6 10 11 15 14) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 {core_to_wall:.17g} 1)
     hex (0 1 3 2 8 9 11 10) ({cross_cells} {cross_cells} {axial_cells}) simpleGrading (1 1 1)
 );
 

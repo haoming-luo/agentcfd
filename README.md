@@ -238,6 +238,35 @@ agentcfd run openfoam-turbulent-precursor precursor \
   --container-image opencfd/openfoam-run:2606 --json
 ```
 
+Keep the nominal wall-adjacent cell height fixed while changing the O-grid
+interior resolution, then assess the resulting wall-function study separately
+from formal GCI:
+
+```bash
+agentcfd prepare openfoam-turbulent-wall-study wall-study
+agentcfd run openfoam-turbulent-wall-study wall-study \
+  --container-image opencfd/openfoam-run:2606
+```
+
+The evidence-backed defaults are c8/c16/c32, a 0.0625 nominal wall-cell
+fraction, and 1000/4000/6000 iterations with a 50-sample stability window.
+Existing accepted precursor results can also be assessed directly with
+`agentcfd verify turbulent-wall-study`.
+
+A uniform, geometrically similar candidate can be checked separately with
+`agentcfd verify turbulent-precursor-grid-study`. It uses the periodic
+cross-section size `h/D = 1/N`, verifies that all three wall-y-plus ranges stay
+in one wall-model regime, and refuses oscillatory Richardson sequences.
+
+The fraction is relative to the nominal radial edge of the outer O-grid block.
+AgentCFD solves the required OpenFOAM end/start grading ratio and records both
+the fraction and physical design height. Fixed-wall-cell families test whether
+the chosen wall-function regime remains consistent; because their interior
+grading changes with resolution, they are not automatically valid Richardson/
+GCI families. Pathological cumulative grading is rejected before OpenFOAM runs
+when its estimated axial-to-smallest-radial cell ratio already exceeds the
+declared mesh-aspect limit.
+
 Map that accepted, content-addressed developed field into a downstream pipe:
 
 ```bash
@@ -318,6 +347,8 @@ authoritative.
 - [OpenFOAM v2606 turbulent-pipe diagnostic evidence](docs/openfoam-v2606-turbulent-pipe-diagnostic.json)
 - [OpenFOAM v2606 periodic precursor evidence](docs/openfoam-v2606-periodic-precursor-validation.json)
 - [OpenFOAM v2606 precursor-mapping evidence](docs/openfoam-v2606-precursor-mapping-validation.json)
+- [OpenFOAM v2606 fixed-wall-cell three-grid evidence](docs/openfoam-v2606-fixed-wall-cell-study.json)
+- [OpenFOAM v2606 turbulent GCI-candidate evidence](docs/openfoam-v2606-turbulent-gci-candidate.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

@@ -23,6 +23,7 @@ from agentcfd.providers.openfoam import (
     _mesh_controls_from_case,
     _mesh_metric_checks,
     _mesh_quality_quantities,
+    _nominal_wall_cell_height,
     _outer_residual_check,
     _pressure_drop_stability_check,
     _read_scalar_series,
@@ -34,6 +35,7 @@ from agentcfd.providers.openfoam import (
     _solver_converged,
     _solver_residual_evidence,
     _unexpected_case_entries,
+    _wall_normal_expansion_ratio,
 )
 from agentcfd.results import Check, History, Quantity
 
@@ -82,10 +84,17 @@ def turbulent_pipe_model(*, velocity: float = 1.0) -> Model:
     )
 
 
-def accepted_precursor(tmp_path: Path, step, *, cross_section_cells: int = 8) -> Path:
+def accepted_precursor(
+    tmp_path: Path,
+    step,
+    *,
+    cross_section_cells: int = 8,
+    nominal_wall_cell_fraction: float | None = None,
+) -> Path:
     source = tmp_path / "precursor"
     prepared = OpenFOAMTurbulentPrecursorProvider(
         cross_section_cells=cross_section_cells,
+        nominal_wall_cell_fraction=nominal_wall_cell_fraction,
     ).prepare(step, source)
     solution = source / "100"
     solution.mkdir()
@@ -145,6 +154,7 @@ def accepted_precursor(tmp_path: Path, step, *, cross_section_cells: int = 8) ->
             "precursor": {
                 "cross_section_cells": cross_section_cells,
                 "axial_cells": 1,
+                "nominal_wall_cell_fraction": nominal_wall_cell_fraction,
                 "periodic_end_planes": True,
             }
         },
@@ -219,6 +229,29 @@ def test_turbulent_precursor_mapping_rejects_resolution_mismatch(tmp_path):
         mesh=OpenFOAMMeshControls(cross_section_cells=16, axial_cells=120),
     )
     with pytest.raises(CaseIntegrityError, match="same cross-section resolution"):
+        provider.prepare(step, tmp_path / "target")
+
+
+def test_turbulent_precursor_mapping_rejects_near_wall_mismatch(tmp_path):
+    step = turbulent_pipe_model().step(
+        procedure=procedures.steady(relative_tolerance=1e-4, maximum_iterations=300),
+        output=outputs.turbulent_internal_flow(),
+    )
+    source = accepted_precursor(
+        tmp_path,
+        step,
+        cross_section_cells=16,
+        nominal_wall_cell_fraction=0.0625,
+    )
+    provider = OpenFOAMProvider(
+        precursor_case=source,
+        mesh=OpenFOAMMeshControls(
+            cross_section_cells=16,
+            axial_cells=120,
+            nominal_wall_cell_fraction=0.125,
+        ),
+    )
+    with pytest.raises(CaseIntegrityError, match="same near-wall grading"):
         provider.prepare(step, tmp_path / "target")
 
 
@@ -342,6 +375,47 @@ def test_openfoam_case_has_physical_pipe_and_expected_boundary_semantics(tmp_pat
     assert control.count("type surfaceFieldValue;") == 4
     assert "operation areaAverage;" in control
     assert "operation sum;" in control
+
+
+def test_near_wall_grading_solves_geometric_series_and_is_recoverable(tmp_path):
+    fraction = 1.0 / 8.0
+    ratios = [
+        _wall_normal_expansion_ratio(cells, fraction)
+        for cells in (8, 16, 32)
+    ]
+    assert ratios[0] == pytest.approx(1.0)
+    assert 0.0 < ratios[2] < ratios[1] < ratios[0]
+    for cells, expansion in zip((8, 16, 32), ratios):
+        per_cell = expansion ** (1.0 / (cells - 1))
+        recovered_fraction = 1.0 / sum(per_cell**index for index in range(cells))
+        assert recovered_fraction == pytest.approx(fraction, rel=1.0e-12)
+
+    heights = [
+        _nominal_wall_cell_height(
+            radius=0.05,
+            cross_cells=cells,
+            nominal_wall_cell_fraction=fraction,
+        )
+        for cells in (8, 16, 32)
+    ]
+    assert heights[0] == pytest.approx(heights[1])
+    assert heights[1] == pytest.approx(heights[2])
+
+    prepared = OpenFOAMProvider(
+        mesh=OpenFOAMMeshControls(
+            cross_section_cells=16,
+            axial_cells=120,
+            nominal_wall_cell_fraction=fraction,
+        )
+    ).prepare(turbulent_pipe_model().step(), tmp_path / "graded")
+    mesh = (prepared.directory / "system/blockMeshDict").read_text()
+    assert "// agentcfdNominalWallCellFraction 0.125" in mesh
+    assert mesh.count("simpleGrading (1 1 1)") == 1
+    assert _mesh_controls_from_case(prepared.directory) == OpenFOAMMeshControls(
+        cross_section_cells=16,
+        axial_cells=120,
+        nominal_wall_cell_fraction=fraction,
+    )
 
 
 def test_openfoam_fully_developed_inlet_uses_non_compiling_radial_expression(tmp_path):
@@ -737,6 +811,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
     assert result.scientific_inputs["mesh_controls"] == {
         "cross_section_cells": 8,
         "axial_cells": 40,
+        "nominal_wall_cell_fraction": None,
     }
     assert result.scientific_inputs["validation_policy"] == {
         "maximum_relative_mass_imbalance": 1.0e-6,
@@ -745,6 +820,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "maximum_relative_pressure_drop_drift": 1.0e-4,
         "maximum_relative_turbulent_pressure_drop_drift": 5.0e-4,
         "minimum_steady_samples": 5,
+        "minimum_precursor_steady_samples": 50,
         "maximum_mesh_non_orthogonality": 65.0,
         "maximum_mesh_skewness": 4.0,
         "maximum_mesh_aspect_ratio": 50.0,

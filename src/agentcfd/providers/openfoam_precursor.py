@@ -16,7 +16,7 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +38,8 @@ from .openfoam import (
     _latest_time_directory,
     _mesh_metric_checks,
     _mesh_quality_quantities,
+    _nominal_wall_cell_height,
+    _nominal_wall_fraction_from_block_mesh,
     _read_y_plus_series,
     _runtime_version,
     _runtime_version_key,
@@ -45,11 +47,118 @@ from .openfoam import (
     _stop_timed_out_container,
     _turbulence_properties,
     _unexpected_case_entries,
+    _wall_normal_expansion_ratio,
     _write_mesh_manifest,
 )
 
 
 _CAPABILITY = "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedOpenFOAMTurbulentWallStudy:
+    """Content-addressed plan for a fixed-wall-cell precursor family."""
+
+    directory: Path
+    model_sha256: str
+    nominal_wall_cell_fraction: float
+    cases: tuple[dict[str, object], ...]
+    scientific_inputs: dict[str, object]
+    schema: str = "agentcfd.openfoam-turbulent-wall-study/0.1"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "model_sha256": self.model_sha256,
+            "quantity": "flow.pressure_gradient",
+            "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+            "scientific_inputs": self.scientific_inputs,
+            "cases": list(self.cases),
+        }
+
+    def write(self) -> Path:
+        target = self.directory / "agentcfd-turbulent-wall-study.json"
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+        return target
+
+
+def prepare_turbulent_wall_study(
+    step,
+    directory: str | Path,
+    *,
+    cross_section_cells: tuple[int, int, int] = (8, 16, 32),
+    nominal_wall_cell_fraction: float = 0.0625,
+    maximum_iterations: tuple[int, int, int] = (1000, 4000, 6000),
+) -> PreparedOpenFOAMTurbulentWallStudy:
+    """Prepare three precursor cases with one fixed nominal wall-cell height."""
+
+    selected = tuple(
+        integer_at_least(value, name="cross_section_cells", minimum=2)
+        for value in cross_section_cells
+    )
+    iterations = tuple(
+        integer_at_least(value, name="maximum_iterations", minimum=5)
+        for value in maximum_iterations
+    )
+    if len(selected) != 3 or len(iterations) != 3:
+        raise ValueError("Exactly three grid counts and iteration limits are required.")
+    if not (selected[0] < selected[1] < selected[2]):
+        raise ValueError("Cross-section cell counts must be strictly increasing.")
+    fraction = positive_float(
+        nominal_wall_cell_fraction,
+        name="nominal_wall_cell_fraction",
+    )
+    if fraction >= 1.0:
+        raise ValueError("nominal_wall_cell_fraction must be below one.")
+    root = Path(directory)
+    if root.exists() and any(root.iterdir()):
+        raise FileExistsError(f"OpenFOAM wall-study directory is not empty: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+    model_sha256 = step.model.fingerprint()
+    cases: list[dict[str, object]] = []
+    for index, (cross_cells, iteration_limit) in enumerate(
+        zip(selected, iterations),
+        start=1,
+    ):
+        relative = Path(f"wall-{index}-c{cross_cells}")
+        prepared = OpenFOAMTurbulentPrecursorProvider(
+            case_directory=root / relative,
+            cross_section_cells=cross_cells,
+            nominal_wall_cell_fraction=fraction,
+            maximum_iterations=iteration_limit,
+        ).prepare(step)
+        if prepared.model_sha256 != model_sha256:
+            raise RuntimeError("Prepared wall-study cases do not share one model identity.")
+        cases.append(
+            {
+                "index": index,
+                "label": ("coarse", "medium", "fine")[index - 1],
+                "directory": str(relative),
+                "cross_section_cells": cross_cells,
+                "maximum_iterations": iteration_limit,
+                "expected_cell_count": 5 * cross_cells**2,
+                "case_sha256": prepared.case_sha256,
+                "result": str(relative / "agentcfd-result.json"),
+            }
+        )
+    study = PreparedOpenFOAMTurbulentWallStudy(
+        directory=root,
+        model_sha256=model_sha256,
+        nominal_wall_cell_fraction=fraction,
+        cases=tuple(cases),
+        scientific_inputs={
+            "model": step.model.to_dict(),
+            "procedure": step.procedure.to_dict(),
+            "output_request": step.output.to_dict(),
+        },
+    )
+    study.write()
+    return study
 
 
 def _precursor_series(log: str) -> tuple[dict[float, float], dict[float, float]]:
@@ -153,6 +262,7 @@ class OpenFOAMTurbulentPrecursorProvider:
         *,
         case_directory: str | Path | None = None,
         cross_section_cells: int = 16,
+        nominal_wall_cell_fraction: float | None = None,
         maximum_iterations: int = 1000,
         validation: OpenFOAMValidationPolicy | None = None,
         timeout_seconds: float = 3600.0,
@@ -164,6 +274,16 @@ class OpenFOAMTurbulentPrecursorProvider:
             name="cross_section_cells",
             minimum=2,
         )
+        if nominal_wall_cell_fraction is None:
+            self.nominal_wall_cell_fraction = None
+        else:
+            fraction = positive_float(
+                nominal_wall_cell_fraction,
+                name="nominal_wall_cell_fraction",
+            )
+            if fraction >= 1.0:
+                raise ValueError("nominal_wall_cell_fraction must be below one.")
+            self.nominal_wall_cell_fraction = fraction
         self.maximum_iterations = integer_at_least(
             maximum_iterations,
             name="maximum_iterations",
@@ -283,7 +403,44 @@ class OpenFOAMTurbulentPrecursorProvider:
                 "Prepared OpenFOAM precursor contains unrecorded entries: "
                 + ", ".join(unexpected)
             )
+        self._verify_prepared_controls(prepared)
         return self._execute(step, prepared)
+
+    def _verify_prepared_controls(self, prepared: PreparedOpenFOAMCase) -> None:
+        """Bind runtime expectations to the controls in the verified case files."""
+
+        block_mesh = (prepared.directory / "system/blockMeshDict").read_text(
+            encoding="utf-8"
+        )
+        matches = re.findall(
+            r"hex\s+\([^)]*\)\s+\((\d+)\s+(\d+)\s+(\d+)\)",
+            block_mesh,
+        )
+        expected_resolution = (
+            self.cross_section_cells,
+            self.cross_section_cells,
+            1,
+        )
+        if len(matches) != 5 or any(
+            tuple(int(value) for value in match) != expected_resolution
+            for match in matches
+        ):
+            raise CaseIntegrityError(
+                "Prepared precursor mesh resolution differs from runtime controls."
+            )
+        fraction = _nominal_wall_fraction_from_block_mesh(block_mesh)
+        if fraction != self.nominal_wall_cell_fraction:
+            raise CaseIntegrityError(
+                "Prepared precursor near-wall grading differs from runtime controls."
+            )
+        control = (prepared.directory / "system/controlDict").read_text(
+            encoding="utf-8"
+        )
+        end_time = re.search(r"(?m)^endTime\s+(\d+)\s*;\s*$", control)
+        if end_time is None or int(end_time.group(1)) != self.maximum_iterations:
+            raise CaseIntegrityError(
+                "Prepared precursor iteration limit differs from runtime controls."
+            )
 
     def _load_prepared(
         self,
@@ -354,11 +511,11 @@ class OpenFOAMTurbulentPrecursorProvider:
             or study.wall_treatment != "blended-wall-functions"
         ):
             raise UnsupportedCaseError(
-                "The boundaryFoam precursor supports steady incompressible isothermal "
+                "The periodic pipe precursor supports steady incompressible isothermal "
                 "k-omega SST flow with blended wall functions only."
             )
         if model.domain.roughness != 0.0:
-            raise UnsupportedCaseError("The boundaryFoam precursor currently requires a smooth pipe.")
+            raise UnsupportedCaseError("The periodic pipe precursor requires a smooth pipe.")
         inlets = [
             value
             for value in model.boundary_conditions.values()
@@ -371,7 +528,7 @@ class OpenFOAMTurbulentPrecursorProvider:
         ]
         if len(inlets) != 1 or len(walls) != 1:
             raise UnsupportedCaseError(
-                "The boundaryFoam precursor requires one turbulent inlet and one no-slip wall."
+                "The periodic pipe precursor requires one turbulent inlet and one no-slip wall."
             )
         reynolds = (
             model.fluid.density
@@ -383,6 +540,30 @@ class OpenFOAMTurbulentPrecursorProvider:
             raise UnsupportedCaseError(
                 f"Re={reynolds:.6g} is outside the turbulent precursor range Re >= 4000."
             )
+        estimated_aspect = self._estimated_axial_to_radial_ratio(model.domain.diameter)
+        if estimated_aspect > self.validation.maximum_mesh_aspect_ratio:
+            raise UnsupportedCaseError(
+                "The requested precursor grading has an estimated axial-to-smallest-"
+                f"radial cell ratio {estimated_aspect:.6g}, above the declared "
+                f"{self.validation.maximum_mesh_aspect_ratio:g} mesh-aspect limit."
+            )
+
+    def _estimated_axial_to_radial_ratio(self, diameter: float) -> float:
+        radius = diameter / 2.0
+        outer_edge = radius * (1.0 - math.sqrt(2.0) / 3.0)
+        fraction = (
+            1.0 / self.cross_section_cells
+            if self.nominal_wall_cell_fraction is None
+            else self.nominal_wall_cell_fraction
+        )
+        wall_cell = outer_edge * fraction
+        wall_to_core = _wall_normal_expansion_ratio(
+            self.cross_section_cells,
+            self.nominal_wall_cell_fraction,
+        )
+        smallest_radial = wall_cell * min(1.0, wall_to_core)
+        axial_cell = diameter / self.cross_section_cells
+        return axial_cell / smallest_radial
 
     def _render_files(self, step) -> dict[str, str]:
         model = step.model
@@ -424,6 +605,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                 outlet="periodic_out",
                 walls=(wall_name,),
                 cyclic_end_planes=True,
+                nominal_wall_cell_fraction=self.nominal_wall_cell_fraction,
             ),
             "system/controlDict": _precursor_control_dict(self.maximum_iterations),
             "system/fvSchemes": _precursor_fv_schemes(),
@@ -560,11 +742,32 @@ class OpenFOAMTurbulentPrecursorProvider:
         )
         mesh_quantities = _mesh_quality_quantities(logs.get("checkMesh", ""))
         quantities.update(mesh_quantities)
+        quantities["mesh.estimated_axial_to_smallest_radial_cell_ratio"] = Quantity(
+            self._estimated_axial_to_radial_ratio(step.model.domain.diameter),
+            "1",
+            kind="scientific_input",
+        )
+        quantities["mesh.nominal_wall_cell_height"] = Quantity(
+            _nominal_wall_cell_height(
+                radius=step.model.domain.diameter / 2.0,
+                cross_cells=self.cross_section_cells,
+                nominal_wall_cell_fraction=self.nominal_wall_cell_fraction,
+            ),
+            "m",
+            kind="scientific_input",
+            description=(
+                "Design height on the O-grid corner-to-core radial edge; curved-face "
+                "cell-centre wall distance is recovered separately through y+."
+            ),
+        )
         residual_check = _precursor_residual_check(
             quantities,
             tolerance=self.validation.maximum_turbulent_outer_residual,
         )
-        gradient_drift = _tail_relative_range(gradients, self.validation.minimum_steady_samples)
+        gradient_drift = _tail_relative_range(
+            gradients,
+            self.validation.minimum_precursor_steady_samples,
+        )
         gradient_check = Check(
             name="pressure-gradient-tail-stability",
             passed=bool(
@@ -797,6 +1000,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                     "driving_source": "meanVelocityForce",
                     "cross_section_cells": self.cross_section_cells,
                     "axial_cells": 1,
+                    "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
                     "maximum_iterations": self.maximum_iterations,
                     "periodic_end_planes": True,
                 },

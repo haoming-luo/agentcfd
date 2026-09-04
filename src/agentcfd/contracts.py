@@ -18,10 +18,13 @@ _SCHEMAS = (
     "openfoam-grid-study.schema.json",
     "openfoam-mesh.schema.json",
     "openfoam-precursor-map.schema.json",
+    "openfoam-turbulent-wall-study.schema.json",
     "result-exchange.schema.json",
     "scientific-sample.schema.json",
     "simulation-result.schema.json",
     "thermophysical-state.schema.json",
+    "turbulent-precursor-grid-study.schema.json",
+    "turbulent-wall-study.schema.json",
     "validation-point.schema.json",
 )
 

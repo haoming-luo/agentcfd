@@ -44,6 +44,6 @@
   "scope": [
     "This verifies same-resolution deterministic precursor mapping at one operating point.",
     "The Colebrook difference is a model-form diagnostic, not experimental validation.",
-    "Cross-resolution mapping, grid convergence, other Reynolds numbers, geometries, and OpenFOAM dialects remain unvalidated."
+    "A fixed-wall-cell resolution study now controls y-plus but cannot supply GCI; cross-resolution mapping, formal grid uncertainty, other Reynolds numbers, geometries, and OpenFOAM dialects remain unvalidated."
   ]
 }

@@ -6,6 +6,8 @@ from agentcfd.verification import (
     GridConvergencePolicy,
     GridConvergenceResult,
     GridSolution,
+    assess_turbulent_precursor_grid_study,
+    assess_turbulent_wall_study,
     assess_validation_point,
     assess_grid_convergence,
     grid_convergence_from_result_records,
@@ -267,3 +269,90 @@ def test_result_record_grid_convergence_rejects_mixed_analysis_inputs():
     records[2] = _result_record(cells=4096, value=1.16)
     with pytest.raises(ValueError, match="all provide an analysis"):
         grid_convergence_from_result_records(records, quantity="flow.pressure_drop")
+
+
+def _wall_study_record(*, cross: int, gradient: float, y_plus: float):
+    return {
+        "status": "completed",
+        "converged": True,
+        "accepted": True,
+        "trust_level": "verified",
+        "provider": "openfoam-periodic-precursor",
+        "provenance": {"model_sha256": "a" * 64},
+        "scientific_inputs": {
+            "record": {
+                "precursor": {
+                    "cross_section_cells": cross,
+                    "nominal_wall_cell_fraction": 0.0625,
+                },
+                "validation_policy": {"minimum_precursor_steady_samples": 50},
+            }
+        },
+        "checks": [
+            {
+                "name": "pressure-gradient-tail-stability",
+                "passed": True,
+                "value": 1.0e-4,
+            }
+        ],
+        "quantities": {
+            "flow.pressure_gradient": {"value": gradient, "unit": "Pa/m"},
+            "flow.darcy_friction_factor_relative_error": {
+                "value": 0.07,
+                "unit": "1",
+            },
+            "mesh.cell_count": {"value": 5 * cross**2, "unit": "1"},
+            "mesh.maximum_aspect_ratio": {"value": 12.0, "unit": "1"},
+            "mesh.nominal_wall_cell_height": {"value": 0.00165, "unit": "m"},
+            "runtime.total_wall_seconds": {"value": float(cross), "unit": "s"},
+            "wall.y_plus.minimum": {"value": y_plus - 5.0, "unit": "1"},
+            "wall.y_plus.average": {"value": y_plus, "unit": "1"},
+            "wall.y_plus.maximum": {"value": y_plus + 5.0, "unit": "1"},
+        },
+    }
+
+
+def test_fixed_wall_cell_study_separates_wall_control_from_gci_promotion():
+    records = [
+        _wall_study_record(cross=8, gradient=84.76, y_plus=43.6),
+        _wall_study_record(cross=16, gradient=82.81, y_plus=43.9),
+        _wall_study_record(cross=32, gradient=83.16, y_plus=44.2),
+    ]
+    result = assess_turbulent_wall_study(records)
+
+    assert result["acceptance"]["wall_strategy_accepted"] is True
+    assert result["acceptance"]["discretization_plateau"] is True
+    assert result["acceptance"]["uncertainty_promotion_accepted"] is False
+    assert result["metrics"]["monotonic"] is False
+    assert result["gci"]["applicable"] is False
+    assert "not geometrically similar" in result["gci"]["reason"]
+
+    records[2]["scientific_inputs"]["record"]["precursor"][
+        "nominal_wall_cell_fraction"
+    ] = 0.125
+    with pytest.raises(ValueError, match="share one nominal"):
+        assess_turbulent_wall_study(records)
+
+
+def test_uniform_precursor_grid_study_rejects_oscillation_and_can_compute_gci():
+    records = [
+        _wall_study_record(cross=8, gradient=85.54, y_plus=87.0),
+        _wall_study_record(cross=12, gradient=85.04, y_plus=58.0),
+        _wall_study_record(cross=18, gradient=85.22, y_plus=39.0),
+    ]
+    for record in records:
+        record["scientific_inputs"]["record"]["precursor"][
+            "nominal_wall_cell_fraction"
+        ] = None
+    rejected = assess_turbulent_precursor_grid_study(records)
+    assert rejected["acceptance"]["wall_model_consistent"] is True
+    assert rejected["acceptance"]["discretization_plateau"] is True
+    assert rejected["acceptance"]["uncertainty_promotion_accepted"] is False
+    assert rejected["gci"]["applicable"] is False
+    assert "oscillatory" in rejected["gci"]["reason"]
+
+    for record, gradient in zip(records, (85.0, 84.4444444444, 84.1975308642)):
+        record["quantities"]["flow.pressure_gradient"]["value"] = gradient
+    accepted = assess_turbulent_precursor_grid_study(records)
+    assert accepted["gci"]["applicable"] is True
+    assert accepted["metrics"]["monotonic"] is True

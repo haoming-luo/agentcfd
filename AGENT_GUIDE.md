@@ -45,3 +45,17 @@ against the precursor pressure gradient is 1.05% and the result is verified.
 The separate 3.81% Colebrook difference remains a model-form diagnostic; do
 not extend this evidence to another Reynolds number, wall strategy, geometry,
 or OpenFOAM dialect.
+
+The fixed-wall-cell precursor workflow accepts an explicit
+`nominal_wall_cell_fraction`. At Re 99,621, the 0.0625 c8/c16/c32 family kept
+mean y-plus within 43.63--44.39 and its fine-pair pressure-gradient change was
+0.630% after 50-sample stability checks. Use `verify turbulent-wall-study` for
+this evidence. Never pass this family to Richardson/GCI: holding wall height
+fixed changes radial grading, even though the final pressure-gradient sequence
+is monotonic.
+
+For a geometrically similar periodic precursor candidate, use
+`verify turbulent-precursor-grid-study`; its characteristic size is
+`h/D = 1/cross_section_cells`, not total cells to the `-1/3` power. The first
+uniform c8/c12/c18 candidate retained wall y-plus above 30 but was oscillatory,
+so its 0.212% fine-pair plateau is not a GCI or uncertainty certificate.

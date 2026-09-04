@@ -5,7 +5,7 @@ import pytest
 
 from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing, properties
 from agentcfd.cli import _result_cli_payload, build_parser, entrypoint, main
-from agentcfd.providers import OpenFOAMProvider
+from agentcfd.providers import OpenFOAMProvider, OpenFOAMTurbulentPrecursorProvider
 
 
 def test_capability_catalog_is_truthful():
@@ -83,6 +83,9 @@ def test_benchmark_catalog_is_machine_readable_and_cli_visible(capsys):
 def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "simulation-result.schema.json" in contracts.available()
     assert "openfoam-precursor-map.schema.json" in contracts.available()
+    assert "turbulent-wall-study.schema.json" in contracts.available()
+    assert "openfoam-turbulent-wall-study.schema.json" in contracts.available()
+    assert "turbulent-precursor-grid-study.schema.json" in contracts.available()
     result_schema = contracts.load("simulation-result.schema.json")
     assert result_schema["$schema"].endswith("2020-12/schema")
     assert contracts.path("simulation-result.schema.json").is_file()
@@ -335,6 +338,35 @@ def test_cli_prepares_same_model_openfoam_grid_family(tmp_path, capsys):
     ]
 
 
+def test_cli_prepares_fixed_wall_cell_turbulent_family(tmp_path, capsys):
+    root = tmp_path / "wall-study"
+    assert (
+        main(
+            [
+                "prepare",
+                "openfoam-turbulent-wall-study",
+                str(root),
+                "--cross-section-cells",
+                "8",
+                "16",
+                "32",
+                "--nominal-wall-cell-fraction",
+                "0.0625",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema"] == "agentcfd.openfoam-turbulent-wall-study/0.1"
+    assert payload["nominal_wall_cell_fraction"] == 0.0625
+    assert [case["expected_cell_count"] for case in payload["cases"]] == [
+        320,
+        1280,
+        5120,
+    ]
+
+
 def test_cli_exposes_hash_verified_prepared_case_execution():
     args = build_parser().parse_args(
         [
@@ -347,6 +379,8 @@ def test_cli_exposes_hash_verified_prepared_case_execution():
             "16",
             "--axial-cells",
             "80",
+            "--nominal-wall-cell-fraction",
+            "0.125",
             "--timeout-seconds",
             "120",
         ]
@@ -354,6 +388,7 @@ def test_cli_exposes_hash_verified_prepared_case_execution():
     assert args.prepared is True
     assert args.cross_section_cells == 16
     assert args.axial_cells == 80
+    assert args.nominal_wall_cell_fraction == 0.125
     assert args.timeout_seconds == 120.0
 
 
@@ -394,6 +429,66 @@ def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monk
         "grid-2-c16-a80",
         "grid-3-c32-a160",
     ))
+
+
+def test_cli_executes_prepared_turbulent_wall_family(tmp_path, capsys, monkeypatch):
+    root = tmp_path / "wall-study"
+    assert main(["prepare", "openfoam-turbulent-wall-study", str(root)]) == 0
+    capsys.readouterr()
+    gradients = {8: 84.76, 16: 82.81, 32: 83.16}
+
+    def fake_run_prepared(self, step, directory=None):
+        cross = self.cross_section_cells
+        return SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam-periodic-precursor",
+            quantities={
+                "flow.pressure_gradient": Quantity(gradients[cross], "Pa/m"),
+                "flow.darcy_friction_factor_relative_error": Quantity(0.07, "1"),
+                "mesh.cell_count": Quantity(5 * cross**2, "1"),
+                "mesh.maximum_aspect_ratio": Quantity(12.0, "1"),
+                "mesh.nominal_wall_cell_height": Quantity(0.00165, "m"),
+                "runtime.total_wall_seconds": Quantity(float(cross), "s"),
+                "wall.y_plus.minimum": Quantity(38.0, "1"),
+                "wall.y_plus.average": Quantity(44.0, "1"),
+                "wall.y_plus.maximum": Quantity(48.0, "1"),
+            },
+            checks=(
+                Check("synthetic-verification", True, kind="verification"),
+                Check(
+                    "pressure-gradient-tail-stability",
+                    True,
+                    value=1.0e-4,
+                    limit=5.0e-4,
+                    kind="verification",
+                ),
+            ),
+            scientific_inputs={
+                "precursor": {
+                    "cross_section_cells": cross,
+                    "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+                },
+                "validation_policy": {"minimum_precursor_steady_samples": 50},
+            },
+            provenance={"model_sha256": step.model.fingerprint()},
+        )
+
+    monkeypatch.setattr(
+        OpenFOAMTurbulentPrecursorProvider,
+        "run_prepared",
+        fake_run_prepared,
+    )
+    assert main(["run", "openfoam-turbulent-wall-study", str(root), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["acceptance"]["wall_strategy_accepted"] is True
+    assert payload["acceptance"]["uncertainty_promotion_accepted"] is False
+    assert payload["gci"]["applicable"] is False
+    jsonschema.Draft202012Validator(
+        contracts.load("turbulent-wall-study.schema.json")
+    ).validate(payload)
+    assert (root / "agentcfd-turbulent-wall-assessment.json").is_file()
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

@@ -1,0 +1,86 @@
+{
+  "acceptance": {
+    "discretization_plateau": true,
+    "source_results_accepted": true,
+    "uncertainty_promotion_accepted": false,
+    "wall_model_consistent": true
+  },
+  "cases": [
+    {
+      "characteristic_size_over_diameter": 0.125,
+      "colebrook_relative_error": 0.04806305016759049,
+      "cross_section_cells": 8,
+      "maximum_aspect_ratio": 6.37086168,
+      "pressure_gradient_pa_per_m": 85.53933507964601,
+      "pressure_gradient_tail_relative_range": 7.477841089169372e-05,
+      "runtime_wall_seconds": 3.263417374007986,
+      "source_accepted": true,
+      "stability_window_samples": 50,
+      "wall_y_plus": {
+        "average": 87.07415302,
+        "maximum": 93.594532984,
+        "minimum": 78.268134014
+      }
+    },
+    {
+      "characteristic_size_over_diameter": 0.08333333333333333,
+      "colebrook_relative_error": 0.05360165615343612,
+      "cross_section_cells": 12,
+      "maximum_aspect_ratio": 6.889274921,
+      "pressure_gradient_pa_per_m": 85.04164579577801,
+      "pressure_gradient_tail_relative_range": 1.413698040248481e-06,
+      "runtime_wall_seconds": 7.847489999010577,
+      "source_accepted": true,
+      "stability_window_samples": 50,
+      "wall_y_plus": {
+        "average": 58.436019602,
+        "maximum": 62.935715114,
+        "minimum": 51.726262386
+      }
+    },
+    {
+      "characteristic_size_over_diameter": 0.05555555555555555,
+      "colebrook_relative_error": 0.051595197610009726,
+      "cross_section_cells": 18,
+      "maximum_aspect_ratio": 7.302832635,
+      "pressure_gradient_pa_per_m": 85.22194253643,
+      "pressure_gradient_tail_relative_range": 1.280576372112615e-06,
+      "runtime_wall_seconds": 20.671263083000667,
+      "source_accepted": true,
+      "stability_window_samples": 50,
+      "wall_y_plus": {
+        "average": 39.199764118,
+        "maximum": 42.249417085,
+        "minimum": 34.337909716
+      }
+    }
+  ],
+  "characteristic_size_definition": "h/D = 1/cross_section_cells",
+  "gci": {
+    "applicable": false,
+    "reason": "The three values are oscillatory; monotonic Richardson extrapolation is not valid."
+  },
+  "metrics": {
+    "fine_pair_pressure_gradient_relative_change": 0.0021156140694038395,
+    "monotonic": false,
+    "pressure_gradient_relative_envelope": 0.005839919497906896
+  },
+  "model_sha256": "3c6e57d066f91dea59a39f0205401df58eab99305d9fcea39ffc10d5a209bbab",
+  "quantity": "flow.pressure_gradient",
+  "refinement_ratio": 1.5,
+  "schema": "agentcfd.turbulent-precursor-grid-study/0.1",
+  "sources": [
+    {
+      "path": "/private/tmp/agentcfd-similar-wall-c8-i1000-v1/agentcfd-result.json",
+      "sha256": "16309bc06351d41860f2c4091982ebad73e5b9847cf5bbed8281f1a0e2faa31b"
+    },
+    {
+      "path": "/private/tmp/agentcfd-similar-wall-c12-i3000-v1/agentcfd-result.json",
+      "sha256": "575ef804fc9bae08fcdc16e5d5c9ce29757a56eb13d9eac5376361c35b72fda7"
+    },
+    {
+      "path": "/private/tmp/agentcfd-similar-wall-c18-i5000-v1/agentcfd-result.json",
+      "sha256": "6a04ea365bd9007fce129240772c07c1d97df562520cf507bb86ca52816d92ac"
+    }
+  ]
+}

@@ -48,6 +48,12 @@ def test_discrete_solver_controls_require_actual_integers(invalid):
         OpenFOAMMeshControls(cross_section_cells=invalid)
 
 
+@pytest.mark.parametrize("invalid", [0.0, -0.1, 1.0, math.nan, math.inf, True])
+def test_nominal_wall_cell_fraction_is_finite_and_fractional(invalid):
+    with pytest.raises(ValueError, match="positive|finite|below one|boolean"):
+        OpenFOAMMeshControls(nominal_wall_cell_fraction=invalid)
+
+
 def test_numeric_inputs_are_normalized_for_stable_serialization():
     pipe = geometry.circular_pipe(length=2, diameter=1, roughness=0)
     fluid = fluids.newtonian("water", density=1000, dynamic_viscosity=1)

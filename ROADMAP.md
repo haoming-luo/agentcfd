@@ -31,8 +31,13 @@ Study -> Model -> Geometry/Mesh -> Regions -> Fluids
 Current checkpoint: the first OpenCFD v2606 k-omega SST smooth-pipe slice and a
 verified periodic `meanVelocityForce` developed-flow precursor are implemented.
 Same-resolution content-addressed inlet mapping is implemented and verified at
-one c8 operating point. Cross-resolution mapping, wall-strategy-controlled grid
-validation, and Reynolds-range validation remain open.
+one c8 operating point. A fixed-wall-cell c8/c16/c32 study now verifies stable
+high-Re wall-function sampling and a fine-pair pressure-gradient plateau, while
+correctly rejecting GCI because that fixed-wall-height family is non-similar.
+A geometrically similar c8/c12/c18 candidate also stays in one wall-function
+regime but is oscillatory and therefore correctly rejected. Formal turbulent
+discretization uncertainty, cross-resolution mapping, and Reynolds-range
+validation remain open.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

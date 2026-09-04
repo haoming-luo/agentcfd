@@ -177,6 +177,34 @@ Colebrook, versus 10.94% for the earlier developing-pipe run on the same
 cross-section. This verifies the experimental precursor workflow but does not
 replace a turbulent grid or Reynolds-range validation certificate.
 
+Near-wall mesh intent can be made explicit with
+`nominal_wall_cell_fraction`. The value is the first wall cell divided by the
+nominal outer-block radial edge; the provider solves the corresponding
+geometric-series grading and orients it correctly in all four outer O-grid
+blocks. Prepared execution recovers this control from the content-addressed
+`blockMeshDict`, and a mapped precursor must use the same resolution and
+near-wall grading as its downstream target. The precursor also estimates the
+axial-to-smallest-radial cell ratio before case generation and rejects a request
+that already exceeds the declared mesh-aspect limit.
+
+`agentcfd verify turbulent-wall-study` reads at least three accepted precursor
+results, verifies common model and fixed wall height, and reports y-plus
+spread, pressure-gradient changes, mesh aspect ratio, runtime, and correlation
+diagnostics. It emits separate decisions for wall-strategy acceptance, a
+fine-pair plateau, and numerical-uncertainty promotion. Fixed wall height
+changes interior grading, so GCI is inapplicable; an oscillatory sequence adds
+an independent reason for rejection. The prepared family defaults to
+c8/c16/c32 with 1000/4000/6000 iterations, and precursor pressure-gradient
+stability uses 50 tail samples so a short locally flat interval cannot mask
+slow drift.
+
+`agentcfd verify turbulent-precursor-grid-study` covers the complementary
+uniform, geometrically similar candidate. It requires exactly three accepted
+precursors with one cross-section refinement ratio and a common high-Re
+wall-function regime. It uses `h/D = 1/cross_section_cells`, reports a plateau
+independently, and invokes Richardson/GCI only when the pressure-gradient
+sequence is monotonic.
+
 An accepted precursor can be supplied to the turbulent pipe provider through
 `--precursor-case`. AgentCFD verifies the source result, model, resolution,
 runtime, mesh, and SHA-256 identities of `U`, `p`, `k`, `omega`, and `nut`, then
@@ -222,5 +250,6 @@ Before this provider advances beyond experimental maturity it must add:
 3. a documented uniform-inlet entrance-length policy;
 4. installed-runtime tests on Linux and macOS, plus Windows through WSL2;
 5. restart, failure taxonomy, and bounded log/result artifacts.
-6. a wall-strategy-controlled turbulent three-grid study and public smooth-pipe
-   friction benchmark across a declared Reynolds-number range.
+6. a geometrically similar turbulent discretization certificate that stays in
+   one wall-model regime, plus a public smooth-pipe friction benchmark across
+   a declared Reynolds-number range.

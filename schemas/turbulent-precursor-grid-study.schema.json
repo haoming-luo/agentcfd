@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/turbulent-precursor-grid-study.schema.json",
+  "title": "AgentCFD geometrically similar turbulent precursor grid study 0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "model_sha256",
+    "quantity",
+    "refinement_ratio",
+    "characteristic_size_definition",
+    "cases",
+    "metrics",
+    "gci",
+    "acceptance"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.turbulent-precursor-grid-study/0.1"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "quantity": {"const": "flow.pressure_gradient"},
+    "refinement_ratio": {"type": "number", "exclusiveMinimum": 1},
+    "characteristic_size_definition": {"const": "h/D = 1/cross_section_cells"},
+    "sources": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "cross_section_cells",
+          "characteristic_size_over_diameter",
+          "pressure_gradient_pa_per_m",
+          "pressure_gradient_tail_relative_range",
+          "stability_window_samples",
+          "colebrook_relative_error",
+          "wall_y_plus",
+          "maximum_aspect_ratio",
+          "runtime_wall_seconds",
+          "source_accepted"
+        ],
+        "properties": {
+          "cross_section_cells": {"type": "integer", "minimum": 2},
+          "characteristic_size_over_diameter": {"type": "number", "exclusiveMinimum": 0},
+          "pressure_gradient_pa_per_m": {"type": "number", "exclusiveMinimum": 0},
+          "pressure_gradient_tail_relative_range": {"type": "number", "minimum": 0},
+          "stability_window_samples": {"type": "integer", "minimum": 10},
+          "colebrook_relative_error": {"type": "number", "minimum": 0},
+          "wall_y_plus": {
+            "type": "object",
+            "required": ["minimum", "average", "maximum"],
+            "properties": {
+              "minimum": {"type": "number", "minimum": 0},
+              "average": {"type": "number", "minimum": 0},
+              "maximum": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          },
+          "maximum_aspect_ratio": {"type": "number", "minimum": 0},
+          "runtime_wall_seconds": {"type": "number", "minimum": 0},
+          "source_accepted": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "fine_pair_pressure_gradient_relative_change",
+        "pressure_gradient_relative_envelope",
+        "monotonic"
+      ],
+      "properties": {
+        "fine_pair_pressure_gradient_relative_change": {"type": "number", "minimum": 0},
+        "pressure_gradient_relative_envelope": {"type": "number", "minimum": 0},
+        "monotonic": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "gci": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["applicable", "reason"],
+          "properties": {
+            "applicable": {"const": false},
+            "reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["applicable", "result", "acceptance"],
+          "properties": {
+            "applicable": {"const": true},
+            "result": {"type": "object"},
+            "acceptance": {"type": "object"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "acceptance": {
+      "type": "object",
+      "required": [
+        "source_results_accepted",
+        "wall_model_consistent",
+        "discretization_plateau",
+        "uncertainty_promotion_accepted"
+      ],
+      "properties": {
+        "source_results_accepted": {"type": "boolean"},
+        "wall_model_consistent": {"type": "boolean"},
+        "discretization_plateau": {"type": "boolean"},
+        "uncertainty_promotion_accepted": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

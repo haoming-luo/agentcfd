@@ -8,7 +8,11 @@ from .openfoam import (
     prepare_pipe_grid_study,
 )
 from .reference import ReferencePipeProvider
-from .openfoam_precursor import OpenFOAMTurbulentPrecursorProvider
+from .openfoam_precursor import (
+    OpenFOAMTurbulentPrecursorProvider,
+    PreparedOpenFOAMTurbulentWallStudy,
+    prepare_turbulent_wall_study,
+)
 
 __all__ = [
     "OpenFOAMMeshControls",
@@ -17,8 +21,10 @@ __all__ = [
     "OpenFOAMTurbulentPrecursorProvider",
     "PreparedOpenFOAMCase",
     "PreparedOpenFOAMGridStudy",
+    "PreparedOpenFOAMTurbulentWallStudy",
     "Provider",
     "ProviderDescriptor",
     "ReferencePipeProvider",
     "prepare_pipe_grid_study",
+    "prepare_turbulent_wall_study",
 ]

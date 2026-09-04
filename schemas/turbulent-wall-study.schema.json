@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/turbulent-wall-study.schema.json",
+  "title": "AgentCFD fixed-wall-cell turbulent precursor study 0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "model_sha256",
+    "quantity",
+    "nominal_wall_cell_fraction",
+    "cases",
+    "metrics",
+    "gci",
+    "acceptance"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.turbulent-wall-study/0.1"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "quantity": {"const": "flow.pressure_gradient"},
+    "nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+    "sources": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": [
+          "cross_section_cells",
+          "cell_count",
+          "nominal_wall_cell_height_m",
+          "pressure_gradient_pa_per_m",
+          "pressure_gradient_tail_relative_range",
+          "stability_window_samples",
+          "colebrook_relative_error",
+          "wall_y_plus",
+          "maximum_aspect_ratio",
+          "runtime_wall_seconds",
+          "source_accepted"
+        ],
+        "properties": {
+          "cross_section_cells": {"type": "integer", "minimum": 2},
+          "cell_count": {"type": "integer", "minimum": 1},
+          "nominal_wall_cell_height_m": {"type": "number", "exclusiveMinimum": 0},
+          "pressure_gradient_pa_per_m": {"type": "number", "exclusiveMinimum": 0},
+          "pressure_gradient_tail_relative_range": {"type": "number", "minimum": 0},
+          "stability_window_samples": {"type": "integer", "minimum": 10},
+          "colebrook_relative_error": {"type": "number", "minimum": 0},
+          "wall_y_plus": {
+            "type": "object",
+            "required": ["minimum", "average", "maximum"],
+            "properties": {
+              "minimum": {"type": "number", "minimum": 0},
+              "average": {"type": "number", "minimum": 0},
+              "maximum": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          },
+          "maximum_aspect_ratio": {"type": "number", "minimum": 0},
+          "runtime_wall_seconds": {"type": "number", "minimum": 0},
+          "source_accepted": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": [
+        "mean_y_plus_relative_spread",
+        "fine_pair_pressure_gradient_relative_change",
+        "pressure_gradient_relative_envelope",
+        "monotonic"
+      ],
+      "properties": {
+        "mean_y_plus_relative_spread": {"type": "number", "minimum": 0},
+        "fine_pair_pressure_gradient_relative_change": {"type": "number", "minimum": 0},
+        "pressure_gradient_relative_envelope": {"type": "number", "minimum": 0},
+        "monotonic": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "gci": {
+      "type": "object",
+      "required": ["applicable", "reason"],
+      "properties": {
+        "applicable": {"const": false},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "required": [
+        "wall_strategy_accepted",
+        "discretization_plateau",
+        "uncertainty_promotion_accepted",
+        "checks"
+      ],
+      "properties": {
+        "wall_strategy_accepted": {"type": "boolean"},
+        "discretization_plateau": {"type": "boolean"},
+        "uncertainty_promotion_accepted": {"const": false},
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "passed", "value", "limit"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "passed": {"type": "boolean"},
+              "value": {},
+              "limit": {}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

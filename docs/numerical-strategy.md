@@ -105,9 +105,43 @@ materially better than the 10.94% difference in the developing 3 m pipe while
 preserving the same c8 cross-section and wall treatment. A
 c8/12/16/20/24/32 scan was non-monotonic and the finer members crossed below
 the declared y-plus 30 high-Re limit; it is diagnostic evidence, not a GCI
-family. The next numerical gate is either a constant-y-plus wall-function
-family or an explicitly declared wall-resolved SST family with graded
-near-wall cells.
+family.
+
+The redesigned mesh exposes `nominal_wall_cell_fraction`. AgentCFD treats this
+as the first wall-adjacent cell width divided by the nominal outer O-grid
+radial-edge length and solves OpenFOAM's end/start `simpleGrading` ratio from
+the complete geometric series. This follows the official
+[OpenFOAM blockMesh grading definition](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/blockMesh/),
+where expansion is end-cell width divided by start-cell width rather than a
+per-cell growth factor. Holding the fraction at 0.0625 fixed the design
+height at 1.65186 mm for c8/c16/c32. Real v2606 runs kept average y-plus within
+43.63--44.39 (1.72% relative spread) and the full wall range within
+38.46--47.86. The c16-to-c32 pressure-gradient change was 0.630%.
+
+This is a wall-strategy and resolution-plateau certificate, not a formal GCI.
+Early five-sample tail checks falsely accepted slow drift on the finer grids.
+The production gate now requires 50 samples; after 1000/4000/6000 iterations,
+the pressure gradients were 84.7583, 85.0938, and 85.6336 Pa/m and converged
+monotonically. Fixed physical wall height nevertheless requires different
+radial grading at each resolution, so the meshes are not
+geometrically similar. `verify turbulent-wall-study` records both successful
+wall control and failed uncertainty promotion rather than applying Richardson
+extrapolation outside its assumptions. The remaining numerical gate is a
+separate geometrically similar family that stays within one valid wall model,
+or a declared wall-resolved SST family with its own verification policy.
+
+A complementary uniform c8/c12/c18 family tests formal GCI eligibility while
+remaining in the same high-Re wall-function range. The ratio is exactly 1.5,
+the combined y-plus range is 34.34--93.59, and all three sources pass the new
+50-sample stability gate. For this one-axial-layer periodic problem, AgentCFD
+uses cross-section characteristic size `h/D = 1/N`; total cell count to the
+`-1/3` power would incorrectly treat the extruded 2-D refinement as 3-D.
+Measured pressure gradients were 85.5393, 85.0416, and 85.2219 Pa/m. The fine
+pair differs by only 0.212%, but the sequence is oscillatory, so
+`verify turbulent-precursor-grid-study` rejects Richardson extrapolation and
+uncertainty promotion. This negative result is retained in
+`openfoam-v2606-turbulent-gci-candidate.json` rather than converted into a
+misleading GCI.
 
 The c8 precursor is now mapped through a deterministic `mapFields` contract
 into the 3 m target. The target pressure loss differs by 1.05% from the source

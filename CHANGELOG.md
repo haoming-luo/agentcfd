@@ -15,6 +15,27 @@
   their absolute linear tolerance.
 - Publish the precursor-map JSON Schema and a verified 38,400-cell OpenCFD
   v2606 execution record.
+- Add physical near-wall control through `nominal_wall_cell_fraction`; solve
+  OpenFOAM block grading from the geometric series and preserve the control in
+  prepared-case recovery, result quantities, CLI, and precursor compatibility.
+- Reject cumulative precursor grading before meshing when the estimated axial-
+  to-smallest-radial cell ratio already exceeds the declared aspect limit.
+- Add the installed `turbulent-wall-study` contract and CLI verifier, which
+  separates wall-function consistency and a fine-pair plateau from formal GCI
+  applicability and uncertainty promotion.
+- Add content-addressed `prepare`/`run openfoam-turbulent-wall-study` commands
+  that bind three precursor meshes and iteration budgets, execute them, and
+  emit the assessment without manual result assembly.
+- Replace the precursor's five-sample local stability gate with an explicit
+  50-sample window after extended runs exposed slow false convergence.
+- Record real OpenCFD v2606 c8/c16/c32 fixed-wall-cell evidence at Re 99,621.
+  Mean y-plus varies by 1.72%, pressure gradient converges monotonically, and
+  the fine-pair change is 0.630%; non-similar refinement correctly remains
+  ineligible for GCI.
+- Add a precursor-specific geometrically similar GCI candidate verifier using
+  `h/D = 1/cross_section_cells` rather than an invalid 3-D cell-count exponent.
+  The real uniform c8/c12/c18 candidate keeps y-plus above 30 and reaches a
+  0.212% fine-pair plateau, but rejects GCI because the sequence is oscillatory.
 
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the

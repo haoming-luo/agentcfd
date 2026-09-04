@@ -42,8 +42,12 @@ follow-up now establish a 0.00689% c16-to-c32 pressure-gradient plateau with
 about 1.85% smooth-Colebrook difference. A bounded standard k-epsilon precursor
 and identical-mesh model study are implemented; at Re 99,621 SST/Spalding is
 1.851% from the correlation versus 3.289% for k-epsilon/nutk. Both remain
-benchmark-specific. Multi-Re numerical uncertainty and independent
-experimental validation are the next promotion gates.
+benchmark-specific. A source-hashed four-point matrix now spans Re
+49,810--498,104 with adaptive wall spacing and all runtime y-plus gates passing.
+It finds SST/Spalding better at the two lower points and k-epsilon/nutk better
+at the two higher points, so the software rejects a universal model default.
+The next promotion gates are high-Re accuracy below 2%, formal numerical
+uncertainty, and independent experimental validation.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

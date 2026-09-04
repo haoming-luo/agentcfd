@@ -225,6 +225,25 @@ The assessment therefore nominates SST/Spalding for this benchmark only and
 sets `default_promotion_accepted=false` pending multi-Reynolds and independent
 experimental validation.
 
+The multi-Re follow-up is recorded in
+`docs/openfoam-v2606-turbulent-model-sweep.json`, with all four point
+assessments retained as source-hashed documents. It spans Re 49,810, 99,621,
+199,242, and 498,104. All eight source runs pass convergence, conservation,
+mesh, runtime-version, field, stability, and solved y-plus gates. Near-wall
+fractions vary by operating point while each SST/k-epsilon pair remains on an
+identical mesh; this avoids the invalid assumption that one physical wall cell
+serves a decade of Reynolds number.
+
+SST/Spalding correlation differences are 0.953%, 1.851%, 3.050%, and 3.589%.
+K-epsilon/nutk differences are 3.661%, 3.289%, 2.928%, and 2.428%. The preferred
+pair therefore changes between the second and third points. The verifier sets
+`evidence_matrix_accepted=true`, but also
+`model_selection_required=true`, `all_point_accuracy_targets_met=false`,
+`range_candidate_accepted=false`, and `default_promotion_accepted=false`.
+This is a usable negative decision: neither model may be silently selected as
+a universal industrial default, and the two high-Re points still require
+numerical-uncertainty and independent experimental work.
+
 The real k-epsilon work also exposed a numerical-control defect: the outer
 SIMPLE target had been reused as each inner linear solver's absolute tolerance,
 allowing equations to be skipped near convergence. The generated dictionary

@@ -56,6 +56,14 @@ estimate first-cell-centre distance and nominal first-cell thickness for a
 target `y+`. The estimate is deliberately restricted to `Re >= 4000` and does
 not replace post-processing the achieved local wall coordinate.
 
+The same calculation is available to humans and agents through `agentcfd
+calculate wall-resolution`. The OpenFOAM model-study workflow accepts
+`--target-y-plus`; it converts the estimated cell thickness into the circular
+O-grid's nominal wall-cell fraction and embeds the prediction, Reynolds number,
+recommended range, and mandatory runtime-verification flag in the prepared
+plan. This is a preflight setup decision only: solved patch minimum/mean/maximum
+y-plus still controls acceptance.
+
 OpenFOAM's [wall-function guidance](https://doc.openfoam.com/2606/tools/processing/models/turbulence/ras/wall-functions/)
 identifies approximately `y+ <= 1` for wall-resolved operation and `30 <= y+
 <= 300` for high-Re wall functions, with the buffer layer between them being a

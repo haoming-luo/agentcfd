@@ -3,13 +3,38 @@
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-turbulent-model-study.schema.json",
   "title": "AgentCFD prepared OpenFOAM turbulent model study 0.1",
   "type": "object",
-  "required": ["schema", "quantity", "cross_section_cells", "nominal_wall_cell_fraction", "maximum_iterations", "scientific_inputs", "cases"],
+  "required": ["schema", "quantity", "cross_section_cells", "nominal_wall_cell_fraction", "maximum_iterations", "wall_resolution_screen", "scientific_inputs", "cases"],
   "properties": {
     "schema": {"const": "agentcfd.openfoam-turbulent-model-study/0.1"},
     "quantity": {"const": "flow.darcy_friction_factor"},
     "cross_section_cells": {"type": "integer", "minimum": 2},
     "nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
     "maximum_iterations": {"type": "integer", "minimum": 5},
+    "wall_resolution_screen": {
+      "type": "object",
+      "required": ["method", "prediction_only", "reynolds_number", "nominal_wall_cell_height_m", "predicted_nominal_y_plus", "target_y_plus", "recommended_nominal_wall_cell_fraction", "recommended_fraction_range", "predicted_high_re_wall_function_applicable", "runtime_y_plus_verification_required"],
+      "properties": {
+        "method": {"type": "string", "minLength": 1},
+        "prediction_only": {"const": true},
+        "reynolds_number": {"type": "number", "minimum": 4000},
+        "nominal_wall_cell_height_m": {"type": "number", "exclusiveMinimum": 0},
+        "predicted_nominal_y_plus": {"type": "number", "exclusiveMinimum": 0},
+        "target_y_plus": {"type": "number", "exclusiveMinimum": 0},
+        "recommended_nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0},
+        "recommended_fraction_range": {
+          "type": "object",
+          "required": ["minimum", "maximum"],
+          "properties": {
+            "minimum": {"type": "number", "exclusiveMinimum": 0},
+            "maximum": {"type": "number", "exclusiveMinimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "predicted_high_re_wall_function_applicable": {"type": "boolean"},
+        "runtime_y_plus_verification_required": {"const": true}
+      },
+      "additionalProperties": false
+    },
     "scientific_inputs": {
       "type": "object",
       "required": ["cases"],

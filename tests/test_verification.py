@@ -7,6 +7,7 @@ from agentcfd.verification import (
     GridConvergenceResult,
     GridSolution,
     assess_turbulent_model_study,
+    assess_turbulent_model_sweep,
     assess_turbulent_precursor_grid_study,
     assess_turbulent_wall_function_study,
     assess_turbulent_wall_study,
@@ -352,6 +353,10 @@ def test_wall_function_study_is_identical_mesh_screening_not_default_promotion()
         ] = wall_function
         record["quantities"].update(
             {
+                "flow.reynolds_number": {
+                    "value": 998.2 * 0.1 / 0.001002,
+                    "unit": "1",
+                },
                 "flow.darcy_friction_factor": {"value": 0.018, "unit": "1"},
                 "reference.flow.darcy_friction_factor": {
                     "value": 0.0183,
@@ -413,6 +418,10 @@ def test_turbulence_model_study_holds_non_model_inputs_and_mesh_constant():
         )
         record["quantities"].update(
             {
+                "flow.reynolds_number": {
+                    "value": 998.2 * 0.1 / 0.001002,
+                    "unit": "1",
+                },
                 "flow.darcy_friction_factor": {"value": 0.018, "unit": "1"},
                 "reference.flow.darcy_friction_factor": {
                     "value": 0.0183,
@@ -434,8 +443,76 @@ def test_turbulence_model_study_holds_non_model_inputs_and_mesh_constant():
     assert result["cases"][0]["relative_runtime_to_fastest"] == pytest.approx(18 / 17)
 
     records[1]["scientific_inputs"]["record"]["model"]["domain"]["diameter"] = 0.2
-    with pytest.raises(ValueError, match="share all non-model scientific inputs"):
+    with pytest.raises(ValueError, match="Reynolds number disagrees with model inputs"):
         assess_turbulent_model_study(records)
+
+
+def _model_study_assessment(reynolds, sst_error, k_epsilon_error):
+    return {
+        "schema": "agentcfd.turbulent-model-study/0.1",
+        "mesh_sha256": "c" * 64,
+        "cross_section_cells": 16,
+        "nominal_wall_cell_fraction": 0.0625,
+        "maximum_iterations": 4000,
+        "reynolds_number": reynolds,
+        "cases": [
+            {
+                "turbulence_model": "k-omega-sst",
+                "nut_wall_function": "nutUSpaldingWallFunction",
+                "reynolds_number": reynolds,
+                "colebrook_relative_error": sst_error,
+                "runtime_wall_seconds": 18.0,
+                "wall_y_plus": {"minimum": 38.0, "average": 44.0, "maximum": 48.0},
+                "source_accepted": True,
+            },
+            {
+                "turbulence_model": "k-epsilon",
+                "nut_wall_function": "nutkWallFunction",
+                "reynolds_number": reynolds,
+                "colebrook_relative_error": k_epsilon_error,
+                "runtime_wall_seconds": 16.0,
+                "wall_y_plus": {"minimum": 38.0, "average": 44.0, "maximum": 48.0},
+                "source_accepted": True,
+            },
+        ],
+        "acceptance": {
+            "source_results_accepted": True,
+            "identical_mesh": True,
+            "non_model_inputs_identical": True,
+            "wall_function_y_plus_range": True,
+            "screening_accepted": min(sst_error, k_epsilon_error) <= 0.02,
+        },
+    }
+
+
+def test_turbulence_model_sweep_promotes_only_a_sampled_range_candidate():
+    studies = [
+        _model_study_assessment(49810.0, 0.014, 0.035),
+        _model_study_assessment(99621.0, 0.0185, 0.0329),
+        _model_study_assessment(199242.0, 0.028, 0.041),
+        _model_study_assessment(498104.0, 0.032, 0.046),
+    ]
+    for index, study in enumerate(studies):
+        study["mesh_sha256"] = f"{index + 1:x}" * 64
+        study["nominal_wall_cell_fraction"] = (0.15, 0.08, 0.043, 0.019)[index]
+
+    result = assess_turbulent_model_sweep(studies)
+
+    assert result["recommendation"]["candidate_turbulence_model"] == "k-omega-sst"
+    assert result["acceptance"]["consistent_candidate"] is True
+    assert result["acceptance"]["range_candidate_accepted"] is True
+    assert result["acceptance"]["evidence_matrix_accepted"] is True
+    assert result["acceptance"]["default_promotion_accepted"] is False
+    assert result["reynolds_range"]["point_count"] == 4
+    assert result["mesh_strategy"] == {
+        "pairwise_identical_model_mesh": True,
+        "adaptive_wall_cell_fraction": True,
+        "unique_mesh_count": 4,
+    }
+
+    studies[3]["reynolds_number"] = 199242.0
+    with pytest.raises(ValueError, match="Reynolds numbers must be distinct"):
+        assess_turbulent_model_sweep(studies)
 
 
 def test_uniform_precursor_grid_study_rejects_oscillation_and_can_compute_gci():

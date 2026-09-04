@@ -282,10 +282,28 @@ agentcfd run openfoam-turbulent-model-study model-study \
   --container-image opencfd/openfoam-run:2606 --json
 ```
 
+For Reynolds sweeps, ask AgentCFD to derive the near-wall spacing instead of
+reusing one physical cell height blindly:
+
+```bash
+agentcfd prepare openfoam-turbulent-model-study re-low \
+  --velocity 0.5 --target-y-plus 40 --json
+agentcfd calculate wall-resolution --density 998.2 --viscosity 0.001002 \
+  --velocity 0.5 --diameter 0.1 --target-y-plus 40 --json
+agentcfd verify turbulent-model-sweep study-1.json study-2.json study-3.json
+```
+
+The prepared plan records the correlation-based wall-spacing prediction and
+recommended fraction, but runtime y-plus remains mandatory evidence. Across a
+sweep each model pair must share an identical mesh; different Reynolds points
+may use different wall-cell fractions to preserve one declared y-plus policy.
+
 The same assessment can be recreated from two accepted results with
 `agentcfd verify turbulent-model-study`. The certificate ranks accuracy and
 runtime but always keeps general default promotion false at a single Reynolds
-number.
+number. The current four-point OpenCFD v2606 matrix finds SST/Spalding best at
+Re 49,810 and 99,621, then k-epsilon/nutk best at Re 199,242 and 498,104. It
+therefore accepts the evidence matrix but rejects a single range-wide default.
 
 A uniform, geometrically similar candidate can be checked separately with
 `agentcfd verify turbulent-precursor-grid-study`. It uses the periodic
@@ -386,6 +404,7 @@ authoritative.
 - [OpenFOAM v2606 wall-function sensitivity evidence](docs/openfoam-v2606-wall-function-study.json)
 - [OpenFOAM v2606 Spalding fixed-wall evidence](docs/openfoam-v2606-spalding-fixed-wall-study.json)
 - [OpenFOAM v2606 turbulence-model sensitivity evidence](docs/openfoam-v2606-turbulent-model-study.json)
+- [OpenFOAM v2606 multi-Re turbulence-model matrix](docs/openfoam-v2606-turbulent-model-sweep.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

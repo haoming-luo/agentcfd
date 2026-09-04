@@ -3,7 +3,7 @@
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/turbulent-model-study.schema.json",
   "title": "AgentCFD turbulent model sensitivity study 0.1",
   "type": "object",
-  "required": ["schema", "mesh_sha256", "cross_section_cells", "nominal_wall_cell_fraction", "maximum_iterations", "quantity", "cases", "recommendation", "acceptance"],
+  "required": ["schema", "mesh_sha256", "cross_section_cells", "nominal_wall_cell_fraction", "maximum_iterations", "reynolds_number", "quantity", "cases", "recommendation", "acceptance"],
   "properties": {
     "schema": {"const": "agentcfd.turbulent-model-study/0.1"},
     "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
@@ -12,6 +12,7 @@
       "oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}]
     },
     "maximum_iterations": {"type": "integer", "minimum": 5},
+    "reynolds_number": {"type": "number", "minimum": 4000},
     "quantity": {"const": "flow.darcy_friction_factor"},
     "sources": {
       "type": "array",
@@ -33,11 +34,12 @@
       "maxItems": 2,
       "items": {
         "type": "object",
-        "required": ["turbulence_model", "nut_wall_function", "model_sha256", "pressure_gradient_pa_per_m", "darcy_friction_factor", "reference_darcy_friction_factor", "colebrook_relative_error", "wall_y_plus", "runtime_wall_seconds", "relative_runtime_to_fastest", "source_accepted"],
+        "required": ["turbulence_model", "nut_wall_function", "model_sha256", "reynolds_number", "pressure_gradient_pa_per_m", "darcy_friction_factor", "reference_darcy_friction_factor", "colebrook_relative_error", "wall_y_plus", "runtime_wall_seconds", "relative_runtime_to_fastest", "source_accepted"],
         "properties": {
           "turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
           "nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
           "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "reynolds_number": {"type": "number", "minimum": 4000},
           "pressure_gradient_pa_per_m": {"type": "number", "minimum": 0},
           "darcy_friction_factor": {"type": "number", "minimum": 0},
           "reference_darcy_friction_factor": {"type": "number", "minimum": 0},

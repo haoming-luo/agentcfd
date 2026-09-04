@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/turbulent-model-sweep.schema.json",
+  "title": "AgentCFD turbulent model Reynolds sweep 0.1",
+  "type": "object",
+  "required": ["schema", "cross_section_cells", "maximum_iterations", "mesh_strategy", "reynolds_range", "points", "candidate_transitions", "model_statistics", "recommendation", "acceptance"],
+  "properties": {
+    "schema": {"const": "agentcfd.turbulent-model-sweep/0.1"},
+    "cross_section_cells": {"type": "integer", "minimum": 2},
+    "maximum_iterations": {"type": "integer", "minimum": 5},
+    "mesh_strategy": {
+      "type": "object",
+      "required": ["pairwise_identical_model_mesh", "adaptive_wall_cell_fraction", "unique_mesh_count"],
+      "properties": {
+        "pairwise_identical_model_mesh": {"const": true},
+        "adaptive_wall_cell_fraction": {"type": "boolean"},
+        "unique_mesh_count": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "reynolds_range": {
+      "type": "object",
+      "required": ["minimum", "maximum", "point_count"],
+      "properties": {
+        "minimum": {"type": "number", "minimum": 4000},
+        "maximum": {"type": "number", "minimum": 4000},
+        "point_count": {"type": "integer", "minimum": 3}
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "points": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/point"}
+    },
+    "candidate_transitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["lower_reynolds_number", "upper_reynolds_number", "from_turbulence_model", "to_turbulence_model"],
+        "properties": {
+          "lower_reynolds_number": {"type": "number", "minimum": 4000},
+          "upper_reynolds_number": {"type": "number", "minimum": 4000},
+          "from_turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+          "to_turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "model_statistics": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/modelStatistics"}
+    },
+    "recommendation": {
+      "type": "object",
+      "required": ["candidate_turbulence_model", "candidate_nut_wall_function", "basis", "sampled_range_only", "operational_use"],
+      "properties": {
+        "candidate_turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+        "candidate_nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
+        "basis": {"type": "string", "minLength": 1},
+        "sampled_range_only": {"const": true},
+        "operational_use": {"enum": ["sampled-range-candidate", "diagnostic-ranking-only"]}
+      },
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "required": ["source_results_accepted", "pairwise_identical_model_mesh", "wall_function_y_plus_range", "consistent_candidate", "model_selection_required", "all_point_accuracy_targets_met", "evidence_matrix_accepted", "candidate_within_range_error_limit", "maximum_range_relative_error", "range_candidate_accepted", "default_promotion_accepted", "default_promotion_reason"],
+      "properties": {
+        "source_results_accepted": {"type": "boolean"},
+        "pairwise_identical_model_mesh": {"const": true},
+        "wall_function_y_plus_range": {"type": "boolean"},
+        "consistent_candidate": {"type": "boolean"},
+        "model_selection_required": {"type": "boolean"},
+        "all_point_accuracy_targets_met": {"type": "boolean"},
+        "evidence_matrix_accepted": {"type": "boolean"},
+        "candidate_within_range_error_limit": {"type": "boolean"},
+        "maximum_range_relative_error": {"type": "number", "exclusiveMinimum": 0},
+        "range_candidate_accepted": {"type": "boolean"},
+        "default_promotion_accepted": {"const": false},
+        "default_promotion_reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["turbulence_model", "nut_wall_function", "colebrook_relative_error", "runtime_wall_seconds", "wall_y_plus", "source_accepted"],
+      "properties": {
+        "turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+        "nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
+        "colebrook_relative_error": {"type": "number", "minimum": 0},
+        "runtime_wall_seconds": {"type": "number", "minimum": 0},
+        "wall_y_plus": {
+          "type": "object",
+          "required": ["minimum", "average", "maximum"],
+          "properties": {
+            "minimum": {"type": "number", "minimum": 0},
+            "average": {"type": "number", "minimum": 0},
+            "maximum": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "source_accepted": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "point": {
+      "type": "object",
+      "required": ["reynolds_number", "mesh_sha256", "nominal_wall_cell_fraction", "cases", "candidate_turbulence_model", "point_screening_accepted", "source_results_accepted", "wall_function_y_plus_range"],
+      "properties": {
+        "reynolds_number": {"type": "number", "minimum": 4000},
+        "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "nominal_wall_cell_fraction": {
+          "oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}]
+        },
+        "cases": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"$ref": "#/$defs/case"}},
+        "candidate_turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+        "point_screening_accepted": {"type": "boolean"},
+        "source_results_accepted": {"type": "boolean"},
+        "wall_function_y_plus_range": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "modelStatistics": {
+      "type": "object",
+      "required": ["turbulence_model", "nut_wall_function", "mean_correlation_relative_error", "maximum_correlation_relative_error", "mean_runtime_wall_seconds", "point_wins"],
+      "properties": {
+        "turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+        "nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
+        "mean_correlation_relative_error": {"type": "number", "minimum": 0},
+        "maximum_correlation_relative_error": {"type": "number", "minimum": 0},
+        "mean_runtime_wall_seconds": {"type": "number", "minimum": 0},
+        "point_wins": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

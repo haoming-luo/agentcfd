@@ -150,14 +150,12 @@ differences of 5.634%, 1.851%, and 6.185%. A tighter-solver fixed-wall-height
 Spalding c8/c16/c32 follow-up produced 1.746%, 1.851%, and 1.858% differences,
 with only a 0.00689% fine-pair pressure-gradient change. This clean plateau
 shows that further interior refinement does not remove the remaining model/
-reference difference. Spalding is therefore the current smooth-pipe candidate,
-not yet the global default: c16 checks at
-Re 199,242 and 498,104 retain 3.07--3.20% correlation differences, and no
-experimental uncertainty budget has been applied. AgentCFD exposes the choice,
-hashes it into each case, and keeps default promotion false until the Reynolds
-range and independent reference data are adequate.
+reference difference. Spalding is therefore a smooth-pipe candidate at this
+operating point, not the global default. AgentCFD exposes the choice, hashes it
+into each case, and keeps default promotion false until the Reynolds range and
+independent reference data are adequate.
 
-The next model-form screen holds that c16 mesh and every non-model input fixed.
+The first model-form screen holds that c16 mesh and every non-model input fixed.
 With the inner linear solves tightened independently of the outer SIMPLE
 target, SST plus `nutUSpaldingWallFunction` differs from smooth Colebrook by
 1.851%, while standard k-epsilon plus `nutkWallFunction` differs by 3.289%.
@@ -167,6 +165,22 @@ candidate for the present smooth-pipe benchmark, not as a general-purpose
 default. The study contract requires identical native mesh SHA-256, physical
 inputs, numerical procedure, iteration budget, stability window, and y-plus
 regime before comparison.
+
+A four-point follow-up now covers Re 49,810--498,104. Within every point,
+SST/Spalding and k-epsilon/nutk use the same native mesh; across points the
+wall-cell fraction adapts to a declared correlation-based y-plus target. The
+preflight accurately diagnosed the original Re 49,810 mesh as buffer-layer
+sampling (actual minimum y-plus 20.95--21.64). A y+=40 design moved the solved
+minimum to 39.44--40.24 and reduced the SST smooth-Colebrook difference to
+0.953%.
+
+The ranking is not constant: SST/Spalding is best at Re 49,810 and 99,621
+(0.953% and 1.851%), while k-epsilon/nutk is best at Re 199,242 and 498,104
+(2.928% and 2.428%). K-epsilon is also about 7.7% faster on the four-point mean.
+Consequently the matrix itself is accepted as valid evidence, but the
+range-wide candidate, the all-point 2% accuracy gate, and general default
+promotion are all rejected. The observed ranking transition is bracketed
+between Re 99,621 and 199,242; it is not treated as a calibrated switch point.
 
 The c8 precursor is now mapped through a deterministic `mapFields` contract
 into the 3 m target. The target pressure loss differs by 1.05% from the source

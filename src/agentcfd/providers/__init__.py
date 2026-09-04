@@ -16,6 +16,7 @@ from .openfoam_precursor import (
     prepare_turbulent_wall_function_study,
     prepare_turbulent_model_study,
     prepare_turbulent_wall_study,
+    turbulent_pipe_wall_mesh_screen,
 )
 
 __all__ = [
@@ -33,6 +34,7 @@ __all__ = [
     "ReferencePipeProvider",
     "prepare_pipe_grid_study",
     "prepare_turbulent_wall_study",
+    "turbulent_pipe_wall_mesh_screen",
     "prepare_turbulent_wall_function_study",
     "prepare_turbulent_model_study",
 ]

@@ -157,6 +157,7 @@ class PreparedOpenFOAMTurbulentModelStudy:
     cross_section_cells: int
     nominal_wall_cell_fraction: float
     maximum_iterations: int
+    wall_resolution_screen: dict[str, object]
     cases: tuple[dict[str, object], ...]
     scientific_inputs: dict[str, object]
     schema: str = "agentcfd.openfoam-turbulent-model-study/0.1"
@@ -168,6 +169,7 @@ class PreparedOpenFOAMTurbulentModelStudy:
             "cross_section_cells": self.cross_section_cells,
             "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
             "maximum_iterations": self.maximum_iterations,
+            "wall_resolution_screen": self.wall_resolution_screen,
             "scientific_inputs": self.scientific_inputs,
             "cases": list(self.cases),
         }
@@ -195,6 +197,81 @@ def _model_study_comparison_inputs(step) -> dict[str, object]:
     }
 
 
+def turbulent_pipe_wall_mesh_screen(
+    step,
+    *,
+    nominal_wall_cell_fraction: float,
+    target_y_plus: float = 50.0,
+) -> dict[str, object]:
+    """Predict a circular-pipe wall-cell fraction before an OpenFOAM run.
+
+    The correlation estimate is a setup screen, not solved-field evidence.  It
+    prevents agents from blindly reusing one physical wall spacing across a
+    Reynolds-number sweep while preserving the runtime y-plus gate.
+    """
+
+    fraction = positive_float(
+        nominal_wall_cell_fraction,
+        name="nominal_wall_cell_fraction",
+    )
+    if fraction >= 1.0:
+        raise ValueError("nominal_wall_cell_fraction must be below one.")
+    selected_target = positive_float(target_y_plus, name="target_y_plus")
+    model = step.model
+    inlets = [
+        value
+        for value in model.boundary_conditions.values()
+        if isinstance(value, boundaries.TurbulentMeanVelocityInlet)
+    ]
+    if len(inlets) != 1:
+        raise ValueError("Wall-mesh screening requires one turbulent mean-velocity inlet.")
+    velocity = inlets[0].velocity
+    common = {
+        "density": model.fluid.density,
+        "dynamic_viscosity": model.fluid.dynamic_viscosity,
+        "mean_velocity": velocity,
+        "hydraulic_diameter": model.domain.diameter,
+    }
+    target = engineering.turbulent_pipe_wall_resolution(
+        **common,
+        target_y_plus=selected_target,
+    )
+    lower = engineering.turbulent_pipe_wall_resolution(**common, target_y_plus=30.0)
+    upper = engineering.turbulent_pipe_wall_resolution(**common, target_y_plus=300.0)
+    radius = model.domain.diameter / 2.0
+    outer_edge_length = radius * (1.0 - math.sqrt(2.0) / 3.0)
+    nominal_height = _nominal_wall_cell_height(
+        radius=radius,
+        cross_cells=2,
+        nominal_wall_cell_fraction=fraction,
+    )
+    predicted_y_plus = engineering.y_plus(
+        wall_distance=nominal_height / 2.0,
+        friction_velocity=target.friction_velocity,
+        density=model.fluid.density,
+        dynamic_viscosity=model.fluid.dynamic_viscosity,
+    )
+    return {
+        "method": "smooth-Colebrook bulk-wall-stress estimate",
+        "prediction_only": True,
+        "reynolds_number": target.reynolds_number,
+        "nominal_wall_cell_height_m": nominal_height,
+        "predicted_nominal_y_plus": predicted_y_plus,
+        "target_y_plus": selected_target,
+        "recommended_nominal_wall_cell_fraction": (
+            target.nominal_first_cell_thickness / outer_edge_length
+        ),
+        "recommended_fraction_range": {
+            "minimum": lower.nominal_first_cell_thickness / outer_edge_length,
+            "maximum": upper.nominal_first_cell_thickness / outer_edge_length,
+        },
+        "predicted_high_re_wall_function_applicable": 30.0
+        <= predicted_y_plus
+        <= 300.0,
+        "runtime_y_plus_verification_required": True,
+    }
+
+
 def prepare_turbulent_model_study(
     sst_step,
     k_epsilon_step,
@@ -202,6 +279,7 @@ def prepare_turbulent_model_study(
     *,
     cross_section_cells: int = 16,
     nominal_wall_cell_fraction: float = 0.0625,
+    target_y_plus: float = 50.0,
     maximum_iterations: int = 4000,
 ) -> PreparedOpenFOAMTurbulentModelStudy:
     """Prepare SST/Spalding and k-epsilon/nutk cases on one mesh."""
@@ -281,6 +359,11 @@ def prepare_turbulent_model_study(
         cross_section_cells=cross_cells,
         nominal_wall_cell_fraction=fraction,
         maximum_iterations=iteration_limit,
+        wall_resolution_screen=turbulent_pipe_wall_mesh_screen(
+            sst_step,
+            nominal_wall_cell_fraction=fraction,
+            target_y_plus=target_y_plus,
+        ),
         cases=tuple(cases),
         scientific_inputs={"cases": scientific_cases},
     )

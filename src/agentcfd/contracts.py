@@ -28,6 +28,7 @@ _SCHEMAS = (
     "turbulent-precursor-grid-study.schema.json",
     "turbulent-wall-function-study.schema.json",
     "turbulent-model-study.schema.json",
+    "turbulent-model-sweep.schema.json",
     "turbulent-wall-study.schema.json",
     "validation-point.schema.json",
 )

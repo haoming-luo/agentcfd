@@ -121,6 +121,26 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="verification.turbulent-model-reynolds-sweep",
+        maturity="experimental",
+        scope=(
+            "Source-hashed multi-Re smooth-pipe comparison of SST/Spalding and "
+            "standard k-epsilon/nutk with pairwise-identical meshes and adaptive "
+            "near-wall spacing."
+        ),
+        evidence=(
+            "installed point-study and sweep JSON contracts",
+            "correlation-based preflight followed by solved y-plus gates",
+            "four-point OpenCFD v2606 matrix over Re 49,810--498,104",
+            "explicit model-ranking transition detection",
+        ),
+        limitations=(
+            "Smooth-Colebrook agreement is a model-form diagnostic, not experimental validation.",
+            "The two high-Re best-model differences remain above the 2% point target.",
+            "No single turbulence model is promoted across the sampled range.",
+        ),
+    ),
+    Capability(
         name="provider.openfoam",
         maturity="experimental",
         scope="Deterministic external OpenFOAM case lowering and bounded process execution.",
@@ -165,6 +185,7 @@ _CAPABILITIES = (
             "explicit inlet intensity and length-scale identity",
             "runtime y-plus, mass-balance, pressure-loss, and friction-factor checks",
             "verified same-resolution periodic-precursor mapping at Re 99,621",
+            "multi-Re model sensitivity with adaptive wall spacing",
         ),
         limitations=(
             "Only a flow-rate-constrained mean-velocity inlet is supported.",
@@ -200,11 +221,11 @@ _CAPABILITIES = (
         evidence=(
             "model-specific epsilon and wall-function lowering tests",
             "content-addressed prepare/run and source-hashed comparison contracts",
-            "accepted OpenCFD v2606 c16 execution at Re 99,621",
-            "identical-mesh SST versus k-epsilon sensitivity evidence",
+            "accepted OpenCFD v2606 c16 execution from Re 49,810 to 498,104",
+            "pairwise-identical-mesh SST versus k-epsilon sensitivity evidence",
         ),
         limitations=(
-            "The current validation point is one smooth-pipe Reynolds number.",
+            "Correlation differences exceed 2% at the two high-Re matrix points.",
             "Downstream k-epsilon field mapping is not supported.",
             "No general turbulence-model default is promoted from the correlation screen.",
         ),

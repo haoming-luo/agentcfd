@@ -1,0 +1,73 @@
+{
+  "acceptance": {
+    "default_promotion_accepted": false,
+    "default_promotion_reason": "One Reynolds-number point and one engineering correlation cannot establish a general industrial turbulence-model default.",
+    "identical_mesh": true,
+    "maximum_correlation_relative_error": 0.02,
+    "non_model_inputs_identical": true,
+    "screening_accepted": true,
+    "source_results_accepted": true,
+    "wall_function_y_plus_range": true
+  },
+  "cases": [
+    {
+      "colebrook_relative_error": 0.009531807115945997,
+      "darcy_friction_factor": 0.020709860488,
+      "model_sha256": "3afcaeb1a9bbe9401d5ff756337ad0e8236a4f394e4df6f94c437a25269d2607",
+      "nut_wall_function": "nutUSpaldingWallFunction",
+      "pressure_gradient_pa_per_m": 25.840728423902004,
+      "reference_darcy_friction_factor": 0.020909162592790433,
+      "relative_runtime_to_fastest": 1.0656235853020106,
+      "reynolds_number": 49810.37924151697,
+      "runtime_wall_seconds": 19.21701141599624,
+      "source_accepted": true,
+      "turbulence_model": "k-omega-sst",
+      "wall_y_plus": {
+        "average": 45.84540905,
+        "maximum": 49.388172169,
+        "minimum": 40.244446903
+      }
+    },
+    {
+      "colebrook_relative_error": 0.03660939654533886,
+      "darcy_friction_factor": 0.020143690768000003,
+      "model_sha256": "ee275b2ad3fa9d80425a3466156464bd01dd99571a60f907763eb51044488f29",
+      "nut_wall_function": "nutkWallFunction",
+      "pressure_gradient_pa_per_m": 25.134290155772,
+      "reference_darcy_friction_factor": 0.020909162592790433,
+      "relative_runtime_to_fastest": 1.0,
+      "reynolds_number": 49810.37924151697,
+      "runtime_wall_seconds": 18.03358304100402,
+      "source_accepted": true,
+      "turbulence_model": "k-epsilon",
+      "wall_y_plus": {
+        "average": 44.899576172,
+        "maximum": 48.370648631,
+        "minimum": 39.441347377
+      }
+    }
+  ],
+  "cross_section_cells": 16,
+  "maximum_iterations": 4000,
+  "mesh_sha256": "1e38c1a4b5a548ba08a1e4ef3310c04dff766a6a9532def158c3f8bce2aba299",
+  "nominal_wall_cell_fraction": 0.11886482721736276,
+  "quantity": "flow.darcy_friction_factor",
+  "recommendation": {
+    "basis": "minimum absolute relative difference from the Colebrook smooth-pipe correlation",
+    "benchmark_specific": true,
+    "candidate_nut_wall_function": "nutUSpaldingWallFunction",
+    "candidate_turbulence_model": "k-omega-sst"
+  },
+  "reynolds_number": 49810.37924151697,
+  "schema": "agentcfd.turbulent-model-study/0.1",
+  "sources": [
+    {
+      "path": "/private/tmp/agentcfd-model-study-re49810-y40-v1/model-1-k-omega-sst/agentcfd-result.json",
+      "sha256": "04766e046b333598dc3a3a12396e28cd641614f2642b74b60a87b4bfec58480c"
+    },
+    {
+      "path": "/private/tmp/agentcfd-model-study-re49810-y40-v1/model-2-k-epsilon/agentcfd-result.json",
+      "sha256": "8bef43a40e74e16d4a0eab00d5993b99fe399c70c54d917e1abb53cd18696409"
+    }
+  ]
+}

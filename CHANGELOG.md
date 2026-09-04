@@ -57,6 +57,13 @@
   c16 mesh, SST/Spalding differs from smooth Colebrook by 1.851% versus 3.289%
   for k-epsilon/nutk; the latter is faster, while global default promotion
   remains explicitly false.
+- Add a correlation-based OpenFOAM wall-mesh preflight and `--target-y-plus`
+  model-study option, while retaining solved patch y-plus as the acceptance
+  authority. Expose the underlying estimate through `calculate wall-resolution`.
+- Add a source-hashed multi-Re turbulence-model sweep contract and CLI. Its
+  four-point v2606 evidence accepts the matrix but rejects a global default:
+  SST/Spalding wins at Re 49,810 and 99,621, while k-epsilon/nutk wins at Re
+  199,242 and 498,104; the two high-Re best errors remain above 2%.
 
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the

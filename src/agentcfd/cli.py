@@ -24,11 +24,13 @@ from .providers import (
     prepare_turbulent_model_study,
     prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
+    turbulent_pipe_wall_mesh_screen,
 )
 from .results import SimulationResult, read_result_record
 from .verification import (
     assess_grid_convergence,
     assess_turbulent_model_study,
+    assess_turbulent_model_sweep,
     assess_turbulent_precursor_grid_study,
     assess_turbulent_wall_function_study,
     assess_turbulent_wall_study,
@@ -331,21 +333,36 @@ def _prepare_openfoam_turbulent_wall_function_study(
 def _prepare_openfoam_turbulent_model_study(
     directory: Path,
     *,
+    velocity: float,
+    turbulence_intensity: float,
+    turbulence_length_scale: float,
     cross_section_cells: int,
-    nominal_wall_cell_fraction: float,
+    nominal_wall_cell_fraction: float | None,
+    target_y_plus: float | None,
     maximum_iterations: int,
 ) -> dict[str, object]:
     common = {
-        "velocity": 1.0,
-        "turbulence_intensity": 0.05,
-        "turbulence_length_scale": 0.007,
+        "velocity": velocity,
+        "turbulence_intensity": turbulence_intensity,
+        "turbulence_length_scale": turbulence_length_scale,
     }
+    sst_step = _turbulent_pipe_step(turbulence_model="k-omega-sst", **common)
+    fraction = 0.0625 if nominal_wall_cell_fraction is None else nominal_wall_cell_fraction
+    if target_y_plus is not None:
+        fraction = float(
+            turbulent_pipe_wall_mesh_screen(
+                sst_step,
+                nominal_wall_cell_fraction=0.0625,
+                target_y_plus=target_y_plus,
+            )["recommended_nominal_wall_cell_fraction"]
+        )
     return prepare_turbulent_model_study(
-        _turbulent_pipe_step(turbulence_model="k-omega-sst", **common),
+        sst_step,
         _turbulent_pipe_step(turbulence_model="k-epsilon", **common),
         directory,
         cross_section_cells=cross_section_cells,
-        nominal_wall_cell_fraction=nominal_wall_cell_fraction,
+        nominal_wall_cell_fraction=fraction,
+        target_y_plus=50.0 if target_y_plus is None else target_y_plus,
         maximum_iterations=maximum_iterations,
     ).to_dict()
 
@@ -402,6 +419,23 @@ def _turbulent_wall_function_study_payload(paths: list[Path]) -> dict[str, objec
 def _turbulent_model_study_payload(paths: list[Path]) -> dict[str, object]:
     records = [read_result_record(path) for path in paths]
     assessment = assess_turbulent_model_study(records)
+    return {
+        **assessment,
+        "sources": [
+            {"path": str(path), "sha256": file_sha256(path)} for path in paths
+        ],
+    }
+
+
+def _turbulent_model_sweep_payload(paths: list[Path]) -> dict[str, object]:
+    studies = [
+        strict_json_object(
+            path.read_text(encoding="utf-8"),
+            label=f"Turbulent model study {path}",
+        )
+        for path in paths
+    ]
+    assessment = assess_turbulent_model_sweep(studies)
     return {
         **assessment,
         "sources": [
@@ -689,10 +723,30 @@ def _run_openfoam_turbulent_model_study(
         raise ValueError("OpenFOAM model study wall-cell fraction is invalid.")
     if isinstance(iteration_limit, bool) or not isinstance(iteration_limit, int):
         raise ValueError("OpenFOAM model study iteration limit is invalid.")
+    planned_inputs = plan.get("scientific_inputs")
+    planned_cases = (
+        planned_inputs.get("cases") if isinstance(planned_inputs, dict) else None
+    )
+    sst_inputs = (
+        planned_cases.get("k-omega-sst") if isinstance(planned_cases, dict) else None
+    )
+    planned_model = sst_inputs.get("model") if isinstance(sst_inputs, dict) else None
+    planned_boundaries = (
+        planned_model.get("boundaries") if isinstance(planned_model, dict) else None
+    )
+    planned_inlets = [
+        value
+        for value in planned_boundaries.values()
+        if isinstance(value, dict)
+        and value.get("type") == "turbulent-mean-velocity-inlet"
+    ] if isinstance(planned_boundaries, dict) else []
+    if len(planned_inlets) != 1:
+        raise ValueError("OpenFOAM model study has no unique turbulent inlet input.")
+    planned_inlet = planned_inlets[0]
     common = {
-        "velocity": 1.0,
-        "turbulence_intensity": 0.05,
-        "turbulence_length_scale": 0.007,
+        "velocity": planned_inlet.get("velocity"),
+        "turbulence_intensity": planned_inlet.get("turbulence_intensity"),
+        "turbulence_length_scale": planned_inlet.get("turbulence_length_scale"),
     }
     steps = {
         "k-omega-sst": _turbulent_pipe_step(
@@ -717,6 +771,16 @@ def _run_openfoam_turbulent_model_study(
     )
     if plan.get("scientific_inputs") != expected_inputs:
         raise ValueError("OpenFOAM turbulent model-study inputs changed.")
+    planned_screen = plan.get("wall_resolution_screen")
+    if not isinstance(planned_screen, dict):
+        raise ValueError("OpenFOAM turbulent model-study has no wall-resolution screen.")
+    expected_screen = turbulent_pipe_wall_mesh_screen(
+        steps["k-omega-sst"],
+        nominal_wall_cell_fraction=float(fraction),
+        target_y_plus=planned_screen.get("target_y_plus"),
+    )
+    if plan.get("wall_resolution_screen") != expected_screen:
+        raise ValueError("OpenFOAM turbulent model-study wall-resolution screen changed.")
     cases = plan.get("cases")
     if not isinstance(cases, list) or len(cases) != 2:
         raise ValueError("OpenFOAM model study must contain exactly two cases.")
@@ -842,6 +906,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.3,
     )
     compressibility.add_argument("--json", action="store_true", dest="as_json")
+    wall_resolution = calculate_subparsers.add_parser(
+        "wall-resolution",
+        help="Estimate turbulent-pipe wall spacing for a target y-plus.",
+    )
+    wall_resolution.add_argument("--density", type=float, required=True)
+    wall_resolution.add_argument("--viscosity", type=float, required=True)
+    wall_resolution.add_argument("--velocity", type=float, required=True)
+    wall_resolution.add_argument("--diameter", type=float, required=True)
+    wall_resolution.add_argument("--target-y-plus", type=float, required=True)
+    wall_resolution.add_argument("--roughness", type=float, default=0.0)
+    wall_resolution.add_argument("--json", action="store_true", dest="as_json")
 
     property_command = subparsers.add_parser(
         "properties",
@@ -990,11 +1065,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Prepare an identical-mesh SST versus k-epsilon model screen.",
     )
     model_study_prepare.add_argument("directory", type=Path)
+    model_study_prepare.add_argument("--velocity", type=float, default=1.0)
+    model_study_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
+    model_study_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
     model_study_prepare.add_argument("--cross-section-cells", type=int, default=16)
-    model_study_prepare.add_argument(
+    wall_selection = model_study_prepare.add_mutually_exclusive_group()
+    wall_selection.add_argument(
         "--nominal-wall-cell-fraction",
         type=float,
-        default=0.0625,
+    )
+    wall_selection.add_argument(
+        "--target-y-plus",
+        type=float,
+        help="Derive the wall-cell fraction from a smooth-pipe preflight estimate.",
     )
     model_study_prepare.add_argument("--maximum-iterations", type=int, default=4000)
     model_study_prepare.add_argument("--json", action="store_true", dest="as_json")
@@ -1189,6 +1272,13 @@ def build_parser() -> argparse.ArgumentParser:
     model_study.add_argument("results", nargs=2, type=Path)
     model_study.add_argument("--output", type=Path)
     model_study.add_argument("--json", action="store_true", dest="as_json")
+    model_sweep = verify_subparsers.add_parser(
+        "turbulent-model-sweep",
+        help="Aggregate at least three identical-mesh turbulence-model studies.",
+    )
+    model_sweep.add_argument("studies", nargs="+", type=Path)
+    model_sweep.add_argument("--output", type=Path)
+    model_sweep.add_argument("--json", action="store_true", dest="as_json")
     result_check = verify_subparsers.add_parser(
         "result",
         help="Verify a result's trust state and content-addressed artifacts.",
@@ -1310,6 +1400,24 @@ def main(argv: list[str] | None = None) -> int:
                 f"Mach {report['mach_number']:.6g} | incompressible model "
                 f"{decision} under threshold "
                 f"{report['maximum_incompressible_mach']:.6g}"
+            )
+        return 0
+    if args.command == "calculate" and args.calculation == "wall-resolution":
+        report = engineering.turbulent_pipe_wall_resolution(
+            density=args.density,
+            dynamic_viscosity=args.viscosity,
+            mean_velocity=args.velocity,
+            hydraulic_diameter=args.diameter,
+            target_y_plus=args.target_y_plus,
+            roughness=args.roughness,
+        ).to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Re {report['reynolds_number']:.6g} | target y+ "
+                f"{report['target_y_plus']:.6g} | nominal first-cell thickness "
+                f"{report['nominal_first_cell_thickness']:.6g} m"
             )
         return 0
     if args.command == "properties" and args.property_operation == "state":
@@ -1435,8 +1543,12 @@ def main(argv: list[str] | None = None) -> int:
     ):
         plan = _prepare_openfoam_turbulent_model_study(
             args.directory,
+            velocity=args.velocity,
+            turbulence_intensity=args.turbulence_intensity,
+            turbulence_length_scale=args.turbulence_length_scale,
             cross_section_cells=args.cross_section_cells,
             nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+            target_y_plus=args.target_y_plus,
             maximum_iterations=args.maximum_iterations,
         )
         if args.as_json:
@@ -1444,6 +1556,15 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("Prepared identical-mesh OpenFOAM turbulence-model study")
             print(args.directory / "agentcfd-turbulent-model-study.json")
+            screen = plan["wall_resolution_screen"]
+            assert isinstance(screen, dict)
+            print(
+                f"wall preflight: predicted y+ "
+                f"{float(screen['predicted_nominal_y_plus']):.6g} | "
+                "runtime verification required"
+            )
+            if screen["predicted_high_re_wall_function_applicable"] is not True:
+                print("warning: predicted y+ is outside the high-Re wall-function range")
         return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe-grid":
         plan = _prepare_openfoam_pipe_grid(
@@ -1750,6 +1871,34 @@ def main(argv: list[str] | None = None) -> int:
             if args.output is not None:
                 print(args.output)
         return 0 if payload["acceptance"]["screening_accepted"] else 3
+    if args.command == "verify" and args.verification == "turbulent-model-sweep":
+        payload = _turbulent_model_sweep_payload(args.studies)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = args.output.with_suffix(args.output.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(args.output)
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            recommendation = payload["recommendation"]
+            acceptance = payload["acceptance"]
+            reynolds_range = payload["reynolds_range"]
+            print(
+                "Turbulent model sweep | candidate "
+                f"{recommendation['candidate_turbulence_model']} + "
+                f"{recommendation['candidate_nut_wall_function']} | "
+                f"Re {reynolds_range['minimum']:.6g}.."
+                f"{reynolds_range['maximum']:.6g} | range accepted "
+                f"{str(acceptance['range_candidate_accepted']).lower()} | "
+                "default promotion false"
+            )
+            if args.output is not None:
+                print(args.output)
+        return 0 if payload["acceptance"]["range_candidate_accepted"] else 3
     if args.command == "verify" and args.verification == "result":
         record = read_result_record(args.result)
         report = {

@@ -73,3 +73,14 @@ The periodic precursor also supports standard k-epsilon paired with
 first c16 screen finds 1.851% for SST/Spalding and 3.289% for k-epsilon/nutk.
 Both are accepted at this point, but the assessment intentionally refuses
 general default promotion. Downstream mapping remains SST-only.
+
+For a Reynolds sweep, pass `--target-y-plus` to each
+`prepare openfoam-turbulent-model-study` call. The resulting plan contains a
+prediction-only wall-resolution screen; never replace the solved y-plus gate
+with that estimate. Aggregate at least three point assessments with `verify
+turbulent-model-sweep`. Cross-Re meshes may adapt wall spacing, but each point's
+two model cases must retain one identical native mesh and the same non-model
+inputs. The current four-point evidence changes winner between Re 99,621 and
+199,242. Treat `diagnostic-ranking-only`, `model_selection_required=true`, or a
+false range gate as an instruction to run sensitivity/validation—not as
+permission to choose the aggregate ranking.

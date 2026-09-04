@@ -89,6 +89,7 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "turbulent-wall-study.schema.json" in contracts.available()
     assert "openfoam-turbulent-wall-study.schema.json" in contracts.available()
     assert "turbulent-precursor-grid-study.schema.json" in contracts.available()
+    assert "turbulent-model-sweep.schema.json" in contracts.available()
     result_schema = contracts.load("simulation-result.schema.json")
     assert result_schema["$schema"].endswith("2020-12/schema")
     assert contracts.path("simulation-result.schema.json").is_file()
@@ -168,6 +169,35 @@ def test_cli_exposes_auditable_compressibility_screen(capsys):
         "mach_number": 0.25,
         "maximum_incompressible_mach": 0.3,
     }
+
+
+def test_cli_exposes_turbulent_wall_resolution_screen(capsys):
+    assert (
+        main(
+            [
+                "calculate",
+                "wall-resolution",
+                "--density",
+                "998.2",
+                "--viscosity",
+                "0.001002",
+                "--velocity",
+                "0.5",
+                "--diameter",
+                "0.1",
+                "--target-y-plus",
+                "40",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["reynolds_number"] == pytest.approx(49_810.3792415)
+    assert report["target_y_plus"] == 40.0
+    assert report["nominal_first_cell_thickness"] == pytest.approx(
+        0.0031415705152
+    )
 
 
 def test_cli_exposes_versioned_thermophysical_state(monkeypatch, capsys):
@@ -545,6 +575,7 @@ def test_cli_executes_prepared_wall_function_study(tmp_path, capsys, monkeypatch
             converged=True,
             provider="openfoam-periodic-precursor",
             quantities={
+                "flow.reynolds_number": Quantity(998.2 * 0.1 / 0.001002, "1"),
                 "flow.pressure_gradient": Quantity(88.0, "Pa/m"),
                 "flow.darcy_friction_factor": Quantity(0.018, "1"),
                 "reference.flow.darcy_friction_factor": Quantity(0.0183, "1"),
@@ -590,12 +621,31 @@ def test_cli_executes_prepared_wall_function_study(tmp_path, capsys, monkeypatch
 
 def test_cli_executes_prepared_turbulence_model_study(tmp_path, capsys, monkeypatch):
     root = tmp_path / "models"
-    assert main(["prepare", "openfoam-turbulent-model-study", str(root)]) == 0
+    assert (
+        main(
+            [
+                "prepare",
+                "openfoam-turbulent-model-study",
+                str(root),
+                "--velocity",
+                "0.5",
+                "--target-y-plus",
+                "50",
+            ]
+        )
+        == 0
+    )
     capsys.readouterr()
     plan = json.loads((root / "agentcfd-turbulent-model-study.json").read_text())
     jsonschema.Draft202012Validator(
         contracts.load("openfoam-turbulent-model-study.schema.json")
     ).validate(plan)
+    assert plan["wall_resolution_screen"]["predicted_nominal_y_plus"] == pytest.approx(
+        50.0
+    )
+    assert plan["wall_resolution_screen"][
+        "predicted_high_re_wall_function_applicable"
+    ] is True
 
     def fake_run_prepared(self, step, directory=None):
         model = step.model.study.turbulence
@@ -606,6 +656,7 @@ def test_cli_executes_prepared_turbulence_model_study(tmp_path, capsys, monkeypa
             converged=True,
             provider="openfoam-periodic-precursor",
             quantities={
+                "flow.reynolds_number": Quantity(998.2 * 0.5 * 0.1 / 0.001002, "1"),
                 "flow.pressure_gradient": Quantity(88.0, "Pa/m"),
                 "flow.darcy_friction_factor": Quantity(0.018, "1"),
                 "reference.flow.darcy_friction_factor": Quantity(0.0183, "1"),
@@ -648,7 +699,94 @@ def test_cli_executes_prepared_turbulence_model_study(tmp_path, capsys, monkeypa
     jsonschema.Draft202012Validator(
         contracts.load("turbulent-model-study.schema.json")
     ).validate(payload)
+    assert payload["reynolds_number"] == pytest.approx(998.2 * 0.5 * 0.1 / 0.001002)
     assert (root / "agentcfd-turbulent-model-assessment.json").is_file()
+
+
+def test_cli_aggregates_turbulence_model_sweep(tmp_path, capsys):
+    paths = []
+    for index, (reynolds, sst_error, k_epsilon_error) in enumerate(
+        (
+            (49_810.0, 0.014, 0.035),
+            (99_621.0, 0.0185, 0.0329),
+            (199_242.0, 0.028, 0.041),
+        )
+    ):
+        path = tmp_path / f"study-{index}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "schema": "agentcfd.turbulent-model-study/0.1",
+                    "mesh_sha256": "c" * 64,
+                    "cross_section_cells": 16,
+                    "nominal_wall_cell_fraction": 0.0625,
+                    "maximum_iterations": 4000,
+                    "reynolds_number": reynolds,
+                    "cases": [
+                        {
+                            "turbulence_model": "k-omega-sst",
+                            "nut_wall_function": "nutUSpaldingWallFunction",
+                            "reynolds_number": reynolds,
+                            "colebrook_relative_error": sst_error,
+                            "runtime_wall_seconds": 18.0,
+                            "wall_y_plus": {
+                                "minimum": 38.0,
+                                "average": 44.0,
+                                "maximum": 48.0,
+                            },
+                            "source_accepted": True,
+                        },
+                        {
+                            "turbulence_model": "k-epsilon",
+                            "nut_wall_function": "nutkWallFunction",
+                            "reynolds_number": reynolds,
+                            "colebrook_relative_error": k_epsilon_error,
+                            "runtime_wall_seconds": 16.0,
+                            "wall_y_plus": {
+                                "minimum": 38.0,
+                                "average": 44.0,
+                                "maximum": 48.0,
+                            },
+                            "source_accepted": True,
+                        },
+                    ],
+                    "acceptance": {
+                        "source_results_accepted": True,
+                        "identical_mesh": True,
+                        "non_model_inputs_identical": True,
+                        "wall_function_y_plus_range": True,
+                        "screening_accepted": True,
+                    },
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        paths.append(path)
+
+    output = tmp_path / "sweep.json"
+    assert (
+        main(
+            [
+                "verify",
+                "turbulent-model-sweep",
+                *(str(path) for path in paths),
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload == json.loads(output.read_text())
+    assert payload["recommendation"]["candidate_turbulence_model"] == "k-omega-sst"
+    assert payload["acceptance"]["range_candidate_accepted"] is True
+    assert len(payload["sources"]) == 3
+    jsonschema.Draft202012Validator(
+        contracts.load("turbulent-model-sweep.schema.json")
+    ).validate(payload)
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

@@ -253,6 +253,10 @@ def test_turbulence_model_study_prepares_two_models_on_identical_mesh(tmp_path):
         "nutUSpaldingWallFunction",
         "nutkWallFunction",
     ]
+    assert payload["wall_resolution_screen"]["prediction_only"] is True
+    assert payload["wall_resolution_screen"][
+        "runtime_y_plus_verification_required"
+    ] is True
     schema = json.loads(
         (
             Path(__file__).parents[1]

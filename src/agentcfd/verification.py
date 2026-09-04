@@ -1212,6 +1212,7 @@ def assess_turbulent_model_study(
     wall_fractions: set[float | None] = set()
     maximum_iterations: set[int] = set()
     stability_windows: set[int] = set()
+    reynolds_numbers: set[float] = set()
     pairs: set[tuple[str, str]] = set()
     rows: list[dict[str, object]] = []
     all_sources_accepted = True
@@ -1325,6 +1326,7 @@ def assess_turbulent_model_study(
         if not isinstance(quantities, Mapping):
             raise ValueError(f"Result {index} is missing quantities.")
         required = {
+            "flow.reynolds_number": "1",
             "flow.pressure_gradient": "Pa/m",
             "flow.darcy_friction_factor": "1",
             "reference.flow.darcy_friction_factor": "1",
@@ -1343,6 +1345,42 @@ def assess_turbulent_model_study(
                 raise ValueError(f"Result {index} quantity {name!r} must use unit {unit!r}.")
         if any(value < 0.0 for value in values.values()):
             raise ValueError(f"Result {index} contains a negative comparison quantity.")
+        reynolds_numbers.add(values["flow.reynolds_number"])
+        domain = model.get("domain")
+        fluid = model.get("fluid")
+        model_boundaries = model.get("boundaries")
+        if not all(isinstance(value, Mapping) for value in (domain, fluid, model_boundaries)):
+            raise ValueError(f"Result {index} has incomplete Reynolds-number inputs.")
+        assert isinstance(domain, Mapping)
+        assert isinstance(fluid, Mapping)
+        assert isinstance(model_boundaries, Mapping)
+        inlet_candidates = [
+            value
+            for value in model_boundaries.values()
+            if isinstance(value, Mapping) and "velocity" in value
+        ]
+        if len(inlet_candidates) != 1:
+            raise ValueError(f"Result {index} has no unique velocity inlet.")
+        density = positive_float(fluid.get("density"), name=f"Result {index} density")
+        viscosity = positive_float(
+            fluid.get("dynamic_viscosity"),
+            name=f"Result {index} dynamic viscosity",
+        )
+        diameter = positive_float(
+            domain.get("diameter"),
+            name=f"Result {index} diameter",
+        )
+        velocity = positive_float(
+            inlet_candidates[0].get("velocity"),
+            name=f"Result {index} inlet velocity",
+        )
+        expected_reynolds = density * velocity * diameter / viscosity
+        if not math.isclose(
+            values["flow.reynolds_number"],
+            expected_reynolds,
+            rel_tol=1.0e-9,
+        ):
+            raise ValueError(f"Result {index} Reynolds number disagrees with model inputs.")
         if not (
             values["wall.y_plus.minimum"]
             <= values["wall.y_plus.average"]
@@ -1354,6 +1392,7 @@ def assess_turbulent_model_study(
                 "turbulence_model": turbulence_model,
                 "nut_wall_function": wall_function,
                 "model_sha256": model_identity,
+                "reynolds_number": values["flow.reynolds_number"],
                 "pressure_gradient_pa_per_m": values["flow.pressure_gradient"],
                 "darcy_friction_factor": values["flow.darcy_friction_factor"],
                 "reference_darcy_friction_factor": values[
@@ -1382,6 +1421,8 @@ def assess_turbulent_model_study(
         raise ValueError("Turbulence-model results must share identical mesh controls.")
     if len(maximum_iterations) != 1 or len(stability_windows) != 1:
         raise ValueError("Turbulence-model results must share identical convergence controls.")
+    if len(reynolds_numbers) != 1:
+        raise ValueError("Turbulence-model results must share one Reynolds number.")
     if pairs != expected_pairs:
         raise ValueError("Turbulence-model results must cover both supported pairs exactly once.")
     rows.sort(key=lambda item: float(item["colebrook_relative_error"]))
@@ -1406,6 +1447,7 @@ def assess_turbulent_model_study(
         "cross_section_cells": next(iter(cross_counts)),
         "nominal_wall_cell_fraction": next(iter(wall_fractions)),
         "maximum_iterations": next(iter(maximum_iterations)),
+        "reynolds_number": next(iter(reynolds_numbers)),
         "quantity": "flow.darcy_friction_factor",
         "cases": rows,
         "recommendation": {
@@ -1430,6 +1472,278 @@ def assess_turbulent_model_study(
     }
 
 
+def assess_turbulent_model_sweep(
+    studies: Iterable[Mapping[str, object]],
+    *,
+    maximum_range_relative_error: float = 0.05,
+) -> dict[str, object]:
+    """Aggregate at least three identical-mesh turbulence-model screens.
+
+    This promotes a candidate only for the sampled smooth-pipe Reynolds range.
+    It never promotes a general default because the reference is still an
+    engineering correlation rather than independent experimental validation.
+    """
+
+    selected = tuple(studies)
+    if len(selected) < 3:
+        raise ValueError("At least three turbulent model studies are required.")
+    error_limit = positive_float(
+        maximum_range_relative_error,
+        name="maximum_range_relative_error",
+    )
+    expected_pairs = {
+        "k-omega-sst": "nutUSpaldingWallFunction",
+        "k-epsilon": "nutkWallFunction",
+    }
+    mesh_identities: set[str] = set()
+    cross_counts: set[int] = set()
+    wall_fractions: set[float | None] = set()
+    iteration_limits: set[int] = set()
+    reynolds_numbers: set[float] = set()
+    points: list[dict[str, object]] = []
+    by_model: dict[str, list[dict[str, float]]] = {
+        model: [] for model in expected_pairs
+    }
+    all_source_results_accepted = True
+    all_y_plus_valid = True
+
+    for index, study in enumerate(selected, start=1):
+        if not isinstance(study, Mapping):
+            raise ValueError(f"Model study {index} must be a mapping.")
+        if study.get("schema") != "agentcfd.turbulent-model-study/0.1":
+            raise ValueError(f"Model study {index} uses an unsupported schema.")
+        mesh_identity = study.get("mesh_sha256")
+        if (
+            not isinstance(mesh_identity, str)
+            or len(mesh_identity) != 64
+            or any(character not in "0123456789abcdef" for character in mesh_identity.lower())
+        ):
+            raise ValueError(f"Model study {index} has no valid mesh identity.")
+        mesh_identities.add(mesh_identity)
+        cross_cells = study.get("cross_section_cells")
+        iteration_limit = study.get("maximum_iterations")
+        if isinstance(cross_cells, bool) or not isinstance(cross_cells, int) or cross_cells < 2:
+            raise ValueError(f"Model study {index} has an invalid cross-section count.")
+        if isinstance(iteration_limit, bool) or not isinstance(iteration_limit, int) or iteration_limit < 5:
+            raise ValueError(f"Model study {index} has an invalid iteration limit.")
+        cross_counts.add(cross_cells)
+        iteration_limits.add(iteration_limit)
+        fraction = study.get("nominal_wall_cell_fraction")
+        if fraction is None:
+            normalized_fraction = None
+        elif isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+            raise ValueError(f"Model study {index} has an invalid wall-cell fraction.")
+        else:
+            normalized_fraction = positive_float(
+                fraction,
+                name=f"Model study {index} wall-cell fraction",
+            )
+            if normalized_fraction >= 1.0:
+                raise ValueError(f"Model study {index} wall-cell fraction must be below one.")
+        wall_fractions.add(normalized_fraction)
+        reynolds = positive_float(
+            study.get("reynolds_number"),
+            name=f"Model study {index} Reynolds number",
+        )
+        if reynolds < 4000.0:
+            raise ValueError(f"Model study {index} is outside the turbulent range.")
+        if reynolds in reynolds_numbers:
+            raise ValueError("Turbulent model sweep Reynolds numbers must be distinct.")
+        reynolds_numbers.add(reynolds)
+
+        acceptance = study.get("acceptance")
+        if not isinstance(acceptance, Mapping):
+            raise ValueError(f"Model study {index} has no acceptance record.")
+        sources_accepted = acceptance.get("source_results_accepted") is True
+        y_plus_valid = acceptance.get("wall_function_y_plus_range") is True
+        if acceptance.get("identical_mesh") is not True or acceptance.get(
+            "non_model_inputs_identical"
+        ) is not True:
+            raise ValueError(f"Model study {index} does not preserve comparison controls.")
+        all_source_results_accepted = all_source_results_accepted and sources_accepted
+        all_y_plus_valid = all_y_plus_valid and y_plus_valid
+
+        cases = study.get("cases")
+        if not isinstance(cases, list) or len(cases) != 2:
+            raise ValueError(f"Model study {index} must contain exactly two cases.")
+        case_rows: dict[str, dict[str, object]] = {}
+        for case in cases:
+            if not isinstance(case, Mapping):
+                raise ValueError(f"Model study {index} contains an invalid case.")
+            model = case.get("turbulence_model")
+            wall_function = case.get("nut_wall_function")
+            if not isinstance(model, str) or expected_pairs.get(model) != wall_function:
+                raise ValueError(f"Model study {index} has an unsupported model pair.")
+            if model in case_rows:
+                raise ValueError(f"Model study {index} duplicates a turbulence model.")
+            case_reynolds = positive_float(
+                case.get("reynolds_number"),
+                name=f"Model study {index} case Reynolds number",
+            )
+            if not math.isclose(case_reynolds, reynolds, rel_tol=1.0e-12):
+                raise ValueError(f"Model study {index} case Reynolds number differs.")
+            error = nonnegative_float(
+                case.get("colebrook_relative_error"),
+                name=f"Model study {index} correlation error",
+            )
+            runtime = nonnegative_float(
+                case.get("runtime_wall_seconds"),
+                name=f"Model study {index} runtime",
+            )
+            wall_y_plus = case.get("wall_y_plus")
+            if not isinstance(wall_y_plus, Mapping):
+                raise ValueError(f"Model study {index} case has no wall y-plus record.")
+            y_minimum = nonnegative_float(
+                wall_y_plus.get("minimum"),
+                name=f"Model study {index} minimum wall y-plus",
+            )
+            y_average = nonnegative_float(
+                wall_y_plus.get("average"),
+                name=f"Model study {index} average wall y-plus",
+            )
+            y_maximum = nonnegative_float(
+                wall_y_plus.get("maximum"),
+                name=f"Model study {index} maximum wall y-plus",
+            )
+            if not y_minimum <= y_average <= y_maximum:
+                raise ValueError(f"Model study {index} wall y-plus values are unordered.")
+            if case.get("source_accepted") is not True:
+                sources_accepted = False
+                all_source_results_accepted = False
+            case_rows[model] = {
+                "turbulence_model": model,
+                "nut_wall_function": wall_function,
+                "colebrook_relative_error": error,
+                "runtime_wall_seconds": runtime,
+                "wall_y_plus": {
+                    "minimum": y_minimum,
+                    "average": y_average,
+                    "maximum": y_maximum,
+                },
+                "source_accepted": case.get("source_accepted") is True,
+            }
+            by_model[model].append({"error": error, "runtime": runtime})
+        if set(case_rows) != set(expected_pairs):
+            raise ValueError(f"Model study {index} does not cover both model pairs.")
+        ranked = sorted(
+            case_rows.values(),
+            key=lambda item: float(item["colebrook_relative_error"]),
+        )
+        points.append(
+            {
+                "reynolds_number": reynolds,
+                "mesh_sha256": mesh_identity,
+                "nominal_wall_cell_fraction": normalized_fraction,
+                "cases": [case_rows[model] for model in expected_pairs],
+                "candidate_turbulence_model": ranked[0]["turbulence_model"],
+                "point_screening_accepted": acceptance.get("screening_accepted") is True,
+                "source_results_accepted": sources_accepted,
+                "wall_function_y_plus_range": y_plus_valid,
+            }
+        )
+
+    if len(cross_counts) != 1:
+        raise ValueError("Turbulent model sweep studies must share one topology resolution.")
+    if len(iteration_limits) != 1:
+        raise ValueError("Turbulent model sweep studies must share an iteration limit.")
+    points.sort(key=lambda item: float(item["reynolds_number"]))
+    candidate_transitions = [
+        {
+            "lower_reynolds_number": float(lower["reynolds_number"]),
+            "upper_reynolds_number": float(upper["reynolds_number"]),
+            "from_turbulence_model": lower["candidate_turbulence_model"],
+            "to_turbulence_model": upper["candidate_turbulence_model"],
+        }
+        for lower, upper in zip(points, points[1:])
+        if lower["candidate_turbulence_model"] != upper["candidate_turbulence_model"]
+    ]
+    model_statistics: list[dict[str, object]] = []
+    for model, observations in by_model.items():
+        errors = tuple(item["error"] for item in observations)
+        runtimes = tuple(item["runtime"] for item in observations)
+        model_statistics.append(
+            {
+                "turbulence_model": model,
+                "nut_wall_function": expected_pairs[model],
+                "mean_correlation_relative_error": sum(errors) / len(errors),
+                "maximum_correlation_relative_error": max(errors),
+                "mean_runtime_wall_seconds": sum(runtimes) / len(runtimes),
+                "point_wins": sum(
+                    point["candidate_turbulence_model"] == model for point in points
+                ),
+            }
+        )
+    model_statistics.sort(
+        key=lambda item: (
+            -int(item["point_wins"]),
+            float(item["mean_correlation_relative_error"]),
+        )
+    )
+    candidate = model_statistics[0]
+    consistent_candidate = int(candidate["point_wins"]) == len(points)
+    candidate_within_limit = (
+        float(candidate["maximum_correlation_relative_error"]) <= error_limit
+    )
+    range_candidate_accepted = bool(
+        all_source_results_accepted
+        and all_y_plus_valid
+        and consistent_candidate
+        and candidate_within_limit
+    )
+    all_point_accuracy_targets_met = all(
+        point["point_screening_accepted"] is True for point in points
+    )
+    evidence_matrix_accepted = bool(
+        all_source_results_accepted and all_y_plus_valid
+    )
+    return {
+        "schema": "agentcfd.turbulent-model-sweep/0.1",
+        "cross_section_cells": next(iter(cross_counts)),
+        "maximum_iterations": next(iter(iteration_limits)),
+        "mesh_strategy": {
+            "pairwise_identical_model_mesh": True,
+            "adaptive_wall_cell_fraction": len(wall_fractions) > 1,
+            "unique_mesh_count": len(mesh_identities),
+        },
+        "reynolds_range": {
+            "minimum": float(points[0]["reynolds_number"]),
+            "maximum": float(points[-1]["reynolds_number"]),
+            "point_count": len(points),
+        },
+        "points": points,
+        "candidate_transitions": candidate_transitions,
+        "model_statistics": model_statistics,
+        "recommendation": {
+            "candidate_turbulence_model": candidate["turbulence_model"],
+            "candidate_nut_wall_function": candidate["nut_wall_function"],
+            "basis": "most point wins followed by minimum mean smooth-Colebrook difference",
+            "sampled_range_only": True,
+            "operational_use": (
+                "sampled-range-candidate"
+                if range_candidate_accepted
+                else "diagnostic-ranking-only"
+            ),
+        },
+        "acceptance": {
+            "source_results_accepted": all_source_results_accepted,
+            "pairwise_identical_model_mesh": True,
+            "wall_function_y_plus_range": all_y_plus_valid,
+            "consistent_candidate": consistent_candidate,
+            "model_selection_required": not consistent_candidate,
+            "all_point_accuracy_targets_met": all_point_accuracy_targets_met,
+            "evidence_matrix_accepted": evidence_matrix_accepted,
+            "candidate_within_range_error_limit": candidate_within_limit,
+            "maximum_range_relative_error": error_limit,
+            "range_candidate_accepted": range_candidate_accepted,
+            "default_promotion_accepted": False,
+            "default_promotion_reason": (
+                "A smooth-pipe correlation sweep without independent experiments "
+                "or numerical uncertainty cannot establish a general industrial default."
+            ),
+        },
+    }
+
+
 __all__ = [
     "GridConvergencePolicy",
     "GridConvergenceResult",
@@ -1441,6 +1755,7 @@ __all__ = [
     "assess_turbulent_precursor_grid_study",
     "assess_turbulent_wall_function_study",
     "assess_turbulent_model_study",
+    "assess_turbulent_model_sweep",
     "grid_convergence_from_result_records",
     "grid_convergence_index",
 ]

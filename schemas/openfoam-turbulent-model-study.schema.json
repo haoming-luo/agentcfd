@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-turbulent-model-study.schema.json",
+  "title": "AgentCFD prepared OpenFOAM turbulent model study 0.1",
+  "type": "object",
+  "required": ["schema", "quantity", "cross_section_cells", "nominal_wall_cell_fraction", "maximum_iterations", "scientific_inputs", "cases"],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-turbulent-model-study/0.1"},
+    "quantity": {"const": "flow.darcy_friction_factor"},
+    "cross_section_cells": {"type": "integer", "minimum": 2},
+    "nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+    "maximum_iterations": {"type": "integer", "minimum": 5},
+    "scientific_inputs": {
+      "type": "object",
+      "required": ["cases"],
+      "properties": {
+        "cases": {
+          "type": "object",
+          "required": ["k-omega-sst", "k-epsilon"],
+          "properties": {
+            "k-omega-sst": {"$ref": "#/$defs/caseInputs"},
+            "k-epsilon": {"$ref": "#/$defs/caseInputs"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"$ref": "#/$defs/case"}
+    }
+  },
+  "$defs": {
+    "caseInputs": {
+      "type": "object",
+      "required": ["model", "procedure", "output_request"],
+      "properties": {
+        "model": {"type": "object"},
+        "procedure": {"type": "object"},
+        "output_request": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "case": {
+      "type": "object",
+      "required": ["index", "directory", "turbulence_model", "nut_wall_function", "model_sha256", "expected_cell_count", "case_sha256", "result"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 1, "maximum": 2},
+        "directory": {"type": "string", "minLength": 1},
+        "turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+        "nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
+        "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "expected_cell_count": {"type": "integer", "minimum": 1},
+        "case_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "result": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -15,8 +15,8 @@ principles established through AgentFEM, but it is a separate codebase with its
 own fluid-mechanics language, providers, validation evidence, and release cycle.
 
 > **Project status:** pre-alpha. The public workflow and circular-pipe reference
-> solution are executable. Deterministic OpenFOAM laminar and k-omega SST
-> smooth-pipe generation, execution, mesh checks, result recovery, and
+> solution are executable. Deterministic OpenFOAM laminar, k-omega SST, and
+> bounded k-epsilon precursor generation, execution, mesh checks, result recovery, and
 > pressure-loss evidence are experimental capabilities; every run must still
 > earn acceptance.
 
@@ -238,6 +238,12 @@ agentcfd run openfoam-turbulent-precursor precursor \
   --container-image opencfd/openfoam-run:2606 --json
 ```
 
+The precursor supports explicit `--turbulence-model k-omega-sst` and
+`--turbulence-model k-epsilon` selections. AgentCFD pairs k-epsilon with
+`epsilonWallFunction` and `nutkWallFunction`, recovers `epsilon` rather than
+`omega`, and keeps this capability precursor-only until downstream mapping is
+independently verified.
+
 Keep the nominal wall-adjacent cell height fixed while changing the O-grid
 interior resolution, then assess the resulting wall-function study separately
 from formal GCI:
@@ -266,6 +272,20 @@ agentcfd prepare openfoam-turbulent-wall-study spalding-grid \
 
 The comparison is fail-closed: it can nominate a benchmark-specific candidate,
 but one Reynolds point and one correlation cannot promote a general default.
+
+Compare the evidence-backed SST/Spalding and k-epsilon/nutk model pairs with
+all non-model inputs and the native mesh held fixed:
+
+```bash
+agentcfd prepare openfoam-turbulent-model-study model-study
+agentcfd run openfoam-turbulent-model-study model-study \
+  --container-image opencfd/openfoam-run:2606 --json
+```
+
+The same assessment can be recreated from two accepted results with
+`agentcfd verify turbulent-model-study`. The certificate ranks accuracy and
+runtime but always keeps general default promotion false at a single Reynolds
+number.
 
 A uniform, geometrically similar candidate can be checked separately with
 `agentcfd verify turbulent-precursor-grid-study`. It uses the periodic
@@ -365,6 +385,7 @@ authoritative.
 - [OpenFOAM v2606 turbulent GCI-candidate evidence](docs/openfoam-v2606-turbulent-gci-candidate.json)
 - [OpenFOAM v2606 wall-function sensitivity evidence](docs/openfoam-v2606-wall-function-study.json)
 - [OpenFOAM v2606 Spalding fixed-wall evidence](docs/openfoam-v2606-spalding-fixed-wall-study.json)
+- [OpenFOAM v2606 turbulence-model sensitivity evidence](docs/openfoam-v2606-turbulent-model-study.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

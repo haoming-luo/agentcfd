@@ -129,11 +129,11 @@ _CAPABILITIES = (
             "runtime discovery",
             "external-process boundary",
             "automatic patch-history and mesh-quality recovery tests",
-            "OpenCFD v2606 k-omega SST execution evidence",
+            "OpenCFD v2606 k-omega SST and k-epsilon precursor execution evidence",
         ),
         limitations=(
             "Only steady incompressible isothermal flow in a smooth circular pipe is lowered.",
-            "Turbulence is limited to the explicitly declared k-omega SST slice.",
+            "Downstream turbulent pipes remain limited to k-omega SST; k-epsilon is precursor-only.",
             "OpenCFD v2606 is the currently exercised runtime dialect.",
             "Each laminar or turbulent slice has its own validation and grid-evidence gate.",
         ),
@@ -185,9 +185,28 @@ _CAPABILITIES = (
             "OpenCFD v2606 real execution with pressure-gradient, residual, y-plus, and friction checks",
         ),
         limitations=(
-            "The current wall-function evidence point is Re 99,621 on the c8 O-grid.",
-            "Cross-resolution inlet mapping and a turbulent grid certificate remain open gates.",
+            "Wall-function and model screens remain benchmark-specific, not global defaults.",
+            "A geometrically similar turbulent grid certificate remains an open gate.",
             "OpenFOAM boundaryFoam is not used because its implementation requires parallel planar walls.",
+        ),
+    ),
+    Capability(
+        name="openfoam.periodic-k-epsilon-circular-pipe-precursor",
+        maturity="experimental",
+        scope=(
+            "Periodic smooth circular-pipe standard k-epsilon flow driven to a "
+            "target bulk velocity for model sensitivity and developed-field evidence."
+        ),
+        evidence=(
+            "model-specific epsilon and wall-function lowering tests",
+            "content-addressed prepare/run and source-hashed comparison contracts",
+            "accepted OpenCFD v2606 c16 execution at Re 99,621",
+            "identical-mesh SST versus k-epsilon sensitivity evidence",
+        ),
+        limitations=(
+            "The current validation point is one smooth-pipe Reynolds number.",
+            "Downstream k-epsilon field mapping is not supported.",
+            "No general turbulence-model default is promoted from the correlation screen.",
         ),
     ),
 )

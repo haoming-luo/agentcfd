@@ -30,15 +30,29 @@ def standard() -> OutputRequest:
     )
 
 
-def turbulent_internal_flow() -> OutputRequest:
+def turbulent_internal_flow(
+    *,
+    turbulence_model: str = "k-omega-sst",
+) -> OutputRequest:
     """Request the minimum auditable field set for two-equation RANS flow."""
+
+    dissipation_fields = {
+        "k-omega-sst": "turbulence.specific_dissipation_rate",
+        "k-epsilon": "turbulence.dissipation_rate",
+    }
+    try:
+        dissipation_field = dissipation_fields[turbulence_model]
+    except KeyError as error:
+        raise ValueError(
+            "turbulence_model must be 'k-omega-sst' or 'k-epsilon'."
+        ) from error
 
     return OutputRequest(
         fields=(
             "fluid.velocity",
             "fluid.pressure",
             "turbulence.kinetic_energy",
-            "turbulence.specific_dissipation_rate",
+            dissipation_field,
             "turbulence.kinematic_eddy_viscosity",
         ),
         histories=(

@@ -37,10 +37,13 @@ correctly rejecting GCI because that fixed-wall-height family is non-similar.
 A geometrically similar c8/c12/c18 candidate also stays in one wall-function
 regime but is oscillatory and therefore correctly rejected. Formal turbulent
 discretization uncertainty and cross-resolution mapping remain open. An
-identical-mesh wall-function screen and Spalding c8/c16/c32 follow-up now reduce
-the Re 99,621 c32 smooth-Colebrook difference to 0.877%, but higher-Re c16
-checks remain above 3%; multi-Re numerical uncertainty and experimental
-validation are the next promotion gates.
+identical-mesh wall-function screen and tighter-solver Spalding c8/c16/c32
+follow-up now establish a 0.00689% c16-to-c32 pressure-gradient plateau with
+about 1.85% smooth-Colebrook difference. A bounded standard k-epsilon precursor
+and identical-mesh model study are implemented; at Re 99,621 SST/Spalding is
+1.851% from the correlation versus 3.289% for k-epsilon/nutk. Both remain
+benchmark-specific. Multi-Re numerical uncertainty and independent
+experimental validation are the next promotion gates.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

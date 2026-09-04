@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/turbulent-model-study.schema.json",
+  "title": "AgentCFD turbulent model sensitivity study 0.1",
+  "type": "object",
+  "required": ["schema", "mesh_sha256", "cross_section_cells", "nominal_wall_cell_fraction", "maximum_iterations", "quantity", "cases", "recommendation", "acceptance"],
+  "properties": {
+    "schema": {"const": "agentcfd.turbulent-model-study/0.1"},
+    "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "cross_section_cells": {"type": "integer", "minimum": 2},
+    "nominal_wall_cell_fraction": {
+      "oneOf": [{"type": "null"}, {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1}]
+    },
+    "maximum_iterations": {"type": "integer", "minimum": 5},
+    "quantity": {"const": "flow.darcy_friction_factor"},
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["turbulence_model", "nut_wall_function", "model_sha256", "pressure_gradient_pa_per_m", "darcy_friction_factor", "reference_darcy_friction_factor", "colebrook_relative_error", "wall_y_plus", "runtime_wall_seconds", "relative_runtime_to_fastest", "source_accepted"],
+        "properties": {
+          "turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+          "nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
+          "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "pressure_gradient_pa_per_m": {"type": "number", "minimum": 0},
+          "darcy_friction_factor": {"type": "number", "minimum": 0},
+          "reference_darcy_friction_factor": {"type": "number", "minimum": 0},
+          "colebrook_relative_error": {"type": "number", "minimum": 0},
+          "wall_y_plus": {
+            "type": "object",
+            "required": ["minimum", "average", "maximum"],
+            "properties": {
+              "minimum": {"type": "number", "minimum": 0},
+              "average": {"type": "number", "minimum": 0},
+              "maximum": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          },
+          "runtime_wall_seconds": {"type": "number", "minimum": 0},
+          "relative_runtime_to_fastest": {"type": "number", "minimum": 1},
+          "source_accepted": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "required": ["candidate_turbulence_model", "candidate_nut_wall_function", "basis", "benchmark_specific"],
+      "properties": {
+        "candidate_turbulence_model": {"enum": ["k-omega-sst", "k-epsilon"]},
+        "candidate_nut_wall_function": {"enum": ["nutUSpaldingWallFunction", "nutkWallFunction"]},
+        "basis": {"type": "string", "minLength": 1},
+        "benchmark_specific": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "required": ["source_results_accepted", "identical_mesh", "non_model_inputs_identical", "wall_function_y_plus_range", "screening_accepted", "maximum_correlation_relative_error", "default_promotion_accepted", "default_promotion_reason"],
+      "properties": {
+        "source_results_accepted": {"type": "boolean"},
+        "identical_mesh": {"const": true},
+        "non_model_inputs_identical": {"const": true},
+        "wall_function_y_plus_range": {"type": "boolean"},
+        "screening_accepted": {"type": "boolean"},
+        "maximum_correlation_relative_error": {"type": "number", "exclusiveMinimum": 0},
+        "default_promotion_accepted": {"const": false},
+        "default_promotion_reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

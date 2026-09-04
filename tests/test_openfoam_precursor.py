@@ -4,10 +4,11 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import outputs, procedures
+from agentcfd import Model, outputs, procedures, studies
 from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
 from agentcfd.providers import (
     OpenFOAMTurbulentPrecursorProvider,
+    prepare_turbulent_model_study,
     prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
 )
@@ -28,6 +29,26 @@ def turbulent_step():
             maximum_iterations=300,
         ),
         output=outputs.turbulent_internal_flow(),
+    )
+
+
+def k_epsilon_step():
+    source = turbulent_pipe_model()
+    model = Model(
+        study=studies.internal_flow(
+            turbulence="k-epsilon",
+            wall_treatment="blended-wall-functions",
+        ),
+        domain=source.domain,
+        fluid=source.fluid,
+        name="k-epsilon-pipe",
+    ).boundaries(**source.boundary_conditions)
+    return model.step(
+        procedure=procedures.steady(
+            relative_tolerance=1.0e-4,
+            maximum_iterations=300,
+        ),
+        output=outputs.turbulent_internal_flow(turbulence_model="k-epsilon"),
     )
 
 
@@ -107,6 +128,42 @@ def test_precursor_rejects_unknown_momentum_wall_function():
         OpenFOAMTurbulentPrecursorProvider(nut_wall_function="inventedWallFunction")
 
 
+def test_k_epsilon_precursor_lowering_is_explicit_and_model_specific(tmp_path):
+    provider = OpenFOAMTurbulentPrecursorProvider(
+        cross_section_cells=8,
+        maximum_iterations=20,
+        nut_wall_function="nutkWallFunction",
+    )
+    prepared = provider.prepare(k_epsilon_step(), tmp_path / "k-epsilon")
+
+    assert prepared.capability == "openfoam.periodic-k-epsilon-circular-pipe-precursor"
+    assert "0/epsilon" in prepared.files
+    assert "0/omega" not in prepared.files
+    assert "RASModel        kEpsilon;" in (
+        prepared.directory / "constant/turbulenceProperties"
+    ).read_text()
+    assert "type epsilonWallFunction;" in (
+        prepared.directory / "0/epsilon"
+    ).read_text()
+    assert "div(phi,epsilon)" in (
+        prepared.directory / "system/fvSchemes"
+    ).read_text()
+    assert '"(k|epsilon)"' in (
+        prepared.directory / "system/fvSolution"
+    ).read_text()
+    solution = (prepared.directory / "system/fvSolution").read_text()
+    assert solution.count("tolerance 1e-08;") == 3
+    assert "epsilon 0.0001;" in solution
+
+
+def test_k_epsilon_precursor_requires_consistent_momentum_wall_function(tmp_path):
+    with pytest.raises(UnsupportedCaseError, match="requires nutkWallFunction"):
+        OpenFOAMTurbulentPrecursorProvider().prepare(
+            k_epsilon_step(),
+            tmp_path / "invalid-k-epsilon",
+        )
+
+
 def test_precursor_declares_near_wall_grading(tmp_path):
     prepared = OpenFOAMTurbulentPrecursorProvider(
         cross_section_cells=16,
@@ -179,6 +236,37 @@ def test_wall_function_study_prepares_identical_mesh_cases(tmp_path):
     assert len(mesh_hashes) == 1
 
 
+def test_turbulence_model_study_prepares_two_models_on_identical_mesh(tmp_path):
+    study = prepare_turbulent_model_study(
+        turbulent_step(),
+        k_epsilon_step(),
+        tmp_path / "models",
+    )
+    payload = study.to_dict()
+
+    assert payload["schema"] == "agentcfd.openfoam-turbulent-model-study/0.1"
+    assert [case["turbulence_model"] for case in payload["cases"]] == [
+        "k-omega-sst",
+        "k-epsilon",
+    ]
+    assert [case["nut_wall_function"] for case in payload["cases"]] == [
+        "nutUSpaldingWallFunction",
+        "nutkWallFunction",
+    ]
+    schema = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "schemas/openfoam-turbulent-model-study.schema.json"
+        ).read_text()
+    )
+    jsonschema.Draft202012Validator(schema).validate(payload)
+    meshes = {
+        (study.directory / case["directory"] / "system/blockMeshDict").read_text()
+        for case in payload["cases"]
+    }
+    assert len(meshes) == 1
+
+
 def test_prepared_precursor_binds_mesh_and_iteration_runtime_controls(tmp_path):
     source = tmp_path / "source"
     OpenFOAMTurbulentPrecursorProvider(
@@ -204,6 +292,23 @@ def test_prepared_precursor_binds_mesh_and_iteration_runtime_controls(tmp_path):
     )
     with pytest.raises(CaseIntegrityError, match="iteration limit differs"):
         changed.run_prepared(turbulent_step())
+
+
+def test_prepared_precursor_rejects_legacy_loose_inner_solver_tolerance(tmp_path):
+    source = tmp_path / "source"
+    provider = OpenFOAMTurbulentPrecursorProvider(
+        case_directory=source,
+        cross_section_cells=8,
+        maximum_iterations=20,
+    )
+    prepared = provider.prepare(turbulent_step())
+    solution = source / "system/fvSolution"
+    solution.write_text(
+        solution.read_text().replace("tolerance 1e-08;", "tolerance 0.0001;")
+    )
+
+    with pytest.raises(CaseIntegrityError, match="inner linear-solver tolerance"):
+        provider._verify_prepared_controls(prepared, turbulent_step())
 
 
 def test_precursor_rejects_extreme_cumulative_wall_grading_before_meshing(tmp_path):

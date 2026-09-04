@@ -13,6 +13,9 @@ def test_capability_catalog_is_truthful():
     assert maturity["reference.hagen-poiseuille"] == "release"
     assert maturity["provider.openfoam"] == "experimental"
     assert maturity["openfoam.steady-laminar-circular-pipe"] == "experimental"
+    assert maturity["openfoam.periodic-k-epsilon-circular-pipe-precursor"] == (
+        "experimental"
+    )
     assert maturity["engineering.gas-screening"] == "experimental"
     assert maturity["validation.single-observable-uncertainty"] == "experimental"
     report = capabilities.as_dict()
@@ -279,6 +282,37 @@ def test_cli_prepares_periodic_turbulent_precursor(tmp_path, capsys):
     ).read_text()
     assert "endTime         600;" in (
         case_directory / "system/controlDict"
+    ).read_text()
+
+
+def test_cli_prepares_k_epsilon_precursor_with_consistent_defaults(tmp_path, capsys):
+    case_directory = tmp_path / "k-epsilon-precursor"
+    assert (
+        main(
+            [
+                "prepare",
+                "openfoam-turbulent-precursor",
+                str(case_directory),
+                "--turbulence-model",
+                "k-epsilon",
+                "--cross-section-cells",
+                "8",
+                "--maximum-iterations",
+                "20",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["capability"] == (
+        "openfoam.periodic-k-epsilon-circular-pipe-precursor"
+    )
+    assert (case_directory / "0/epsilon").is_file()
+    assert not (case_directory / "0/omega").exists()
+    assert "type nutkWallFunction;" in (case_directory / "0/nut").read_text()
+    assert "RASModel        kEpsilon;" in (
+        case_directory / "constant/turbulenceProperties"
     ).read_text()
 
 
@@ -552,6 +586,69 @@ def test_cli_executes_prepared_wall_function_study(tmp_path, capsys, monkeypatch
         contracts.load("turbulent-wall-function-study.schema.json")
     ).validate(payload)
     assert (root / "agentcfd-turbulent-wall-function-assessment.json").is_file()
+
+
+def test_cli_executes_prepared_turbulence_model_study(tmp_path, capsys, monkeypatch):
+    root = tmp_path / "models"
+    assert main(["prepare", "openfoam-turbulent-model-study", str(root)]) == 0
+    capsys.readouterr()
+    plan = json.loads((root / "agentcfd-turbulent-model-study.json").read_text())
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-turbulent-model-study.schema.json")
+    ).validate(plan)
+
+    def fake_run_prepared(self, step, directory=None):
+        model = step.model.study.turbulence
+        error = 0.0185 if model == "k-omega-sst" else 0.0329
+        runtime = 18.0 if model == "k-omega-sst" else 17.0
+        return SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam-periodic-precursor",
+            quantities={
+                "flow.pressure_gradient": Quantity(88.0, "Pa/m"),
+                "flow.darcy_friction_factor": Quantity(0.018, "1"),
+                "reference.flow.darcy_friction_factor": Quantity(0.0183, "1"),
+                "flow.darcy_friction_factor_relative_error": Quantity(error, "1"),
+                "runtime.total_wall_seconds": Quantity(runtime, "s"),
+                "wall.y_plus.minimum": Quantity(38.0, "1"),
+                "wall.y_plus.average": Quantity(44.0, "1"),
+                "wall.y_plus.maximum": Quantity(48.0, "1"),
+            },
+            checks=(Check("synthetic-verification", True, kind="verification"),),
+            scientific_inputs={
+                "model": step.model.to_dict(),
+                "procedure": step.procedure.to_dict(),
+                "precursor": {
+                    "cross_section_cells": self.cross_section_cells,
+                    "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+                    "nut_wall_function": self.nut_wall_function,
+                    "turbulence_model": model,
+                    "maximum_iterations": self.maximum_iterations,
+                },
+                "validation_policy": {"minimum_precursor_steady_samples": 50},
+            },
+            provenance={
+                "model_sha256": step.model.fingerprint(),
+                "mesh_sha256": "c" * 64,
+            },
+        )
+
+    monkeypatch.setattr(
+        OpenFOAMTurbulentPrecursorProvider,
+        "run_prepared",
+        fake_run_prepared,
+    )
+    assert main(["run", "openfoam-turbulent-model-study", str(root), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["recommendation"]["candidate_turbulence_model"] == "k-omega-sst"
+    assert payload["acceptance"]["screening_accepted"] is True
+    assert payload["acceptance"]["default_promotion_accepted"] is False
+    jsonschema.Draft202012Validator(
+        contracts.load("turbulent-model-study.schema.json")
+    ).validate(payload)
+    assert (root / "agentcfd-turbulent-model-assessment.json").is_file()
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

@@ -10,45 +10,45 @@
   },
   "cases": [
     {
-      "colebrook_relative_error": 0.015884621751084616,
-      "darcy_friction_factor": 0.017718058582,
+      "colebrook_relative_error": 0.018514935175404576,
+      "darcy_friction_factor": 0.017670702298,
       "nut_wall_function": "nutUSpaldingWallFunction",
-      "pressure_gradient_pa_per_m": 88.430830382762,
+      "pressure_gradient_pa_per_m": 88.194475169318,
       "reference_darcy_friction_factor": 0.018004046043388334,
-      "runtime_wall_seconds": 18.372322417009855,
+      "runtime_wall_seconds": 18.829440750996582,
       "source_accepted": true,
       "wall_y_plus": {
-        "average": 44.865149247,
-        "maximum": 48.301491871,
-        "minimum": 39.478616402
+        "average": 44.806032852,
+        "maximum": 48.240615878,
+        "minimum": 39.423297652
       }
     },
     {
-      "colebrook_relative_error": 0.053020737176957475,
-      "darcy_friction_factor": 0.01704945825,
+      "colebrook_relative_error": 0.05633901162793504,
+      "darcy_friction_factor": 0.016989715884,
       "nut_wall_function": "nutUBlendedWallFunction",
-      "pressure_gradient_pa_per_m": 85.09384612575,
+      "pressure_gradient_pa_per_m": 84.79567197704401,
       "reference_darcy_friction_factor": 0.018004046043388334,
-      "runtime_wall_seconds": 13.357360582987894,
+      "runtime_wall_seconds": 17.675933167003677,
       "source_accepted": true,
       "wall_y_plus": {
-        "average": 44.013586695,
-        "maximum": 47.432773317,
-        "minimum": 38.653214463
+        "average": 43.937236315,
+        "maximum": 47.35379112,
+        "minimum": 38.582286917
       }
     },
     {
-      "colebrook_relative_error": 0.05828351754152965,
-      "darcy_friction_factor": 0.016954706910000002,
+      "colebrook_relative_error": 0.06184703764392158,
+      "darcy_friction_factor": 0.016890549129999998,
       "nut_wall_function": "nutkWallFunction",
-      "pressure_gradient_pa_per_m": 84.62094218781,
+      "pressure_gradient_pa_per_m": 84.30073070783,
       "reference_darcy_friction_factor": 0.018004046043388334,
-      "runtime_wall_seconds": 16.937571208007284,
+      "runtime_wall_seconds": 18.935739291002392,
       "source_accepted": true,
       "wall_y_plus": {
-        "average": 43.831634066,
-        "maximum": 47.354593572,
-        "minimum": 38.309589494
+        "average": 43.741389104,
+        "maximum": 47.261442086,
+        "minimum": 38.225329876
       }
     }
   ],
@@ -65,16 +65,16 @@
   "schema": "agentcfd.turbulent-wall-function-study/0.1",
   "sources": [
     {
-      "path": "/private/tmp/agentcfd-wall-model-blended-c16-i4000-v1/agentcfd-result.json",
-      "sha256": "ad0a3065a8e6bc75f171aeccb103d7cfedc1e109e3cce86449c6aa4733c1fd06"
+      "path": "/private/tmp/agentcfd-wall-function-study-tight-v1/wall-function-1-nutUBlendedWallFunction/agentcfd-result.json",
+      "sha256": "4d36ea0313673e098ddab8536fba92d5fadfd83a9ebb5eff832147c719444757"
     },
     {
-      "path": "/private/tmp/agentcfd-wall-model-spalding-c16-i4000-v1/agentcfd-result.json",
-      "sha256": "9a26a8fc081a2e9ed50ce90b0449a944077df6c73906374214cac8a7a42f69c7"
+      "path": "/private/tmp/agentcfd-wall-function-study-tight-v1/wall-function-2-nutUSpaldingWallFunction/agentcfd-result.json",
+      "sha256": "a5a416d5c3725e36f0ac4ab08ddd884240c6bea265fe2f0e12b8c915e92c7dac"
     },
     {
-      "path": "/private/tmp/agentcfd-wall-model-k_based-c16-i4000-v1/agentcfd-result.json",
-      "sha256": "b1e7c0e0b4e63683c5b6868f70ef419a08a2a365c3b302758408134657be2458"
+      "path": "/private/tmp/agentcfd-wall-function-study-tight-v1/wall-function-3-nutkWallFunction/agentcfd-result.json",
+      "sha256": "1c2062b48851b33513d2a8b398eb82f18cd9f66f77a2632a3876a9ce250709a0"
     }
   ]
 }

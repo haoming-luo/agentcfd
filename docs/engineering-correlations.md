@@ -63,6 +63,11 @@ common source of modelling inconsistency. Those ranges are guidance, not
 hard-coded acceptance thresholds; the selected wall treatment and the solved
 `y+` distribution must be recorded together.
 
+The same official guidance identifies the typical high-Re standard k-epsilon
+pairing as `kqRWallFunction`, `epsilonWallFunction`, and `nutkWallFunction`.
+AgentCFD treats that trio as one compatible implementation choice rather than
+allowing arbitrary cross-model wall-function combinations.
+
 `turbulence_inlet_from_intensity` derives the common `k`, `omega`, and
 `epsilon` inlet estimates from an explicit mean speed, fractional turbulence
 intensity, and length scale. OpenFOAM documents

@@ -125,6 +125,18 @@ def test_study_flags_and_output_names_are_runtime_validated():
     assert turbulent.to_dict()["wall_treatment"] == "blended-wall-functions"
 
 
+def test_turbulent_output_request_tracks_model_specific_dissipation_field():
+    sst = outputs.turbulent_internal_flow()
+    k_epsilon = outputs.turbulent_internal_flow(turbulence_model="k-epsilon")
+
+    assert "turbulence.specific_dissipation_rate" in sst.fields
+    assert "turbulence.dissipation_rate" not in sst.fields
+    assert "turbulence.dissipation_rate" in k_epsilon.fields
+    assert "turbulence.specific_dissipation_rate" not in k_epsilon.fields
+    with pytest.raises(ValueError, match="turbulence_model"):
+        outputs.turbulent_internal_flow(turbulence_model="invented")
+
+
 @pytest.mark.parametrize("invalid_name", [None, True, 1, ""])
 def test_physical_asset_names_require_non_empty_strings(invalid_name):
     with pytest.raises(ValueError, match="Pipe name must be a non-empty string"):

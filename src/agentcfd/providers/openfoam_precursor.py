@@ -2,8 +2,8 @@
 
 The precursor is a separate, content-addressed numerical problem.  It solves a
 single periodic axial layer of the same circular O-grid used by the downstream
-pipe provider and retains the developed ``U``, ``k``, ``omega``, and ``nut``
-fields as auditable artifacts.
+pipe provider and retains developed ``U``, ``k``, model-specific ``omega`` or
+``epsilon``, and ``nut`` fields as auditable artifacts.
 """
 
 from __future__ import annotations
@@ -52,7 +52,17 @@ from .openfoam import (
 )
 
 
-_CAPABILITY = "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
+_CAPABILITIES = {
+    "k-omega-sst": "openfoam.periodic-k-omega-sst-circular-pipe-precursor",
+    "k-epsilon": "openfoam.periodic-k-epsilon-circular-pipe-precursor",
+}
+
+
+def _precursor_capability(step) -> str:
+    try:
+        return _CAPABILITIES[step.model.study.turbulence]
+    except KeyError as error:
+        raise UnsupportedCaseError("Unsupported periodic precursor turbulence model.") from error
 
 _SUPPORTED_NUT_WALL_FUNCTIONS = (
     "nutUBlendedWallFunction",
@@ -137,6 +147,145 @@ class PreparedOpenFOAMTurbulentWallFunctionStudy:
         )
         temporary.replace(target)
         return target
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedOpenFOAMTurbulentModelStudy:
+    """Content-addressed plan for an identical-mesh RANS model screen."""
+
+    directory: Path
+    cross_section_cells: int
+    nominal_wall_cell_fraction: float
+    maximum_iterations: int
+    cases: tuple[dict[str, object], ...]
+    scientific_inputs: dict[str, object]
+    schema: str = "agentcfd.openfoam-turbulent-model-study/0.1"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "quantity": "flow.darcy_friction_factor",
+            "cross_section_cells": self.cross_section_cells,
+            "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+            "maximum_iterations": self.maximum_iterations,
+            "scientific_inputs": self.scientific_inputs,
+            "cases": list(self.cases),
+        }
+
+    def write(self) -> Path:
+        target = self.directory / "agentcfd-turbulent-model-study.json"
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+        return target
+
+
+def _model_study_comparison_inputs(step) -> dict[str, object]:
+    model = step.model.to_dict()
+    model.pop("name", None)
+    study = dict(model["study"])
+    study.pop("turbulence", None)
+    model["study"] = study
+    return {
+        "model": model,
+        "procedure": step.procedure.to_dict(),
+    }
+
+
+def prepare_turbulent_model_study(
+    sst_step,
+    k_epsilon_step,
+    directory: str | Path,
+    *,
+    cross_section_cells: int = 16,
+    nominal_wall_cell_fraction: float = 0.0625,
+    maximum_iterations: int = 4000,
+) -> PreparedOpenFOAMTurbulentModelStudy:
+    """Prepare SST/Spalding and k-epsilon/nutk cases on one mesh."""
+
+    steps = {
+        "k-omega-sst": (sst_step, "nutUSpaldingWallFunction"),
+        "k-epsilon": (k_epsilon_step, "nutkWallFunction"),
+    }
+    for turbulence_model, (step, _wall_function) in steps.items():
+        if step.model.study.turbulence != turbulence_model:
+            raise ValueError(
+                f"The {turbulence_model} model-study step has a different turbulence model."
+            )
+    if _model_study_comparison_inputs(sst_step) != _model_study_comparison_inputs(
+        k_epsilon_step
+    ):
+        raise ValueError("Turbulence-model study steps must share all non-model inputs.")
+    cross_cells = integer_at_least(
+        cross_section_cells,
+        name="cross_section_cells",
+        minimum=2,
+    )
+    iteration_limit = integer_at_least(
+        maximum_iterations,
+        name="maximum_iterations",
+        minimum=5,
+    )
+    fraction = positive_float(
+        nominal_wall_cell_fraction,
+        name="nominal_wall_cell_fraction",
+    )
+    if fraction >= 1.0:
+        raise ValueError("nominal_wall_cell_fraction must be below one.")
+    root = Path(directory)
+    if root.exists() and any(root.iterdir()):
+        raise FileExistsError(f"OpenFOAM model-study directory is not empty: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+    cases: list[dict[str, object]] = []
+    mesh_text: str | None = None
+    scientific_cases: dict[str, object] = {}
+    for index, (turbulence_model, (step, wall_function)) in enumerate(
+        steps.items(), start=1
+    ):
+        relative = Path(f"model-{index}-{turbulence_model}")
+        prepared = OpenFOAMTurbulentPrecursorProvider(
+            case_directory=root / relative,
+            cross_section_cells=cross_cells,
+            nominal_wall_cell_fraction=fraction,
+            nut_wall_function=wall_function,
+            maximum_iterations=iteration_limit,
+        ).prepare(step)
+        current_mesh = (prepared.directory / "system/blockMeshDict").read_text(
+            encoding="utf-8"
+        )
+        if mesh_text is not None and current_mesh != mesh_text:
+            raise RuntimeError("Prepared turbulence-model cases do not share one mesh.")
+        mesh_text = current_mesh
+        cases.append(
+            {
+                "index": index,
+                "directory": str(relative),
+                "turbulence_model": turbulence_model,
+                "nut_wall_function": wall_function,
+                "model_sha256": prepared.model_sha256,
+                "expected_cell_count": 5 * cross_cells**2,
+                "case_sha256": prepared.case_sha256,
+                "result": str(relative / "agentcfd-result.json"),
+            }
+        )
+        scientific_cases[turbulence_model] = {
+            "model": step.model.to_dict(),
+            "procedure": step.procedure.to_dict(),
+            "output_request": step.output.to_dict(),
+        }
+    study = PreparedOpenFOAMTurbulentModelStudy(
+        directory=root,
+        cross_section_cells=cross_cells,
+        nominal_wall_cell_fraction=fraction,
+        maximum_iterations=iteration_limit,
+        cases=tuple(cases),
+        scientific_inputs={"cases": scientific_cases},
+    )
+    study.write()
+    return study
 
 
 def prepare_turbulent_wall_function_study(
@@ -332,6 +481,7 @@ def _precursor_residual_check(
     quantities: dict[str, Quantity],
     *,
     tolerance: float,
+    turbulence_model: str = "k-omega-sst",
 ) -> Check:
     initial_prefix = "solver.initial_residual."
     final_prefix = "solver.final_residual."
@@ -346,13 +496,18 @@ def _precursor_residual_check(
         if name.startswith(final_prefix)
     }
     axial_names = tuple(name for name in ("Uz", "U") if name in initial)
-    missing = [name for name in ("k", "omega") if name not in initial]
+    dissipation_name = "epsilon" if turbulence_model == "k-epsilon" else "omega"
+    missing = [name for name in ("k", dissipation_name) if name not in initial]
     has_velocity = bool(axial_names)
     if not has_velocity:
         missing.insert(0, "axial velocity")
     if "p" not in final:
         missing.insert(0, "pressure")
-    selected = [initial[name] for name in (*axial_names, "k", "omega") if name in initial]
+    selected = [
+        initial[name]
+        for name in (*axial_names, "k", dissipation_name)
+        if name in initial
+    ]
     selected.extend(
         value
         for name, value in final.items()
@@ -468,7 +623,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                 if self.container_image
                 else "filesystem-and-subprocess"
             ),
-            capabilities=(_CAPABILITY,),
+            capabilities=tuple(_CAPABILITIES.values()),
         )
 
     def prepare(self, step, directory: str | Path | None = None) -> PreparedOpenFOAMCase:
@@ -496,7 +651,7 @@ class OpenFOAMTurbulentPrecursorProvider:
             analysis_sha256=_analysis_sha256(step),
             case_sha256=case_sha256,
             files=hashes,
-            capability=_CAPABILITY,
+            capability=_precursor_capability(step),
         )
         (target / "agentcfd-case.json").write_text(
             json.dumps(prepared.to_dict(), indent=2, sort_keys=True) + "\n",
@@ -529,10 +684,10 @@ class OpenFOAMTurbulentPrecursorProvider:
                 "Prepared OpenFOAM precursor contains unrecorded entries: "
                 + ", ".join(unexpected)
             )
-        self._verify_prepared_controls(prepared)
+        self._verify_prepared_controls(prepared, step)
         return self._execute(step, prepared)
 
-    def _verify_prepared_controls(self, prepared: PreparedOpenFOAMCase) -> None:
+    def _verify_prepared_controls(self, prepared: PreparedOpenFOAMCase, step) -> None:
         """Bind runtime expectations to the controls in the verified case files."""
 
         block_mesh = (prepared.directory / "system/blockMeshDict").read_text(
@@ -573,6 +728,40 @@ class OpenFOAMTurbulentPrecursorProvider:
             raise CaseIntegrityError(
                 "Prepared precursor momentum wall function differs from runtime controls."
             )
+        model_names = {"k-omega-sst": "kOmegaSST", "k-epsilon": "kEpsilon"}
+        turbulence_model = step.model.study.turbulence
+        model_name = model_names.get(turbulence_model)
+        turbulence = (
+            prepared.directory / "constant/turbulenceProperties"
+        ).read_text(encoding="utf-8")
+        if model_name is None or not re.search(
+            rf"(?m)^\s*RASModel\s+{model_name}\s*;\s*$",
+            turbulence,
+        ):
+            raise CaseIntegrityError(
+                "Prepared precursor turbulence model differs from runtime controls."
+            )
+        solution = (prepared.directory / "system/fvSolution").read_text(
+            encoding="utf-8"
+        )
+        inner_tolerances = tuple(
+            float(value)
+            for value in re.findall(
+                r"(?m)^\s*tolerance\s+([0-9.eE+-]+)\s*;\s*$",
+                solution,
+            )
+        )
+        expected_inner = _precursor_linear_solver_tolerance(
+            step.procedure.relative_tolerance
+        )
+        if len(inner_tolerances) != 3 or any(
+            not math.isclose(value, expected_inner, rel_tol=1.0e-12)
+            for value in inner_tolerances
+        ):
+            raise CaseIntegrityError(
+                "Prepared precursor inner linear-solver tolerance differs from "
+                "runtime controls."
+            )
 
     def _load_prepared(
         self,
@@ -594,7 +783,7 @@ class OpenFOAMTurbulentPrecursorProvider:
             raise CaseIntegrityError("Prepared OpenFOAM precursor manifest is missing or invalid.") from error
         expected = {
             "schema": "agentcfd.openfoam-case/0.3",
-            "capability": _CAPABILITY,
+            "capability": _precursor_capability(step),
             "model_sha256": step.model.fingerprint(),
             "analysis_sha256": _analysis_sha256(step),
         }
@@ -628,7 +817,7 @@ class OpenFOAMTurbulentPrecursorProvider:
             analysis_sha256=expected["analysis_sha256"],
             case_sha256=case_sha256,
             files=verified,
-            capability=_CAPABILITY,
+            capability=_precursor_capability(step),
         )
 
     def _validate_supported(self, step) -> None:
@@ -639,12 +828,17 @@ class OpenFOAMTurbulentPrecursorProvider:
             or study.compressible
             or study.energy
             or study.reacting
-            or study.turbulence != "k-omega-sst"
+            or study.turbulence not in _CAPABILITIES
             or study.wall_treatment != "blended-wall-functions"
         ):
             raise UnsupportedCaseError(
                 "The periodic pipe precursor supports steady incompressible isothermal "
-                "k-omega SST flow with blended wall functions only."
+                "k-omega SST or k-epsilon flow with blended wall functions only."
+            )
+        if study.turbulence == "k-epsilon" and self.nut_wall_function != "nutkWallFunction":
+            raise UnsupportedCaseError(
+                "The k-epsilon precursor requires nutkWallFunction with "
+                "epsilonWallFunction."
             )
         if model.domain.roughness != 0.0:
             raise UnsupportedCaseError("The periodic pipe precursor requires a smooth pipe.")
@@ -699,6 +893,8 @@ class OpenFOAMTurbulentPrecursorProvider:
 
     def _render_files(self, step) -> dict[str, str]:
         model = step.model
+        turbulence_model = model.study.turbulence
+        assert turbulence_model in _CAPABILITIES
         inlet = next(
             value
             for value in model.boundary_conditions.values()
@@ -721,6 +917,8 @@ class OpenFOAMTurbulentPrecursorProvider:
                 wall_name,
                 kinetic_energy=estimate.turbulent_kinetic_energy,
                 specific_dissipation_rate=estimate.specific_dissipation_rate,
+                dissipation_rate=estimate.dissipation_rate,
+                turbulence_model=turbulence_model,
                 nut_wall_function=self.nut_wall_function,
             ),
             "0/p": _precursor_pressure_field(wall_name),
@@ -728,7 +926,10 @@ class OpenFOAMTurbulentPrecursorProvider:
             "constant/transportProperties": _precursor_transport_properties(
                 model.fluid.kinematic_viscosity
             ),
-            "constant/turbulenceProperties": _turbulence_properties(turbulent=True),
+            "constant/turbulenceProperties": _turbulence_properties(
+                turbulent=True,
+                turbulence_model=turbulence_model,
+            ),
             "system/blockMeshDict": _block_mesh_dict(
                 length=thickness,
                 radius=model.domain.diameter / 2.0,
@@ -741,8 +942,11 @@ class OpenFOAMTurbulentPrecursorProvider:
                 nominal_wall_cell_fraction=self.nominal_wall_cell_fraction,
             ),
             "system/controlDict": _precursor_control_dict(self.maximum_iterations),
-            "system/fvSchemes": _precursor_fv_schemes(),
-            "system/fvSolution": _precursor_fv_solution(step.procedure.relative_tolerance),
+            "system/fvSchemes": _precursor_fv_schemes(turbulence_model),
+            "system/fvSolution": _precursor_fv_solution(
+                step.procedure.relative_tolerance,
+                turbulence_model,
+            ),
         }
 
     def _execute(self, step, prepared: PreparedOpenFOAMCase) -> SimulationResult:
@@ -809,6 +1013,9 @@ class OpenFOAMTurbulentPrecursorProvider:
         durations: dict[str, float],
         commands: dict[str, str | None],
     ) -> SimulationResult:
+        turbulence_model = step.model.study.turbulence
+        assert turbulence_model in _CAPABILITIES
+        dissipation_name = "epsilon" if turbulence_model == "k-epsilon" else "omega"
         process_ok = all(return_codes.get(name) == 0 for name in ("blockMesh", "checkMesh", "simpleFoam"))
         solver_log = logs.get("simpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
@@ -896,6 +1103,7 @@ class OpenFOAMTurbulentPrecursorProvider:
         residual_check = _precursor_residual_check(
             quantities,
             tolerance=self.validation.maximum_turbulent_outer_residual,
+            turbulence_model=turbulence_model,
         )
         gradient_drift = _tail_relative_range(
             gradients,
@@ -985,7 +1193,7 @@ class OpenFOAMTurbulentPrecursorProvider:
             "U": "m/s",
             "p": "m^2/s^2",
             "k": "m^2/s^2",
-            "omega": "1/s",
+            dissipation_name: "m^2/s^3" if dissipation_name == "epsilon" else "1/s",
             "nut": "m^2/s",
         }
         fields: dict[str, FieldRecord] = {}
@@ -1099,7 +1307,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                 name="developed-field-completeness",
                 passed=len(fields) == len(field_units),
                 value=", ".join(sorted(fields)),
-                limit="U, p, k, omega, and nut are recovered",
+                limit=f"U, p, k, {dissipation_name}, and nut are recovered",
                 kind="runtime",
                 observable="result.outputs",
             ),
@@ -1135,7 +1343,11 @@ class OpenFOAMTurbulentPrecursorProvider:
                     "axial_cells": 1,
                     "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
                     "nut_wall_function": self.nut_wall_function,
+                    "turbulence_model": turbulence_model,
                     "maximum_iterations": self.maximum_iterations,
+                    "linear_solver_tolerance": _precursor_linear_solver_tolerance(
+                        step.procedure.relative_tolerance
+                    ),
                     "periodic_end_planes": True,
                 },
                 "validation_policy": asdict(self.validation),
@@ -1189,17 +1401,34 @@ def _precursor_turbulence_fields(
     *,
     kinetic_energy: float,
     specific_dissipation_rate: float,
+    dissipation_rate: float | None = None,
+    turbulence_model: str = "k-omega-sst",
     nut_wall_function: str = "nutUBlendedWallFunction",
 ) -> dict[str, str]:
     nut_wall_function = _validated_nut_wall_function(nut_wall_function)
-    specifications = {
-        "k": ("[0 2 -2 0 0 0 0]", kinetic_energy, "kqRWallFunction", ""),
-        "omega": (
+    if turbulence_model not in _CAPABILITIES:
+        raise ValueError("Unsupported precursor turbulence model.")
+    if turbulence_model == "k-epsilon":
+        if dissipation_rate is None:
+            raise ValueError("k-epsilon precursor requires dissipation_rate.")
+        dissipation_name = "epsilon"
+        dissipation_specification = (
+            "[0 2 -3 0 0 0 0]",
+            dissipation_rate,
+            "epsilonWallFunction",
+            "",
+        )
+    else:
+        dissipation_name = "omega"
+        dissipation_specification = (
             "[0 0 -1 0 0 0 0]",
             specific_dissipation_rate,
             "omegaWallFunction",
             "        blending binomial;\n",
-        ),
+        )
+    specifications = {
+        "k": ("[0 2 -2 0 0 0 0]", kinetic_energy, "kqRWallFunction", ""),
+        dissipation_name: dissipation_specification,
         "nut": ("[0 2 -1 0 0 0 0]", 0.0, nut_wall_function, ""),
     }
     files: dict[str, str] = {}
@@ -1309,8 +1538,9 @@ functions
 """
 
 
-def _precursor_fv_schemes() -> str:
-    return _header(object_name="fvSchemes", class_name="dictionary", location="system") + """ddtSchemes
+def _precursor_fv_schemes(turbulence_model: str = "k-omega-sst") -> str:
+    dissipation_name = "epsilon" if turbulence_model == "k-epsilon" else "omega"
+    body = """ddtSchemes
 {
     default steadyState;
 }
@@ -1324,7 +1554,7 @@ divSchemes
     div(phi,U) bounded Gauss linearUpwind grad(U);
     turbulence bounded Gauss linear;
     div(phi,k) $turbulence;
-    div(phi,omega) $turbulence;
+    div(phi,DISSIPATION_NAME) $turbulence;
     div((nuEff*dev2(T(grad(U))))) Gauss linear;
 }
 laplacianSchemes
@@ -1344,15 +1574,35 @@ wallDist
     method meshWave;
 }
 """
+    return _header(
+        object_name="fvSchemes",
+        class_name="dictionary",
+        location="system",
+    ) + body.replace("DISSIPATION_NAME", dissipation_name)
 
 
-def _precursor_fv_solution(tolerance: float) -> str:
+def _precursor_linear_solver_tolerance(outer_tolerance: float) -> float:
+    """Keep inner linear solves tighter than the outer SIMPLE target."""
+
+    return min(1.0e-8, outer_tolerance * 1.0e-2)
+
+
+def _precursor_fv_solution(
+    tolerance: float,
+    turbulence_model: str = "k-omega-sst",
+) -> str:
+    dissipation_name = "epsilon" if turbulence_model == "k-epsilon" else "omega"
+    # ``procedure.relative_tolerance`` is an outer SIMPLE convergence target.
+    # Reusing it as the absolute tolerance of every inner linear solve lets
+    # equations be skipped near the outer threshold and can produce a false
+    # residual plateau.  Keep the inner solve at least two orders tighter.
+    linear_tolerance = _precursor_linear_solver_tolerance(tolerance)
     return _header(object_name="fvSolution", class_name="dictionary", location="system") + f"""solvers
 {{
     p
     {{
         solver GAMG;
-        tolerance {tolerance:.17g};
+        tolerance {linear_tolerance:.17g};
         relTol 0;
         smoother GaussSeidel;
     }}
@@ -1360,14 +1610,14 @@ def _precursor_fv_solution(tolerance: float) -> str:
     {{
         solver smoothSolver;
         smoother symGaussSeidel;
-        tolerance {tolerance:.17g};
+        tolerance {linear_tolerance:.17g};
         relTol 0;
     }}
-    \"(k|omega)\"
+    \"(k|{dissipation_name})\"
     {{
         solver smoothSolver;
         smoother symGaussSeidel;
-        tolerance {tolerance:.17g};
+        tolerance {linear_tolerance:.17g};
         relTol 0;
     }}
 }}
@@ -1382,7 +1632,7 @@ SIMPLE
         p {tolerance:.17g};
         U {tolerance:.17g};
         k {tolerance:.17g};
-        omega {tolerance:.17g};
+        {dissipation_name} {tolerance:.17g};
     }}
 }}
 relaxationFactors
@@ -1395,7 +1645,7 @@ relaxationFactors
     {{
         U 0.5;
         k 0.7;
-        omega 0.7;
+        {dissipation_name} 0.7;
     }}
 }}
 """

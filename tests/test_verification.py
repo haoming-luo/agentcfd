@@ -6,6 +6,7 @@ from agentcfd.verification import (
     GridConvergencePolicy,
     GridConvergenceResult,
     GridSolution,
+    assess_turbulent_model_study,
     assess_turbulent_precursor_grid_study,
     assess_turbulent_wall_function_study,
     assess_turbulent_wall_study,
@@ -372,6 +373,69 @@ def test_wall_function_study_is_identical_mesh_screening_not_default_promotion()
     records[2]["provenance"]["mesh_sha256"] = "c" * 64
     with pytest.raises(ValueError, match="share one mesh identity"):
         assess_turbulent_wall_function_study(records)
+
+
+def test_turbulence_model_study_holds_non_model_inputs_and_mesh_constant():
+    records = []
+    for index, (model, wall_function, error, runtime) in enumerate(
+        (
+            ("k-omega-sst", "nutUSpaldingWallFunction", 0.0185, 18.0),
+            ("k-epsilon", "nutkWallFunction", 0.0329, 17.0),
+        )
+    ):
+        record = _wall_study_record(cross=16, gradient=88.0, y_plus=44.0)
+        record["provenance"].update(
+            {"model_sha256": chr(ord("a") + index) * 64, "mesh_sha256": "c" * 64}
+        )
+        record["scientific_inputs"]["record"].update(
+            {
+                "model": {
+                    "name": "pipe",
+                    "domain": {"diameter": 0.1, "length": 3.0},
+                    "fluid": {"density": 998.2, "dynamic_viscosity": 0.001002},
+                    "boundaries": {"inlet": {"velocity": 1.0}},
+                    "study": {
+                        "family": "internal-flow",
+                        "steady": True,
+                        "turbulence": model,
+                        "wall_treatment": "blended-wall-functions",
+                    },
+                },
+                "procedure": {"relative_tolerance": 1.0e-4},
+            }
+        )
+        record["scientific_inputs"]["record"]["precursor"].update(
+            {
+                "turbulence_model": model,
+                "nut_wall_function": wall_function,
+                "maximum_iterations": 4000,
+            }
+        )
+        record["quantities"].update(
+            {
+                "flow.darcy_friction_factor": {"value": 0.018, "unit": "1"},
+                "reference.flow.darcy_friction_factor": {
+                    "value": 0.0183,
+                    "unit": "1",
+                },
+            }
+        )
+        record["quantities"]["flow.darcy_friction_factor_relative_error"][
+            "value"
+        ] = error
+        record["quantities"]["runtime.total_wall_seconds"]["value"] = runtime
+        records.append(record)
+
+    result = assess_turbulent_model_study(records)
+
+    assert result["recommendation"]["candidate_turbulence_model"] == "k-omega-sst"
+    assert result["acceptance"]["screening_accepted"] is True
+    assert result["acceptance"]["default_promotion_accepted"] is False
+    assert result["cases"][0]["relative_runtime_to_fastest"] == pytest.approx(18 / 17)
+
+    records[1]["scientific_inputs"]["record"]["model"]["domain"]["diameter"] = 0.2
+    with pytest.raises(ValueError, match="share all non-model scientific inputs"):
+        assess_turbulent_model_study(records)
 
 
 def test_uniform_precursor_grid_study_rejects_oscillation_and_can_compute_gci():

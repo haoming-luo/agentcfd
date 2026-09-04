@@ -249,6 +249,15 @@ ranking correlation differences. Real v2606 evidence currently nominates
 Spalding for further smooth-pipe validation; it does not silently change the
 existing default or claim general model validation.
 
+The periodic precursor additionally supports a bounded standard k-epsilon
+slice. It writes and recovers `epsilon`, pairs `epsilonWallFunction` with
+`nutkWallFunction`, and carries a distinct capability and model SHA-256. The
+public turbulence-model study prepares SST/Spalding and k-epsilon/nutk on one
+byte-identical `blockMeshDict`, executes both, and refuses comparison unless
+their recovered native mesh SHA-256 and all non-model scientific inputs match.
+This does not extend the downstream pipe mapper, which remains SST-only until
+k-epsilon mapping has its own verification evidence.
+
 ## Promotion gate
 
 Before this provider advances beyond experimental maturity it must add:

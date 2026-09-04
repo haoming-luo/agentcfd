@@ -146,14 +146,27 @@ misleading GCI.
 The next controlled variable is the OpenFOAM momentum wall function. On one
 identical c16 mesh, the existing `nutUBlendedWallFunction`,
 `nutUSpaldingWallFunction`, and `nutkWallFunction` produced smooth-Colebrook
-differences of 5.302%, 1.588%, and 5.828%. A fixed-wall-height Spalding
-c8/c16/c32 follow-up reduced the difference monotonically to 0.877% on c32,
-with a 0.718% fine-pair pressure-gradient change. This makes Spalding the
-current smooth-pipe candidate, not yet the global default: c16 checks at
+differences of 5.634%, 1.851%, and 6.185%. A tighter-solver fixed-wall-height
+Spalding c8/c16/c32 follow-up produced 1.746%, 1.851%, and 1.858% differences,
+with only a 0.00689% fine-pair pressure-gradient change. This clean plateau
+shows that further interior refinement does not remove the remaining model/
+reference difference. Spalding is therefore the current smooth-pipe candidate,
+not yet the global default: c16 checks at
 Re 199,242 and 498,104 retain 3.07--3.20% correlation differences, and no
 experimental uncertainty budget has been applied. AgentCFD exposes the choice,
 hashes it into each case, and keeps default promotion false until the Reynolds
 range and independent reference data are adequate.
+
+The next model-form screen holds that c16 mesh and every non-model input fixed.
+With the inner linear solves tightened independently of the outer SIMPLE
+target, SST plus `nutUSpaldingWallFunction` differs from smooth Colebrook by
+1.851%, while standard k-epsilon plus `nutkWallFunction` differs by 3.289%.
+Both runs are accepted and remain in the high-Re wall-function range; k-epsilon
+is modestly faster in repeated local runs. This supports SST/Spalding as the
+candidate for the present smooth-pipe benchmark, not as a general-purpose
+default. The study contract requires identical native mesh SHA-256, physical
+inputs, numerical procedure, iteration budget, stability window, and y-plus
+regime before comparison.
 
 The c8 precursor is now mapped through a deterministic `mapFields` contract
 into the 3 m target. The target pressure loss differs by 1.05% from the source

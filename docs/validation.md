@@ -195,18 +195,39 @@ manufacturing numerical uncertainty from an oscillatory sequence.
 `docs/openfoam-v2606-wall-function-study.json` compares
 `nutUBlendedWallFunction`, `nutUSpaldingWallFunction`, and `nutkWallFunction`
 on the identical c16 mesh at Re 99,621. All three sources are accepted, use the
-same native mesh SHA-256, keep y-plus within 38.31--48.30, and pass the
+same native mesh SHA-256, keep y-plus within 38.23--48.24, and pass the
 50-sample stability gate. Their smooth-Colebrook relative differences are
-5.302%, 1.588%, and 5.828%, respectively. The study therefore nominates
+5.634%, 1.851%, and 6.185%, respectively. The study therefore nominates
 `nutUSpaldingWallFunction` as a benchmark-specific candidate while explicitly
 setting `default_promotion_accepted=false`.
 
-The independent fixed-wall-height Spalding family in
+The tighter-solver fixed-wall-height Spalding family in
 `docs/openfoam-v2606-spalding-fixed-wall-study.json` strengthens that screen:
-c8/c16/c32 differences are 1.964%, 1.588%, and 0.877%; the pressure-gradient
-sequence is monotonic, and the c16-to-c32 change is 0.718%. This verifies a
-stable high-Re wall strategy and a resolution plateau, but not GCI because the
-fixed physical wall height changes the interior grading. Additional c16 checks
+c8/c16/c32 differences are 1.746%, 1.851%, and 1.858%; the pressure-gradient
+sequence is monotonic, and the c16-to-c32 change is only 0.00689%. This verifies
+a stable high-Re wall strategy and a strong resolution plateau, but not GCI
+because the fixed physical wall height changes the interior grading. It also
+prevents the former loose inner solve from being mistaken for refinement
+improvement. Additional c16 checks
 at Re 49,810, 199,242, and 498,104 show Spalding remains better than the prior
 blended choice, although its correlation differences rise to 3.07--3.20% at
 the two highest points. A broad default therefore remains deliberately open.
+
+## Turbulence-model sensitivity
+
+`docs/openfoam-v2606-turbulent-model-study.json` is the source-hashed result of
+the public model-study workflow. It compares SST/Spalding and standard
+k-epsilon/nutk at Re 99,621 on the same 1,280-cell native mesh. Both sources
+are `trust_level="verified"`, pass the 50-sample pressure-gradient stability
+gate, and keep y-plus between 39.06 and 48.24. Their smooth-Colebrook relative
+differences are 1.851% and 3.289%, respectively; k-epsilon is modestly faster.
+The assessment therefore nominates SST/Spalding for this benchmark only and
+sets `default_promotion_accepted=false` pending multi-Reynolds and independent
+experimental validation.
+
+The real k-epsilon work also exposed a numerical-control defect: the outer
+SIMPLE target had been reused as each inner linear solver's absolute tolerance,
+allowing equations to be skipped near convergence. The generated dictionary
+now keeps inner solves at least two orders tighter. On the same c16/4000 case,
+the 50-sample pressure-gradient range fell from an unaccepted 0.427% to
+0.0000888%, while the maximum selected residual fell to `1.53e-7`.

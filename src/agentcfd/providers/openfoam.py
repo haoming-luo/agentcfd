@@ -42,6 +42,7 @@ _OUTPUT_FIELD_KEYS = {
     "fluid.pressure": "p",
     "turbulence.kinetic_energy": "k",
     "turbulence.specific_dissipation_rate": "omega",
+    "turbulence.dissipation_rate": "epsilon",
     "turbulence.kinematic_eddy_viscosity": "nut",
 }
 _OUTPUT_HISTORY_KEYS = {
@@ -2753,16 +2754,27 @@ nu              [0 2 -1 0 0 0 0] {nu:.17g};
 """
 
 
-def _turbulence_properties(*, turbulent: bool = False) -> str:
+def _turbulence_properties(
+    *,
+    turbulent: bool = False,
+    turbulence_model: str = "k-omega-sst",
+) -> str:
+    model_names = {
+        "k-omega-sst": "kOmegaSST",
+        "k-epsilon": "kEpsilon",
+    }
+    if turbulence_model not in model_names:
+        raise ValueError("Unsupported OpenFOAM turbulence model.")
+    model_name = model_names[turbulence_model]
     body = """simulationType RAS;
 
 RAS
 {
-    RASModel        kOmegaSST;
+    RASModel        MODEL_NAME;
     turbulence      on;
     printCoeffs     on;
 }
-""" if turbulent else """simulationType laminar;
+""".replace("MODEL_NAME", model_name) if turbulent else """simulationType laminar;
 """
     return _header(
         object_name="turbulenceProperties",

@@ -42,9 +42,21 @@
 - Add content-addressed `prepare`/`run` and direct `verify` wall-function study
   workflows plus installed JSON contracts.
 - Record identical-mesh v2606 sensitivity evidence: Spalding reduces the c16
-  Colebrook difference from 5.302% to 1.588%. Its fixed-wall c8/c16/c32 family
-  reaches 0.877% on c32 with a 0.718% fine-pair change, while default promotion
-  remains false pending broader Reynolds and experimental validation.
+  Colebrook difference from 5.634% to 1.851%. Its tighter-solver fixed-wall
+  c8/c16/c32 family reaches a 0.00689% fine-pair pressure-gradient plateau with
+  1.746--1.858% correlation differences, while default promotion remains false
+  pending broader Reynolds and experimental validation.
+- Add a bounded periodic k-epsilon precursor path with model-specific
+  `epsilon`, `epsilonWallFunction`, `nutkWallFunction`, output semantics,
+  capability identity, prepared-case verification, and CLI controls.
+- Separate outer SIMPLE convergence targets from tighter inner linear-solver
+  tolerances. This removes the skipped-equation residual plateau observed in
+  real k-epsilon runs and turns the c16/4000 case into accepted, stable evidence.
+- Add content-addressed `prepare`/`run` and source-hashed `verify` turbulence-
+  model studies with installed JSON contracts. On one identical OpenCFD v2606
+  c16 mesh, SST/Spalding differs from smooth Colebrook by 1.851% versus 3.289%
+  for k-epsilon/nutk; the latter is faster, while global default promotion
+  remains explicitly false.
 
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the

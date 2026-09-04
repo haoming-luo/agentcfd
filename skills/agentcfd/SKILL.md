@@ -20,8 +20,24 @@ model.
 7. Export learning data only from accepted results unless the user explicitly
    records another scientific disposition.
 
-## Initial release
+## Current capability boundary
 
-The only executable scientific path in 0.1.0a1 is the steady incompressible
-Newtonian laminar circular-pipe reference workflow. Do not describe the planned
-OpenFOAM boundary as an implemented mesh-based solver.
+The released in-process scientific path is the steady incompressible Newtonian
+laminar circular-pipe reference workflow. The external OpenCFD v2606 provider
+also has experimental, evidence-gated laminar and smooth-pipe RANS slices.
+
+For turbulent fully developed inlet evidence:
+
+- use `openfoam-turbulent-precursor` with an explicit `--turbulence-model`;
+- pair k-omega SST with a declared supported momentum wall function;
+- pair standard k-epsilon only with `nutkWallFunction` and its generated
+  `epsilonWallFunction`;
+- use `openfoam-turbulent-wall-function-study` to isolate SST wall treatment;
+- use `openfoam-turbulent-model-study` to compare the supported SST/Spalding
+  and k-epsilon/nutk pairs on an identical mesh;
+- treat every recommendation as benchmark-specific when
+  `default_promotion_accepted` is false.
+
+Downstream developed-field mapping remains k-omega SST-only. Do not silently
+map k-epsilon fields, extend evidence to rough walls or another geometry, or
+equate a correlation screen with experimental validation.

@@ -61,8 +61,15 @@ uniform c8/c12/c18 candidate retained wall y-plus above 30 but was oscillatory,
 so its 0.212% fine-pair plateau is not a GCI or uncertainty certificate.
 
 Use `openfoam-turbulent-wall-function-study` to isolate the supported SST
-momentum wall functions on one mesh. At Re 99,621, Spalding reduced the c16
-smooth-Colebrook difference to 1.588%, and its fixed-wall c32 follow-up reached
-0.877%. Treat this as a benchmark-specific candidate: higher-Re c16 checks are
-still above 3%, and the machine-readable assessment intentionally refuses
-general default promotion.
+momentum wall functions on one mesh. At Re 99,621, Spalding reduces the c16
+smooth-Colebrook difference to 1.851%. Its tighter-solver fixed-wall c16/c32
+pressure-gradient change is only 0.00689%, with 1.851% and 1.858% correlation
+differences. This is a plateau, not evidence that refinement removes model-form
+difference.
+
+The periodic precursor also supports standard k-epsilon paired with
+`epsilonWallFunction` and `nutkWallFunction`. Use
+`openfoam-turbulent-model-study` to hold mesh and non-model inputs fixed; its
+first c16 screen finds 1.851% for SST/Spalding and 3.289% for k-epsilon/nutk.
+Both are accepted at this point, but the assessment intentionally refuses
+general default promotion. Downstream mapping remains SST-only.

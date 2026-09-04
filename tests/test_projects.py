@@ -30,6 +30,9 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
     assert plan["decisions"]["portable_formats"] == []
+    assert plan["decisions"]["output_plan"]["channels"]["field_frames"][
+        "resolved_count"
+    ] == 1
     assert plan["plan_sha256"].startswith("sha256:")
     jsonschema.Draft202012Validator(contracts.load("solution-plan.schema.json")).validate(
         plan
@@ -122,6 +125,31 @@ def test_project_plan_returns_addressable_physics_issue(tmp_path):
 
     with pytest.raises(ProjectError, match="not ready"):
         project.run()
+
+
+def test_project_plan_rejects_accidental_full_field_frame_explosion(tmp_path):
+    project = projects.init_project(tmp_path / "pipe", provider="openfoam")
+    case = project.root / "case.py"
+    case.write_text(
+        case.read_text()
+        .replace("studies.internal_flow()", "studies.internal_flow(steady=False)")
+        .replace(
+            "procedure=procedures.steady(),",
+            "procedure=procedures.transient(end_time=10.0, initial_time_step=0.001),",
+        )
+        .replace(
+            "output=outputs.standard(),",
+            "output=outputs.animation(every=0.001, maximum_frames=100),",
+        )
+    )
+
+    plan = project.plan()
+
+    assert plan["readiness"]["ready_to_run"] is False
+    issue = next(
+        item for item in plan["issues"] if item["code"] == "OUTPUT_POLICY_INVALID"
+    )
+    assert "10000 full-field frames" in issue["message"]
 
 
 def test_project_paths_cannot_escape_root(tmp_path):

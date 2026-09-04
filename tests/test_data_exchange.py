@@ -217,6 +217,18 @@ def test_xdmf_only_bundle_omits_npz_without_losing_verification(tmp_path):
         "xdmf": "fields.xdmf",
         "hdf5": "fields.h5",
     }
+    assert manifest["storage"]["compression"] == "gzip"
+    assert manifest["storage"]["actual_portable_bytes"] > 0
+
+    import h5py
+
+    with h5py.File(bundle.hdf5, "r") as h5:
+        compressed = [
+            item.compression
+            for item in h5.values()
+            if isinstance(item, h5py.Dataset) and item.ndim > 0
+        ]
+    assert compressed and all(value == "gzip" for value in compressed)
     assert manifest["arrays"] == []
     assert data_exchange.verify_field_bundle(bundle.directory)["formats"] == [
         "hdf5",
@@ -229,6 +241,22 @@ def test_xdmf_only_bundle_omits_npz_without_losing_verification(tmp_path):
             tmp_path / "sample.npz",
             field="fluid.velocity",
         )
+
+
+def test_portable_export_fails_before_writing_when_budget_is_too_small(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+    _write_frame(case, 10, 2.0)
+
+    with pytest.raises(Exception, match="exceeds its declared storage budget"):
+        data_exchange.export_openfoam_case(
+            case,
+            tmp_path / "bundle",
+            convert=False,
+            maximum_bytes=1024,
+        )
+
+    assert not (tmp_path / "bundle").exists()
 
 
 def test_openfoam_series_is_numerically_sorted(tmp_path):

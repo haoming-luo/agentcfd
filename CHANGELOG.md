@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Separate full-field frames, scalar histories, and native restart checkpoints
+  in the public output contract; add `outputs.animation`, `outputs.checkpoints`,
+  human-readable storage budgets, hard frame caps, and transient procedures.
+- Add plan-time frame/temporary-peak estimates with fail-closed output issues,
+  plus exact selected-array budget enforcement before portable export.
+- Repack numeric XDMF/HDF5 datasets with bounded-memory chunked compression,
+  record estimated and actual storage in the field-bundle manifest, and request
+  binary compressed native output from the OpenFOAM pipe provider.
+
 - Add the first AgentFEM-style public project lifecycle: `init`, `check`,
   inspectable `plan`, short-form `run`, and `inspect`, with `case.py` as modeling
   truth and operational settings isolated in `agentcfd.toml`.

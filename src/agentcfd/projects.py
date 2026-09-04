@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import shutil
 import sys
 import tomllib
@@ -187,6 +188,130 @@ def _inlet_reynolds(step: Step) -> float | None:
     )
 
 
+def _human_bytes(value: int) -> str:
+    for unit, divisor in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
+        if value >= divisor:
+            return f"{value / divisor:.2f} {unit}"
+    return f"{value} B"
+
+
+def _resolved_output_plan(
+    step: Step,
+    *,
+    provider: str,
+    openfoam: Mapping[str, object],
+) -> dict[str, object]:
+    """Resolve user output intent into inspectable counts and a conservative budget."""
+
+    frames = step.output.frames
+    if frames.mode == "final":
+        requested_frames = 1
+    else:
+        if step.model.study.steady:
+            extent = float(step.procedure.maximum_iterations)
+            expected_coordinate = "solver-iteration"
+        else:
+            extent = step.procedure.end_time
+            expected_coordinate = "physical-time"
+        if frames.coordinate != expected_coordinate:
+            raise ModelValidationError(
+                f"Field frame coordinate {frames.coordinate!r} does not match the "
+                f"{expected_coordinate!r} procedure coordinate."
+            )
+        assert frames.every is not None
+        requested_frames = math.floor(extent / frames.every + 1.0e-12)
+        if frames.include_initial:
+            requested_frames += 1
+        if frames.include_final and not math.isclose(
+            extent / frames.every,
+            round(extent / frames.every),
+            rel_tol=0.0,
+            abs_tol=1.0e-10,
+        ):
+            requested_frames += 1
+        requested_frames = max(1, requested_frames)
+    if requested_frames > frames.maximum:
+        raise ModelValidationError(
+            f"Output interval requests {requested_frames} full-field frames, above "
+            f"maximum_frames={frames.maximum}. Increase the interval or the explicit cap."
+        )
+
+    estimated_cells: int | None = None
+    if provider == "openfoam" and hasattr(step.model.domain, "diameter"):
+        cross = int(openfoam.get("cross_section_cells", 8))
+        axial_setting = openfoam.get("axial_cells")
+        axial = (
+            int(axial_setting)
+            if axial_setting is not None
+            else max(
+                20,
+                min(
+                    800,
+                    math.ceil(
+                        2.0 * step.model.domain.length / step.model.domain.diameter
+                    ),
+                ),
+            )
+        )
+        estimated_cells = 5 * cross * cross * axial
+
+    components = {
+        "fluid.velocity": 3,
+        "fluid.vorticity": 3,
+    }
+    scalar_components = sum(components.get(name, 1) for name in step.output.fields)
+    if estimated_cells is None:
+        estimated_portable_bytes = None
+        estimated_temporary_peak_bytes = None
+    else:
+        entities = (
+            math.ceil(estimated_cells * 1.25)
+            if step.output.portable_profile == "visualization"
+            else estimated_cells
+            if step.output.portable_profile == "native"
+            else estimated_cells + math.ceil(estimated_cells * 1.25)
+        )
+        field_bytes = requested_frames * entities * scalar_components * 8
+        mesh_bytes = estimated_cells * 8 * 10
+        estimated_portable_bytes = math.ceil(1.10 * (field_bytes + mesh_bytes) + 1024**2)
+        if "npz" in step.output.portable_formats:
+            estimated_portable_bytes += field_bytes + mesh_bytes
+        # Current external adapter stages solver-native and VTK data before publishing HDF5.
+        estimated_temporary_peak_bytes = estimated_portable_bytes + field_bytes * 2
+
+    return {
+        "channels": {
+            "histories": {
+                "names": list(step.output.histories),
+                "retention": "all scalar samples",
+            },
+            "field_frames": {
+                **frames.to_dict(),
+                "resolved_count": requested_frames,
+            },
+            "checkpoints": step.output.checkpoints.to_dict(),
+        },
+        "estimated_mesh_cells": estimated_cells,
+        "estimated_portable_bytes": estimated_portable_bytes,
+        "estimated_portable_display": (
+            None if estimated_portable_bytes is None else _human_bytes(estimated_portable_bytes)
+        ),
+        "estimated_temporary_peak_bytes": estimated_temporary_peak_bytes,
+        "estimated_temporary_peak_display": (
+            None
+            if estimated_temporary_peak_bytes is None
+            else _human_bytes(estimated_temporary_peak_bytes)
+        ),
+        "storage": step.output.storage.to_dict(),
+        "within_budget": (
+            None
+            if estimated_temporary_peak_bytes is None
+            else estimated_temporary_peak_bytes <= step.output.storage.maximum_bytes
+        ),
+        "estimate_kind": "conservative-preflight-not-measured",
+    }
+
+
 class Project:
     """A case.py plus operational manifest and content-addressed run history."""
 
@@ -314,7 +439,14 @@ class Project:
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
             )
-            provider_compatible = model_valid and required_capability in descriptor.capabilities
+            provider_compatible = (
+                model_valid
+                and study.steady
+                and not study.compressible
+                and not study.energy
+                and not study.reacting
+                and required_capability in descriptor.capabilities
+            )
         if not provider_compatible:
             issues.append(
                 ProjectIssue(
@@ -338,6 +470,37 @@ class Project:
                     "Use OpenFOAM with an explicit turbulent Study or reduce the declared flow rate.",
                 )
             )
+        try:
+            output_plan = _resolved_output_plan(
+                step,
+                provider=selected_name,
+                openfoam=self._openfoam_settings(),
+            )
+        except (ModelValidationError, ValueError) as error:
+            output_plan = {"valid": False, "error": str(error)}
+            issues.append(
+                ProjectIssue(
+                    "OUTPUT_POLICY_INVALID",
+                    "error",
+                    str(error),
+                    "case.py:output",
+                    "Adjust outputs.animation interval, coordinate, maximum_frames, or budget.",
+                )
+            )
+        else:
+            if output_plan["within_budget"] is False:
+                issues.append(
+                    ProjectIssue(
+                        "OUTPUT_BUDGET_EXCEEDED",
+                        "error",
+                        "Conservative temporary storage estimate "
+                        f"{output_plan['estimated_temporary_peak_display']} exceeds "
+                        f"the declared {_human_bytes(step.output.storage.maximum_bytes)} budget.",
+                        "case.py:output.storage",
+                        "Reduce field frames/variables, select one association, or raise the explicit budget.",
+                    )
+                )
+        output_ready = not any(issue.code.startswith("OUTPUT_") for issue in issues)
         runtime_available = descriptor.available
         if not runtime_available:
             issues.append(
@@ -363,7 +526,13 @@ class Project:
                     "Install `agentcfd[io]` in the execution environment.",
                 )
             )
-        ready_to_run = model_valid and provider_compatible and runtime_available and io_ready
+        ready_to_run = (
+            model_valid
+            and provider_compatible
+            and runtime_available
+            and io_ready
+            and output_ready
+        )
         decisions = {
             "study": study.to_dict(),
             "procedure": step.procedure.to_dict(),
@@ -382,6 +551,7 @@ class Project:
                 if export_fields
                 else []
             ),
+            "output_plan": output_plan,
         }
         plan: dict[str, object] = {
             "schema": "agentcfd.solution-plan/0.1",
@@ -525,6 +695,8 @@ class Project:
                 profile=step.output.portable_profile,
                 fields=step.output.fields,
                 formats=step.output.portable_formats,
+                compression=step.output.storage.compression,
+                maximum_bytes=step.output.storage.maximum_bytes,
             )
             portable_artifacts = [
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),

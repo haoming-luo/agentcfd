@@ -50,7 +50,8 @@
           "type": "array",
           "items": {"enum": ["xdmf", "hdf5", "npz"]},
           "uniqueItems": true
-        }
+        },
+        "output_plan": {"type": "object"}
       },
       "additionalProperties": false
     },

@@ -279,6 +279,63 @@ def _array_key(*parts: object) -> str:
     return "__".join(str(part).replace(".", "_") for part in parts)
 
 
+def _field_storage_bytes(point_data: Mapping[str, Any], cell_data: Mapping[str, Any]) -> int:
+    """Return exact in-memory bytes for one selected field frame."""
+
+    return sum(value.nbytes for value in point_data.values()) + sum(
+        block.nbytes for blocks in cell_data.values() for block in blocks
+    )
+
+
+def _repack_hdf5(path: Path, *, compression: str) -> None:
+    """Repack meshio HDF5 datasets with bounded-memory transparent compression."""
+
+    if compression == "none":
+        return
+    import h5py
+
+    temporary = path.with_suffix(path.suffix + ".repack")
+    if temporary.exists():
+        raise FileExistsError(temporary)
+
+    def copy_group(source, target) -> None:
+        for key, value in source.attrs.items():
+            target.attrs[key] = value
+        for name, value in source.items():
+            if isinstance(value, h5py.Group):
+                copy_group(value, target.create_group(name))
+                continue
+            compressible = (
+                value.ndim > 0
+                and value.size > 0
+                and value.dtype.kind in {"b", "i", "u", "f", "c"}
+            )
+            options: dict[str, object] = {}
+            if compressible:
+                options.update(compression=compression, chunks=True, shuffle=True)
+                if compression == "gzip":
+                    options["compression_opts"] = 4
+            created = target.create_dataset(name, shape=value.shape, dtype=value.dtype, **options)
+            for key, attribute in value.attrs.items():
+                created.attrs[key] = attribute
+            if value.ndim == 0:
+                created[()] = value[()]
+            elif value.shape[0] > 0:
+                bytes_per_row = max(1, value.dtype.itemsize * math.prod(value.shape[1:]))
+                rows = max(1, (4 * 1024**2) // bytes_per_row)
+                for start in range(0, value.shape[0], rows):
+                    stop = min(value.shape[0], start + rows)
+                    created[start:stop] = value[start:stop]
+
+    try:
+        with h5py.File(path, "r") as source, h5py.File(temporary, "w") as target:
+            copy_group(source, target)
+        temporary.replace(path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
 def _canonical_data(
     mesh: Any,
     *,
@@ -458,6 +515,8 @@ def export_vtu_series(
     profile: str = "both",
     fields: Iterable[str] | None = None,
     formats: Iterable[str] = ("xdmf",),
+    compression: str = "gzip",
+    maximum_bytes: int | None = None,
 ) -> FieldBundle:
     """Write a canonical XDMF/HDF5 bundle and, when selected, an NPZ mirror."""
 
@@ -502,6 +561,14 @@ def export_vtu_series(
         raise ValueError(f"Unsupported portable formats: {unsupported_formats}.")
     if "xdmf" not in selected_formats:
         raise ValueError("Portable formats must include 'xdmf' as the bundle foundation.")
+    if compression not in {"none", "gzip", "lzf"}:
+        raise ValueError("Portable compression must be 'none', 'gzip', or 'lzf'.")
+    if maximum_bytes is not None and (
+        isinstance(maximum_bytes, bool)
+        or not isinstance(maximum_bytes, int)
+        or maximum_bytes <= 0
+    ):
+        raise ValueError("Portable field budget must be a positive integer number of bytes.")
     write_npz = "npz" in selected_formats
     source_root = Path(case_directory) if case_directory is not None else files[0].parents[2]
     axis_record = dict(axis or _axis_from_result(source_root))
@@ -510,15 +577,6 @@ def export_vtu_series(
         raise ValueError("Field axis must define name, unit, physical_time, and description.")
     if not isinstance(axis_record["physical_time"], bool):
         raise ValueError("Field-axis physical_time must be a boolean.")
-
-    target = Path(output_directory)
-    if target.exists() and any(target.iterdir()):
-        raise FileExistsError(f"Field-bundle directory is not empty: {target}")
-    target.mkdir(parents=True, exist_ok=True)
-    xdmf_path = target / "fields.xdmf"
-    hdf5_path = target / "fields.h5"
-    npz_path = target / "fields.npz" if write_npz else None
-    manifest_path = target / "manifest.json"
 
     first = meshio.read(files[0])
     points = np.asarray(first.points)
@@ -537,6 +595,36 @@ def export_vtu_series(
             raise ValueError(f"Cell block {cell_type!r} connectivity must be integral.")
         if int(data.min()) < 0 or int(data.max()) >= len(points):
             raise ValueError(f"Cell block {cell_type!r} references an invalid point index.")
+    first_point_data, first_cell_data, _ = _canonical_data(
+        first,
+        density=density,
+        associations=associations,
+        selected_fields=selected_fields,
+    )
+    geometry_bytes = points.nbytes + sum(data.nbytes for _, data in topology)
+    field_bytes_per_frame = _field_storage_bytes(first_point_data, first_cell_data)
+    # Conservative uncompressed preflight including HDF5 metadata and XDMF.
+    estimated_bytes = math.ceil(
+        1.10 * (geometry_bytes + len(files) * field_bytes_per_frame) + 1024**2
+    )
+    if write_npz:
+        estimated_bytes += geometry_bytes + len(files) * field_bytes_per_frame
+    if maximum_bytes is not None and estimated_bytes > maximum_bytes:
+        raise AgentCFDError(
+            "Portable field output exceeds its declared storage budget: "
+            f"estimated {estimated_bytes / 1024**2:.1f} MiB, "
+            f"budget {maximum_bytes / 1024**2:.1f} MiB. Reduce fields or frames, "
+            "choose one association, or raise outputs.storage(...)."
+        )
+
+    target = Path(output_directory)
+    if target.exists() and any(target.iterdir()):
+        raise FileExistsError(f"Field-bundle directory is not empty: {target}")
+    target.mkdir(parents=True, exist_ok=True)
+    xdmf_path = target / "fields.xdmf"
+    hdf5_path = target / "fields.h5"
+    npz_path = target / "fields.npz" if write_npz else None
+    manifest_path = target / "manifest.json"
     point_frames: dict[str, list[Any]] = {}
     cell_frames: dict[str, list[list[Any]]] = {}
     field_records: list[dict[str, object]] | None = None
@@ -604,6 +692,8 @@ def export_vtu_series(
         raise
     else:
         writer.__exit__(None, None, None)
+
+    _repack_hdf5(hdf5_path, compression=compression)
 
     with h5py.File(hdf5_path, "a") as h5:
         h5.attrs["agentcae_schema"] = "agentcae.field-bundle"
@@ -679,6 +769,13 @@ def export_vtu_series(
                 else list(selected_fields)
             ),
         },
+        "storage": {
+            "budget_bytes": maximum_bytes,
+            "conservative_preflight_bytes": estimated_bytes,
+            "uncompressed_field_bytes_per_frame": field_bytes_per_frame,
+            "geometry_and_topology_bytes": geometry_bytes,
+            "compression": compression,
+        },
     }
     if write_npz:
         assert npz_path is not None
@@ -696,6 +793,13 @@ def export_vtu_series(
         path.name: {"sha256": file_sha256(path), "size_bytes": path.stat().st_size}
         for path in artifact_paths
     }
+    actual_bytes = sum(path.stat().st_size for path in artifact_paths)
+    metadata["storage"]["actual_portable_bytes"] = actual_bytes
+    if maximum_bytes is not None and actual_bytes > maximum_bytes:
+        raise AgentCFDError(
+            "Portable field artifacts exceeded their declared storage budget after writing: "
+            f"{actual_bytes / 1024**2:.1f} MiB > {maximum_bytes / 1024**2:.1f} MiB."
+        )
     manifest_path.write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -724,6 +828,8 @@ def export_openfoam_case(
     profile: str = "both",
     fields: Iterable[str] | None = None,
     formats: Iterable[str] = ("xdmf",),
+    compression: str = "gzip",
+    maximum_bytes: int | None = None,
 ) -> FieldBundle:
     """Export all OpenFOAM time directories to the standard field bundle."""
 
@@ -748,6 +854,8 @@ def export_openfoam_case(
         profile=profile,
         fields=fields,
         formats=formats,
+        compression=compression,
+        maximum_bytes=maximum_bytes,
     )
 
 

@@ -18,12 +18,15 @@ Use the least ambiguous inlet that represents the physical problem:
   when mass or volume flow is the measured input. Its default plug profile and
   optional extrapolated-profile behavior must remain explicit in the AgentCFD
   model because they describe different entrance physics.
-- **Developed turbulent duct or pipe flow:** use
-  [`boundaryFoam`](https://doc.openfoam.com/2606/tools/processing/solvers/rtm/incompressible/boundaryFoam/)
-  to generate a compatible developed mean velocity and turbulence state when
-  no trusted analytical profile exists. Store the precursor case identity,
-  target bulk flow, turbulence model, wall treatment, and mapped fields as
-  scientific inputs.
+- **Developed turbulent circular-pipe flow:** use a periodic one-layer O-grid
+  with OpenFOAM's
+  [`meanVelocityForce`](https://doc.openfoam.com/2212/tools/processing/numerics/fvoptions/sources/rtm/meanVelocityForce/)
+  to drive `simpleFoam` to the declared bulk velocity. Store the precursor case,
+  mesh, container, target flow, turbulence model, wall treatment, pressure
+  gradient, and developed fields as scientific inputs. OpenCFD v2606
+  `boundaryFoam` is not used for this geometry: its implementation is
+  one-dimensional and rejects more than two mutually parallel wall faces, so
+  it is appropriate for planar channels rather than circular cross-sections.
 
 The existing analytical expression uses OpenFOAM patch `weightSum` support,
 documented in the
@@ -80,9 +83,11 @@ relevant outer residual was `2.56e-4`. The flow-rate inlet reduced setup
 ambiguity and exactly met bulk flow, but the 10.94% Colebrook friction
 difference cannot yet be divided into entrance, grid, and model-form effects.
 It therefore proves the integration and evidence pipeline, not turbulent
-accuracy. The next performance target is a reusable `boundaryFoam` precursor
-whose developed velocity, `k`, `omega`, flow rate, mesh, and provider identity
-are content-addressed and reused across a three-grid family.
+accuracy. The implemented periodic precursor now content-addresses developed
+velocity, `k`, `omega`, `nut`, target flow, pressure gradient, mesh, runtime,
+and provider identity. The next product gate is deterministic mapping of those
+fields to the main pipe inlet, followed by a wall-strategy-controlled grid
+family.
 
 The first exploratory 4,800 / 38,400 / 307,200-cell family moved smooth-pipe
 friction error from 14.46% to 10.94% to 6.20%, but failed the GCI monotonic-
@@ -91,6 +96,18 @@ refinement. Its y-plus range also moved substantially (mean 168.06 to 86.55 to
 43.92), confirming that a wall-function grid family must control near-wall
 strategy rather than treating indiscriminate refinement as one unchanged
 numerical problem.
+
+The first periodic precursor closes the entrance-condition part of that
+redesign. At Re 99,621, the c8 one-layer O-grid used only 320 cells and
+completed in 2.29 s. It recovered y-plus 78.27 / 87.07 / 93.59 and a Darcy
+friction factor of 0.0171387, 4.81% below the smooth Colebrook value. This is
+materially better than the 10.94% difference in the developing 3 m pipe while
+preserving the same c8 cross-section and wall treatment. A
+c8/12/16/20/24/32 scan was non-monotonic and the finer members crossed below
+the declared y-plus 30 high-Re limit; it is diagnostic evidence, not a GCI
+family. The next numerical gate is either a constant-y-plus wall-function
+family or an explicitly declared wall-resolved SST family with graded
+near-wall cells.
 
 ## Steam and compressible-flow promotion sequence
 

@@ -37,3 +37,8 @@ but is intentionally unaccepted because a developed inlet and turbulent grid
 study have not passed. Do not extend either evidence record to another inlet,
 OpenFOAM dialect, geometry, heat transfer, or rough wall. A generated case or a
 zero process exit code is never a broader CFD claim.
+
+The next working milestone adds an experimental periodic circular-pipe
+precursor driven by OpenFOAM `meanVelocityForce`. Its c8 evidence verifies the
+precursor's developed fields and pressure gradient at one operating point; it
+does not yet prove downstream inlet mapping or Reynolds-range validation.

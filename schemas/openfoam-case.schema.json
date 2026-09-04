@@ -17,7 +17,8 @@
     "capability": {
       "enum": [
         "openfoam.steady-laminar-circular-pipe",
-        "openfoam.steady-rans-smooth-circular-pipe"
+        "openfoam.steady-rans-smooth-circular-pipe",
+        "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
       ]
     },
     "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},

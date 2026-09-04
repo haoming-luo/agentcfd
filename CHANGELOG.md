@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add a content-addressed periodic `simpleFoam`/`meanVelocityForce` k-omega SST
+  circular-pipe precursor with CLI prepare/run workflows.
+- Recover developed `U`, `k`, `omega`, and `nut`, pressure-gradient and friction
+  evidence, residuals, y-plus, mesh identity, and immutable container identity.
+- Record OpenCFD v2606 c8 execution evidence and the fail-closed rejection of
+  `boundaryFoam` for circular geometry.
+
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the
 machine-readable capability catalog.

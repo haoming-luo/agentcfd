@@ -16,7 +16,12 @@ from .errors import AgentCFDError
 from .jsonio import strict_json_object
 from .model import Model
 from .provenance import file_sha256
-from .providers import OpenFOAMMeshControls, OpenFOAMProvider, prepare_pipe_grid_study
+from .providers import (
+    OpenFOAMMeshControls,
+    OpenFOAMProvider,
+    OpenFOAMTurbulentPrecursorProvider,
+    prepare_pipe_grid_study,
+)
 from .results import SimulationResult, read_result_record
 from .verification import assess_grid_convergence, assess_validation_point, grid_convergence_from_result_records
 
@@ -215,6 +220,23 @@ def _turbulent_openfoam_provider(
             cross_section_cells=cross_section_cells,
             axial_cells=axial_cells,
         ),
+    )
+
+
+def _turbulent_precursor_provider(
+    case_directory: Path,
+    *,
+    cross_section_cells: int,
+    maximum_iterations: int,
+    container_image: str | None = None,
+    timeout_seconds: float = 3600.0,
+) -> OpenFOAMTurbulentPrecursorProvider:
+    return OpenFOAMTurbulentPrecursorProvider(
+        case_directory=case_directory,
+        cross_section_cells=cross_section_cells,
+        maximum_iterations=maximum_iterations,
+        container_image=container_image,
+        timeout_seconds=timeout_seconds,
     )
 
 
@@ -454,6 +476,17 @@ def build_parser() -> argparse.ArgumentParser:
     turbulent_prepare.add_argument("--cross-section-cells", type=int, default=8)
     turbulent_prepare.add_argument("--axial-cells", type=int, default=120)
     turbulent_prepare.add_argument("--json", action="store_true", dest="as_json")
+    precursor_prepare = prepare_subparsers.add_parser(
+        "openfoam-turbulent-precursor",
+        help="Generate a periodic k-omega SST circular-pipe inlet precursor.",
+    )
+    precursor_prepare.add_argument("case_directory", type=Path)
+    precursor_prepare.add_argument("--velocity", type=float, default=1.0)
+    precursor_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
+    precursor_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    precursor_prepare.add_argument("--cross-section-cells", type=int, default=8)
+    precursor_prepare.add_argument("--maximum-iterations", type=int, default=1000)
+    precursor_prepare.add_argument("--json", action="store_true", dest="as_json")
     grid_prepare = prepare_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Prepare a same-model three-grid fully developed pipe study.",
@@ -530,6 +563,21 @@ def build_parser() -> argparse.ArgumentParser:
     turbulent_run.add_argument("--timeout-seconds", type=float, default=3600.0)
     turbulent_run.add_argument("--prepared", action="store_true")
     turbulent_run.add_argument("--json", action="store_true", dest="as_json")
+    precursor_run = run_subparsers.add_parser(
+        "openfoam-turbulent-precursor",
+        help="Run a periodic k-omega SST circular-pipe inlet precursor.",
+    )
+    precursor_run.add_argument("case_directory", type=Path)
+    precursor_run.add_argument("--result", type=Path)
+    precursor_run.add_argument("--velocity", type=float, default=1.0)
+    precursor_run.add_argument("--turbulence-intensity", type=float, default=0.05)
+    precursor_run.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    precursor_run.add_argument("--cross-section-cells", type=int, default=8)
+    precursor_run.add_argument("--maximum-iterations", type=int, default=1000)
+    precursor_run.add_argument("--container-image")
+    precursor_run.add_argument("--timeout-seconds", type=float, default=3600.0)
+    precursor_run.add_argument("--prepared", action="store_true")
+    precursor_run.add_argument("--json", action="store_true", dest="as_json")
     run_grid = run_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Execute a prepared three-grid pipe study and compute GCI.",
@@ -732,6 +780,24 @@ def main(argv: list[str] | None = None) -> int:
             print(args.case_directory)
             print(f"case sha256: {manifest['case_sha256']}")
         return 0
+    if args.command == "prepare" and args.provider == "openfoam-turbulent-precursor":
+        step = _turbulent_pipe_step(
+            velocity=args.velocity,
+            turbulence_intensity=args.turbulence_intensity,
+            turbulence_length_scale=args.turbulence_length_scale,
+        )
+        manifest = _turbulent_precursor_provider(
+            args.case_directory,
+            cross_section_cells=args.cross_section_cells,
+            maximum_iterations=args.maximum_iterations,
+        ).prepare(step).to_dict()
+        if args.as_json:
+            print(json.dumps(manifest, indent=2, sort_keys=True))
+        else:
+            print("Prepared periodic OpenFOAM k-omega SST inlet precursor")
+            print(args.case_directory)
+            print(f"case sha256: {manifest['case_sha256']}")
+        return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe-grid":
         plan = _prepare_openfoam_pipe_grid(
             args.directory,
@@ -794,6 +860,38 @@ def main(argv: list[str] | None = None) -> int:
                 detail = f" | Darcy f {friction.value:.6g}"
             print(
                 f"OpenFOAM turbulent pipe {result.status} | trust "
+                f"{result.trust_level} | accepted {str(result.accepted).lower()}{detail}"
+            )
+            failed = [check.name for check in result.checks if not check.passed]
+            if failed:
+                print("blocked by: " + ", ".join(failed))
+            print(target)
+        if result.accepted:
+            return 0
+        return 1 if result.status != "completed" else 3
+    if args.command == "run" and args.provider == "openfoam-turbulent-precursor":
+        step = _turbulent_pipe_step(
+            velocity=args.velocity,
+            turbulence_intensity=args.turbulence_intensity,
+            turbulence_length_scale=args.turbulence_length_scale,
+        )
+        provider = _turbulent_precursor_provider(
+            args.case_directory,
+            cross_section_cells=args.cross_section_cells,
+            maximum_iterations=args.maximum_iterations,
+            container_image=args.container_image,
+            timeout_seconds=args.timeout_seconds,
+        )
+        result = provider.run_prepared(step) if args.prepared else provider.run(step)
+        target = args.result or args.case_directory / "agentcfd-result.json"
+        result.write(target)
+        if args.as_json:
+            print(json.dumps(_result_cli_payload(result), indent=2, sort_keys=True))
+        else:
+            friction = result.quantities.get("flow.darcy_friction_factor")
+            detail = f" | Darcy f {friction.value:.6g}" if friction is not None else ""
+            print(
+                f"OpenFOAM turbulent precursor {result.status} | trust "
                 f"{result.trust_level} | accepted {str(result.accepted).lower()}{detail}"
             )
             failed = [check.name for check in result.checks if not check.passed]

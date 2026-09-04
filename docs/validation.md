@@ -150,3 +150,13 @@ grew from 9.48 Pa to 12.80 Pa, so the sequence was not in the asymptotic range
 and `grid_convergence_index` correctly rejected it. This negative result shows
 that finer mesh improves agreement but cannot yet support a GCI certificate;
 near-wall resolution and developed-inlet evidence must be redesigned together.
+
+The first periodic `simpleFoam` plus `meanVelocityForce` precursor is recorded
+in `docs/openfoam-v2606-periodic-precursor-validation.json`. On the same c8
+cross-section at Re 99,621 it removed the developing-inlet ambiguity, completed
+in 2.29 s on 320 cells, held y-plus between 78.27 and 93.59, and reduced the
+smooth-Colebrook friction difference to 4.81%. All declared precursor checks
+passed and the developed `U`, `k`, `omega`, and `nut` fields are content
+addressed. This verifies the bounded precursor workflow; mapping those fields
+into a downstream case and controlling wall strategy across a grid family
+remain open validation gates.

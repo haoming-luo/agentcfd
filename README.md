@@ -230,12 +230,20 @@ agentcfd run openfoam-turbulent-pipe turbulent-pipe \
   --container-image opencfd/openfoam-run:2606 --json
 ```
 
+Generate or run the experimental fully developed circular-pipe precursor:
+
+```bash
+agentcfd prepare openfoam-turbulent-precursor precursor --json
+agentcfd run openfoam-turbulent-precursor precursor \
+  --container-image opencfd/openfoam-run:2606 --json
+```
+
 AgentCFD lowers this to `flowRateInletVelocity`, `kOmegaSST`, explicit `k` and
 `omega` inputs, blended wall functions, and in-run `yPlus` recovery. A completed
 and converged run remains unaccepted until its inlet/reference applicability and
 grid evidence pass; the trust state is intended to be safe for unattended AI
 workflows.
-The rationale for analytical, flow-rate, and `boundaryFoam` inlets, measured
+The rationale for analytical, flow-rate, and periodic developed inlets, measured
 resolution/runtime tiers, and the staged turbulence and steam plan is recorded
 in [the numerical strategy](docs/numerical-strategy.md).
 Common pipe checks are available under `agentcfd.engineering`: hydraulic
@@ -295,6 +303,7 @@ authoritative.
 - [OpenFOAM v2606 execution evidence](docs/openfoam-v2606-validation.json)
 - [OpenFOAM v2606 grid-validation evidence](docs/openfoam-v2606-grid-validation.json)
 - [OpenFOAM v2606 turbulent-pipe diagnostic evidence](docs/openfoam-v2606-turbulent-pipe-diagnostic.json)
+- [OpenFOAM v2606 periodic precursor evidence](docs/openfoam-v2606-periodic-precursor-validation.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

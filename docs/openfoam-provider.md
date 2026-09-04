@@ -161,9 +161,21 @@ develops inside the pipe, while the correlation is a fully developed bulk-flow
 reference. `pressure-reference-applicability` therefore fails until a
 developed turbulent inlet and grid evidence are supplied, even if execution,
 convergence, y-plus, conservation, and the diagnostic friction threshold pass.
-The intended precursor route is OpenFOAM `boundaryFoam`; its case identity,
-fields, target flow, wall treatment, and turbulence model must become public
-scientific inputs before promotion.
+The developed circular-pipe precursor instead uses a periodic one-layer O-grid
+with `simpleFoam` and `meanVelocityForce`. Its case, analysis, mesh, and
+container identities, target flow, pressure gradient, wall treatment,
+turbulence model, and final `U`, `k`, `omega`, and `nut` fields are retained.
+OpenCFD v2606 `boundaryFoam` was tested and rejected for this geometry because
+its source requires at most two mutually parallel wall faces; silently using
+it for a circular perimeter would be operationally invalid.
+
+The first c8 precursor run completed in 2.29 s with 320 cells. It met the
+target bulk velocity, residual, pressure-gradient stability, mesh, field,
+container, and high-Re wall-function checks. Its y-plus range was 78.27 to
+93.59 and its Darcy friction factor was 0.0171387, 4.81% below smooth
+Colebrook, versus 10.94% for the earlier developing-pipe run on the same
+cross-section. This verifies the experimental precursor workflow but does not
+replace a turbulent grid or Reynolds-range validation certificate.
 
 Prepared-case manifests bind the model, procedure, and output request through
 an analysis SHA-256 in addition to hashing every generated file. Reusing a case

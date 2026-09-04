@@ -28,10 +28,10 @@ Study -> Model -> Geometry/Mesh -> Regions -> Fluids
 
 ## P1 — industrial internal flow
 
-Current checkpoint: the first OpenCFD v2606 k-omega SST smooth-pipe slice is
-implemented and has converged diagnostic execution evidence. Developed-inlet
-and grid validation remain open, so the capability is not yet scientifically
-accepted.
+Current checkpoint: the first OpenCFD v2606 k-omega SST smooth-pipe slice and a
+verified periodic `meanVelocityForce` developed-flow precursor are implemented.
+Cross-mesh inlet mapping and wall-strategy-controlled grid validation remain
+open, so the downstream turbulent pipe is not yet scientifically accepted.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

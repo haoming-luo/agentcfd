@@ -247,6 +247,37 @@ def test_cli_prepares_turbulent_openfoam_pipe_with_explicit_inputs(tmp_path, cap
     ).read_text()
 
 
+def test_cli_prepares_periodic_turbulent_precursor(tmp_path, capsys):
+    case_directory = tmp_path / "precursor"
+    assert (
+        main(
+            [
+                "prepare",
+                "openfoam-turbulent-precursor",
+                str(case_directory),
+                "--velocity",
+                "1.2",
+                "--cross-section-cells",
+                "8",
+                "--maximum-iterations",
+                "600",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["capability"] == (
+        "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
+    )
+    assert "type meanVelocityForce;" in (
+        case_directory / "constant/fvOptions"
+    ).read_text()
+    assert "endTime         600;" in (
+        case_directory / "system/controlDict"
+    ).read_text()
+
+
 def test_cli_prepares_declared_fully_developed_openfoam_case(tmp_path, capsys):
     case_directory = tmp_path / "foam-case"
     assert (

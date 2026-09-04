@@ -2409,11 +2409,16 @@ def _block_mesh_dict(
     inlet: str,
     outlet: str,
     walls: tuple[str, ...],
+    cyclic_end_planes: bool = False,
 ) -> str:
     inner = radius / 3.0
     wall_name = walls[0]
     if len(walls) != 1:
         raise UnsupportedCaseError("The initial OpenFOAM pipe mesh requires exactly one wall boundary.")
+    inlet_type = "cyclic" if cyclic_end_planes else "patch"
+    outlet_type = "cyclic" if cyclic_end_planes else "patch"
+    inlet_neighbour = f"\n        neighbourPatch {outlet};" if cyclic_end_planes else ""
+    outlet_neighbour = f"\n        neighbourPatch {inlet};" if cyclic_end_planes else ""
     return _header(object_name="blockMeshDict", class_name="dictionary", location="system") + f"""convertToMeters 1;
 
 geometry
@@ -2472,7 +2477,7 @@ boundary
 (
     {inlet}
     {{
-        type patch;
+        type {inlet_type};{inlet_neighbour}
         faces
         (
             (4 0 1 5)
@@ -2484,7 +2489,7 @@ boundary
     }}
     {outlet}
     {{
-        type patch;
+        type {outlet_type};{outlet_neighbour}
         faces
         (
             (12 13 9 8)

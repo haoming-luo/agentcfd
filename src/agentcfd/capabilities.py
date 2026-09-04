@@ -171,6 +171,24 @@ _CAPABILITIES = (
             "One real run is diagnostic until grid and benchmark validation pass.",
         ),
     ),
+    Capability(
+        name="openfoam.periodic-k-omega-sst-circular-pipe-precursor",
+        maturity="experimental",
+        scope=(
+            "Periodic smooth circular-pipe k-omega SST flow driven to a target "
+            "bulk velocity for reusable developed-inlet fields."
+        ),
+        evidence=(
+            "deterministic cyclic O-grid and meanVelocityForce lowering tests",
+            "content-addressed U, k, omega, nut, mesh, and container identities",
+            "OpenCFD v2606 real execution with pressure-gradient, residual, y-plus, and friction checks",
+        ),
+        limitations=(
+            "The current wall-function evidence point is Re 99,621 on the c8 O-grid.",
+            "Cross-mesh inlet mapping and a turbulent grid certificate remain open gates.",
+            "OpenFOAM boundaryFoam is not used because its implementation requires parallel planar walls.",
+        ),
+    ),
 )
 
 

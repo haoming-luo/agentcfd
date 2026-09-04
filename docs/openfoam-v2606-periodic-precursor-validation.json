@@ -1,0 +1,62 @@
+{
+  "schema": "agentcfd.execution-evidence/0.1",
+  "recorded_at": "2026-09-04T02:00:00+08:00",
+  "agentcfd_version": "0.1.0a3+working-tree",
+  "evidence_level": "verified-experimental-precursor",
+  "case": {
+    "capability": "openfoam.periodic-k-omega-sst-circular-pipe-precursor",
+    "diameter_m": 0.1,
+    "density_kg_per_m3": 998.2,
+    "dynamic_viscosity_Pa_s": 0.001002,
+    "target_bulk_velocity_m_per_s": 1.0,
+    "turbulence_model": "kOmegaSST",
+    "wall_treatment": "nutUBlendedWallFunction",
+    "driving_source": "meanVelocityForce",
+    "periodic_end_planes": true,
+    "cross_section_cells_per_block": 8,
+    "axial_cells": 1,
+    "maximum_iterations": 1000,
+    "model_sha256": "3c6e57d066f91dea59a39f0205401df58eab99305d9fcea39ffc10d5a209bbab",
+    "analysis_sha256": "b99655a4ae4e14d07d7160ca5a623d6e6af1918bc6749926545e9a4b0c16a024",
+    "case_sha256": "fce465801bd1884565b4d1fdd214b5ab21542a209437aeff381c0c49ecffc353"
+  },
+  "runtime": {
+    "container_image": "opencfd/openfoam-run:2606",
+    "image_id": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb",
+    "architecture": "arm64",
+    "return_codes": {"blockMesh": 0, "checkMesh": 0, "simpleFoam": 0},
+    "wall_seconds": {"blockMesh": 0.3085, "checkMesh": 0.2794, "simpleFoam": 1.7045, "total": 2.2924}
+  },
+  "mesh": {
+    "cells": 320,
+    "maximum_aspect_ratio": 6.37086168,
+    "maximum_non_orthogonality_deg": 28.31852142,
+    "maximum_skewness": 0.8522758054,
+    "check_mesh": "Mesh OK",
+    "mesh_sha256": "af69ccc14242d9e3777aab617d488279f84c49ca64e759fdd60b73dec0c6a9ce"
+  },
+  "solution": {
+    "reynolds_number": 99620.7586,
+    "recovered_bulk_velocity_m_per_s": 1.000000001,
+    "kinematic_pressure_gradient_m_per_s2": 0.08569358353,
+    "pressure_gradient_Pa_per_m": 85.53933508,
+    "darcy_friction_factor": 0.01713871667,
+    "smooth_colebrook_friction_factor": 0.01800404604,
+    "relative_friction_difference": 0.04806305017,
+    "wall_y_plus": {"minimum": 78.26813401, "average": 87.07415302, "maximum": 93.59453298},
+    "maximum_gated_residual": 9.48804528e-05,
+    "pressure_gradient_tail_relative_range": 5.37601511e-06
+  },
+  "acceptance": {
+    "completed": true,
+    "converged": true,
+    "accepted_for_declared_precursor_policy": true,
+    "trust_level": "verified",
+    "failed_checks": [],
+    "limitations": [
+      "This verifies the bounded precursor workflow; it is not physical validation across a Reynolds-number range.",
+      "A turbulent grid certificate and downstream cross-mesh field mapping remain open promotion gates.",
+      "The 8/12/16/20/24/32 scan was non-monotonic as y-plus crossed wall-treatment regimes, so no GCI is claimed."
+    ]
+  }
+}

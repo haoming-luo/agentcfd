@@ -41,3 +41,4 @@ jobs:
       - run: wheel-test/bin/agentcfd demo pipe --output pipe-result.json
       - run: wheel-test/bin/agentcfd prepare openfoam-pipe openfoam-pipe --fully-developed --cross-section-cells 4 --axial-cells 20 --json
       - run: wheel-test/bin/agentcfd prepare openfoam-turbulent-pipe openfoam-turbulent-pipe --cross-section-cells 4 --axial-cells 20 --json
+      - run: wheel-test/bin/agentcfd prepare openfoam-turbulent-precursor openfoam-turbulent-precursor --cross-section-cells 4 --maximum-iterations 20 --json

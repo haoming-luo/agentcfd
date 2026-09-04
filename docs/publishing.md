@@ -2,13 +2,16 @@
 
 ## Published status
 
-`agentcfd` 0.1.0a2 was published on 2026-09-03 from GitHub commit `be1c663`
+`agentcfd` 0.1.0a3 was published on 2026-09-04 from GitHub commit `6b5952f`
 through PyPI Trusted Publishing after the Linux, macOS, Windows, Python
-3.11--3.13, and offline-wheel gates passed. The distribution name is occupied
-by the project, and `haoming-luo/agentcfd` remains the canonical source
-repository. Release artifacts are rebuilt by GitHub Actions, receive PyPI
-digital attestations, and are therefore expected to have different hashes from
-any local pre-release build.
+3.11--3.13, offline-wheel, and installed turbulent-case-generation gates
+passed. A second clean environment then installed 0.1.0a3 from the public PyPI
+index and reproduced its version, capability catalog, and k-omega SST case
+manifest. The distribution name is occupied by the project, and
+`haoming-luo/agentcfd` remains the canonical source repository. Release
+artifacts are rebuilt by GitHub Actions, receive PyPI digital attestations, and
+are therefore expected to have different hashes from any local pre-release
+build.
 
 The pending publisher converted to an active publisher after the first OIDC
 upload. Its identity is GitHub owner `haoming-luo`, repository `agentcfd`,

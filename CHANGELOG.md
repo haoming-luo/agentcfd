@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- Add the first AgentFEM-style public project lifecycle: `init`, `check`,
+  inspectable `plan`, short-form `run`, and `inspect`, with `case.py` as modeling
+  truth and operational settings isolated in `agentcfd.toml`.
+- Add addressable project issues, deterministic plan fingerprints, explicit
+  provider/runtime/I/O readiness, and content-addressed per-run directories.
+- Add a standard `agentcae.field-bundle/0.1.0` export with XDMF/HDF5 time
+  series, pickle-free NPZ arrays, canonical CFD names and units, explicit
+  point/cell and axis semantics, source context, and SHA-256 artifacts.
+- Add `agentcfd export openfoam` and `verify field-bundle`; OpenFOAM project
+  runs automatically attach portable field artifacts and field records.
+- Add `export field-sample`, an exact pickle-free bridge to AgentFEM's
+  `FEMFieldSample` NPZ keys with field encoding, units, axis, and provenance.
+- Identify the neutral `agentcae.field-bundle` contract inside HDF5 itself, so
+  detached heavy-data files fail closed instead of relying only on filenames.
+- Keep NumPy, h5py, and meshio optional under the `io` extra; the mandatory
+  AgentCFD core remains dependency-free and Apache-2.0.
+
 - Add a content-addressed periodic `simpleFoam`/`meanVelocityForce` k-omega SST
   circular-pipe precursor with CLI prepare/run workflows.
 - Recover developed `U`, `p`, `k`, `omega`, and `nut`, pressure-gradient and friction

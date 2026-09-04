@@ -11,7 +11,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from . import benchmarks, boundaries, capabilities, contracts, engineering, fluids, geometry, licensing, outputs, procedures, properties, studies
+from . import benchmarks, boundaries, capabilities, contracts, data_exchange, engineering, fluids, geometry, licensing, outputs, procedures, projects, properties, studies
 from ._version import __version__
 from .errors import AgentCFDError
 from .jsonio import strict_json_object
@@ -1006,6 +1006,49 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Inspect the installed runtime.")
     doctor.add_argument("--json", action="store_true", dest="as_json")
 
+    init = subparsers.add_parser(
+        "init",
+        help="Create a readable AgentCFD engineering project.",
+    )
+    init.add_argument("directory", nargs="?", type=Path, default=Path("."))
+    init.add_argument(
+        "--template",
+        choices=("industrial-pipe",),
+        default="industrial-pipe",
+    )
+    init.add_argument(
+        "--provider",
+        choices=("reference", "openfoam"),
+        default="reference",
+    )
+    init.add_argument("--json", action="store_true", dest="as_json")
+
+    check = subparsers.add_parser(
+        "check",
+        help="Validate project intent and provider compatibility without running.",
+    )
+    check.add_argument("project", nargs="?", type=Path, default=Path("."))
+    check.add_argument("--provider", choices=("reference", "openfoam"))
+    check.add_argument("--container-image")
+    check.add_argument("--json", action="store_true", dest="as_json")
+
+    plan = subparsers.add_parser(
+        "plan",
+        help="Resolve a deterministic, inspectable solution plan.",
+    )
+    plan.add_argument("project", nargs="?", type=Path, default=Path("."))
+    plan.add_argument("--provider", choices=("reference", "openfoam"))
+    plan.add_argument("--container-image")
+    plan.add_argument("--output", type=Path)
+    plan.add_argument("--json", action="store_true", dest="as_json")
+
+    inspect = subparsers.add_parser(
+        "inspect",
+        help="Inspect project readiness and its latest structured run.",
+    )
+    inspect.add_argument("project", nargs="?", type=Path, default=Path("."))
+    inspect.add_argument("--json", action="store_true", dest="as_json")
+
     catalog = subparsers.add_parser("capabilities", help="Show truthful capability boundaries.")
     catalog.add_argument("--json", action="store_true", dest="as_json")
 
@@ -1026,6 +1069,47 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show dependency and external-solver license boundaries.",
     )
     license_catalog.add_argument("--json", action="store_true", dest="as_json")
+
+    export = subparsers.add_parser(
+        "export",
+        help="Export portable fields for visualization, coupling, and AI datasets.",
+    )
+    export_subparsers = export.add_subparsers(dest="export_format", required=True)
+    field_bundle = export_subparsers.add_parser(
+        "openfoam",
+        help="Export every OpenFOAM field frame as XDMF/H5 and safe NPZ.",
+    )
+    field_bundle.add_argument("case_directory", type=Path)
+    field_bundle.add_argument("output_directory", type=Path)
+    field_bundle.add_argument(
+        "--container-image",
+        help="Run foamToVTK through Docker, for example opencfd/openfoam-run:2606.",
+    )
+    field_bundle.add_argument(
+        "--skip-conversion",
+        action="store_true",
+        help="Reuse an existing case_directory/VTK series.",
+    )
+    field_bundle.add_argument(
+        "--density",
+        type=float,
+        help="Constant density used to derive fluid.pressure in Pa from kinematic p.",
+    )
+    field_bundle.add_argument("--timeout-seconds", type=float, default=3600.0)
+    field_bundle.add_argument("--json", action="store_true", dest="as_json")
+    field_sample = export_subparsers.add_parser(
+        "field-sample",
+        help="Extract one AgentFEM- and tensor-ready field NPZ from a bundle.",
+    )
+    field_sample.add_argument("bundle_directory", type=Path)
+    field_sample.add_argument("output", type=Path)
+    field_sample.add_argument("--field", required=True, help="Canonical field name.")
+    field_sample.add_argument(
+        "--association", choices=("point", "cell"), default="point"
+    )
+    field_sample.add_argument("--frame", type=int, default=-1)
+    field_sample.add_argument("--cell-block", type=int, default=0)
+    field_sample.add_argument("--json", action="store_true", dest="as_json")
 
     calculate = subparsers.add_parser(
         "calculate",
@@ -1280,6 +1364,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="Prepare, execute, and recover a provider result.")
     run_subparsers = run.add_subparsers(dest="provider", required=True)
+    project_run = run_subparsers.add_parser(
+        "project",
+        help="Execute the declared project and publish one structured run directory.",
+    )
+    project_run.add_argument("project", nargs="?", type=Path, default=Path("."))
+    project_run.add_argument(
+        "--provider",
+        choices=("reference", "openfoam"),
+        dest="project_provider",
+    )
+    project_run.add_argument("--container-image")
+    project_run.add_argument("--json", action="store_true", dest="as_json")
     run_openfoam = run_subparsers.add_parser(
         "openfoam-pipe",
         help="Run and recover the experimental OpenFOAM laminar-pipe case.",
@@ -1476,6 +1572,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     result_check.add_argument("result", type=Path)
     result_check.add_argument("--json", action="store_true", dest="as_json")
+    bundle_check = verify_subparsers.add_parser(
+        "field-bundle",
+        help="Verify XDMF/H5/NPZ hashes and cross-format frame identity.",
+    )
+    bundle_check.add_argument("directory", type=Path)
+    bundle_check.add_argument("--json", action="store_true", dest="as_json")
     validation_point = verify_subparsers.add_parser(
         "validation-point",
         help="Compare one simulated observable with reference data and uncertainty.",
@@ -1491,7 +1593,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    selected_argv = list(sys.argv[1:] if argv is None else argv)
+    legacy_run_targets = {
+        "project",
+        "openfoam-pipe",
+        "openfoam-turbulent-pipe",
+        "openfoam-turbulent-precursor",
+        "openfoam-turbulent-wall-study",
+        "openfoam-turbulent-wall-function-study",
+        "openfoam-turbulent-model-study",
+        "openfoam-turbulent-model-sweep",
+        "openfoam-pipe-grid",
+    }
+    if selected_argv and selected_argv[0] == "run" and (
+        len(selected_argv) == 1
+        or (
+            selected_argv[1] not in legacy_run_targets
+            and selected_argv[1] not in {"-h", "--help"}
+        )
+    ):
+        selected_argv.insert(1, "project")
+    args = build_parser().parse_args(selected_argv)
     if args.command == "doctor":
         report = _doctor()
         if args.as_json:
@@ -1499,6 +1621,82 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"AgentCFD {report['agentcfd']} | Python {report['python']} | healthy")
             print(f"Reference provider: ready | OpenFOAM runtime: {'found' if report['providers']['openfoam-runtime'] else 'not found (optional)'}")
+        return 0
+    if args.command == "init":
+        project = projects.init_project(args.directory, provider=args.provider)
+        report = {
+            "schema": "agentcfd.project-initialization/0.1",
+            "template": args.template,
+            "root": str(project.root),
+            "entrypoint": str(project.entrypoint),
+            "provider": project.manifest.default_provider,
+        }
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(f"Created AgentCFD {args.template} project")
+            print(project.root)
+        return 0
+    if args.command == "check":
+        plan = projects.Project(args.project).plan(
+            provider=args.provider,
+            container_image=args.container_image,
+        )
+        readiness = plan["readiness"]
+        valid = readiness["model_valid"] and readiness["provider_compatible"]
+        report = {
+            "schema": "agentcfd.project-check/0.1",
+            "valid": valid,
+            "readiness": readiness,
+            "issues": plan["issues"],
+            "model": plan["model"],
+            "plan_sha256": plan["plan_sha256"],
+        }
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Project {'valid' if valid else 'invalid'} | ready to run "
+                f"{str(readiness['ready_to_run']).lower()}"
+            )
+            for issue in plan["issues"]:
+                print(f"{issue['severity']}: {issue['code']} | {issue['message']}")
+        return 0 if valid else 3
+    if args.command == "plan":
+        report = projects.Project(args.project).plan(
+            provider=args.provider,
+            container_image=args.container_image,
+        )
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Solution plan | provider {report['decisions']['provider']['name']} | "
+                f"ready {str(report['readiness']['ready_to_run']).lower()}"
+            )
+            if args.output is not None:
+                print(args.output)
+        return 0 if report["readiness"]["ready_to_run"] else 3
+    if args.command == "inspect":
+        report = projects.Project(args.project).inspect()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"{report['model']['name']} | runs {report['run_count']} | "
+                f"ready {str(report['readiness']['ready_to_run']).lower()}"
+            )
+            if report["latest_run"] is not None:
+                print(
+                    f"latest {report['latest_run']['run_id']} | "
+                    f"trust {report['latest_run']['trust_level']}"
+                )
         return 0
     if args.command == "capabilities":
         report = capabilities.as_dict()
@@ -1535,6 +1733,46 @@ def main(argv: list[str] | None = None) -> int:
                     f"{component.name}: {component.license_expression} | "
                     f"{component.relationship} | {required}"
                 )
+        return 0
+    if args.command == "export" and args.export_format == "openfoam":
+        bundle = data_exchange.export_openfoam_case(
+            args.case_directory,
+            args.output_directory,
+            container_image=args.container_image,
+            timeout_seconds=args.timeout_seconds,
+            convert=not args.skip_conversion,
+            density=args.density,
+        )
+        report = bundle.to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Exported {bundle.frame_count} frames | XDMF/H5 + safe NPZ"
+            )
+            print(bundle.xdmf)
+        return 0
+    if args.command == "export" and args.export_format == "field-sample":
+        output = data_exchange.export_agentfem_field_sample(
+            args.bundle_directory,
+            args.output,
+            field=args.field,
+            association=args.association,
+            frame=args.frame,
+            cell_block=args.cell_block,
+        )
+        report = {
+            "schema": "agentcfd.field-sample-export/0.1",
+            "output": str(output),
+            "field": args.field,
+            "association": args.association,
+            "frame": args.frame,
+        }
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(f"Exported tensor-ready field sample | {args.field}:{args.association}")
+            print(output)
         return 0
     if args.command == "calculate" and args.calculation == "pipe-loss":
         report = engineering.pipe_pressure_loss(
@@ -1817,6 +2055,24 @@ def main(argv: list[str] | None = None) -> int:
         if result.accepted:
             return 0
         return 1 if result.status != "completed" else 3
+    if args.command == "run" and args.provider == "project":
+        completed = projects.Project(args.project).run(
+            provider=args.project_provider,
+            container_image=args.container_image,
+        )
+        report = completed.to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Project run {completed.result.status} | trust "
+                f"{completed.result.trust_level} | accepted "
+                f"{str(completed.result.accepted).lower()}"
+            )
+            print(completed.directory)
+        if completed.result.accepted:
+            return 0
+        return 1 if completed.result.status != "completed" else 3
     if args.command == "run" and args.provider == "openfoam-turbulent-pipe":
         step = _turbulent_pipe_step(
             velocity=args.velocity,
@@ -2148,6 +2404,16 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Verified result | trust {report['trust_level']} | "
                 f"artifacts {report['artifact_count']}"
+            )
+        return 0
+    if args.command == "verify" and args.verification == "field-bundle":
+        report = data_exchange.verify_field_bundle(args.directory)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Verified portable field bundle | {report['frame_count']} frames | "
+                f"{report['point_count']} points"
             )
         return 0
     if args.command == "verify" and args.verification == "validation-point":

@@ -10,6 +10,12 @@ Study -> Domain/Mesh -> Regions -> Fluid/Thermodynamics
 
 ## Standard sequence
 
+At project level, the recommended lifecycle is:
+
+```text
+init -> edit case.py -> check -> plan -> run -> inspect/compare/export
+```
+
 1. Declare the physical Study and modeling assumptions.
 2. Select a numerical Procedure only after the physics is fixed.
 3. Define or import the Domain and inspect its dimensions and identity.
@@ -36,9 +42,11 @@ Study -> Domain/Mesh -> Regions -> Fluid/Thermodynamics
     applicability, required outputs, and reference or benchmark claims.
 18. Return one SimulationResult whose acceptance state and provenance travel
     with every artifact.
-19. Run mesh, timestep, iterative, and model-form sensitivity appropriate to
+19. Publish volumetric results through the standard XDMF/H5/NPZ field bundle;
+    keep native cell and interpolated point associations explicit.
+20. Run mesh, timestep, iterative, and model-form sensitivity appropriate to
     the decision before claiming engineering verification.
-20. Admit observations to campaigns or learning datasets only under a named
+21. Admit observations to campaigns or learning datasets only under a named
     quality policy.
 
 ## Progressive disclosure

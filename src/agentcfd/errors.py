@@ -16,3 +16,7 @@ class ProviderUnavailableError(AgentCFDError):
 
 class CaseIntegrityError(AgentCFDError):
     """A prepared provider case no longer matches its recorded identity."""
+
+
+class ProjectError(AgentCFDError):
+    """A project cannot be loaded, planned, or executed as declared."""

@@ -26,7 +26,24 @@ _CAPABILITIES = (
         maturity="release",
         scope="Typed study, domain, fluid, boundary, procedure, output, and result lifecycle.",
         evidence=("public API tests", "JSON round-trip tests"),
-        limitations=("The first release contains one executable reference provider.",),
+        limitations=("The public geometry catalog is still limited to circular pipes.",),
+    ),
+    Capability(
+        name="workflow.project-lifecycle",
+        maturity="experimental",
+        scope=(
+            "One init, check, inspectable-plan, run, and inspect lifecycle shared "
+            "by people, agents, CLI automation, and future GUIs."
+        ),
+        evidence=(
+            "content-addressed plan and run lifecycle tests",
+            "reference-provider end-to-end project execution",
+            "OpenFOAM project execution with automatic portable fields",
+        ),
+        limitations=(
+            "The first template is an industrial circular pipe.",
+            "OpenFOAM project execution currently uses the provider's bounded pipe controls.",
+        ),
     ),
     Capability(
         name="reference.hagen-poiseuille",
@@ -88,6 +105,23 @@ _CAPABILITIES = (
         scope="Provider-neutral field exchange contract for AgentCFD, AgentFEM, learning, and coupling tools.",
         evidence=("schema and direction validation tests",),
         limitations=("No conservative mesh mapper or coupled time integrator is released yet.",),
+    ),
+    Capability(
+        name="interoperability.portable-field-bundle",
+        maturity="experimental",
+        scope=(
+            "Canonical fixed-mesh time series in XDMF/HDF5 plus pickle-free NPZ "
+            "for visualization, AgentFEM exchange, and learned workflows."
+        ),
+        evidence=(
+            "XDMF/HDF5 and NPZ cross-format round-trip tests",
+            "field-unit, association, axis, and artifact-hash contract tests",
+            "16-frame OpenCFD v2606 turbulent-pipe export",
+        ),
+        limitations=(
+            "The first exporter consumes foamToVTK fixed-mesh volume fields.",
+            "Moving meshes, decomposed parallel fields, and conservative CFD-to-FEM mapping remain open.",
+        ),
     ),
     Capability(
         name="verification.grid-convergence-index",

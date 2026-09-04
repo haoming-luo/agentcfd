@@ -17,6 +17,13 @@ Study -> Model -> Geometry/Mesh -> Regions -> Fluids
 
 ## P0 — trustworthy foundation
 
+Current product checkpoint: the first shared project lifecycle now creates,
+checks, plans, executes, and inspects the same readable `case.py` for people and
+agents. The first standard field bundle publishes XDMF/H5 for visualization and
+AgentFEM exchange plus pickle-free NPZ for learned workflows, with canonical
+names, units, association, axis semantics, source identity, and hashes. These
+are the product backbone; numerical benchmarks remain evidence underneath it.
+
 - stabilize the public engineering vocabulary and versioned model/result schemas;
 - release mesh import, named regions, boundary identity, and mesh-quality audits;
 - lower one bounded incompressible laminar workflow to a real numerical provider;
@@ -28,26 +35,13 @@ Study -> Model -> Geometry/Mesh -> Regions -> Fluids
 
 ## P1 — industrial internal flow
 
-Current checkpoint: the first OpenCFD v2606 k-omega SST smooth-pipe slice and a
-verified periodic `meanVelocityForce` developed-flow precursor are implemented.
-Same-resolution content-addressed inlet mapping is implemented and verified at
-one c8 operating point. A fixed-wall-cell c8/c16/c32 study now verifies stable
-high-Re wall-function sampling and a fine-pair pressure-gradient plateau, while
-correctly rejecting GCI because that fixed-wall-height family is non-similar.
-A geometrically similar c8/c12/c18 candidate also stays in one wall-function
-regime but is oscillatory and therefore correctly rejected. Formal turbulent
-discretization uncertainty and cross-resolution mapping remain open. An
-identical-mesh wall-function screen and tighter-solver Spalding c8/c16/c32
-follow-up now establish a 0.00689% c16-to-c32 pressure-gradient plateau with
-about 1.85% smooth-Colebrook difference. A bounded standard k-epsilon precursor
-and identical-mesh model study are implemented; at Re 99,621 SST/Spalding is
-1.851% from the correlation versus 3.289% for k-epsilon/nutk. Both remain
-benchmark-specific. A source-hashed four-point matrix now spans Re
-49,810--498,104 with adaptive wall spacing and all runtime y-plus gates passing.
-It finds SST/Spalding better at the two lower points and k-epsilon/nutk better
-at the two higher points, so the software rejects a universal model default.
-The next promotion gates are high-Re accuracy below 2%, formal numerical
-uncertainty, and independent experimental validation.
+Current numerical checkpoint: OpenCFD v2606 laminar and two-equation RANS pipe
+routes, developed-flow precursors, mapping, wall treatment, and a four-point
+Reynolds/model matrix are executable and content addressed. The evidence rejects
+a universal turbulence-model default and remains bounded to its declared pipe
+cases. Detailed results live in `docs/numerical-strategy.md`; product development
+now prioritizes end-to-end industrial geometry and decision workflows over
+additional smooth-pipe tuning.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

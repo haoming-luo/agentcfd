@@ -10,8 +10,11 @@ validation and the selected provider advertises the required capability.
 python -m pip install -e .
 agentcfd doctor --json
 agentcfd capabilities --json
-agentcfd demo pipe --output pipe-result.json
-agentcfd prepare openfoam-pipe openfoam-pipe --json
+agentcfd init --template industrial-pipe first-flow
+agentcfd check first-flow --json
+agentcfd plan first-flow --json
+agentcfd run first-flow --json
+agentcfd inspect first-flow --json
 python -m pytest -q
 ```
 
@@ -25,6 +28,9 @@ python -m pytest -q
 6. Do not train on a result unless `result.accepted` is true or a human explicitly
    records why a failed check is acceptable for that dataset.
 7. Explain unsupported physics instead of silently changing the model.
+8. Prefer the project lifecycle over case-specific CLI commands for new work.
+9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
+   never infer physical time or point/cell association from shape alone.
 
 ## Current boundary
 

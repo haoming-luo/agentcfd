@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/solution-plan.schema.json",
+  "title": "AgentCFD inspectable solution plan 0.1",
+  "type": "object",
+  "required": [
+    "schema", "project", "model", "decisions", "readiness", "issues",
+    "next_actions", "plan_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.solution-plan/0.1"},
+    "project": {
+      "type": "object",
+      "required": ["root", "entrypoint", "entrypoint_sha256", "factory"],
+      "properties": {
+        "root": {"type": "string"},
+        "entrypoint": {"type": "string"},
+        "entrypoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "factory": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "model": {
+      "type": "object",
+      "required": ["name", "sha256", "summary", "reynolds_number"],
+      "properties": {
+        "name": {"type": "string"},
+        "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "summary": {"type": "object"},
+        "reynolds_number": {"type": ["number", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "decisions": {
+      "type": "object",
+      "required": [
+        "study", "procedure", "outputs", "provider", "required_capability",
+        "mesh_strategy", "solver", "portable_field_bundle", "portable_formats"
+      ],
+      "properties": {
+        "study": {"type": "object"},
+        "procedure": {"type": "object"},
+        "outputs": {"type": "object"},
+        "provider": {"type": "object"},
+        "required_capability": {"type": "string"},
+        "mesh_strategy": {"type": "string"},
+        "solver": {"type": "string"},
+        "portable_field_bundle": {"type": "boolean"},
+        "portable_formats": {
+          "type": "array",
+          "items": {"enum": ["xdmf", "hdf5", "npz"]},
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "readiness": {
+      "type": "object",
+      "required": [
+        "model_valid", "provider_compatible", "runtime_available",
+        "portable_io_available", "ready_to_run"
+      ],
+      "properties": {
+        "model_valid": {"type": "boolean"},
+        "provider_compatible": {"type": "boolean"},
+        "runtime_available": {"type": "boolean"},
+        "portable_io_available": {"type": "boolean"},
+        "ready_to_run": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "message", "path", "repair"],
+        "properties": {
+          "code": {"type": "string"},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "message": {"type": "string"},
+          "path": {"type": "string"},
+          "repair": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_actions": {"type": "array", "items": {"type": "string"}},
+    "plan_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

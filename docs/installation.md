@@ -19,11 +19,12 @@ python -m pytest -q
 Release candidates must also be installed from the built wheel into a clean
 environment. Editable-source success alone is not a release gate.
 
-NumPy array interoperability and CoolProp thermophysical properties are
-separate permissively licensed extras:
+NumPy array interoperability, portable XDMF/H5/NPZ fields, and CoolProp
+thermophysical properties are separate permissively licensed extras:
 
 ```bash
 python -m pip install "agentcfd[arrays]"
+python -m pip install "agentcfd[io]"
 python -m pip install "agentcfd[properties]"
 ```
 

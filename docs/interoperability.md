@@ -49,6 +49,12 @@ The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack
 behind the stable `agentcae.*` records.
 
+Spatial fields use `agentcae.field-bundle/0.1.0`: XDMF/HDF5 for mesh-aware
+exchange and a mirror NPZ for array consumers. `agentcfd export field-sample`
+also emits the exact `coordinates`, `values`, `encoding_json`, and
+`metadata_json` keys read by `agentfem.datasets.FEMFieldSample`. This is a
+direct file-level bridge, not a Python dependency between the products.
+
 Installed tools can discover these contracts through
 `agentcfd.contracts.available()`, `path()`, and `load()`, or with
 `agentcfd contracts --json`. This avoids repository-relative paths and does not

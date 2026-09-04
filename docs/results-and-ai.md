@@ -70,7 +70,61 @@ Field-learning workflows should consume `field_records` and their artifacts;
 they must also retain mesh identity, tensor layout, masks, normalization, and
 units. AgentCFD will not silently flatten a field and discard those semantics.
 
+## Standard portable field bundle
+
+AgentCFD uses one `agentcae.field-bundle/0.1.0` contract across visualization,
+AgentFEM transfer, and field-learning pipelines. One directory contains:
+
+| Artifact | Role |
+| --- | --- |
+| `fields.xdmf` | lightweight topology, field, association, and time-series index |
+| `fields.h5` | binary geometry, topology, and field payloads referenced by XDMF |
+| `fields.npz` | compressed, pickle-free arrays for NumPy/PyTorch/JAX ingestion |
+| `manifest.json` | units, canonical names, source names, processing, axis semantics, and hashes |
+
+OpenFOAM native cell values and its interpolated point values are both
+retained and named separately. For example, `fluid.velocity.cell` is the native
+finite-volume field while `fluid.velocity.point` is the visualization-oriented
+cell-to-point representation. In incompressible OpenFOAM cases,
+`fluid.kinematic_pressure` remains in `m^2/s^2`; `fluid.pressure` in Pa is added
+only when a positive constant density is available and the multiplication is
+recorded in the manifest.
+
+The NPZ layout is stable and does not require object deserialization:
+
+```python
+import json
+import numpy as np
+
+with np.load("fields/fields.npz", allow_pickle=False) as data:
+    metadata = json.loads(str(data["metadata_json"]))
+    axis = data["axis"]
+    points = data["points"]
+    cells = data["cells__0__hexahedron"]
+    velocity = data["cell__fluid_velocity_cell__0"]
+```
+
+For a single field/frame, AgentCFD can emit the exact four-key NPZ shape used
+by AgentFEM's dependency-free `FEMFieldSample` reader:
+
+```bash
+agentcfd export field-sample fields velocity-final.npz \
+  --field fluid.velocity --association point --frame -1
+```
+
+The output keys are `coordinates`, `values`, `encoding_json`, and
+`metadata_json`. Point fields retain mesh vertices; cell fields use explicit
+cell-centre coordinates. Units, component names, interpolation history,
+source identity, selected axis coordinate, and the parent bundle hash remain
+attached rather than being inferred by a training script.
+
+The manifest says whether the axis is physical time, a steady-solver iteration,
+or an unclassified provider coordinate. Consumers must not infer seconds from
+an XDMF `Time` element alone. `agentcfd verify field-bundle` reopens XDMF/H5 and
+NPZ, compares their axes and geometry, and verifies all artifact hashes.
+
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,
-`schemas/result-exchange.schema.json`, and `schemas/scientific-sample.schema.json`.
+`schemas/result-exchange.schema.json`, `schemas/scientific-sample.schema.json`,
+and `schemas/field-bundle.schema.json`.
 Release wheels also install them under `share/agentcfd/schemas` in the active
 Python environment so non-Python consumers can discover the same contracts.

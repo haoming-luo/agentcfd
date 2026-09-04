@@ -11,7 +11,9 @@ review.
 | Component | Role | License | Distribution rule |
 |---|---|---|---|
 | AgentCFD | workflow and scientific contracts | Apache-2.0 | core |
-| NumPy | optional array hashing/interchange | permissive composite (BSD-3-Clause, 0BSD, MIT, Zlib, CC0) | optional `arrays` extra; audit bundled notices |
+| NumPy | optional array hashing/interchange and NPZ bundles | permissive composite (BSD-3-Clause, 0BSD, MIT, Zlib, CC0) | optional `arrays`/`io` extra; audit bundled notices |
+| h5py/HDF5 | optional binary scientific field storage | BSD-3-Clause plus HDF5 permissive license | optional `io` extra; retain bundled licenses |
+| meshio | optional XDMF/HDF5 and mesh interchange | MIT | optional `io` extra; retain license |
 | setuptools | build backend | MIT | source-build dependency only |
 | wheel | wheel build | MIT | source-build dependency only |
 | jsonschema | development-time schema validation | MIT | development dependency only |
@@ -30,7 +32,6 @@ The current runtime boundary is also available to automation through
 
 | Component | Intended role | License posture | Integration rule |
 |---|---|---|---|
-| meshio | mesh interchange | MIT | optional Python dependency |
 | PyVista | interactive result inspection | MIT | optional visualization dependency |
 | VTK | field and mesh visualization backend | BSD-3-Clause | transitive optional dependency through PyVista |
 | Kratos Multiphysics | candidate CFD/CHT engine | BSD-4-Clause core; applications can differ | optional provider; audit every selected application |

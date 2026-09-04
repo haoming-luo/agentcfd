@@ -1,19 +1,39 @@
 # Architecture
 
-AgentCFD separates four responsibilities:
+AgentCFD separates six responsibilities:
 
-1. **Engineering language** — fluid studies, domains, materials, boundaries,
+1. **Project experience** — one `init -> check -> plan -> run -> inspect`
+   lifecycle for humans, agents, CI, and future GUIs.
+2. **Engineering language** — fluid studies, domains, materials, boundaries,
    sources, procedures, outputs, and observations.
-2. **Scientific contracts** — validation issues, capability records, canonical
-   field semantics, provenance, and acceptance checks.
-3. **Provider lowering** — translation of a resolved model into a numerical
+3. **Solution planning** — deterministic provider compatibility, visible
+   numerical decisions, addressable issues, and repair actions before execution.
+4. **Provider lowering** — translation of a resolved model into a numerical
    engine without leaking engine-specific files into the public model.
-4. **Deterministic execution** — assembly, nonlinear iteration, time advancement,
-   parallel execution, restart, and field recovery performed by the selected engine.
+5. **Result and data exchange** — canonical quantities plus XDMF/H5/NPZ field
+   bundles shared by visualization, coupling, campaigns, and learning systems.
+6. **Evidence and trust** — validation issues, capability records, canonical
+   field semantics, provenance, and acceptance checks.
+
+Deterministic execution—assembly, nonlinear iteration, time advancement,
+parallel execution, restart, and field recovery—remains the selected engine's
+responsibility behind the provider boundary.
 
 An AI agent is not a mandatory runtime dependency. Any agent may construct and
 inspect the same model that a person writes in Python. This keeps rapid progress
 in AI models independent from numerical solver evolution.
+
+The public architecture is therefore:
+
+```text
+case.py -> Project -> SolutionPlan -> Provider -> SimulationResult
+                                      |              |
+                                      v              v
+                              OpenFOAM case    XDMF/H5/NPZ + evidence
+```
+
+Validation is a trust layer attached to this route, not a separate product
+workflow that users must reverse-engineer.
 
 ## Provider strategy
 

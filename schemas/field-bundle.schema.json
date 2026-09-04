@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/field-bundle.schema.json",
+  "title": "AgentCAE portable field bundle 0.1.0",
+  "type": "object",
+  "required": [
+    "schema", "schema_version", "mesh", "axis", "fields", "arrays",
+    "source", "formats", "npz", "artifacts"
+  ],
+  "properties": {
+    "schema": {"const": "agentcae.field-bundle"},
+    "schema_version": {"const": "0.1.0"},
+    "mesh": {
+      "type": "object",
+      "required": ["point_count", "geometric_dimension", "cell_blocks", "fixed_across_frames"],
+      "properties": {
+        "point_count": {"type": "integer", "minimum": 1},
+        "geometric_dimension": {"type": "integer", "minimum": 1, "maximum": 3},
+        "cell_blocks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["type", "count"],
+            "properties": {
+              "type": {"type": "string", "minLength": 1},
+              "count": {"type": "integer", "minimum": 1}
+            },
+            "additionalProperties": false
+          }
+        },
+        "fixed_across_frames": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "axis": {
+      "type": "object",
+      "required": ["name", "values", "unit", "physical_time", "description"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "number"}
+        },
+        "unit": {"type": "string"},
+        "physical_time": {"type": "boolean"},
+        "description": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "export_name", "source_name", "association", "unit",
+          "components", "shape", "description", "processing"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "export_name": {"type": "string", "minLength": 1},
+          "source_name": {"type": "string", "minLength": 1},
+          "association": {"enum": ["point", "cell"]},
+          "unit": {"type": "string"},
+          "components": {"type": "array", "items": {"type": "string"}},
+          "shape": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+          "description": {"type": "string"},
+          "processing": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "arrays": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["key", "role"],
+        "properties": {
+          "key": {"type": "string", "minLength": 1},
+          "role": {"enum": ["coordinate", "geometry", "topology", "field"]},
+          "unit": {"type": "string"},
+          "cell_type": {"type": "string"},
+          "export_name": {"type": "string"},
+          "cell_block": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "source": {"type": "object"},
+    "formats": {
+      "type": "object",
+      "required": ["xdmf", "hdf5", "npz"],
+      "properties": {
+        "xdmf": {"type": "string"},
+        "hdf5": {"type": "string"},
+        "npz": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "npz": {
+      "type": "object",
+      "required": ["allow_pickle", "metadata_key"],
+      "properties": {
+        "allow_pickle": {"const": false},
+        "metadata_key": {"const": "metadata_json"}
+      },
+      "additionalProperties": false
+    },
+    "artifacts": {
+      "type": "object",
+      "minProperties": 3,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["sha256", "size_bytes"],
+        "properties": {
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "size_bytes": {"type": "integer", "minimum": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

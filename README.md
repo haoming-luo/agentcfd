@@ -78,6 +78,26 @@ agentcfd doctor
 agentcfd demo pipe
 ```
 
+## One project lifecycle
+
+The current development version exposes the same readable project to people,
+agents, CI, and future GUIs:
+
+```bash
+agentcfd init --template industrial-pipe my-flow
+cd my-flow
+agentcfd check --json
+agentcfd plan --json
+agentcfd run . --json
+agentcfd inspect --json
+```
+
+`case.py` is the modeling source of truth. `agentcfd.toml` contains only
+operational settings such as the default provider, run directory, container,
+and mesh controls. Every execution publishes an immutable run directory with
+the resolved plan, result, provider artifacts, and trust state. Validation is
+attached evidence; it does not replace the engineering workflow.
+
 Common pipe-loss screening is available without a CFD runtime:
 
 ```bash
@@ -143,6 +163,33 @@ model fingerprint. Execution currently targets installations that provide
 area-averaged pressure, pressure drop, mass imbalance, mesh-quality metrics,
 convergence evidence, and final native fields. Process completion alone never
 implies scientific acceptance.
+
+## Portable fields: XDMF/H5 and NPZ
+
+Install the permissively licensed optional I/O stack, then export every saved
+OpenFOAM field frame into one versioned bundle:
+
+```bash
+python -m pip install "agentcfd[io]"
+agentcfd export openfoam OPENFOAM_CASE fields \
+  --container-image opencfd/openfoam-run:2606 --json
+agentcfd verify field-bundle fields --json
+agentcfd export field-sample fields velocity-final.npz \
+  --field fluid.velocity --association point --frame -1
+```
+
+`fields.xdmf` plus `fields.h5` is the standard mesh-and-field route for
+ParaView, AgentFEM exchange, and other scientific tools. `fields.npz` mirrors
+the same geometry, topology, axis, point fields, and native cell fields without
+pickles for NumPy, PyTorch, JAX, and dataset pipelines. `manifest.json` retains
+canonical field names, units, association, interpolation semantics, source
+identity, and artifact hashes. Incompressible OpenFOAM `p` remains available
+as kinematic pressure; physical pressure in Pa is a separate density-derived
+field rather than a silent reinterpretation.
+The optional `field-sample` command extracts one frame into AgentFEM's
+`coordinates`, `values`, `encoding_json`, and `metadata_json` NPZ layout. It
+opens directly with `agentfem.datasets.FEMFieldSample.read(...)`, or with
+`numpy.load(..., allow_pickle=False)`, without adding AgentFEM as a dependency.
 
 For the canonical fully developed validation case, declare the physical inlet
 profile instead of silently changing a mean-velocity boundary:

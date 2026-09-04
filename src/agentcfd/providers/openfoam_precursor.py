@@ -54,6 +54,20 @@ from .openfoam import (
 
 _CAPABILITY = "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
 
+_SUPPORTED_NUT_WALL_FUNCTIONS = (
+    "nutUBlendedWallFunction",
+    "nutUSpaldingWallFunction",
+    "nutkWallFunction",
+)
+
+
+def _validated_nut_wall_function(value: str) -> str:
+    selected = str(value).strip()
+    if selected not in _SUPPORTED_NUT_WALL_FUNCTIONS:
+        choices = ", ".join(_SUPPORTED_NUT_WALL_FUNCTIONS)
+        raise ValueError(f"nut_wall_function must be one of: {choices}.")
+    return selected
+
 
 @dataclass(frozen=True, slots=True)
 class PreparedOpenFOAMTurbulentWallStudy:
@@ -62,6 +76,7 @@ class PreparedOpenFOAMTurbulentWallStudy:
     directory: Path
     model_sha256: str
     nominal_wall_cell_fraction: float
+    nut_wall_function: str
     cases: tuple[dict[str, object], ...]
     scientific_inputs: dict[str, object]
     schema: str = "agentcfd.openfoam-turbulent-wall-study/0.1"
@@ -72,6 +87,7 @@ class PreparedOpenFOAMTurbulentWallStudy:
             "model_sha256": self.model_sha256,
             "quantity": "flow.pressure_gradient",
             "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+            "nut_wall_function": self.nut_wall_function,
             "scientific_inputs": self.scientific_inputs,
             "cases": list(self.cases),
         }
@@ -87,12 +103,117 @@ class PreparedOpenFOAMTurbulentWallStudy:
         return target
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedOpenFOAMTurbulentWallFunctionStudy:
+    """Content-addressed plan for an identical-mesh wall-function screen."""
+
+    directory: Path
+    model_sha256: str
+    cross_section_cells: int
+    nominal_wall_cell_fraction: float
+    maximum_iterations: int
+    cases: tuple[dict[str, object], ...]
+    scientific_inputs: dict[str, object]
+    schema: str = "agentcfd.openfoam-turbulent-wall-function-study/0.1"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": self.schema,
+            "model_sha256": self.model_sha256,
+            "quantity": "flow.darcy_friction_factor",
+            "cross_section_cells": self.cross_section_cells,
+            "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+            "maximum_iterations": self.maximum_iterations,
+            "scientific_inputs": self.scientific_inputs,
+            "cases": list(self.cases),
+        }
+
+    def write(self) -> Path:
+        target = self.directory / "agentcfd-turbulent-wall-function-study.json"
+        temporary = target.with_suffix(".json.tmp")
+        temporary.write_text(
+            json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        temporary.replace(target)
+        return target
+
+
+def prepare_turbulent_wall_function_study(
+    step,
+    directory: str | Path,
+    *,
+    cross_section_cells: int = 16,
+    nominal_wall_cell_fraction: float = 0.0625,
+    maximum_iterations: int = 4000,
+) -> PreparedOpenFOAMTurbulentWallFunctionStudy:
+    """Prepare all supported SST momentum wall functions on one mesh."""
+
+    cross_cells = integer_at_least(
+        cross_section_cells,
+        name="cross_section_cells",
+        minimum=2,
+    )
+    iteration_limit = integer_at_least(
+        maximum_iterations,
+        name="maximum_iterations",
+        minimum=5,
+    )
+    fraction = positive_float(
+        nominal_wall_cell_fraction,
+        name="nominal_wall_cell_fraction",
+    )
+    if fraction >= 1.0:
+        raise ValueError("nominal_wall_cell_fraction must be below one.")
+    root = Path(directory)
+    if root.exists() and any(root.iterdir()):
+        raise FileExistsError(f"OpenFOAM wall-function study directory is not empty: {root}")
+    root.mkdir(parents=True, exist_ok=True)
+    model_sha256 = step.model.fingerprint()
+    cases: list[dict[str, object]] = []
+    for index, wall_function in enumerate(_SUPPORTED_NUT_WALL_FUNCTIONS, start=1):
+        relative = Path(f"wall-function-{index}-{wall_function}")
+        prepared = OpenFOAMTurbulentPrecursorProvider(
+            case_directory=root / relative,
+            cross_section_cells=cross_cells,
+            nominal_wall_cell_fraction=fraction,
+            nut_wall_function=wall_function,
+            maximum_iterations=iteration_limit,
+        ).prepare(step)
+        cases.append(
+            {
+                "index": index,
+                "directory": str(relative),
+                "nut_wall_function": wall_function,
+                "expected_cell_count": 5 * cross_cells**2,
+                "case_sha256": prepared.case_sha256,
+                "result": str(relative / "agentcfd-result.json"),
+            }
+        )
+    study = PreparedOpenFOAMTurbulentWallFunctionStudy(
+        directory=root,
+        model_sha256=model_sha256,
+        cross_section_cells=cross_cells,
+        nominal_wall_cell_fraction=fraction,
+        maximum_iterations=iteration_limit,
+        cases=tuple(cases),
+        scientific_inputs={
+            "model": step.model.to_dict(),
+            "procedure": step.procedure.to_dict(),
+            "output_request": step.output.to_dict(),
+        },
+    )
+    study.write()
+    return study
+
+
 def prepare_turbulent_wall_study(
     step,
     directory: str | Path,
     *,
     cross_section_cells: tuple[int, int, int] = (8, 16, 32),
     nominal_wall_cell_fraction: float = 0.0625,
+    nut_wall_function: str = "nutUBlendedWallFunction",
     maximum_iterations: tuple[int, int, int] = (1000, 4000, 6000),
 ) -> PreparedOpenFOAMTurbulentWallStudy:
     """Prepare three precursor cases with one fixed nominal wall-cell height."""
@@ -115,6 +236,7 @@ def prepare_turbulent_wall_study(
     )
     if fraction >= 1.0:
         raise ValueError("nominal_wall_cell_fraction must be below one.")
+    wall_function = _validated_nut_wall_function(nut_wall_function)
     root = Path(directory)
     if root.exists() and any(root.iterdir()):
         raise FileExistsError(f"OpenFOAM wall-study directory is not empty: {root}")
@@ -130,6 +252,7 @@ def prepare_turbulent_wall_study(
             case_directory=root / relative,
             cross_section_cells=cross_cells,
             nominal_wall_cell_fraction=fraction,
+            nut_wall_function=wall_function,
             maximum_iterations=iteration_limit,
         ).prepare(step)
         if prepared.model_sha256 != model_sha256:
@@ -150,6 +273,7 @@ def prepare_turbulent_wall_study(
         directory=root,
         model_sha256=model_sha256,
         nominal_wall_cell_fraction=fraction,
+        nut_wall_function=wall_function,
         cases=tuple(cases),
         scientific_inputs={
             "model": step.model.to_dict(),
@@ -263,6 +387,7 @@ class OpenFOAMTurbulentPrecursorProvider:
         case_directory: str | Path | None = None,
         cross_section_cells: int = 16,
         nominal_wall_cell_fraction: float | None = None,
+        nut_wall_function: str = "nutUBlendedWallFunction",
         maximum_iterations: int = 1000,
         validation: OpenFOAMValidationPolicy | None = None,
         timeout_seconds: float = 3600.0,
@@ -284,6 +409,7 @@ class OpenFOAMTurbulentPrecursorProvider:
             if fraction >= 1.0:
                 raise ValueError("nominal_wall_cell_fraction must be below one.")
             self.nominal_wall_cell_fraction = fraction
+        self.nut_wall_function = _validated_nut_wall_function(nut_wall_function)
         self.maximum_iterations = integer_at_least(
             maximum_iterations,
             name="maximum_iterations",
@@ -441,6 +567,12 @@ class OpenFOAMTurbulentPrecursorProvider:
             raise CaseIntegrityError(
                 "Prepared precursor iteration limit differs from runtime controls."
             )
+        nut = (prepared.directory / "0/nut").read_text(encoding="utf-8")
+        wall_type = re.search(r"(?m)^\s*type\s+(nut\w+WallFunction)\s*;\s*$", nut)
+        if wall_type is None or wall_type.group(1) != self.nut_wall_function:
+            raise CaseIntegrityError(
+                "Prepared precursor momentum wall function differs from runtime controls."
+            )
 
     def _load_prepared(
         self,
@@ -589,6 +721,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                 wall_name,
                 kinetic_energy=estimate.turbulent_kinetic_energy,
                 specific_dissipation_rate=estimate.specific_dissipation_rate,
+                nut_wall_function=self.nut_wall_function,
             ),
             "0/p": _precursor_pressure_field(wall_name),
             "constant/fvOptions": _precursor_fv_options(inlet.velocity),
@@ -1001,6 +1134,7 @@ class OpenFOAMTurbulentPrecursorProvider:
                     "cross_section_cells": self.cross_section_cells,
                     "axial_cells": 1,
                     "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+                    "nut_wall_function": self.nut_wall_function,
                     "maximum_iterations": self.maximum_iterations,
                     "periodic_end_planes": True,
                 },
@@ -1055,7 +1189,9 @@ def _precursor_turbulence_fields(
     *,
     kinetic_energy: float,
     specific_dissipation_rate: float,
+    nut_wall_function: str = "nutUBlendedWallFunction",
 ) -> dict[str, str]:
+    nut_wall_function = _validated_nut_wall_function(nut_wall_function)
     specifications = {
         "k": ("[0 2 -2 0 0 0 0]", kinetic_energy, "kqRWallFunction", ""),
         "omega": (
@@ -1064,7 +1200,7 @@ def _precursor_turbulence_fields(
             "omegaWallFunction",
             "        blending binomial;\n",
         ),
-        "nut": ("[0 2 -1 0 0 0 0]", 0.0, "nutUBlendedWallFunction", ""),
+        "nut": ("[0 2 -1 0 0 0 0]", 0.0, nut_wall_function, ""),
     }
     files: dict[str, str] = {}
     for name, (dimensions, value, wall_type, extra) in specifications.items():

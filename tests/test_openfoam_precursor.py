@@ -8,6 +8,7 @@ from agentcfd import outputs, procedures
 from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
 from agentcfd.providers import (
     OpenFOAMTurbulentPrecursorProvider,
+    prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
 )
 from agentcfd.providers.openfoam_precursor import (
@@ -39,6 +40,8 @@ def test_precursor_case_is_periodic_content_addressed_and_schema_valid(tmp_path)
     second = provider.prepare(turbulent_step(), tmp_path / "second")
 
     assert first.case_sha256 == second.case_sha256
+
+
     assert first.capability == (
         "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
     )
@@ -75,6 +78,33 @@ def test_precursor_case_is_periodic_content_addressed_and_schema_valid(tmp_path)
         (Path(__file__).parents[1] / "schemas/openfoam-case.schema.json").read_text()
     )
     jsonschema.Draft202012Validator(schema).validate(manifest)
+
+
+@pytest.mark.parametrize(
+    "wall_function",
+    (
+        "nutUBlendedWallFunction",
+        "nutUSpaldingWallFunction",
+        "nutkWallFunction",
+    ),
+)
+def test_precursor_momentum_wall_function_is_explicit_and_hashed(
+    tmp_path, wall_function
+):
+    provider = OpenFOAMTurbulentPrecursorProvider(
+        cross_section_cells=8,
+        maximum_iterations=20,
+        nut_wall_function=wall_function,
+    )
+    prepared = provider.prepare(turbulent_step(), tmp_path / wall_function)
+
+    nut = (prepared.directory / "0/nut").read_text()
+    assert f"type {wall_function};" in nut
+
+
+def test_precursor_rejects_unknown_momentum_wall_function():
+    with pytest.raises(ValueError, match="nut_wall_function must be one of"):
+        OpenFOAMTurbulentPrecursorProvider(nut_wall_function="inventedWallFunction")
 
 
 def test_precursor_declares_near_wall_grading(tmp_path):
@@ -114,6 +144,39 @@ def test_fixed_wall_cell_study_prepares_three_content_addressed_cases(tmp_path):
 
     with pytest.raises(FileExistsError, match="not empty"):
         prepare_turbulent_wall_study(turbulent_step(), study.directory)
+
+
+def test_wall_function_study_prepares_identical_mesh_cases(tmp_path):
+    study = prepare_turbulent_wall_function_study(
+        turbulent_step(),
+        tmp_path / "wall-functions",
+    )
+    payload = study.to_dict()
+
+    assert payload["schema"] == (
+        "agentcfd.openfoam-turbulent-wall-function-study/0.1"
+    )
+    assert payload["cross_section_cells"] == 16
+    assert [case["nut_wall_function"] for case in payload["cases"]] == [
+        "nutUBlendedWallFunction",
+        "nutUSpaldingWallFunction",
+        "nutkWallFunction",
+    ]
+    schema = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "schemas/openfoam-turbulent-wall-function-study.schema.json"
+        ).read_text()
+    )
+    jsonschema.Draft202012Validator(schema).validate(payload)
+    mesh_hashes = set()
+    for case in payload["cases"]:
+        case_directory = study.directory / case["directory"]
+        mesh_hashes.add((case_directory / "system/blockMeshDict").read_text())
+        assert f"type {case['nut_wall_function']};" in (
+            case_directory / "0/nut"
+        ).read_text()
+    assert len(mesh_hashes) == 1
 
 
 def test_prepared_precursor_binds_mesh_and_iteration_runtime_controls(tmp_path):

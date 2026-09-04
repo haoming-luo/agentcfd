@@ -59,3 +59,10 @@ For a geometrically similar periodic precursor candidate, use
 `h/D = 1/cross_section_cells`, not total cells to the `-1/3` power. The first
 uniform c8/c12/c18 candidate retained wall y-plus above 30 but was oscillatory,
 so its 0.212% fine-pair plateau is not a GCI or uncertainty certificate.
+
+Use `openfoam-turbulent-wall-function-study` to isolate the supported SST
+momentum wall functions on one mesh. At Re 99,621, Spalding reduced the c16
+smooth-Colebrook difference to 1.588%, and its fixed-wall c32 follow-up reached
+0.877%. Treat this as a benchmark-specific candidate: higher-Re c16 checks are
+still above 3%, and the machine-readable assessment intentionally refuses
+general default promotion.

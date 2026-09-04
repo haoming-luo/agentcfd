@@ -8,6 +8,7 @@
     "model_sha256",
     "quantity",
     "nominal_wall_cell_fraction",
+    "nut_wall_function",
     "cases",
     "metrics",
     "gci",
@@ -18,6 +19,13 @@
     "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "quantity": {"const": "flow.pressure_gradient"},
     "nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+    "nut_wall_function": {
+      "enum": [
+        "nutUBlendedWallFunction",
+        "nutUSpaldingWallFunction",
+        "nutkWallFunction"
+      ]
+    },
     "sources": {
       "type": "array",
       "minItems": 3,

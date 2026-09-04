@@ -36,8 +36,11 @@ high-Re wall-function sampling and a fine-pair pressure-gradient plateau, while
 correctly rejecting GCI because that fixed-wall-height family is non-similar.
 A geometrically similar c8/c12/c18 candidate also stays in one wall-function
 regime but is oscillatory and therefore correctly rejected. Formal turbulent
-discretization uncertainty, cross-resolution mapping, and Reynolds-range
-validation remain open.
+discretization uncertainty and cross-resolution mapping remain open. An
+identical-mesh wall-function screen and Spalding c8/c16/c32 follow-up now reduce
+the Re 99,621 c32 smooth-Colebrook difference to 0.877%, but higher-Re c16
+checks remain above 3%; multi-Re numerical uncertainty and experimental
+validation are the next promotion gates.
 
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;

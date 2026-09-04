@@ -240,6 +240,15 @@ checks, and reached `trust_level="converged"`. It remains scientifically
 unaccepted because the developed-inlet applicability gate has not passed. Its
 10.94% friction difference is diagnostic, not a discretization-error claim.
 
+The periodic precursor now exposes the bounded OpenFOAM implementation choice
+`nutUBlendedWallFunction`, `nutUSpaldingWallFunction`, or `nutkWallFunction`.
+The selected type is included in generated `0/nut`, the case SHA-256, prepared-
+case recovery controls, and result scientific inputs. The wall-function study
+commands guarantee an identical mesh identity across the three variants before
+ranking correlation differences. Real v2606 evidence currently nominates
+Spalding for further smooth-pipe validation; it does not silently change the
+existing default or claim general model validation.
+
 ## Promotion gate
 
 Before this provider advances beyond experimental maturity it must add:

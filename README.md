@@ -253,6 +253,20 @@ fraction, and 1000/4000/6000 iterations with a 50-sample stability window.
 Existing accepted precursor results can also be assessed directly with
 `agentcfd verify turbulent-wall-study`.
 
+Screen the three supported k-omega SST momentum wall functions on one
+content-identical mesh, or select one explicitly for the fixed-wall family:
+
+```bash
+agentcfd prepare openfoam-turbulent-wall-function-study wall-functions
+agentcfd run openfoam-turbulent-wall-function-study wall-functions \
+  --container-image opencfd/openfoam-run:2606
+agentcfd prepare openfoam-turbulent-wall-study spalding-grid \
+  --nut-wall-function nutUSpaldingWallFunction
+```
+
+The comparison is fail-closed: it can nominate a benchmark-specific candidate,
+but one Reynolds point and one correlation cannot promote a general default.
+
 A uniform, geometrically similar candidate can be checked separately with
 `agentcfd verify turbulent-precursor-grid-study`. It uses the periodic
 cross-section size `h/D = 1/N`, verifies that all three wall-y-plus ranges stay
@@ -349,6 +363,8 @@ authoritative.
 - [OpenFOAM v2606 precursor-mapping evidence](docs/openfoam-v2606-precursor-mapping-validation.json)
 - [OpenFOAM v2606 fixed-wall-cell three-grid evidence](docs/openfoam-v2606-fixed-wall-cell-study.json)
 - [OpenFOAM v2606 turbulent GCI-candidate evidence](docs/openfoam-v2606-turbulent-gci-candidate.json)
+- [OpenFOAM v2606 wall-function sensitivity evidence](docs/openfoam-v2606-wall-function-study.json)
+- [OpenFOAM v2606 Spalding fixed-wall evidence](docs/openfoam-v2606-spalding-fixed-wall-study.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

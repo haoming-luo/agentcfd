@@ -7,6 +7,7 @@ from agentcfd.verification import (
     GridConvergenceResult,
     GridSolution,
     assess_turbulent_precursor_grid_study,
+    assess_turbulent_wall_function_study,
     assess_turbulent_wall_study,
     assess_validation_point,
     assess_grid_convergence,
@@ -284,6 +285,7 @@ def _wall_study_record(*, cross: int, gradient: float, y_plus: float):
                 "precursor": {
                     "cross_section_cells": cross,
                     "nominal_wall_cell_fraction": 0.0625,
+                    "nut_wall_function": "nutUBlendedWallFunction",
                 },
                 "validation_policy": {"minimum_precursor_steady_samples": 50},
             }
@@ -332,6 +334,44 @@ def test_fixed_wall_cell_study_separates_wall_control_from_gci_promotion():
     ] = 0.125
     with pytest.raises(ValueError, match="share one nominal"):
         assess_turbulent_wall_study(records)
+
+
+def test_wall_function_study_is_identical_mesh_screening_not_default_promotion():
+    functions_and_errors = (
+        ("nutUBlendedWallFunction", 0.0530),
+        ("nutUSpaldingWallFunction", 0.0159),
+        ("nutkWallFunction", 0.0583),
+    )
+    records = []
+    for wall_function, error in functions_and_errors:
+        record = _wall_study_record(cross=16, gradient=88.0, y_plus=44.0)
+        record["provenance"]["mesh_sha256"] = "b" * 64
+        record["scientific_inputs"]["record"]["precursor"][
+            "nut_wall_function"
+        ] = wall_function
+        record["quantities"].update(
+            {
+                "flow.darcy_friction_factor": {"value": 0.018, "unit": "1"},
+                "reference.flow.darcy_friction_factor": {
+                    "value": 0.0183,
+                    "unit": "1",
+                },
+            }
+        )
+        record["quantities"]["flow.darcy_friction_factor_relative_error"][
+            "value"
+        ] = error
+        records.append(record)
+
+    result = assess_turbulent_wall_function_study(records)
+
+    assert result["recommendation"]["candidate"] == "nutUSpaldingWallFunction"
+    assert result["acceptance"]["screening_accepted"] is True
+    assert result["acceptance"]["default_promotion_accepted"] is False
+
+    records[2]["provenance"]["mesh_sha256"] = "c" * 64
+    with pytest.raises(ValueError, match="share one mesh identity"):
+        assess_turbulent_wall_function_study(records)
 
 
 def test_uniform_precursor_grid_study_rejects_oscillation_and_can_compute_gci():

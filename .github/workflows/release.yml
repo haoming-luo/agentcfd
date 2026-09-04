@@ -29,6 +29,7 @@ jobs:
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-pipe openfoam-pipe --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-pipe openfoam-turbulent-pipe --cross-section-cells 4 --axial-cells 20 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-wall-study openfoam-turbulent-wall-study --cross-section-cells 4 8 16 --maximum-iterations 20 20 20 --json
+          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-wall-function-study openfoam-turbulent-wall-functions --cross-section-cells 4 --maximum-iterations 20 --json
       - uses: actions/upload-artifact@v7
         with:
           name: python-package-distributions

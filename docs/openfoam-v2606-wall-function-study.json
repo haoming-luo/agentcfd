@@ -1,0 +1,80 @@
+{
+  "acceptance": {
+    "default_promotion_accepted": false,
+    "default_promotion_reason": "One Reynolds-number point and one engineering correlation cannot establish a general industrial default.",
+    "identical_mesh": true,
+    "maximum_correlation_relative_error": 0.02,
+    "screening_accepted": true,
+    "source_results_accepted": true,
+    "wall_function_y_plus_range": true
+  },
+  "cases": [
+    {
+      "colebrook_relative_error": 0.015884621751084616,
+      "darcy_friction_factor": 0.017718058582,
+      "nut_wall_function": "nutUSpaldingWallFunction",
+      "pressure_gradient_pa_per_m": 88.430830382762,
+      "reference_darcy_friction_factor": 0.018004046043388334,
+      "runtime_wall_seconds": 18.372322417009855,
+      "source_accepted": true,
+      "wall_y_plus": {
+        "average": 44.865149247,
+        "maximum": 48.301491871,
+        "minimum": 39.478616402
+      }
+    },
+    {
+      "colebrook_relative_error": 0.053020737176957475,
+      "darcy_friction_factor": 0.01704945825,
+      "nut_wall_function": "nutUBlendedWallFunction",
+      "pressure_gradient_pa_per_m": 85.09384612575,
+      "reference_darcy_friction_factor": 0.018004046043388334,
+      "runtime_wall_seconds": 13.357360582987894,
+      "source_accepted": true,
+      "wall_y_plus": {
+        "average": 44.013586695,
+        "maximum": 47.432773317,
+        "minimum": 38.653214463
+      }
+    },
+    {
+      "colebrook_relative_error": 0.05828351754152965,
+      "darcy_friction_factor": 0.016954706910000002,
+      "nut_wall_function": "nutkWallFunction",
+      "pressure_gradient_pa_per_m": 84.62094218781,
+      "reference_darcy_friction_factor": 0.018004046043388334,
+      "runtime_wall_seconds": 16.937571208007284,
+      "source_accepted": true,
+      "wall_y_plus": {
+        "average": 43.831634066,
+        "maximum": 47.354593572,
+        "minimum": 38.309589494
+      }
+    }
+  ],
+  "cross_section_cells": 16,
+  "mesh_sha256": "4ef96b4249fe15497e399e14bcc7e904d2825f5cca3680ba78376e0aaf16065e",
+  "model_sha256": "3c6e57d066f91dea59a39f0205401df58eab99305d9fcea39ffc10d5a209bbab",
+  "nominal_wall_cell_fraction": 0.0625,
+  "quantity": "flow.darcy_friction_factor",
+  "recommendation": {
+    "basis": "minimum absolute relative difference from the Colebrook smooth-pipe correlation",
+    "benchmark_specific": true,
+    "candidate": "nutUSpaldingWallFunction"
+  },
+  "schema": "agentcfd.turbulent-wall-function-study/0.1",
+  "sources": [
+    {
+      "path": "/private/tmp/agentcfd-wall-model-blended-c16-i4000-v1/agentcfd-result.json",
+      "sha256": "ad0a3065a8e6bc75f171aeccb103d7cfedc1e109e3cce86449c6aa4733c1fd06"
+    },
+    {
+      "path": "/private/tmp/agentcfd-wall-model-spalding-c16-i4000-v1/agentcfd-result.json",
+      "sha256": "9a26a8fc081a2e9ed50ce90b0449a944077df6c73906374214cac8a7a42f69c7"
+    },
+    {
+      "path": "/private/tmp/agentcfd-wall-model-k_based-c16-i4000-v1/agentcfd-result.json",
+      "sha256": "b1e7c0e0b4e63683c5b6868f70ef419a08a2a365c3b302758408134657be2458"
+    }
+  ]
+}

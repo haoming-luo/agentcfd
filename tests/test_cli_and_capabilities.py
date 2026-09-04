@@ -465,10 +465,11 @@ def test_cli_executes_prepared_turbulent_wall_family(tmp_path, capsys, monkeypat
                 ),
             ),
             scientific_inputs={
-                "precursor": {
-                    "cross_section_cells": cross,
-                    "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
-                },
+                    "precursor": {
+                        "cross_section_cells": cross,
+                        "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+                        "nut_wall_function": self.nut_wall_function,
+                    },
                 "validation_policy": {"minimum_precursor_steady_samples": 50},
             },
             provenance={"model_sha256": step.model.fingerprint()},
@@ -489,6 +490,68 @@ def test_cli_executes_prepared_turbulent_wall_family(tmp_path, capsys, monkeypat
         contracts.load("turbulent-wall-study.schema.json")
     ).validate(payload)
     assert (root / "agentcfd-turbulent-wall-assessment.json").is_file()
+
+
+def test_cli_executes_prepared_wall_function_study(tmp_path, capsys, monkeypatch):
+    root = tmp_path / "wall-functions"
+    assert main(
+        ["prepare", "openfoam-turbulent-wall-function-study", str(root)]
+    ) == 0
+    capsys.readouterr()
+    errors = {
+        "nutUBlendedWallFunction": 0.053,
+        "nutUSpaldingWallFunction": 0.0159,
+        "nutkWallFunction": 0.0583,
+    }
+
+    def fake_run_prepared(self, step, directory=None):
+        error = errors[self.nut_wall_function]
+        return SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam-periodic-precursor",
+            quantities={
+                "flow.pressure_gradient": Quantity(88.0, "Pa/m"),
+                "flow.darcy_friction_factor": Quantity(0.018, "1"),
+                "reference.flow.darcy_friction_factor": Quantity(0.0183, "1"),
+                "flow.darcy_friction_factor_relative_error": Quantity(error, "1"),
+                "runtime.total_wall_seconds": Quantity(10.0, "s"),
+                "wall.y_plus.minimum": Quantity(38.0, "1"),
+                "wall.y_plus.average": Quantity(44.0, "1"),
+                "wall.y_plus.maximum": Quantity(48.0, "1"),
+            },
+            checks=(Check("synthetic-verification", True, kind="verification"),),
+            scientific_inputs={
+                "precursor": {
+                    "cross_section_cells": self.cross_section_cells,
+                    "nominal_wall_cell_fraction": self.nominal_wall_cell_fraction,
+                    "nut_wall_function": self.nut_wall_function,
+                },
+                "validation_policy": {"minimum_precursor_steady_samples": 50},
+            },
+            provenance={
+                "model_sha256": step.model.fingerprint(),
+                "mesh_sha256": "b" * 64,
+            },
+        )
+
+    monkeypatch.setattr(
+        OpenFOAMTurbulentPrecursorProvider,
+        "run_prepared",
+        fake_run_prepared,
+    )
+    assert main(
+        ["run", "openfoam-turbulent-wall-function-study", str(root), "--json"]
+    ) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    assert payload["recommendation"]["candidate"] == "nutUSpaldingWallFunction"
+    assert payload["acceptance"]["screening_accepted"] is True
+    assert payload["acceptance"]["default_promotion_accepted"] is False
+    jsonschema.Draft202012Validator(
+        contracts.load("turbulent-wall-function-study.schema.json")
+    ).validate(payload)
+    assert (root / "agentcfd-turbulent-wall-function-assessment.json").is_file()
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

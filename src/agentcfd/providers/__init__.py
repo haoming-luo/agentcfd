@@ -10,7 +10,9 @@ from .openfoam import (
 from .reference import ReferencePipeProvider
 from .openfoam_precursor import (
     OpenFOAMTurbulentPrecursorProvider,
+    PreparedOpenFOAMTurbulentWallFunctionStudy,
     PreparedOpenFOAMTurbulentWallStudy,
+    prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
 )
 
@@ -22,9 +24,11 @@ __all__ = [
     "PreparedOpenFOAMCase",
     "PreparedOpenFOAMGridStudy",
     "PreparedOpenFOAMTurbulentWallStudy",
+    "PreparedOpenFOAMTurbulentWallFunctionStudy",
     "Provider",
     "ProviderDescriptor",
     "ReferencePipeProvider",
     "prepare_pipe_grid_study",
     "prepare_turbulent_wall_study",
+    "prepare_turbulent_wall_function_study",
 ]

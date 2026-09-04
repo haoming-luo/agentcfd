@@ -14,28 +14,22 @@
         "value": 0.0
       },
       {
-        "limit": {
-          "maximum": 300.0,
-          "minimum": 30.0
-        },
+        "limit": {"maximum": 300.0, "minimum": 30.0},
         "name": "wall-function-y-plus-range",
         "passed": true,
-        "value": {
-          "maximum": 47.85660047,
-          "minimum": 38.459984611
-        }
+        "value": {"maximum": 48.740366779, "minimum": 39.298178504}
       },
       {
         "limit": 0.05,
         "name": "mean-y-plus-spread",
         "passed": true,
-        "value": 0.017191530227231147
+        "value": 0.01729398057265792
       },
       {
         "limit": 0.02,
         "name": "fine-pair-pressure-gradient-change",
         "passed": true,
-        "value": 0.006303290661599814
+        "value": 0.007178146183583102
       },
       {
         "limit": true,
@@ -51,53 +45,53 @@
   "cases": [
     {
       "cell_count": 320,
-      "colebrook_relative_error": 0.056754934277502195,
+      "colebrook_relative_error": 0.019641537033997312,
       "cross_section_cells": 8,
       "maximum_aspect_ratio": 6.435620888,
       "nominal_wall_cell_height_m": 0.0016518608725280257,
-      "pressure_gradient_pa_per_m": 84.75829807138399,
-      "pressure_gradient_tail_relative_range": 0.0001313290605556643,
-      "runtime_wall_seconds": 2.0169316250103293,
+      "pressure_gradient_pa_per_m": 88.09324091955801,
+      "pressure_gradient_tail_relative_range": 0.00013070069373997048,
+      "runtime_wall_seconds": 2.247920209018048,
       "source_accepted": true,
       "stability_window_samples": 50,
       "wall_y_plus": {
-        "average": 43.629370094,
-        "maximum": 46.856899852,
-        "minimum": 39.295322771
+        "average": 44.476742011,
+        "maximum": 47.720414044,
+        "minimum": 40.121286376
       }
     },
     {
       "cell_count": 1280,
-      "colebrook_relative_error": 0.053020737176957475,
+      "colebrook_relative_error": 0.015884621751084616,
       "cross_section_cells": 16,
       "maximum_aspect_ratio": 7.193583067,
       "nominal_wall_cell_height_m": 0.0016518608725280257,
-      "pressure_gradient_pa_per_m": 85.09384612575,
-      "pressure_gradient_tail_relative_range": 3.6121968860638026e-06,
-      "runtime_wall_seconds": 12.99694404102047,
+      "pressure_gradient_pa_per_m": 88.430830382762,
+      "pressure_gradient_tail_relative_range": 3.5236366169236897e-06,
+      "runtime_wall_seconds": 18.372322417009855,
       "source_accepted": true,
       "stability_window_samples": 50,
       "wall_y_plus": {
-        "average": 44.013586695,
-        "maximum": 47.432773317,
-        "minimum": 38.653214463
+        "average": 44.865149247,
+        "maximum": 48.301491871,
+        "minimum": 39.478616402
       }
     },
     {
       "cell_count": 5120,
-      "colebrook_relative_error": 0.047013787896173984,
+      "colebrook_relative_error": 0.008769419862490661,
       "cross_section_cells": 32,
       "maximum_aspect_ratio": 15.48015823,
       "nominal_wall_cell_height_m": 0.0016518608725280257,
-      "pressure_gradient_pa_per_m": 85.633619721258,
-      "pressure_gradient_tail_relative_range": 0.000435705499142191,
-      "runtime_wall_seconds": 69.34794283399242,
+      "pressure_gradient_pa_per_m": 89.070189221594,
+      "pressure_gradient_tail_relative_range": 0.0004583219903848187,
+      "runtime_wall_seconds": 70.95488120699883,
       "source_accepted": true,
       "stability_window_samples": 50,
       "wall_y_plus": {
-        "average": 44.38596315,
-        "maximum": 47.85660047,
-        "minimum": 38.459984611
+        "average": 45.252633711,
+        "maximum": 48.740366779,
+        "minimum": 39.298178504
       }
     }
   ],
@@ -106,28 +100,28 @@
     "reason": "The fixed physical wall-cell height changes radial grading with resolution, so the family is not geometrically similar."
   },
   "metrics": {
-    "fine_pair_pressure_gradient_relative_change": 0.006303290661599814,
-    "mean_y_plus_relative_spread": 0.017191530227231147,
+    "fine_pair_pressure_gradient_relative_change": 0.007178146183583102,
+    "mean_y_plus_relative_spread": 0.01729398057265792,
     "monotonic": true,
-    "pressure_gradient_relative_envelope": 0.010221705595573664
+    "pressure_gradient_relative_envelope": 0.010968297143789421
   },
   "model_sha256": "3c6e57d066f91dea59a39f0205401df58eab99305d9fcea39ffc10d5a209bbab",
   "nominal_wall_cell_fraction": 0.0625,
-  "nut_wall_function": "nutUBlendedWallFunction",
+  "nut_wall_function": "nutUSpaldingWallFunction",
   "quantity": "flow.pressure_gradient",
   "schema": "agentcfd.turbulent-wall-study/0.1",
   "sources": [
     {
-      "path": "/private/tmp/agentcfd-automated-wall-study-v2/wall-1-c8/agentcfd-result.json",
-      "sha256": "44e5c102bb076fc16fecc10c573714d68576fb65e69dea6b7cda5518577d1507"
+      "path": "/private/tmp/agentcfd-wall-model-spalding-c8-i1000-v1/agentcfd-result.json",
+      "sha256": "269debc30b1242030e7c85030cc531fc30e93128e99dd83f215a4345bb1c833c"
     },
     {
-      "path": "/private/tmp/agentcfd-automated-wall-study-v2/wall-2-c16/agentcfd-result.json",
-      "sha256": "f4f58b7d7a01bc111188ab03b693aeaeae02d8348830d23e8dcf7ed2649abb77"
+      "path": "/private/tmp/agentcfd-wall-model-spalding-c16-i4000-v1/agentcfd-result.json",
+      "sha256": "9a26a8fc081a2e9ed50ce90b0449a944077df6c73906374214cac8a7a42f69c7"
     },
     {
-      "path": "/private/tmp/agentcfd-automated-wall-study-v2/wall-3-c32/agentcfd-result.json",
-      "sha256": "8a762438c9f002d0fb4d83327a562fce918f153434e5fddea6f8a59ff2cb8e8c"
+      "path": "/private/tmp/agentcfd-wall-model-spalding-c32-i6000-v1/agentcfd-result.json",
+      "sha256": "b4bacffbff14c78d6c9bb59fb5642cc60c070fc55f7acfc67855441301a51fc9"
     }
   ]
 }

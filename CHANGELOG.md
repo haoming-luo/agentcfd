@@ -36,6 +36,15 @@
   `h/D = 1/cross_section_cells` rather than an invalid 3-D cell-count exponent.
   The real uniform c8/c12/c18 candidate keeps y-plus above 30 and reaches a
   0.212% fine-pair plateau, but rejects GCI because the sequence is oscillatory.
+- Make the periodic SST momentum wall function an explicit, hashed runtime
+  control with three supported OpenFOAM implementations and prepared-case
+  integrity enforcement.
+- Add content-addressed `prepare`/`run` and direct `verify` wall-function study
+  workflows plus installed JSON contracts.
+- Record identical-mesh v2606 sensitivity evidence: Spalding reduces the c16
+  Colebrook difference from 5.302% to 1.588%. Its fixed-wall c8/c16/c32 family
+  reaches 0.877% on c32 with a 0.718% fine-pair change, while default promotion
+  remains false pending broader Reynolds and experimental validation.
 
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the

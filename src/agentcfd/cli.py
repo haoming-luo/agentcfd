@@ -21,12 +21,14 @@ from .providers import (
     OpenFOAMProvider,
     OpenFOAMTurbulentPrecursorProvider,
     prepare_pipe_grid_study,
+    prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
 )
 from .results import SimulationResult, read_result_record
 from .verification import (
     assess_grid_convergence,
     assess_turbulent_precursor_grid_study,
+    assess_turbulent_wall_function_study,
     assess_turbulent_wall_study,
     assess_validation_point,
     grid_convergence_from_result_records,
@@ -244,6 +246,7 @@ def _turbulent_precursor_provider(
     cross_section_cells: int,
     maximum_iterations: int,
     nominal_wall_cell_fraction: float | None = None,
+    nut_wall_function: str = "nutUBlendedWallFunction",
     container_image: str | None = None,
     timeout_seconds: float = 3600.0,
 ) -> OpenFOAMTurbulentPrecursorProvider:
@@ -251,6 +254,7 @@ def _turbulent_precursor_provider(
         case_directory=case_directory,
         cross_section_cells=cross_section_cells,
         nominal_wall_cell_fraction=nominal_wall_cell_fraction,
+        nut_wall_function=nut_wall_function,
         maximum_iterations=maximum_iterations,
         container_image=container_image,
         timeout_seconds=timeout_seconds,
@@ -280,6 +284,7 @@ def _prepare_openfoam_turbulent_wall_study(
     *,
     cross_section_cells: tuple[int, int, int],
     nominal_wall_cell_fraction: float,
+    nut_wall_function: str,
     maximum_iterations: tuple[int, int, int],
 ) -> dict[str, object]:
     step = _turbulent_pipe_step(
@@ -288,6 +293,28 @@ def _prepare_openfoam_turbulent_wall_study(
         turbulence_length_scale=0.007,
     )
     return prepare_turbulent_wall_study(
+        step,
+        directory,
+        cross_section_cells=cross_section_cells,
+        nominal_wall_cell_fraction=nominal_wall_cell_fraction,
+        nut_wall_function=nut_wall_function,
+        maximum_iterations=maximum_iterations,
+    ).to_dict()
+
+
+def _prepare_openfoam_turbulent_wall_function_study(
+    directory: Path,
+    *,
+    cross_section_cells: int,
+    nominal_wall_cell_fraction: float,
+    maximum_iterations: int,
+) -> dict[str, object]:
+    step = _turbulent_pipe_step(
+        velocity=1.0,
+        turbulence_intensity=0.05,
+        turbulence_length_scale=0.007,
+    )
+    return prepare_turbulent_wall_function_study(
         step,
         directory,
         cross_section_cells=cross_section_cells,
@@ -326,6 +353,17 @@ def _turbulent_wall_study_payload(paths: list[Path]) -> dict[str, object]:
 def _turbulent_precursor_grid_study_payload(paths: list[Path]) -> dict[str, object]:
     records = [read_result_record(path) for path in paths]
     assessment = assess_turbulent_precursor_grid_study(records)
+    return {
+        **assessment,
+        "sources": [
+            {"path": str(path), "sha256": file_sha256(path)} for path in paths
+        ],
+    }
+
+
+def _turbulent_wall_function_study_payload(paths: list[Path]) -> dict[str, object]:
+    records = [read_result_record(path) for path in paths]
+    assessment = assess_turbulent_wall_function_study(records)
     return {
         **assessment,
         "sources": [
@@ -448,6 +486,9 @@ def _run_openfoam_turbulent_wall_study(
     fraction = plan.get("nominal_wall_cell_fraction")
     if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
         raise ValueError("OpenFOAM turbulent wall-study has an invalid wall-cell fraction.")
+    nut_wall_function = plan.get("nut_wall_function")
+    if not isinstance(nut_wall_function, str):
+        raise ValueError("OpenFOAM turbulent wall-study has no momentum wall function.")
     cases = plan.get("cases")
     if not isinstance(cases, list) or len(cases) != 3:
         raise ValueError("OpenFOAM turbulent wall-study must contain exactly three cases.")
@@ -480,6 +521,7 @@ def _run_openfoam_turbulent_wall_study(
             case_directory=case_directory,
             cross_section_cells=cross_cells,
             nominal_wall_cell_fraction=float(fraction),
+            nut_wall_function=nut_wall_function,
             maximum_iterations=iteration_limit,
             container_image=container_image,
             timeout_seconds=timeout_seconds,
@@ -491,6 +533,93 @@ def _run_openfoam_turbulent_wall_study(
 
     payload = _turbulent_wall_study_payload(result_paths)
     target = directory / "agentcfd-turbulent-wall-assessment.json"
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+    return payload, target
+
+
+def _run_openfoam_turbulent_wall_function_study(
+    directory: Path,
+    *,
+    container_image: str | None,
+    timeout_seconds: float,
+) -> tuple[dict[str, object], Path]:
+    plan_path = directory / "agentcfd-turbulent-wall-function-study.json"
+    plan = strict_json_object(
+        plan_path.read_text(encoding="utf-8"),
+        label=f"OpenFOAM turbulent wall-function plan {plan_path}",
+    )
+    if plan.get("schema") != "agentcfd.openfoam-turbulent-wall-function-study/0.1":
+        raise ValueError("OpenFOAM turbulent wall-function plan schema is unsupported.")
+    step = _turbulent_pipe_step(
+        velocity=1.0,
+        turbulence_intensity=0.05,
+        turbulence_length_scale=0.007,
+    )
+    if plan.get("model_sha256") != step.model.fingerprint():
+        raise ValueError("OpenFOAM turbulent wall-function study uses a different model.")
+    expected_inputs = json.loads(
+        json.dumps(
+            {
+                "model": step.model.to_dict(),
+                "procedure": step.procedure.to_dict(),
+                "output_request": step.output.to_dict(),
+            },
+            allow_nan=False,
+        )
+    )
+    if plan.get("scientific_inputs") != expected_inputs:
+        raise ValueError("OpenFOAM turbulent wall-function study inputs changed.")
+    cross_cells = plan.get("cross_section_cells")
+    fraction = plan.get("nominal_wall_cell_fraction")
+    iteration_limit = plan.get("maximum_iterations")
+    if isinstance(cross_cells, bool) or not isinstance(cross_cells, int):
+        raise ValueError("OpenFOAM wall-function study grid count is invalid.")
+    if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+        raise ValueError("OpenFOAM wall-function study wall-cell fraction is invalid.")
+    if isinstance(iteration_limit, bool) or not isinstance(iteration_limit, int):
+        raise ValueError("OpenFOAM wall-function study iteration limit is invalid.")
+    cases = plan.get("cases")
+    if not isinstance(cases, list) or len(cases) != 3:
+        raise ValueError("OpenFOAM wall-function study must contain exactly three cases.")
+
+    root = directory.resolve()
+    result_paths: list[Path] = []
+    for case in cases:
+        if not isinstance(case, dict):
+            raise ValueError("OpenFOAM wall-function case record is invalid.")
+        case_directory = (directory / str(case.get("directory", ""))).resolve()
+        try:
+            case_directory.relative_to(root)
+        except ValueError as error:
+            raise ValueError("OpenFOAM wall-function case escapes its study directory.") from error
+        manifest = strict_json_object(
+            (case_directory / "agentcfd-case.json").read_text(encoding="utf-8"),
+            label=f"OpenFOAM case manifest {case_directory}",
+        )
+        if manifest.get("case_sha256") != case.get("case_sha256"):
+            raise ValueError("OpenFOAM wall-function case identity changed.")
+        wall_function = case.get("nut_wall_function")
+        if not isinstance(wall_function, str):
+            raise ValueError("OpenFOAM wall-function case has no implementation identity.")
+        result = OpenFOAMTurbulentPrecursorProvider(
+            case_directory=case_directory,
+            cross_section_cells=cross_cells,
+            nominal_wall_cell_fraction=float(fraction),
+            nut_wall_function=wall_function,
+            maximum_iterations=iteration_limit,
+            container_image=container_image,
+            timeout_seconds=timeout_seconds,
+        ).run_prepared(step)
+        result_path = case_directory / "agentcfd-result.json"
+        result.write(result_path)
+        result_paths.append(result_path)
+    payload = _turbulent_wall_function_study_payload(result_paths)
+    target = directory / "agentcfd-turbulent-wall-function-assessment.json"
     temporary = target.with_suffix(".json.tmp")
     temporary.write_text(
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
@@ -644,6 +773,16 @@ def build_parser() -> argparse.ArgumentParser:
     precursor_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
     precursor_prepare.add_argument("--cross-section-cells", type=int, default=8)
     precursor_prepare.add_argument("--nominal-wall-cell-fraction", type=float)
+    precursor_prepare.add_argument(
+        "--nut-wall-function",
+        choices=(
+            "nutUBlendedWallFunction",
+            "nutUSpaldingWallFunction",
+            "nutkWallFunction",
+        ),
+        default="nutUBlendedWallFunction",
+        help="OpenFOAM momentum wall function (default: nutUBlendedWallFunction).",
+    )
     precursor_prepare.add_argument("--maximum-iterations", type=int, default=1000)
     precursor_prepare.add_argument("--json", action="store_true", dest="as_json")
     wall_prepare = prepare_subparsers.add_parser(
@@ -670,7 +809,29 @@ def build_parser() -> argparse.ArgumentParser:
         default=(1000, 4000, 6000),
         metavar=("COARSE", "MEDIUM", "FINE"),
     )
+    wall_prepare.add_argument(
+        "--nut-wall-function",
+        choices=(
+            "nutUBlendedWallFunction",
+            "nutUSpaldingWallFunction",
+            "nutkWallFunction",
+        ),
+        default="nutUBlendedWallFunction",
+    )
     wall_prepare.add_argument("--json", action="store_true", dest="as_json")
+    wall_function_prepare = prepare_subparsers.add_parser(
+        "openfoam-turbulent-wall-function-study",
+        help="Prepare an identical-mesh SST momentum wall-function study.",
+    )
+    wall_function_prepare.add_argument("directory", type=Path)
+    wall_function_prepare.add_argument("--cross-section-cells", type=int, default=16)
+    wall_function_prepare.add_argument(
+        "--nominal-wall-cell-fraction",
+        type=float,
+        default=0.0625,
+    )
+    wall_function_prepare.add_argument("--maximum-iterations", type=int, default=4000)
+    wall_function_prepare.add_argument("--json", action="store_true", dest="as_json")
     grid_prepare = prepare_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Prepare a same-model three-grid fully developed pipe study.",
@@ -765,6 +926,15 @@ def build_parser() -> argparse.ArgumentParser:
     precursor_run.add_argument("--turbulence-length-scale", type=float, default=0.007)
     precursor_run.add_argument("--cross-section-cells", type=int, default=8)
     precursor_run.add_argument("--nominal-wall-cell-fraction", type=float)
+    precursor_run.add_argument(
+        "--nut-wall-function",
+        choices=(
+            "nutUBlendedWallFunction",
+            "nutUSpaldingWallFunction",
+            "nutkWallFunction",
+        ),
+        default="nutUBlendedWallFunction",
+    )
     precursor_run.add_argument("--maximum-iterations", type=int, default=1000)
     precursor_run.add_argument("--container-image")
     precursor_run.add_argument("--timeout-seconds", type=float, default=3600.0)
@@ -778,6 +948,14 @@ def build_parser() -> argparse.ArgumentParser:
     wall_run.add_argument("--container-image")
     wall_run.add_argument("--timeout-seconds", type=float, default=3600.0)
     wall_run.add_argument("--json", action="store_true", dest="as_json")
+    wall_function_run = run_subparsers.add_parser(
+        "openfoam-turbulent-wall-function-study",
+        help="Execute a prepared SST momentum wall-function study.",
+    )
+    wall_function_run.add_argument("directory", type=Path)
+    wall_function_run.add_argument("--container-image")
+    wall_function_run.add_argument("--timeout-seconds", type=float, default=3600.0)
+    wall_function_run.add_argument("--json", action="store_true", dest="as_json")
     run_grid = run_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Execute a prepared three-grid pipe study and compute GCI.",
@@ -818,6 +996,13 @@ def build_parser() -> argparse.ArgumentParser:
     precursor_grid.add_argument("results", nargs=3, type=Path)
     precursor_grid.add_argument("--output", type=Path)
     precursor_grid.add_argument("--json", action="store_true", dest="as_json")
+    wall_function_study = verify_subparsers.add_parser(
+        "turbulent-wall-function-study",
+        help="Compare supported SST momentum wall functions on one identical mesh.",
+    )
+    wall_function_study.add_argument("results", nargs=3, type=Path)
+    wall_function_study.add_argument("--output", type=Path)
+    wall_function_study.add_argument("--json", action="store_true", dest="as_json")
     result_check = verify_subparsers.add_parser(
         "result",
         help="Verify a result's trust state and content-addressed artifacts.",
@@ -1008,6 +1193,7 @@ def main(argv: list[str] | None = None) -> int:
             cross_section_cells=args.cross_section_cells,
             maximum_iterations=args.maximum_iterations,
             nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+            nut_wall_function=args.nut_wall_function,
         ).prepare(step).to_dict()
         if args.as_json:
             print(json.dumps(manifest, indent=2, sort_keys=True))
@@ -1021,6 +1207,7 @@ def main(argv: list[str] | None = None) -> int:
             args.directory,
             cross_section_cells=tuple(args.cross_section_cells),
             nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+            nut_wall_function=args.nut_wall_function,
             maximum_iterations=tuple(args.maximum_iterations),
         )
         if args.as_json:
@@ -1028,6 +1215,22 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("Prepared fixed-wall-cell OpenFOAM turbulent study")
             print(args.directory / "agentcfd-turbulent-wall-study.json")
+        return 0
+    if (
+        args.command == "prepare"
+        and args.provider == "openfoam-turbulent-wall-function-study"
+    ):
+        plan = _prepare_openfoam_turbulent_wall_function_study(
+            args.directory,
+            cross_section_cells=args.cross_section_cells,
+            nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+            maximum_iterations=args.maximum_iterations,
+        )
+        if args.as_json:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+        else:
+            print("Prepared identical-mesh OpenFOAM wall-function study")
+            print(args.directory / "agentcfd-turbulent-wall-function-study.json")
         return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe-grid":
         plan = _prepare_openfoam_pipe_grid(
@@ -1114,6 +1317,7 @@ def main(argv: list[str] | None = None) -> int:
             cross_section_cells=args.cross_section_cells,
             maximum_iterations=args.maximum_iterations,
             nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+            nut_wall_function=args.nut_wall_function,
             container_image=args.container_image,
             timeout_seconds=args.timeout_seconds,
         )
@@ -1152,6 +1356,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(target)
         return 0 if payload["acceptance"]["wall_strategy_accepted"] else 3
+    if (
+        args.command == "run"
+        and args.provider == "openfoam-turbulent-wall-function-study"
+    ):
+        payload, target = _run_openfoam_turbulent_wall_function_study(
+            args.directory,
+            container_image=args.container_image,
+            timeout_seconds=args.timeout_seconds,
+        )
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            candidate = payload["recommendation"]["candidate"]
+            accepted = payload["acceptance"]["screening_accepted"]
+            print(
+                f"Completed turbulent wall-function study | candidate {candidate} | "
+                f"screening accepted {str(accepted).lower()}"
+            )
+            print(target)
+        return 0 if payload["acceptance"]["screening_accepted"] else 3
     if args.command == "run" and args.provider == "openfoam-pipe-grid":
         payload, target = _run_openfoam_pipe_grid(
             args.directory,
@@ -1233,6 +1457,31 @@ def main(argv: list[str] | None = None) -> int:
             if payload["acceptance"]["uncertainty_promotion_accepted"]
             else 3
         )
+    if (
+        args.command == "verify"
+        and args.verification == "turbulent-wall-function-study"
+    ):
+        payload = _turbulent_wall_function_study_payload(args.results)
+        if args.output is not None:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            temporary = args.output.with_suffix(args.output.suffix + ".tmp")
+            temporary.write_text(
+                json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(args.output)
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            candidate = payload["recommendation"]["candidate"]
+            accepted = payload["acceptance"]["screening_accepted"]
+            print(
+                f"Turbulent wall-function study | candidate {candidate} | "
+                f"screening accepted {str(accepted).lower()} | default promotion false"
+            )
+            if args.output is not None:
+                print(args.output)
+        return 0 if payload["acceptance"]["screening_accepted"] else 3
     if args.command == "verify" and args.verification == "result":
         record = read_result_record(args.result)
         report = {

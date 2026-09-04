@@ -143,6 +143,18 @@ uncertainty promotion. This negative result is retained in
 `openfoam-v2606-turbulent-gci-candidate.json` rather than converted into a
 misleading GCI.
 
+The next controlled variable is the OpenFOAM momentum wall function. On one
+identical c16 mesh, the existing `nutUBlendedWallFunction`,
+`nutUSpaldingWallFunction`, and `nutkWallFunction` produced smooth-Colebrook
+differences of 5.302%, 1.588%, and 5.828%. A fixed-wall-height Spalding
+c8/c16/c32 follow-up reduced the difference monotonically to 0.877% on c32,
+with a 0.718% fine-pair pressure-gradient change. This makes Spalding the
+current smooth-pipe candidate, not yet the global default: c16 checks at
+Re 199,242 and 498,104 retain 3.07--3.20% correlation differences, and no
+experimental uncertainty budget has been applied. AgentCFD exposes the choice,
+hashes it into each case, and keeps default promotion false until the Reynolds
+range and independent reference data are adequate.
+
 The c8 precursor is now mapped through a deterministic `mapFields` contract
 into the 3 m target. The target pressure loss differs by 1.05% from the source
 pressure gradient integrated over the target length, and all mapping,

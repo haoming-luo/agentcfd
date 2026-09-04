@@ -489,6 +489,7 @@ def assess_turbulent_wall_study(
     )
     model_identities: set[str] = set()
     fractions: set[float] = set()
+    wall_functions: set[str] = set()
     stability_windows: set[int] = set()
     rows: list[dict[str, object]] = []
     all_sources_accepted = True
@@ -555,6 +556,10 @@ def assess_turbulent_wall_study(
         if normalized_fraction >= 1.0:
             raise ValueError(f"Result {index} nominal wall-cell fraction must be below one.")
         fractions.add(normalized_fraction)
+        wall_function = precursor.get("nut_wall_function")
+        if not isinstance(wall_function, str) or not wall_function:
+            raise ValueError(f"Result {index} has no momentum wall-function identity.")
+        wall_functions.add(wall_function)
 
         quantities = record.get("quantities")
         if not isinstance(quantities, Mapping):
@@ -651,6 +656,8 @@ def assess_turbulent_wall_study(
         raise ValueError("Wall-study results must share one model SHA-256 identity.")
     if len(fractions) != 1:
         raise ValueError("Wall-study results must share one nominal wall-cell fraction.")
+    if len(wall_functions) != 1:
+        raise ValueError("Wall-study results must share one momentum wall function.")
     if len(stability_windows) != 1:
         raise ValueError("Wall-study results must share one precursor stability window.")
     rows.sort(key=lambda item: int(item["cross_section_cells"]))
@@ -750,6 +757,7 @@ def assess_turbulent_wall_study(
         "model_sha256": next(iter(model_identities)),
         "quantity": "flow.pressure_gradient",
         "nominal_wall_cell_fraction": next(iter(fractions)),
+        "nut_wall_function": next(iter(wall_functions)),
         "cases": rows,
         "metrics": {
             "mean_y_plus_relative_spread": mean_y_plus_spread,
@@ -975,6 +983,202 @@ def assess_turbulent_precursor_grid_study(
     }
 
 
+def assess_turbulent_wall_function_study(
+    records: Iterable[Mapping[str, object]],
+    *,
+    maximum_correlation_relative_error: float = 0.02,
+) -> dict[str, object]:
+    """Screen supported SST momentum wall functions on one identical mesh.
+
+    This is a controlled model-form sensitivity study, not a validation
+    certificate.  It can identify a candidate for broader validation while
+    explicitly refusing to promote a project default from one Reynolds-number
+    point and one engineering correlation.
+    """
+
+    selected = tuple(records)
+    expected_functions = {
+        "nutUBlendedWallFunction",
+        "nutUSpaldingWallFunction",
+        "nutkWallFunction",
+    }
+    if len(selected) != len(expected_functions):
+        raise ValueError("Exactly three turbulent wall-function results are required.")
+    error_limit = positive_float(
+        maximum_correlation_relative_error,
+        name="maximum_correlation_relative_error",
+    )
+    model_identities: set[str] = set()
+    mesh_identities: set[str] = set()
+    cross_counts: set[int] = set()
+    wall_fractions: set[float | None] = set()
+    stability_windows: set[int] = set()
+    wall_functions: set[str] = set()
+    rows: list[dict[str, object]] = []
+    all_sources_accepted = True
+    for index, record in enumerate(selected, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"Result {index} must be a mapping.")
+        source_accepted = bool(
+            record.get("status") == "completed"
+            and record.get("converged") is True
+            and record.get("accepted") is True
+            and record.get("trust_level") in {"verified", "validated"}
+            and record.get("provider") == "openfoam-periodic-precursor"
+        )
+        all_sources_accepted = all_sources_accepted and source_accepted
+        provenance = record.get("provenance")
+        if not isinstance(provenance, Mapping):
+            raise ValueError(f"Result {index} is missing provenance.")
+        model_identity = provenance.get("model_sha256")
+        mesh_identity = provenance.get("mesh_sha256")
+        for value, label in (
+            (model_identity, "model"),
+            (mesh_identity, "mesh"),
+        ):
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(character not in "0123456789abcdef" for character in value.lower())
+            ):
+                raise ValueError(f"Result {index} is missing a {label} SHA-256 identity.")
+        model_identities.add(model_identity)
+        mesh_identities.add(mesh_identity)
+
+        scientific = record.get("scientific_inputs")
+        scientific_record = scientific.get("record", scientific) if isinstance(scientific, Mapping) else None
+        precursor = scientific_record.get("precursor") if isinstance(scientific_record, Mapping) else None
+        policy = scientific_record.get("validation_policy") if isinstance(scientific_record, Mapping) else None
+        if not isinstance(precursor, Mapping) or not isinstance(policy, Mapping):
+            raise ValueError(f"Result {index} has incomplete precursor controls.")
+        wall_function = precursor.get("nut_wall_function")
+        if not isinstance(wall_function, str) or wall_function not in expected_functions:
+            raise ValueError(f"Result {index} has an unsupported momentum wall function.")
+        wall_functions.add(wall_function)
+        cross_cells = precursor.get("cross_section_cells")
+        if isinstance(cross_cells, bool) or not isinstance(cross_cells, int) or cross_cells < 2:
+            raise ValueError(f"Result {index} has an invalid cross-section cell count.")
+        cross_counts.add(cross_cells)
+        fraction = precursor.get("nominal_wall_cell_fraction")
+        if fraction is None:
+            wall_fractions.add(None)
+        elif isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
+            raise ValueError(f"Result {index} has an invalid wall-cell fraction.")
+        else:
+            normalized_fraction = positive_float(
+                fraction,
+                name=f"Result {index} nominal wall-cell fraction",
+            )
+            if normalized_fraction >= 1.0:
+                raise ValueError(f"Result {index} wall-cell fraction must be below one.")
+            wall_fractions.add(normalized_fraction)
+        stability_window = policy.get("minimum_precursor_steady_samples")
+        if (
+            isinstance(stability_window, bool)
+            or not isinstance(stability_window, int)
+            or stability_window < 10
+        ):
+            raise ValueError(f"Result {index} has an invalid stability window.")
+        stability_windows.add(stability_window)
+
+        quantities = record.get("quantities")
+        if not isinstance(quantities, Mapping):
+            raise ValueError(f"Result {index} is missing quantities.")
+        required = {
+            "flow.pressure_gradient": "Pa/m",
+            "flow.darcy_friction_factor": "1",
+            "reference.flow.darcy_friction_factor": "1",
+            "flow.darcy_friction_factor_relative_error": "1",
+            "runtime.total_wall_seconds": "s",
+            "wall.y_plus.minimum": "1",
+            "wall.y_plus.average": "1",
+            "wall.y_plus.maximum": "1",
+        }
+        values: dict[str, float] = {}
+        for name, unit in required.items():
+            values[name] = _record_quantity_value(quantities, name, index=index)
+            entry = quantities[name]
+            assert isinstance(entry, Mapping)
+            if entry.get("unit") != unit:
+                raise ValueError(f"Result {index} quantity {name!r} must use unit {unit!r}.")
+        if any(value < 0.0 for value in values.values()):
+            raise ValueError(f"Result {index} contains a negative comparison quantity.")
+        if not (
+            values["wall.y_plus.minimum"]
+            <= values["wall.y_plus.average"]
+            <= values["wall.y_plus.maximum"]
+        ):
+            raise ValueError(f"Result {index} wall y-plus statistics are unordered.")
+        rows.append(
+            {
+                "nut_wall_function": wall_function,
+                "pressure_gradient_pa_per_m": values["flow.pressure_gradient"],
+                "darcy_friction_factor": values["flow.darcy_friction_factor"],
+                "reference_darcy_friction_factor": values[
+                    "reference.flow.darcy_friction_factor"
+                ],
+                "colebrook_relative_error": values[
+                    "flow.darcy_friction_factor_relative_error"
+                ],
+                "wall_y_plus": {
+                    "minimum": values["wall.y_plus.minimum"],
+                    "average": values["wall.y_plus.average"],
+                    "maximum": values["wall.y_plus.maximum"],
+                },
+                "runtime_wall_seconds": values["runtime.total_wall_seconds"],
+                "source_accepted": source_accepted,
+            }
+        )
+
+    if len(model_identities) != 1:
+        raise ValueError("Wall-function results must share one model identity.")
+    if len(mesh_identities) != 1:
+        raise ValueError("Wall-function results must share one mesh identity.")
+    if len(cross_counts) != 1 or len(wall_fractions) != 1:
+        raise ValueError("Wall-function results must share identical mesh controls.")
+    if len(stability_windows) != 1:
+        raise ValueError("Wall-function results must share one stability window.")
+    if wall_functions != expected_functions:
+        raise ValueError("Wall-function results must cover each supported implementation exactly once.")
+    rows.sort(key=lambda item: float(item["colebrook_relative_error"]))
+    y_plus_consistent = all(
+        float(item["wall_y_plus"]["minimum"]) >= 30.0  # type: ignore[index]
+        and float(item["wall_y_plus"]["maximum"]) <= 300.0  # type: ignore[index]
+        for item in rows
+    )
+    best = rows[0]
+    best_error = float(best["colebrook_relative_error"])
+    screening_accepted = bool(
+        all_sources_accepted and y_plus_consistent and best_error <= error_limit
+    )
+    return {
+        "schema": "agentcfd.turbulent-wall-function-study/0.1",
+        "model_sha256": next(iter(model_identities)),
+        "mesh_sha256": next(iter(mesh_identities)),
+        "cross_section_cells": next(iter(cross_counts)),
+        "nominal_wall_cell_fraction": next(iter(wall_fractions)),
+        "quantity": "flow.darcy_friction_factor",
+        "cases": rows,
+        "recommendation": {
+            "candidate": best["nut_wall_function"],
+            "basis": "minimum absolute relative difference from the Colebrook smooth-pipe correlation",
+            "benchmark_specific": True,
+        },
+        "acceptance": {
+            "source_results_accepted": all_sources_accepted,
+            "identical_mesh": True,
+            "wall_function_y_plus_range": y_plus_consistent,
+            "screening_accepted": screening_accepted,
+            "maximum_correlation_relative_error": error_limit,
+            "default_promotion_accepted": False,
+            "default_promotion_reason": (
+                "One Reynolds-number point and one engineering correlation cannot "
+                "establish a general industrial default."
+            ),
+        },
+    }
+
+
 __all__ = [
     "GridConvergencePolicy",
     "GridConvergenceResult",
@@ -984,6 +1188,7 @@ __all__ = [
     "assess_grid_convergence",
     "assess_turbulent_wall_study",
     "assess_turbulent_precursor_grid_study",
+    "assess_turbulent_wall_function_study",
     "grid_convergence_from_result_records",
     "grid_convergence_index",
 ]

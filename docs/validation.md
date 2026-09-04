@@ -189,3 +189,24 @@ The complementary geometrically similar c8/c12/c18 candidate is recorded in
 reverses at the medium grid. The precursor-specific verifier therefore sets
 `gci.applicable=false` and returns completed-unaccepted status rather than
 manufacturing numerical uncertainty from an oscillatory sequence.
+
+## Momentum wall-function sensitivity
+
+`docs/openfoam-v2606-wall-function-study.json` compares
+`nutUBlendedWallFunction`, `nutUSpaldingWallFunction`, and `nutkWallFunction`
+on the identical c16 mesh at Re 99,621. All three sources are accepted, use the
+same native mesh SHA-256, keep y-plus within 38.31--48.30, and pass the
+50-sample stability gate. Their smooth-Colebrook relative differences are
+5.302%, 1.588%, and 5.828%, respectively. The study therefore nominates
+`nutUSpaldingWallFunction` as a benchmark-specific candidate while explicitly
+setting `default_promotion_accepted=false`.
+
+The independent fixed-wall-height Spalding family in
+`docs/openfoam-v2606-spalding-fixed-wall-study.json` strengthens that screen:
+c8/c16/c32 differences are 1.964%, 1.588%, and 0.877%; the pressure-gradient
+sequence is monotonic, and the c16-to-c32 change is 0.718%. This verifies a
+stable high-Re wall strategy and a resolution plateau, but not GCI because the
+fixed physical wall height changes the interior grading. Additional c16 checks
+at Re 49,810, 199,242, and 498,104 show Spalding remains better than the prior
+blended choice, although its correlation differences rise to 3.07--3.20% at
+the two highest points. A broad default therefore remains deliberately open.

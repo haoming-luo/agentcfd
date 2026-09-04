@@ -1,29 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-turbulent-wall-study.schema.json",
-  "title": "AgentCFD prepared OpenFOAM turbulent wall study 0.1",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-turbulent-wall-function-study.schema.json",
+  "title": "AgentCFD prepared OpenFOAM turbulent wall-function study 0.1",
   "type": "object",
   "required": [
     "schema",
     "model_sha256",
     "quantity",
+    "cross_section_cells",
     "nominal_wall_cell_fraction",
-    "nut_wall_function",
+    "maximum_iterations",
     "scientific_inputs",
     "cases"
   ],
   "properties": {
-    "schema": {"const": "agentcfd.openfoam-turbulent-wall-study/0.1"},
+    "schema": {"const": "agentcfd.openfoam-turbulent-wall-function-study/0.1"},
     "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "quantity": {"const": "flow.pressure_gradient"},
+    "quantity": {"const": "flow.darcy_friction_factor"},
+    "cross_section_cells": {"type": "integer", "minimum": 2},
     "nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
-    "nut_wall_function": {
-      "enum": [
-        "nutUBlendedWallFunction",
-        "nutUSpaldingWallFunction",
-        "nutkWallFunction"
-      ]
-    },
+    "maximum_iterations": {"type": "integer", "minimum": 5},
     "scientific_inputs": {
       "type": "object",
       "required": ["model", "procedure", "output_request"],
@@ -42,20 +38,22 @@
         "type": "object",
         "required": [
           "index",
-          "label",
           "directory",
-          "cross_section_cells",
-          "maximum_iterations",
+          "nut_wall_function",
           "expected_cell_count",
           "case_sha256",
           "result"
         ],
         "properties": {
           "index": {"type": "integer", "minimum": 1, "maximum": 3},
-          "label": {"enum": ["coarse", "medium", "fine"]},
           "directory": {"type": "string", "minLength": 1},
-          "cross_section_cells": {"type": "integer", "minimum": 2},
-          "maximum_iterations": {"type": "integer", "minimum": 5},
+          "nut_wall_function": {
+            "enum": [
+              "nutUBlendedWallFunction",
+              "nutUSpaldingWallFunction",
+              "nutkWallFunction"
+            ]
+          },
           "expected_cell_count": {"type": "integer", "minimum": 1},
           "case_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "result": {"type": "string", "minLength": 1}

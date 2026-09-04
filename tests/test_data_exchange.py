@@ -58,6 +58,7 @@ def test_xdmf_h5_npz_bundle_round_trip_and_schema(tmp_path):
         tmp_path / "bundle",
         convert=False,
         density=1000.0,
+        formats=("xdmf", "npz"),
     )
 
     assert bundle.frame_count == 2
@@ -110,6 +111,7 @@ def test_agentfem_field_sample_bridge_is_pickle_free(tmp_path):
         tmp_path / "bundle",
         convert=False,
         density=1000.0,
+        formats=("xdmf", "npz"),
     )
 
     point_sample = data_exchange.export_agentfem_field_sample(
@@ -157,6 +159,7 @@ def test_visualization_profile_selects_only_requested_point_fields(tmp_path):
         density=1000.0,
         profile="visualization",
         fields=("fluid.velocity", "fluid.pressure"),
+        formats=("xdmf", "npz"),
     )
 
     manifest = json.loads(bundle.manifest.read_text())
@@ -188,6 +191,43 @@ def test_field_selection_fails_closed_on_unknown_name(tmp_path):
             convert=False,
             profile="native",
             fields=("fluid.not-a-field",),
+        )
+
+
+def test_xdmf_only_bundle_omits_npz_without_losing_verification(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+    _write_frame(case, 10, 2.0)
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        convert=False,
+        profile="visualization",
+        fields=("fluid.velocity",),
+    )
+
+    assert bundle.npz is None
+    assert not (bundle.directory / "fields.npz").exists()
+    manifest = json.loads(bundle.manifest.read_text())
+    jsonschema.Draft202012Validator(contracts.load("field-bundle.schema.json")).validate(
+        manifest
+    )
+    assert manifest["formats"] == {
+        "xdmf": "fields.xdmf",
+        "hdf5": "fields.h5",
+    }
+    assert manifest["arrays"] == []
+    assert data_exchange.verify_field_bundle(bundle.directory)["formats"] == [
+        "hdf5",
+        "xdmf",
+    ]
+
+    with pytest.raises(ValueError, match="NPZ-enabled parent bundle"):
+        data_exchange.export_agentfem_field_sample(
+            bundle.directory,
+            tmp_path / "sample.npz",
+            field="fluid.velocity",
         )
 
 

@@ -79,7 +79,7 @@ AgentFEM transfer, and field-learning pipelines. One directory contains:
 | --- | --- |
 | `fields.xdmf` | lightweight topology, field, association, and time-series index |
 | `fields.h5` | binary geometry, topology, and field payloads referenced by XDMF |
-| `fields.npz` | compressed, pickle-free arrays for NumPy/PyTorch/JAX ingestion |
+| `fields.npz` | optional compressed, pickle-free mirror for NumPy/PyTorch/JAX ingestion |
 | `manifest.json` | units, canonical names, source names, processing, axis semantics, and hashes |
 
 OpenFOAM native cell values and its interpolated point values are both
@@ -90,7 +90,14 @@ cell-to-point representation. In incompressible OpenFOAM cases,
 only when a positive constant density is available and the multiplication is
 recorded in the manifest.
 
-The NPZ layout is stable and does not require object deserialization:
+The standard visualization bundle is only XDMF/H5. Request the stable NPZ
+layout explicitly when an array or learning workflow needs it:
+
+```bash
+agentcfd export openfoam CASE fields --with-npz
+```
+
+The NPZ layout does not require object deserialization:
 
 ```python
 import json
@@ -149,7 +156,9 @@ agentcfd export openfoam CASE fields --profile visualization \
 
 Transient conversion reads physical coordinates from OpenFOAM's
 `case.vtm.series`. Adaptive-time-step file sequence numbers are never treated
-as seconds.
+as seconds. Solver time step and portable write interval remain separate:
+smaller write intervals improve animation detail without changing field
+association or forcing an NPZ copy.
 
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,
 `schemas/result-exchange.schema.json`, `schemas/scientific-sample.schema.json`,

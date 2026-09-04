@@ -116,6 +116,10 @@ def test_study_flags_and_output_names_are_runtime_validated():
         )
     with pytest.raises(ValueError, match="portable_profile"):
         outputs.OutputRequest(fields=("fluid.velocity",), histories=(), portable_profile="huge")
+    with pytest.raises(ValueError, match="portable_formats"):
+        outputs.OutputRequest(
+            fields=("fluid.velocity",), histories=(), portable_formats=("npz",)
+        )
     with pytest.raises(ValueError, match="requires wall_treatment"):
         studies.internal_flow(turbulence="k-omega-sst")
     with pytest.raises(ValueError, match="requires a turbulence model"):

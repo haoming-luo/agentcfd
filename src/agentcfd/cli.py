@@ -1077,7 +1077,7 @@ def build_parser() -> argparse.ArgumentParser:
     export_subparsers = export.add_subparsers(dest="export_format", required=True)
     field_bundle = export_subparsers.add_parser(
         "openfoam",
-        help="Export every OpenFOAM field frame as XDMF/H5 and safe NPZ.",
+        help="Export OpenFOAM field frames as XDMF/H5 with optional safe NPZ.",
     )
     field_bundle.add_argument("case_directory", type=Path)
     field_bundle.add_argument("output_directory", type=Path)
@@ -1109,6 +1109,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="fields",
         help="Canonical or OpenFOAM field name; repeat to select multiple fields.",
+    )
+    field_bundle.add_argument(
+        "--with-npz",
+        action="store_true",
+        help="Also write a pickle-free NPZ mirror for NumPy and ML workflows.",
     )
     field_bundle.add_argument("--timeout-seconds", type=float, default=3600.0)
     field_bundle.add_argument("--json", action="store_true", dest="as_json")
@@ -1381,7 +1386,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_subparsers = run.add_subparsers(dest="provider", required=True)
     project_run = run_subparsers.add_parser(
         "project",
-        help="Execute the declared project and publish one structured run directory.",
+        help="Execute a project into replaceable output or an immutable campaign run.",
     )
     project_run.add_argument("project", nargs="?", type=Path, default=Path("."))
     project_run.add_argument(
@@ -1390,6 +1395,16 @@ def build_parser() -> argparse.ArgumentParser:
         dest="project_provider",
     )
     project_run.add_argument("--container-image")
+    project_run.add_argument(
+        "--campaign",
+        action="store_true",
+        help="Preserve this run under campaigns/<run-id> instead of replacing output/.",
+    )
+    project_run.add_argument(
+        "--keep-workspace",
+        action="store_true",
+        help="Retain the hidden generated OpenFOAM workspace for expert debugging.",
+    )
     project_run.add_argument("--json", action="store_true", dest="as_json")
     run_openfoam = run_subparsers.add_parser(
         "openfoam-pipe",
@@ -1589,7 +1604,7 @@ def build_parser() -> argparse.ArgumentParser:
     result_check.add_argument("--json", action="store_true", dest="as_json")
     bundle_check = verify_subparsers.add_parser(
         "field-bundle",
-        help="Verify XDMF/H5/NPZ hashes and cross-format frame identity.",
+        help="Verify XDMF/H5 and any selected NPZ hashes and frame identity.",
     )
     bundle_check.add_argument("directory", type=Path)
     bundle_check.add_argument("--json", action="store_true", dest="as_json")
@@ -1759,14 +1774,14 @@ def main(argv: list[str] | None = None) -> int:
             density=args.density,
             profile=args.profile,
             fields=args.fields,
+            formats=("xdmf", "npz") if args.with_npz else ("xdmf",),
         )
         report = bundle.to_dict()
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print(
-                f"Exported {bundle.frame_count} frames | XDMF/H5 + safe NPZ"
-            )
+            formats = "XDMF/H5 + safe NPZ" if bundle.npz is not None else "XDMF/H5"
+            print(f"Exported {bundle.frame_count} frames | {formats}")
             print(bundle.xdmf)
         return 0
     if args.command == "export" and args.export_format == "field-sample":
@@ -2076,6 +2091,8 @@ def main(argv: list[str] | None = None) -> int:
         completed = projects.Project(args.project).run(
             provider=args.project_provider,
             container_image=args.container_image,
+            campaign=args.campaign,
+            keep_workspace=args.keep_workspace,
         )
         report = completed.to_dict()
         if args.as_json:

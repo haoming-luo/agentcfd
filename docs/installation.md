@@ -19,7 +19,7 @@ python -m pytest -q
 Release candidates must also be installed from the built wheel into a clean
 environment. Editable-source success alone is not a release gate.
 
-NumPy array interoperability, portable XDMF/H5/NPZ fields, and CoolProp
+NumPy array interoperability, portable XDMF/H5 fields with optional NPZ, and CoolProp
 thermophysical properties are separate permissively licensed extras:
 
 ```bash

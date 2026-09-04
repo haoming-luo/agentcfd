@@ -10,8 +10,15 @@ AgentCFD separates six responsibilities:
    numerical decisions, addressable issues, and repair actions before execution.
 4. **Provider lowering** — translation of a resolved model into a numerical
    engine without leaking engine-specific files into the public model.
-5. **Result and data exchange** — canonical quantities plus XDMF/H5/NPZ field
+5. **Result and data exchange** — canonical quantities plus XDMF/H5 and optional NPZ field
    bundles shared by visualization, coupling, campaigns, and learning systems.
+
+The public project is not an OpenFOAM case directory. `case.py` owns scientific
+intent, `output/` owns the current published answer, and `.agentcfd/` is a
+disposable backend workspace. Ordinary reruns replace only a directory already
+marked by an AgentCFD `run.json`; `--campaign` opts into immutable history and
+`--keep-workspace` opts into backend debugging. This keeps OpenFOAM as the
+numerical foundation without leaking its storage model into the product model.
 6. **Evidence and trust** — validation issues, capability records, canonical
    field semantics, provenance, and acceptance checks.
 
@@ -29,7 +36,7 @@ The public architecture is therefore:
 case.py -> Project -> SolutionPlan -> Provider -> SimulationResult
                                       |              |
                                       v              v
-                              OpenFOAM case    XDMF/H5/NPZ + evidence
+                              OpenFOAM case    XDMF/H5 (+ optional NPZ) + evidence
 ```
 
 Validation is a trust layer attached to this route, not a separate product

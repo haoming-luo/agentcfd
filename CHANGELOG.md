@@ -6,7 +6,13 @@
   inspectable `plan`, short-form `run`, and `inspect`, with `case.py` as modeling
   truth and operational settings isolated in `agentcfd.toml`.
 - Add addressable project issues, deterministic plan fingerprints, explicit
-  provider/runtime/I/O readiness, and content-addressed per-run directories.
+  provider/runtime/I/O readiness, and structured run records.
+- Make a single readable `output/` the default project publication surface;
+  reruns safely replace only AgentCFD-managed output, while `--campaign`
+  explicitly preserves immutable history.
+- Move generated OpenFOAM cases and VTK conversion data into a hidden solver
+  workspace, copy compact execution evidence into the published result, and
+  discard backend bulk after success unless `--keep-workspace` is requested.
 - Add a standard `agentcae.field-bundle/0.1.0` export with XDMF/HDF5 time
   series, pickle-free NPZ arrays, canonical CFD names and units, explicit
   point/cell and axis semantics, source context, and SHA-256 artifacts.
@@ -22,6 +28,9 @@
 - Recover transient physical time from OpenFOAM `case.vtm.series` rather than
   misinterpreting adaptive-step VTK sequence numbers as time.
 - Register canonical vorticity and Q-criterion names and SI units.
+- Make XDMF/HDF5 the ordinary portable output and NPZ an explicit opt-in via
+  `--with-npz` or `OutputRequest.portable_formats`, avoiding duplicate storage
+  and time-series array stacking in visualization-only workflows.
 - Keep NumPy, h5py, and meshio optional under the `io` extra; the mandatory
   AgentCFD core remains dependency-free and Apache-2.0.
 

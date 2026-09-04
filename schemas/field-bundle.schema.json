@@ -5,7 +5,7 @@
   "type": "object",
   "required": [
     "schema", "schema_version", "mesh", "axis", "fields", "arrays",
-    "source", "formats", "output_selection", "npz", "artifacts"
+    "source", "formats", "output_selection", "artifacts"
   ],
   "properties": {
     "schema": {"const": "agentcae.field-bundle"},
@@ -90,7 +90,7 @@
     "source": {"type": "object"},
     "formats": {
       "type": "object",
-      "required": ["xdmf", "hdf5", "npz"],
+      "required": ["xdmf", "hdf5"],
       "properties": {
         "xdmf": {"type": "string"},
         "hdf5": {"type": "string"},
@@ -129,7 +129,7 @@
     },
     "artifacts": {
       "type": "object",
-      "minProperties": 3,
+      "minProperties": 2,
       "additionalProperties": {
         "type": "object",
         "required": ["sha256", "size_bytes"],

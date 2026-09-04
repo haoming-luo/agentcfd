@@ -93,10 +93,32 @@ agentcfd inspect --json
 ```
 
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
-operational settings such as the default provider, run directory, container,
-and mesh controls. Every execution publishes an immutable run directory with
-the resolved plan, result, provider artifacts, and trust state. Validation is
-attached evidence; it does not replace the engineering workflow.
+operational settings such as the default provider, output directory, container,
+and mesh controls. An ordinary execution replaces the managed `output/`
+directory, so editing parameters and rerunning keeps one obvious current
+answer. Preserve an immutable run only when that is the intent:
+
+```bash
+agentcfd run . --campaign
+agentcfd run . --keep-workspace  # expert backend debugging
+```
+
+The ordinary project surface stays small:
+
+```text
+case.py             readable scientific model and outputs
+agentcfd.toml       operational provider/runtime settings
+input/              optional user-owned geometry and data
+output/             current plan, result, fields, and compact evidence
+campaigns/<run-id>/ explicitly preserved runs only
+.agentcfd/          hidden disposable solver workspace
+```
+
+Generated OpenFOAM dictionaries, native time directories, and temporary VTK
+files live below `.agentcfd/` and are removed after successful publication by
+default. They can be regenerated from `case.py`; selected logs and content
+manifests are copied to `output/evidence/` first. Validation is attached
+evidence; it does not replace the engineering workflow.
 
 Common pipe-loss screening is available without a CFD runtime:
 
@@ -164,7 +186,7 @@ area-averaged pressure, pressure drop, mass imbalance, mesh-quality metrics,
 convergence evidence, and final native fields. Process completion alone never
 implies scientific acceptance.
 
-## Portable fields: XDMF/H5 and NPZ
+## Portable fields: XDMF/H5 by default, NPZ on demand
 
 Install the permissively licensed optional I/O stack, then export every saved
 OpenFOAM field frame into one versioned bundle:
@@ -176,14 +198,16 @@ agentcfd export openfoam OPENFOAM_CASE fields \
   --profile visualization \
   --field fluid.velocity --field fluid.pressure --json
 agentcfd verify field-bundle fields --json
-agentcfd export field-sample fields velocity-final.npz \
+agentcfd export openfoam OPENFOAM_CASE fields-with-arrays --with-npz
+agentcfd export field-sample fields-with-arrays velocity-final.npz \
   --field fluid.velocity --association point --frame -1
 ```
 
-`fields.xdmf` plus `fields.h5` is the standard mesh-and-field route for
+`fields.xdmf` plus `fields.h5` is the default mesh-and-field route for
 ParaView, AgentFEM exchange, and other scientific tools. `fields.npz` mirrors
 the same geometry, topology, axis, point fields, and native cell fields without
-pickles for NumPy, PyTorch, JAX, and dataset pipelines. `manifest.json` retains
+pickles for NumPy, PyTorch, JAX, and dataset pipelines only when `--with-npz`
+is selected. `manifest.json` retains
 canonical field names, units, association, interpolation semantics, source
 identity, and artifact hashes. Incompressible OpenFOAM `p` remains available
 as kinematic pressure; physical pressure in Pa is a separate density-derived
@@ -197,7 +221,8 @@ Portable output is intentionally profiled instead of dumping every array:
 `visualization` writes selected interpolated point fields, `native` writes
 selected OpenFOAM cell fields for verification/training, and `both` is the
 explicit expert interchange mode. The CLI defaults to `visualization`; project
-output follows `OutputRequest.portable_profile` and canonical `fields`.
+output follows `OutputRequest.portable_profile`, `portable_formats`, and
+canonical `fields`. Association and file format are independent choices.
 
 For the canonical fully developed validation case, declare the physical inlet
 profile instead of silently changing a mean-velocity boundary:

@@ -10,6 +10,7 @@ class OutputRequest:
     fields: tuple[str, ...]
     histories: tuple[str, ...]
     portable_profile: str = "visualization"
+    portable_formats: tuple[str, ...] = ("xdmf",)
 
     def __post_init__(self) -> None:
         for name in ("fields", "histories"):
@@ -23,16 +24,33 @@ class OutputRequest:
             raise ValueError(
                 "portable_profile must be 'visualization', 'native', or 'both'."
             )
+        formats = tuple(self.portable_formats)
+        if (
+            not formats
+            or any(item not in {"xdmf", "npz"} for item in formats)
+            or len(set(formats)) != len(formats)
+        ):
+            raise ValueError(
+                "portable_formats must be unique and contain only 'xdmf' and optional 'npz'."
+            )
+        if "xdmf" not in formats:
+            raise ValueError("portable_formats must include 'xdmf'.")
+        object.__setattr__(self, "portable_formats", formats)
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
-def standard(*, portable_profile: str = "visualization") -> OutputRequest:
+def standard(
+    *,
+    portable_profile: str = "visualization",
+    portable_formats: tuple[str, ...] = ("xdmf",),
+) -> OutputRequest:
     return OutputRequest(
         fields=("fluid.velocity", "fluid.pressure"),
         histories=("flow.mass_balance", "flow.pressure_drop"),
         portable_profile=portable_profile,
+        portable_formats=portable_formats,
     )
 
 
@@ -40,6 +58,7 @@ def turbulent_internal_flow(
     *,
     turbulence_model: str = "k-omega-sst",
     portable_profile: str = "visualization",
+    portable_formats: tuple[str, ...] = ("xdmf",),
 ) -> OutputRequest:
     """Request the minimum auditable field set for two-equation RANS flow."""
 
@@ -68,4 +87,5 @@ def turbulent_internal_flow(
             "wall.y_plus",
         ),
         portable_profile=portable_profile,
+        portable_formats=portable_formats,
     )

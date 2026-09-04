@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import platform
 import shutil
 import sys
@@ -15,7 +16,7 @@ from ._version import __version__
 from .errors import AgentCFDError
 from .jsonio import strict_json_object
 from .model import Model
-from .provenance import file_sha256
+from .provenance import content_fingerprint, file_sha256
 from .providers import (
     OpenFOAMMeshControls,
     OpenFOAMProvider,
@@ -365,6 +366,162 @@ def _prepare_openfoam_turbulent_model_study(
         target_y_plus=50.0 if target_y_plus is None else target_y_plus,
         maximum_iterations=maximum_iterations,
     ).to_dict()
+
+
+def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def _prepare_openfoam_turbulent_model_sweep(
+    directory: Path,
+    *,
+    velocities: tuple[float, ...],
+    target_y_plus: float,
+    turbulence_intensity: float,
+    turbulence_length_scale: float,
+    cross_section_cells: int,
+    maximum_iterations: int,
+) -> dict[str, object]:
+    if len(velocities) < 3:
+        raise ValueError("A turbulent model sweep requires at least three velocities.")
+    selected = tuple(float(value) for value in velocities)
+    if any(not math.isfinite(value) or value <= 0.0 for value in selected):
+        raise ValueError("Turbulent model sweep velocities must be finite and positive.")
+    if len(set(selected)) != len(selected):
+        raise ValueError("Turbulent model sweep velocities must be distinct.")
+    if directory.exists() and any(directory.iterdir()):
+        raise FileExistsError(f"OpenFOAM model-sweep directory is not empty: {directory}")
+    directory.mkdir(parents=True, exist_ok=True)
+    point_records: list[dict[str, object]] = []
+    for index, velocity in enumerate(sorted(selected), start=1):
+        relative = Path(f"point-{index:02d}")
+        point_directory = directory / relative
+        point = _prepare_openfoam_turbulent_model_study(
+            point_directory,
+            velocity=velocity,
+            turbulence_intensity=turbulence_intensity,
+            turbulence_length_scale=turbulence_length_scale,
+            cross_section_cells=cross_section_cells,
+            nominal_wall_cell_fraction=None,
+            target_y_plus=target_y_plus,
+            maximum_iterations=maximum_iterations,
+        )
+        plan_path = point_directory / "agentcfd-turbulent-model-study.json"
+        screen = point["wall_resolution_screen"]
+        assert isinstance(screen, dict)
+        point_records.append(
+            {
+                "index": index,
+                "directory": str(relative),
+                "velocity_m_per_s": velocity,
+                "reynolds_number": screen["reynolds_number"],
+                "nominal_wall_cell_fraction": point["nominal_wall_cell_fraction"],
+                "plan": str(relative / plan_path.name),
+                "plan_sha256": file_sha256(plan_path),
+                "assessment": str(
+                    relative / "agentcfd-turbulent-model-assessment.json"
+                ),
+            }
+        )
+    payload: dict[str, object] = {
+        "schema": "agentcfd.openfoam-turbulent-model-sweep/0.1",
+        "target_y_plus": float(target_y_plus),
+        "turbulence_intensity": float(turbulence_intensity),
+        "turbulence_length_scale_m": float(turbulence_length_scale),
+        "cross_section_cells": int(cross_section_cells),
+        "maximum_iterations": int(maximum_iterations),
+        "points": point_records,
+    }
+    payload["campaign_sha256"] = content_fingerprint(payload)
+    _write_json_atomic(directory / "agentcfd-turbulent-model-sweep.json", payload)
+    return payload
+
+
+def _run_openfoam_turbulent_model_sweep(
+    directory: Path,
+    *,
+    container_image: str | None,
+    timeout_seconds: float,
+    resume: bool,
+) -> tuple[dict[str, object], Path]:
+    plan_path = directory / "agentcfd-turbulent-model-sweep.json"
+    plan = strict_json_object(
+        plan_path.read_text(encoding="utf-8"),
+        label=f"OpenFOAM turbulent model-sweep plan {plan_path}",
+    )
+    if plan.get("schema") != "agentcfd.openfoam-turbulent-model-sweep/0.1":
+        raise ValueError("OpenFOAM turbulent model-sweep plan schema is unsupported.")
+    recorded_identity = plan.get("campaign_sha256")
+    identity_payload = dict(plan)
+    identity_payload.pop("campaign_sha256", None)
+    if recorded_identity != content_fingerprint(identity_payload):
+        raise ValueError("OpenFOAM turbulent model-sweep campaign identity changed.")
+    points = plan.get("points")
+    if not isinstance(points, list) or len(points) < 3:
+        raise ValueError("OpenFOAM turbulent model sweep requires at least three points.")
+    root = directory.resolve()
+    assessments: list[Path] = []
+    progress: dict[str, object] = {
+        "schema": "agentcfd.campaign-progress/0.1",
+        "campaign_sha256": recorded_identity,
+        "total_points": len(points),
+        "completed_points": 0,
+        "status": "running",
+    }
+    progress_path = directory / "agentcfd-campaign-progress.json"
+    _write_json_atomic(progress_path, progress)
+    for position, point in enumerate(points, start=1):
+        if not isinstance(point, dict):
+            raise ValueError("OpenFOAM turbulent model-sweep point is invalid.")
+        point_directory = (directory / str(point.get("directory", ""))).resolve()
+        try:
+            point_directory.relative_to(root)
+        except ValueError as error:
+            raise ValueError("OpenFOAM model-sweep point escapes its directory.") from error
+        nested_plan = point_directory / "agentcfd-turbulent-model-study.json"
+        if file_sha256(nested_plan) != point.get("plan_sha256"):
+            raise ValueError("OpenFOAM model-sweep point plan identity changed.")
+        assessment_path = point_directory / "agentcfd-turbulent-model-assessment.json"
+        try:
+            if resume and assessment_path.is_file():
+                nested = strict_json_object(
+                    nested_plan.read_text(encoding="utf-8"),
+                    label=f"OpenFOAM turbulent model-study plan {nested_plan}",
+                )
+                cases = nested.get("cases")
+                if not isinstance(cases, list) or len(cases) != 2:
+                    raise ValueError("OpenFOAM model-sweep point has invalid cases.")
+                results = [point_directory / str(case["result"]) for case in cases]
+                refreshed = _turbulent_model_study_payload(results)
+                _write_json_atomic(assessment_path, refreshed)
+            else:
+                _run_openfoam_turbulent_model_study(
+                    point_directory,
+                    container_image=container_image,
+                    timeout_seconds=timeout_seconds,
+                )
+        except (AgentCFDError, OSError, ValueError) as error:
+            progress["status"] = "failed"
+            progress["failed_point"] = position
+            progress["error"] = str(error)
+            _write_json_atomic(progress_path, progress)
+            raise
+        assessments.append(assessment_path)
+        progress["completed_points"] = position
+        _write_json_atomic(progress_path, progress)
+    payload = _turbulent_model_sweep_payload(assessments)
+    target = directory / "agentcfd-turbulent-model-sweep-assessment.json"
+    _write_json_atomic(target, payload)
+    progress["status"] = "completed"
+    progress["assessment"] = target.name
+    _write_json_atomic(progress_path, progress)
+    return payload, target
 
 
 def _grid_convergence_payload(
@@ -1081,6 +1238,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     model_study_prepare.add_argument("--maximum-iterations", type=int, default=4000)
     model_study_prepare.add_argument("--json", action="store_true", dest="as_json")
+    model_sweep_prepare = prepare_subparsers.add_parser(
+        "openfoam-turbulent-model-sweep",
+        help="Prepare a multi-Re SST versus k-epsilon campaign.",
+    )
+    model_sweep_prepare.add_argument("directory", type=Path)
+    model_sweep_prepare.add_argument(
+        "--velocities",
+        nargs="+",
+        type=float,
+        default=(0.5, 1.0, 2.0, 5.0),
+    )
+    model_sweep_prepare.add_argument("--target-y-plus", type=float, default=40.0)
+    model_sweep_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
+    model_sweep_prepare.add_argument(
+        "--turbulence-length-scale", type=float, default=0.007
+    )
+    model_sweep_prepare.add_argument("--cross-section-cells", type=int, default=16)
+    model_sweep_prepare.add_argument("--maximum-iterations", type=int, default=4000)
+    model_sweep_prepare.add_argument("--json", action="store_true", dest="as_json")
     grid_prepare = prepare_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Prepare a same-model three-grid fully developed pipe study.",
@@ -1218,6 +1394,21 @@ def build_parser() -> argparse.ArgumentParser:
     model_study_run.add_argument("--container-image")
     model_study_run.add_argument("--timeout-seconds", type=float, default=3600.0)
     model_study_run.add_argument("--json", action="store_true", dest="as_json")
+    model_sweep_run = run_subparsers.add_parser(
+        "openfoam-turbulent-model-sweep",
+        help="Execute or resume a prepared multi-Re turbulence-model campaign.",
+    )
+    model_sweep_run.add_argument("directory", type=Path)
+    model_sweep_run.add_argument("--container-image")
+    model_sweep_run.add_argument("--timeout-seconds", type=float, default=3600.0)
+    model_sweep_run.add_argument(
+        "--no-resume",
+        action="store_false",
+        dest="resume",
+        help="Do not reuse complete point assessments.",
+    )
+    model_sweep_run.set_defaults(resume=True)
+    model_sweep_run.add_argument("--json", action="store_true", dest="as_json")
     run_grid = run_subparsers.add_parser(
         "openfoam-pipe-grid",
         help="Execute a prepared three-grid pipe study and compute GCI.",
@@ -1566,6 +1757,28 @@ def main(argv: list[str] | None = None) -> int:
             if screen["predicted_high_re_wall_function_applicable"] is not True:
                 print("warning: predicted y+ is outside the high-Re wall-function range")
         return 0
+    if (
+        args.command == "prepare"
+        and args.provider == "openfoam-turbulent-model-sweep"
+    ):
+        plan = _prepare_openfoam_turbulent_model_sweep(
+            args.directory,
+            velocities=tuple(args.velocities),
+            target_y_plus=args.target_y_plus,
+            turbulence_intensity=args.turbulence_intensity,
+            turbulence_length_scale=args.turbulence_length_scale,
+            cross_section_cells=args.cross_section_cells,
+            maximum_iterations=args.maximum_iterations,
+        )
+        if args.as_json:
+            print(json.dumps(plan, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Prepared OpenFOAM turbulence-model sweep | "
+                f"{len(plan['points'])} points | target y+ {plan['target_y_plus']}"
+            )
+            print(args.directory / "agentcfd-turbulent-model-sweep.json")
+        return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe-grid":
         plan = _prepare_openfoam_pipe_grid(
             args.directory,
@@ -1740,6 +1953,26 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(target)
         return 0 if payload["acceptance"]["screening_accepted"] else 3
+    if (
+        args.command == "run"
+        and args.provider == "openfoam-turbulent-model-sweep"
+    ):
+        payload, target = _run_openfoam_turbulent_model_sweep(
+            args.directory,
+            container_image=args.container_image,
+            timeout_seconds=args.timeout_seconds,
+            resume=args.resume,
+        )
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            accepted = payload["acceptance"]["range_candidate_accepted"]
+            print(
+                f"Completed turbulence-model sweep | range accepted "
+                f"{str(accepted).lower()} | default promotion false"
+            )
+            print(target)
+        return 0 if payload["acceptance"]["range_candidate_accepted"] else 3
     if args.command == "run" and args.provider == "openfoam-pipe-grid":
         payload, target = _run_openfoam_pipe_grid(
             args.directory,

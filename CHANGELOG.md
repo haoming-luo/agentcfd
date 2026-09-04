@@ -64,6 +64,9 @@
   four-point v2606 evidence accepts the matrix but rejects a global default:
   SST/Spalding wins at Re 49,810 and 99,621, while k-epsilon/nutk wins at Re
   199,242 and 498,104; the two high-Re best errors remain above 2%.
+- Add content-addressed `prepare/run openfoam-turbulent-model-sweep` campaign
+  orchestration with adaptive y-plus meshes, point-level progress, nested-plan
+  integrity checks, artifact-reverified resume, and automatic final aggregation.
 
 All notable AgentCFD changes are recorded here. Versions follow semantic
 versioning; scientific capability maturity remains independently visible in the

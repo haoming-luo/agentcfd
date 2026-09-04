@@ -130,6 +130,7 @@ _CAPABILITIES = (
         ),
         evidence=(
             "installed point-study and sweep JSON contracts",
+            "content-addressed prepare/run campaign with point-level resume",
             "correlation-based preflight followed by solved y-plus gates",
             "four-point OpenCFD v2606 matrix over Re 49,810--498,104",
             "explicit model-ranking transition detection",

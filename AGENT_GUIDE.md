@@ -84,3 +84,10 @@ inputs. The current four-point evidence changes winner between Re 99,621 and
 199,242. Treat `diagnostic-ranking-only`, `model_selection_required=true`, or a
 false range gate as an instruction to run sensitivity/validation—not as
 permission to choose the aggregate ranking.
+
+Prefer `prepare/run openfoam-turbulent-model-sweep` for unattended campaigns.
+The campaign sorts distinct positive velocities, hashes every nested point
+plan, writes `agentcfd-campaign-progress.json` after each point, and resumes by
+reopening the underlying result artifacts rather than trusting a stale summary.
+If progress says `failed`, repair the recorded point and rerun the same command;
+do not edit a plan or mark the point complete manually.

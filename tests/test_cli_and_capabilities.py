@@ -90,6 +90,7 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "openfoam-turbulent-wall-study.schema.json" in contracts.available()
     assert "turbulent-precursor-grid-study.schema.json" in contracts.available()
     assert "turbulent-model-sweep.schema.json" in contracts.available()
+    assert "openfoam-turbulent-model-sweep.schema.json" in contracts.available()
     result_schema = contracts.load("simulation-result.schema.json")
     assert result_schema["$schema"].endswith("2020-12/schema")
     assert contracts.path("simulation-result.schema.json").is_file()
@@ -787,6 +788,112 @@ def test_cli_aggregates_turbulence_model_sweep(tmp_path, capsys):
     jsonschema.Draft202012Validator(
         contracts.load("turbulent-model-sweep.schema.json")
     ).validate(payload)
+
+
+def test_cli_prepares_and_executes_resumable_turbulence_model_campaign(
+    tmp_path, capsys, monkeypatch
+):
+    root = tmp_path / "campaign"
+    assert (
+        main(
+            [
+                "prepare",
+                "openfoam-turbulent-model-sweep",
+                str(root),
+                "--velocities",
+                "0.5",
+                "1",
+                "2",
+                "--target-y-plus",
+                "40",
+                "--maximum-iterations",
+                "20",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    plan = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-turbulent-model-sweep.schema.json")
+    ).validate(plan)
+    assert [point["velocity_m_per_s"] for point in plan["points"]] == [0.5, 1.0, 2.0]
+    assert len({point["nominal_wall_cell_fraction"] for point in plan["points"]}) == 3
+
+    def fake_run(directory, *, container_image, timeout_seconds):
+        nested = json.loads(
+            (directory / "agentcfd-turbulent-model-study.json").read_text()
+        )
+        screen = nested["wall_resolution_screen"]
+        reynolds = screen["reynolds_number"]
+        index = int(directory.name.split("-")[-1])
+        assessment = {
+            "schema": "agentcfd.turbulent-model-study/0.1",
+            "mesh_sha256": f"{index:x}" * 64,
+            "cross_section_cells": nested["cross_section_cells"],
+            "nominal_wall_cell_fraction": nested["nominal_wall_cell_fraction"],
+            "maximum_iterations": nested["maximum_iterations"],
+            "reynolds_number": reynolds,
+            "cases": [
+                {
+                    "turbulence_model": "k-omega-sst",
+                    "nut_wall_function": "nutUSpaldingWallFunction",
+                    "reynolds_number": reynolds,
+                    "colebrook_relative_error": 0.01,
+                    "runtime_wall_seconds": 2.0,
+                    "wall_y_plus": {
+                        "minimum": 38.0,
+                        "average": 44.0,
+                        "maximum": 48.0,
+                    },
+                    "source_accepted": True,
+                },
+                {
+                    "turbulence_model": "k-epsilon",
+                    "nut_wall_function": "nutkWallFunction",
+                    "reynolds_number": reynolds,
+                    "colebrook_relative_error": 0.03,
+                    "runtime_wall_seconds": 1.8,
+                    "wall_y_plus": {
+                        "minimum": 38.0,
+                        "average": 44.0,
+                        "maximum": 48.0,
+                    },
+                    "source_accepted": True,
+                },
+            ],
+            "acceptance": {
+                "source_results_accepted": True,
+                "identical_mesh": True,
+                "non_model_inputs_identical": True,
+                "wall_function_y_plus_range": True,
+                "screening_accepted": True,
+            },
+        }
+        target = directory / "agentcfd-turbulent-model-assessment.json"
+        target.write_text(json.dumps(assessment) + "\n", encoding="utf-8")
+        return assessment, target
+
+    monkeypatch.setattr(
+        "agentcfd.cli._run_openfoam_turbulent_model_study",
+        fake_run,
+    )
+    assert (
+        main(
+            [
+                "run",
+                "openfoam-turbulent-model-sweep",
+                str(root),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["acceptance"]["range_candidate_accepted"] is True
+    progress = json.loads((root / "agentcfd-campaign-progress.json").read_text())
+    assert progress["status"] == "completed"
+    assert progress["completed_points"] == 3
 
 
 def test_cli_computes_gci_from_three_result_files(tmp_path, capsys):

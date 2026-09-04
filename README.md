@@ -293,6 +293,19 @@ agentcfd calculate wall-resolution --density 998.2 --viscosity 0.001002 \
 agentcfd verify turbulent-model-sweep study-1.json study-2.json study-3.json
 ```
 
+Or prepare and execute the complete content-addressed campaign:
+
+```bash
+agentcfd prepare openfoam-turbulent-model-sweep campaign \
+  --velocities 0.5 1 2 5 --target-y-plus 40 --json
+agentcfd run openfoam-turbulent-model-sweep campaign \
+  --container-image opencfd/openfoam-run:2606 --json
+```
+
+The runner writes point-granular progress, verifies each nested plan hash, and
+resumes only from complete point assessments whose native result artifacts can
+be reopened and reverified.
+
 The prepared plan records the correlation-based wall-spacing prediction and
 recommended fraction, but runtime y-plus remains mandatory evidence. Across a
 sweep each model pair must share an identical mesh; different Reynolds points

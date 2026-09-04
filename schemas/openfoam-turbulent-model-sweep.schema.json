@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-turbulent-model-sweep.schema.json",
+  "title": "AgentCFD prepared OpenFOAM turbulent model sweep 0.1",
+  "type": "object",
+  "required": ["schema", "campaign_sha256", "target_y_plus", "turbulence_intensity", "turbulence_length_scale_m", "cross_section_cells", "maximum_iterations", "points"],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-turbulent-model-sweep/0.1"},
+    "campaign_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "target_y_plus": {"type": "number", "exclusiveMinimum": 0},
+    "turbulence_intensity": {"type": "number", "exclusiveMinimum": 0},
+    "turbulence_length_scale_m": {"type": "number", "exclusiveMinimum": 0},
+    "cross_section_cells": {"type": "integer", "minimum": 2},
+    "maximum_iterations": {"type": "integer", "minimum": 5},
+    "points": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["index", "directory", "velocity_m_per_s", "reynolds_number", "nominal_wall_cell_fraction", "plan", "plan_sha256", "assessment"],
+        "properties": {
+          "index": {"type": "integer", "minimum": 1},
+          "directory": {"type": "string", "pattern": "^point-[0-9]{2,}$"},
+          "velocity_m_per_s": {"type": "number", "exclusiveMinimum": 0},
+          "reynolds_number": {"type": "number", "minimum": 4000},
+          "nominal_wall_cell_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+          "plan": {"type": "string", "minLength": 1},
+          "plan_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "assessment": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 import subprocess
 import tempfile
@@ -732,7 +733,8 @@ def export_agentfem_field_sample(
                 ),
             )
         temporary_path.replace(output)
-        output.chmod(0o644)
+        if os.name != "nt":
+            output.chmod(0o644)
     finally:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()

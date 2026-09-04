@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -138,7 +139,8 @@ def test_agentfem_field_sample_bridge_is_pickle_free(tmp_path):
         metadata = json.loads(str(sample["metadata_json"]))
         assert metadata["schema"] == "agentcae.field-sample"
         assert metadata["coordinate_value"] == 10.0
-    assert point_sample.stat().st_mode & 0o777 == 0o644
+    if os.name != "nt":
+        assert point_sample.stat().st_mode & 0o777 == 0o644
     with np.load(cell_sample, allow_pickle=False) as sample:
         np.testing.assert_allclose(sample["coordinates"], [[0.5, 0.5, 0.5]])
         np.testing.assert_allclose(sample["values"], [2000.0])

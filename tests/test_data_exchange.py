@@ -146,12 +146,89 @@ def test_agentfem_field_sample_bridge_is_pickle_free(tmp_path):
         np.testing.assert_allclose(sample["values"], [2000.0])
 
 
+def test_visualization_profile_selects_only_requested_point_fields(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        convert=False,
+        density=1000.0,
+        profile="visualization",
+        fields=("fluid.velocity", "fluid.pressure"),
+    )
+
+    manifest = json.loads(bundle.manifest.read_text())
+    assert manifest["output_selection"] == {
+        "profile": "visualization",
+        "associations": ["point"],
+        "requested_fields": ["fluid.velocity", "fluid.pressure"],
+    }
+    assert {
+        (record["name"], record["association"])
+        for record in manifest["fields"]
+    } == {("fluid.velocity", "point"), ("fluid.pressure", "point")}
+    with np.load(bundle.npz, allow_pickle=False) as arrays:
+        field_keys = {key for key in arrays.files if key.startswith(("point__", "cell__"))}
+        assert field_keys == {
+            "point__fluid_velocity_point",
+            "point__fluid_pressure_point",
+        }
+
+
+def test_field_selection_fails_closed_on_unknown_name(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+
+    with pytest.raises(ValueError, match="unavailable"):
+        data_exchange.export_openfoam_case(
+            case,
+            tmp_path / "bundle",
+            convert=False,
+            profile="native",
+            fields=("fluid.not-a-field",),
+        )
+
+
 def test_openfoam_series_is_numerically_sorted(tmp_path):
     case = tmp_path / "case"
     late = _write_frame(case, 100, 1.0)
     early = _write_frame(case, 20, 1.0)
 
     assert data_exchange.openfoam_vtu_series(case) == (early, late)
+
+
+def test_openfoam_series_uses_physical_times_from_vtm_index(tmp_path):
+    case = tmp_path / "case"
+    first = _write_frame(case, 72, 1.0)
+    second = _write_frame(case, 145, 2.0)
+    (case / "VTK" / "case.vtm.series").write_text(
+        json.dumps(
+            {
+                "file-series-version": "1.0",
+                "files": [
+                    {"name": "case_145.vtm", "time": 0.4},
+                    {"name": "case_72.vtm", "time": 0.2},
+                ],
+            }
+        )
+    )
+
+    files = data_exchange.openfoam_vtu_series(case)
+    assert files == (first, second)
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        convert=False,
+        axis={
+            "name": "time",
+            "unit": "s",
+            "physical_time": True,
+            "description": "Physical time.",
+        },
+    )
+    assert bundle.times == (0.2, 0.4)
 
 
 def test_container_conversion_uses_argument_list_and_writes_log(tmp_path, monkeypatch):

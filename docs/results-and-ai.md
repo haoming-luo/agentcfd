@@ -123,6 +123,34 @@ or an unclassified provider coordinate. Consumers must not infer seconds from
 an XDMF `Time` element alone. `agentcfd verify field-bundle` reopens XDMF/H5 and
 NPZ, compares their axes and geometry, and verifies all artifact hashes.
 
+### Output profiles
+
+AgentCFD separates three different reasons for storing a field instead of
+presenting cell and point copies as peers to every user:
+
+| Profile | Association | Normal use |
+| --- | --- | --- |
+| `visualization` | interpolated point fields | ParaView, reports, ordinary inspection |
+| `native` | OpenFOAM cell fields | finite-volume audit, coupling, training data |
+| `both` | point and cell fields | explicit expert interchange and debugging |
+
+The CLI defaults to `visualization`. A project takes its canonical field list
+and profile from `OutputRequest`; `outputs.standard()` therefore publishes only
+point velocity and physical pressure when density is known. Native solver
+restart files remain in the OpenFOAM case regardless of the portable profile,
+so reducing presentation noise does not discard the authoritative solution.
+
+Use repeated canonical selectors when a workflow needs a smaller set:
+
+```bash
+agentcfd export openfoam CASE fields --profile visualization \
+  --field fluid.velocity --field fluid.vorticity
+```
+
+Transient conversion reads physical coordinates from OpenFOAM's
+`case.vtm.series`. Adaptive-time-step file sequence numbers are never treated
+as seconds.
+
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,
 `schemas/result-exchange.schema.json`, `schemas/scientific-sample.schema.json`,
 and `schemas/field-bundle.schema.json`.

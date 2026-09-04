@@ -16,6 +16,12 @@
   `FEMFieldSample` NPZ keys with field encoding, units, axis, and provenance.
 - Identify the neutral `agentcae.field-bundle` contract inside HDF5 itself, so
   detached heavy-data files fail closed instead of relying only on filenames.
+- Add explicit `visualization`, `native`, and `both` portable-field profiles
+  plus repeatable canonical field selection; ordinary CLI and project output
+  now avoid duplicate point/cell arrays by default.
+- Recover transient physical time from OpenFOAM `case.vtm.series` rather than
+  misinterpreting adaptive-step VTK sequence numbers as time.
+- Register canonical vorticity and Q-criterion names and SI units.
 - Keep NumPy, h5py, and meshio optional under the `io` extra; the mandatory
   AgentCFD core remains dependency-free and Apache-2.0.
 

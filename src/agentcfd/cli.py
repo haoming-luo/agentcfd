@@ -1095,6 +1095,21 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="Constant density used to derive fluid.pressure in Pa from kinematic p.",
     )
+    field_bundle.add_argument(
+        "--profile",
+        choices=("visualization", "native", "both"),
+        default="visualization",
+        help=(
+            "Point fields for ordinary viewing, native cell fields for training, "
+            "or both for expert interchange."
+        ),
+    )
+    field_bundle.add_argument(
+        "--field",
+        action="append",
+        dest="fields",
+        help="Canonical or OpenFOAM field name; repeat to select multiple fields.",
+    )
     field_bundle.add_argument("--timeout-seconds", type=float, default=3600.0)
     field_bundle.add_argument("--json", action="store_true", dest="as_json")
     field_sample = export_subparsers.add_parser(
@@ -1742,6 +1757,8 @@ def main(argv: list[str] | None = None) -> int:
             timeout_seconds=args.timeout_seconds,
             convert=not args.skip_conversion,
             density=args.density,
+            profile=args.profile,
+            fields=args.fields,
         )
         report = bundle.to_dict()
         if args.as_json:

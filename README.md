@@ -172,7 +172,9 @@ OpenFOAM field frame into one versioned bundle:
 ```bash
 python -m pip install "agentcfd[io]"
 agentcfd export openfoam OPENFOAM_CASE fields \
-  --container-image opencfd/openfoam-run:2606 --json
+  --container-image opencfd/openfoam-run:2606 \
+  --profile visualization \
+  --field fluid.velocity --field fluid.pressure --json
 agentcfd verify field-bundle fields --json
 agentcfd export field-sample fields velocity-final.npz \
   --field fluid.velocity --association point --frame -1
@@ -190,6 +192,12 @@ The optional `field-sample` command extracts one frame into AgentFEM's
 `coordinates`, `values`, `encoding_json`, and `metadata_json` NPZ layout. It
 opens directly with `agentfem.datasets.FEMFieldSample.read(...)`, or with
 `numpy.load(..., allow_pickle=False)`, without adding AgentFEM as a dependency.
+
+Portable output is intentionally profiled instead of dumping every array:
+`visualization` writes selected interpolated point fields, `native` writes
+selected OpenFOAM cell fields for verification/training, and `both` is the
+explicit expert interchange mode. The CLI defaults to `visualization`; project
+output follows `OutputRequest.portable_profile` and canonical `fields`.
 
 For the canonical fully developed validation case, declare the physical inlet
 profile instead of silently changing a mean-velocity boundary:

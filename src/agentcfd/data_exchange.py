@@ -89,6 +89,17 @@ _OPENFOAM_FIELDS = {
         "K",
         description="Absolute temperature.",
     ),
+    "vorticity": FieldSemantic(
+        "fluid.vorticity",
+        "1/s",
+        ("x", "y", "z"),
+        "Curl of the velocity field.",
+    ),
+    "Q": FieldSemantic(
+        "fluid.q_criterion",
+        "1/s^2",
+        description="Second invariant used to identify rotation-dominated regions.",
+    ),
 }
 
 
@@ -116,6 +127,26 @@ def io_available() -> bool:
 
 
 def _time_from_vtu(path: Path) -> float:
+    series_path = path.parent.parent / "case.vtm.series"
+    if series_path.is_file():
+        try:
+            series = json.loads(series_path.read_text(encoding="utf-8"))
+            records = series["files"]
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+            raise ValueError(f"Malformed OpenFOAM VTK series index: {series_path}.") from error
+        expected_name = f"{path.parent.name}.vtm"
+        matches = [record.get("time") for record in records if record.get("name") == expected_name]
+        if len(matches) != 1:
+            raise ValueError(
+                f"OpenFOAM VTK series must map {expected_name!r} to exactly one time."
+            )
+        try:
+            value = float(matches[0])
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"OpenFOAM VTK time for {expected_name!r} is invalid.") from error
+        if not math.isfinite(value):
+            raise ValueError(f"OpenFOAM VTK time for {expected_name!r} must be finite.")
+        return value
     name = path.parent.name
     if not name.startswith("case_"):
         raise ValueError(f"Cannot recover OpenFOAM time from {path}.")
@@ -248,12 +279,20 @@ def _array_key(*parts: object) -> str:
     return "__".join(str(part).replace(".", "_") for part in parts)
 
 
-def _canonical_data(mesh: Any, *, density: float | None):
+def _canonical_data(
+    mesh: Any,
+    *,
+    density: float | None,
+    associations: tuple[str, ...],
+    selected_fields: tuple[str, ...] | None,
+):
     _, np = _io_modules()
     point_data: dict[str, Any] = {}
     cell_data: dict[str, list[Any]] = {}
     fields: list[dict[str, object]] = []
     for association, source in (("point", mesh.point_data), ("cell", mesh.cell_data)):
+        if association not in associations:
+            continue
         for source_name, raw_values in sorted(source.items()):
             semantic = _semantic(source_name)
             name = f"{semantic.canonical_name}.{association}"
@@ -262,12 +301,24 @@ def _canonical_data(mesh: Any, *, density: float | None):
                 if association == "point"
                 else [np.asarray(value) for value in raw_values]
             )
+            base_selected = selected_fields is None or any(
+                selector in {source_name, semantic.canonical_name, name}
+                for selector in selected_fields
+            )
+            pressure_name = f"fluid.pressure.{association}"
+            pressure_selected = selected_fields is None or any(
+                selector in {"p", "fluid.pressure", pressure_name}
+                for selector in selected_fields
+            )
+            if not base_selected and not (
+                source_name == "p" and density is not None and pressure_selected
+            ):
+                continue
             if association == "point":
                 if values.shape[0] != len(mesh.points):
                     raise ValueError(f"Point field {source_name!r} has inconsistent length.")
                 if not np.all(np.isfinite(values)):
                     raise ValueError(f"Point field {source_name!r} contains non-finite values.")
-                point_data[name] = values
                 shape = list(values.shape[1:])
             else:
                 if len(values) != len(mesh.cells) or any(
@@ -277,27 +328,30 @@ def _canonical_data(mesh: Any, *, density: float | None):
                     raise ValueError(f"Cell field {source_name!r} has inconsistent blocks.")
                 if any(not np.all(np.isfinite(block)) for block in values):
                     raise ValueError(f"Cell field {source_name!r} contains non-finite values.")
-                cell_data[name] = values
                 shape = list(values[0].shape[1:]) if values else []
-            fields.append(
-                {
-                    "name": semantic.canonical_name,
-                    "export_name": name,
-                    "source_name": source_name,
-                    "association": association,
-                    "unit": semantic.unit,
-                    "components": list(semantic.components),
-                    "shape": shape,
-                    "description": semantic.description,
-                    "processing": (
-                        "OpenFOAM cell-to-point interpolation"
-                        if association == "point"
-                        else "OpenFOAM native cell field"
-                    ),
-                }
-            )
-            if source_name == "p" and density is not None:
-                pressure_name = f"fluid.pressure.{association}"
+            if base_selected:
+                if association == "point":
+                    point_data[name] = values
+                else:
+                    cell_data[name] = values
+                fields.append(
+                    {
+                        "name": semantic.canonical_name,
+                        "export_name": name,
+                        "source_name": source_name,
+                        "association": association,
+                        "unit": semantic.unit,
+                        "components": list(semantic.components),
+                        "shape": shape,
+                        "description": semantic.description,
+                        "processing": (
+                            "OpenFOAM cell-to-point interpolation"
+                            if association == "point"
+                            else "OpenFOAM native cell field"
+                        ),
+                    }
+                )
+            if source_name == "p" and density is not None and pressure_selected:
                 pressure_values = (
                     values * density
                     if association == "point"
@@ -401,6 +455,8 @@ def export_vtu_series(
     density: float | None = None,
     axis: Mapping[str, object] | None = None,
     source: Mapping[str, object] | None = None,
+    profile: str = "both",
+    fields: Iterable[str] | None = None,
 ) -> FieldBundle:
     """Write one canonical XDMF/HDF5/NPZ bundle from a fixed-mesh VTU series."""
 
@@ -415,6 +471,24 @@ def export_vtu_series(
         density = float(density)
         if not math.isfinite(density) or density <= 0:
             raise ValueError("Density must be a positive finite number.")
+    profile_associations = {
+        "visualization": ("point",),
+        "native": ("cell",),
+        "both": ("point", "cell"),
+    }
+    try:
+        associations = profile_associations[profile]
+    except KeyError as error:
+        raise ValueError(
+            "Field-output profile must be 'visualization', 'native', or 'both'."
+        ) from error
+    selected_fields = None if fields is None else tuple(str(name).strip() for name in fields)
+    if selected_fields is not None and (
+        not selected_fields
+        or any(not name for name in selected_fields)
+        or len(set(selected_fields)) != len(selected_fields)
+    ):
+        raise ValueError("Selected fields must be a non-empty sequence of unique names.")
     source_root = Path(case_directory) if case_directory is not None else files[0].parents[2]
     axis_record = dict(axis or _axis_from_result(source_root))
     required_axis = {"name", "unit", "physical_time", "description"}
@@ -470,8 +544,34 @@ def export_vtu_series(
                 for (left_type, left), (right_type, right) in zip(topology, current_topology)
             ):
                 raise ValueError("XDMF time series requires one unchanged cell topology.")
-            point_data, cell_data, records = _canonical_data(mesh, density=density)
+            point_data, cell_data, records = _canonical_data(
+                mesh,
+                density=density,
+                associations=associations,
+                selected_fields=selected_fields,
+            )
             if field_records is None:
+                if selected_fields is not None:
+                    matched = {
+                        selector
+                        for selector in selected_fields
+                        if any(
+                            selector
+                            in {
+                                record["name"],
+                                record["source_name"],
+                                record["export_name"],
+                            }
+                            for record in records
+                        )
+                    }
+                    missing = sorted(set(selected_fields) - matched)
+                    if missing:
+                        raise ValueError(
+                            f"Requested portable fields are unavailable: {missing}."
+                        )
+                if not records:
+                    raise ValueError("Field-output selection produced no portable fields.")
                 field_records = records
             elif [record["export_name"] for record in records] != [
                 record["export_name"] for record in field_records
@@ -553,6 +653,15 @@ def export_vtu_series(
             "hdf5": "fields.h5",
             "npz": "fields.npz",
         },
+        "output_selection": {
+            "profile": profile,
+            "associations": list(associations),
+            "requested_fields": (
+                list(dict.fromkeys(record["name"] for record in field_records or ()))
+                if selected_fields is None
+                else list(selected_fields)
+            ),
+        },
         "npz": {"allow_pickle": False, "metadata_key": "metadata_json"},
     }
     arrays["metadata_json"] = np.asarray(
@@ -589,6 +698,8 @@ def export_openfoam_case(
     density: float | None = None,
     axis: Mapping[str, object] | None = None,
     source: Mapping[str, object] | None = None,
+    profile: str = "both",
+    fields: Iterable[str] | None = None,
 ) -> FieldBundle:
     """Export all OpenFOAM time directories to the standard field bundle."""
 
@@ -610,6 +721,8 @@ def export_openfoam_case(
         density=selected_density,
         axis=axis,
         source=source,
+        profile=profile,
+        fields=fields,
     )
 
 

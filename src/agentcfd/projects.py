@@ -468,6 +468,8 @@ class Project:
                     "trust_level": result.trust_level,
                     "accepted": result.accepted,
                 },
+                profile=step.output.portable_profile,
+                fields=step.output.fields,
             )
             for name, path, media_type in (
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),

@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 class OutputRequest:
     fields: tuple[str, ...]
     histories: tuple[str, ...]
+    portable_profile: str = "visualization"
 
     def __post_init__(self) -> None:
         for name in ("fields", "histories"):
@@ -18,21 +19,27 @@ class OutputRequest:
             if len(set(selected)) != len(selected):
                 raise ValueError(f"Output {name} must not contain duplicates.")
             object.__setattr__(self, name, selected)
+        if self.portable_profile not in {"visualization", "native", "both"}:
+            raise ValueError(
+                "portable_profile must be 'visualization', 'native', or 'both'."
+            )
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
-def standard() -> OutputRequest:
+def standard(*, portable_profile: str = "visualization") -> OutputRequest:
     return OutputRequest(
         fields=("fluid.velocity", "fluid.pressure"),
         histories=("flow.mass_balance", "flow.pressure_drop"),
+        portable_profile=portable_profile,
     )
 
 
 def turbulent_internal_flow(
     *,
     turbulence_model: str = "k-omega-sst",
+    portable_profile: str = "visualization",
 ) -> OutputRequest:
     """Request the minimum auditable field set for two-equation RANS flow."""
 
@@ -60,4 +67,5 @@ def turbulent_internal_flow(
             "flow.pressure_drop",
             "wall.y_plus",
         ),
+        portable_profile=portable_profile,
     )

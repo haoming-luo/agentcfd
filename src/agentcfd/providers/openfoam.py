@@ -2570,6 +2570,7 @@ class OpenFOAMProvider:
                 inlet=inlet_name,
                 outlet=outlet_name,
                 turbulent=turbulent,
+                compress=step.output.storage.compression != "none",
             ),
             "system/fvSchemes": _fv_schemes(turbulent=turbulent),
             "system/fvSolution": _fv_solution(
@@ -3093,6 +3094,7 @@ def _control_dict(
     inlet: str,
     outlet: str,
     turbulent: bool = False,
+    compress: bool = True,
 ) -> str:
     y_plus = """
     agentcfd_y_plus
@@ -3117,8 +3119,9 @@ deltaT          1;
 writeControl    timeStep;
 writeInterval   {maximum_iterations};
 purgeWrite      1;
-writeFormat     ascii;
+writeFormat     binary;
 writePrecision  10;
+writeCompression {"on" if compress else "off"};
 runTimeModifiable true;
 
 functions

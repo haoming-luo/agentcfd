@@ -160,6 +160,20 @@ as seconds. Solver time step and portable write interval remain separate:
 smaller write intervals improve animation detail without changing field
 association or forcing an NPZ copy.
 
+### Retention, compression, and budgets
+
+Full-field frames are separate from solver timesteps, scalar histories, and
+native restart checkpoints. `outputs.animation(...)` declares physical frame
+cadence and a maximum count; `outputs.checkpoints(...)` declares sparse rolling
+restart intent; `outputs.storage(...)` declares a fail-closed byte budget and
+HDF5 compression. `agentcfd plan` reports the resolved channels and estimated
+temporary peak before execution.
+
+Numeric HDF5 datasets use chunked gzip compression by default. The field-bundle
+manifest records the conservative preflight estimate, uncompressed bytes per
+frame, selected compression, budget, and actual portable bytes. See
+[output architecture](output-architecture.md) for the complete contract.
+
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,
 `schemas/result-exchange.schema.json`, `schemas/scientific-sample.schema.json`,
 and `schemas/field-bundle.schema.json`.

@@ -120,6 +120,23 @@ default. They can be regenerated from `case.py`; selected logs and content
 manifests are copied to `output/evidence/` first. Validation is attached
 evidence; it does not replace the engineering workflow.
 
+Output is declared by purpose instead of by OpenFOAM directory frequency. For
+example, a transient run can keep frequent scalar histories, one visualization
+frame every `0.05 s`, and only two rolling restart checkpoints:
+
+```python
+output = outputs.animation(
+    every=0.05,
+    maximum_frames=240,
+    restart=outputs.checkpoints(every=1.0, keep=2),
+    storage_budget="512 MiB",
+)
+```
+
+`agentcfd plan` resolves the frame count and estimates final plus temporary
+storage before solving. XDMF/H5 numeric datasets are chunked and compressed by
+default; NPZ remains explicit opt-in.
+
 Common pipe-loss screening is available without a CFD runtime:
 
 ```bash
@@ -196,7 +213,8 @@ python -m pip install "agentcfd[io]"
 agentcfd export openfoam OPENFOAM_CASE fields \
   --container-image opencfd/openfoam-run:2606 \
   --profile visualization \
-  --field fluid.velocity --field fluid.pressure --json
+  --field fluid.velocity --field fluid.pressure \
+  --compression gzip --storage-budget "2 GiB" --json
 agentcfd verify field-bundle fields --json
 agentcfd export openfoam OPENFOAM_CASE fields-with-arrays --with-npz
 agentcfd export field-sample fields-with-arrays velocity-final.npz \
@@ -482,6 +500,7 @@ authoritative.
 - [Dependency and license policy](docs/licensing.md)
 - [Thermophysical properties](docs/properties.md)
 - [OpenFOAM provider boundary](docs/openfoam-provider.md)
+- [Output architecture and storage budgets](docs/output-architecture.md)
 - [Numerical strategy and performance tiers](docs/numerical-strategy.md)
 - [Publishing and PyPI name status](docs/publishing.md)
 - [Validation policy](docs/validation.md)

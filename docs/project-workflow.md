@@ -35,6 +35,12 @@ and final native evidence into `output/evidence/`, then removes the generated
 OpenFOAM time directories and temporary VTK conversion. XDMF/HDF5 is the
 ordinary portable field product; NPZ remains explicit opt-in.
 
+The output request in `case.py` also owns an explicit storage policy. Before
+execution, `agentcfd plan` resolves full-field frame count and estimates both
+the final portable bundle and the temporary provider peak. Oversized requests
+fail before solver work starts. See [output architecture](output-architecture.md)
+for animation, checkpoint, compression, and budget examples.
+
 ## Campaign mode
 
 `agentcfd run . --campaign` publishes to `campaigns/<run-id>/` and never

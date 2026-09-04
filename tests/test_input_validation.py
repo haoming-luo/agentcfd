@@ -143,6 +143,53 @@ def test_turbulent_output_request_tracks_model_specific_dissipation_field():
         outputs.turbulent_internal_flow(turbulence_model="invented")
 
 
+def test_animation_output_separates_frames_checkpoints_and_storage_budget():
+    request = outputs.animation(
+        every=0.05,
+        maximum_frames=240,
+        restart=outputs.checkpoints(every=1.0, keep=2),
+        storage_budget="512 MiB",
+    )
+
+    assert request.frames.mode == "interval"
+    assert request.frames.coordinate == "physical-time"
+    assert request.frames.every == 0.05
+    assert request.checkpoints.enabled is True
+    assert request.checkpoints.keep == 2
+    assert request.storage.maximum_bytes == 512 * 1024**2
+    assert request.storage.compression == "gzip"
+    assert request.to_dict()["checkpoints"]["enabled"] is True
+
+
+@pytest.mark.parametrize("invalid", ["lots", "0 MiB", 0, True])
+def test_storage_budget_rejects_ambiguous_or_nonpositive_values(invalid):
+    with pytest.raises(ValueError, match="Storage budget"):
+        outputs.storage(invalid)
+
+
+def test_transient_study_requires_transient_procedure():
+    model = Model(
+        study=studies.internal_flow(steady=False),
+        domain=geometry.circular_pipe(length=1.0, diameter=0.1),
+        fluid=fluids.newtonian("water", density=1000.0, dynamic_viscosity=0.001),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.01),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+    with pytest.raises(ValueError, match="Study and procedure disagree"):
+        model.step(procedure=procedures.steady())
+    step = model.step(
+        procedure=procedures.transient(
+            end_time=2.0,
+            initial_time_step=0.001,
+            maximum_time_step=0.005,
+        ),
+        output=outputs.animation(every=0.05),
+    )
+    assert step.procedure.to_dict()["type"] == "transient"
+
+
 @pytest.mark.parametrize("invalid_name", [None, True, 1, ""])
 def test_physical_asset_names_require_non_empty_strings(invalid_name):
     with pytest.raises(ValueError, match="Pipe name must be a non-empty string"):

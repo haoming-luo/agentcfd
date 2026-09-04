@@ -134,7 +134,7 @@ class Model:
     def step(
         self,
         *,
-        procedure: procedure_types.SteadyProcedure | None = None,
+        procedure: procedure_types.Procedure | None = None,
         output: output_types.OutputRequest | None = None,
     ) -> "Step":
         return Step(
@@ -147,16 +147,44 @@ class Model:
 @dataclass(frozen=True, slots=True)
 class Step:
     model: Model
-    procedure: procedure_types.SteadyProcedure
+    procedure: procedure_types.Procedure
     output: output_types.OutputRequest
 
     def __post_init__(self) -> None:
         if not isinstance(self.model, Model):
             raise TypeError("Step model must be an AgentCFD Model.")
-        if not isinstance(self.procedure, procedure_types.SteadyProcedure):
-            raise TypeError("Step procedure must be an AgentCFD SteadyProcedure.")
+        if not isinstance(
+            self.procedure,
+            (procedure_types.SteadyProcedure, procedure_types.TransientProcedure),
+        ):
+            raise TypeError("Step procedure must be an AgentCFD solution procedure.")
         if not isinstance(self.output, output_types.OutputRequest):
             raise TypeError("Step output must be an AgentCFD OutputRequest.")
+        if self.model.study.steady != isinstance(
+            self.procedure,
+            procedure_types.SteadyProcedure,
+        ):
+            raise ValueError(
+                "Study and procedure disagree: steady studies require steady procedures, "
+                "and transient studies require transient procedures."
+            )
+        coordinate = (
+            "solver-iteration" if self.model.study.steady else "physical-time"
+        )
+        if (
+            self.output.frames.mode == "interval"
+            and self.output.frames.coordinate != coordinate
+        ):
+            raise ValueError(
+                f"Field frames must use {coordinate!r} for this procedure."
+            )
+        if (
+            self.output.checkpoints.enabled
+            and self.output.checkpoints.coordinate != coordinate
+        ):
+            raise ValueError(
+                f"Checkpoints must use {coordinate!r} for this procedure."
+            )
 
     def run(self, *, provider: str | object = "reference") -> SimulationResult:
         self.model.validate()

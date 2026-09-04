@@ -118,6 +118,23 @@
       },
       "additionalProperties": false
     },
+    "storage": {
+      "type": "object",
+      "required": [
+        "budget_bytes", "conservative_preflight_bytes",
+        "uncompressed_field_bytes_per_frame", "geometry_and_topology_bytes",
+        "compression", "actual_portable_bytes"
+      ],
+      "properties": {
+        "budget_bytes": {"type": ["integer", "null"], "minimum": 1},
+        "conservative_preflight_bytes": {"type": "integer", "minimum": 1},
+        "uncompressed_field_bytes_per_frame": {"type": "integer", "minimum": 1},
+        "geometry_and_topology_bytes": {"type": "integer", "minimum": 1},
+        "compression": {"enum": ["none", "gzip", "lzf"]},
+        "actual_portable_bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
     "npz": {
       "type": "object",
       "required": ["allow_pickle", "metadata_key"],

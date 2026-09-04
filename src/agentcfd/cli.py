@@ -1115,6 +1115,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also write a pickle-free NPZ mirror for NumPy and ML workflows.",
     )
+    field_bundle.add_argument(
+        "--compression",
+        choices=("gzip", "lzf", "none"),
+        default="gzip",
+        help="HDF5 dataset compression (default: gzip).",
+    )
+    field_bundle.add_argument(
+        "--storage-budget",
+        type=outputs.parse_storage_size,
+        help="Fail before export when selected fields exceed a budget such as '2 GiB'.",
+    )
     field_bundle.add_argument("--timeout-seconds", type=float, default=3600.0)
     field_bundle.add_argument("--json", action="store_true", dest="as_json")
     field_sample = export_subparsers.add_parser(
@@ -1775,6 +1786,8 @@ def main(argv: list[str] | None = None) -> int:
             profile=args.profile,
             fields=args.fields,
             formats=("xdmf", "npz") if args.with_npz else ("xdmf",),
+            compression=args.compression,
+            maximum_bytes=args.storage_budget,
         )
         report = bundle.to_dict()
         if args.as_json:

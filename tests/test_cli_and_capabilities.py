@@ -457,6 +457,24 @@ def test_cli_exposes_hash_verified_prepared_case_execution():
     assert args.timeout_seconds == 120.0
 
 
+def test_cli_export_accepts_human_storage_budget_and_compression():
+    args = build_parser().parse_args(
+        [
+            "export",
+            "openfoam",
+            "case",
+            "fields",
+            "--storage-budget",
+            "512 MiB",
+            "--compression",
+            "lzf",
+        ]
+    )
+
+    assert args.storage_budget == 512 * 1024**2
+    assert args.compression == "lzf"
+
+
 def test_cli_executes_prepared_grid_family_and_writes_gci(tmp_path, capsys, monkeypatch):
     root = tmp_path / "grid-study"
     assert main(["prepare", "openfoam-pipe-grid", str(root), "--json"]) == 0

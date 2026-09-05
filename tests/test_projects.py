@@ -70,6 +70,20 @@ def test_project_replace_mode_overwrites_only_managed_output(tmp_path):
     assert inspection["latest_run"]["run_id"] == second.run_id
 
 
+def test_project_replace_mode_recovers_interrupted_owned_output(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps({"schema": "agentcfd.project-run/0.1", "status": "preparing"})
+    )
+    (project.run_root / "partial.dat").write_text("interrupted")
+
+    completed = project.run()
+
+    assert completed.result.accepted is True
+    assert not (project.run_root / "partial.dat").exists()
+
+
 def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)
@@ -178,6 +192,25 @@ def test_project_cli_init_check_run_and_inspect(tmp_path, capsys):
     assert entrypoint(["inspect", str(root), "--json"]) == 0
     inspection = json.loads(capsys.readouterr().out)
     assert inspection["run_count"] == 1
+
+
+def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, capsys):
+    root = tmp_path / "wake"
+
+    assert entrypoint(["init", str(root), "--template", "baffle-channel", "--json"]) == 0
+    initialized = json.loads(capsys.readouterr().out)
+    assert initialized["provider"] == "openfoam"
+    plan = projects.Project(root).plan()
+    assert plan["readiness"]["provider_compatible"] is True
+    assert plan["decisions"]["solver"] == "pimpleFoam"
+    assert plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 23880
+
+
+def test_baffle_channel_template_rejects_reference_provider(tmp_path):
+    with pytest.raises(ValueError, match="requires provider='openfoam'"):
+        projects.init_project(
+            tmp_path / "wake", template="baffle-channel", provider="reference"
+        )
 
 
 def test_agentfem_style_run_alias_targets_current_project(tmp_path, capsys):

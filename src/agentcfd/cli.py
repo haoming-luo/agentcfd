@@ -58,6 +58,9 @@ def _doctor() -> dict[str, object]:
             "blockMesh": shutil.which("blockMesh"),
             "checkMesh": shutil.which("checkMesh"),
             "simpleFoam": shutil.which("simpleFoam"),
+            "potentialFoam": shutil.which("potentialFoam"),
+            "pimpleFoam": shutil.which("pimpleFoam"),
+            "foamToVTK": shutil.which("foamToVTK"),
         },
         "providers": {
             "reference-pipe": True,
@@ -1013,13 +1016,13 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("directory", nargs="?", type=Path, default=Path("."))
     init.add_argument(
         "--template",
-        choices=("industrial-pipe",),
+        choices=("industrial-pipe", "baffle-channel"),
         default="industrial-pipe",
     )
     init.add_argument(
         "--provider",
         choices=("reference", "openfoam"),
-        default="reference",
+        default=None,
     )
     init.add_argument("--json", action="store_true", dest="as_json")
 
@@ -1664,7 +1667,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Reference provider: ready | OpenFOAM runtime: {'found' if report['providers']['openfoam-runtime'] else 'not found (optional)'}")
         return 0
     if args.command == "init":
-        project = projects.init_project(args.directory, provider=args.provider)
+        project = projects.init_project(
+            args.directory,
+            provider=args.provider or ("openfoam" if args.template == "baffle-channel" else "reference"),
+            template=args.template,
+        )
         report = {
             "schema": "agentcfd.project-initialization/0.1",
             "template": args.template,

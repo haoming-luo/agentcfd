@@ -1,0 +1,44 @@
+{
+  "schema": "agentcfd.integration-evidence/0.1",
+  "capability": "openfoam.transient-laminar-baffled-channel",
+  "evidence_kind": "execution-and-data-pipeline-smoke",
+  "runtime": "OpenCFD 2606",
+  "validation_claim": false,
+  "model_sha256": "6ea63aa0eb6afa3c7948e096f37d0e3859321c7dc7d18d04f156406e80ebb639",
+  "case_sha256": "039f450f8c4cc4535e13067617a4eaf1c6425b5888f4c822fde5ea03ecd79635",
+  "mesh_sha256": "08e2101e9e01e5092040a09e76a31837a657a33d4773872419b6ce682250c849",
+  "case": {
+    "hydraulic_reynolds_number": 1333.3333333333333,
+    "end_time_seconds": 0.02,
+    "cell_count": 23880,
+    "maximum_aspect_ratio": 1.0,
+    "maximum_non_orthogonality_degrees": 0.0,
+    "maximum_skewness": 1.33226763e-13
+  },
+  "execution": {
+    "blockMesh": 0,
+    "checkMesh": 0,
+    "potentialFoam": 0,
+    "pimpleFoam": 0,
+    "mesh_ok": true,
+    "final_time_seconds": 0.02,
+    "maximum_courant_number": 0.5018226968,
+    "relative_mass_imbalance": 3.999999982416789e-10
+  },
+  "compact_outputs": {
+    "pressure_drop": true,
+    "point_probe": true,
+    "surface_report": true,
+    "force_report": true
+  },
+  "portable_fields": {
+    "times_seconds": [0.01, 0.02],
+    "association": "point",
+    "names": ["fluid.velocity", "fluid.pressure", "fluid.vorticity"],
+    "formats": ["XDMF", "HDF5"],
+    "actual_bytes": 959503,
+    "hdf5_sha256": "54315efc9609888659e729287a8c36d887dc5186717b1a78d1e2ddf7e41bf8d6",
+    "xdmf_sha256": "1da6d9b97ca1f9164b977e1df2afe61a0567d5b5c6c76c79ce13ffb96cb3755e"
+  },
+  "interpretation": "This short run verifies execution, recovery, storage, and project cleanup. It is not a developed wake, timestep study, or physical validation benchmark."
+}

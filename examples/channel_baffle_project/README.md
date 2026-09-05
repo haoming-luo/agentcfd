@@ -1,14 +1,16 @@
 # Bottom-baffle wake project
 
-This project demonstrates the intended common-workflow API for a short, thick
-channel with a wall-attached baffle, fine physical-time frames, compact probes,
-surface reports, local refinement, and boundary layers.
+This project is the first executable non-pipe workflow: a short, thick channel
+with a bottom-attached baffle, physical-time field frames, and compact probes,
+surface reports, and forces.  Its deliberately viscous fluid keeps the declared
+laminar model below the provider's Reynolds-number applicability limit.
 
 ```bash
-agentcfd check examples/channel_baffle_project --json
 agentcfd plan examples/channel_baffle_project --json
+agentcfd run examples/channel_baffle_project --json
+agentcfd inspect examples/channel_baffle_project --json
 ```
 
-The public model is valid. The current circular-pipe OpenFOAM provider must
-report `PROVIDER_INCOMPATIBLE`: unstructured channel/baffle mesh and transient
-report lowering are explicit development gates, not silently ignored options.
+The generated OpenFOAM workspace is disposable implementation detail.  The
+project publishes a compact result record, evidence logs, and XDMF/H5 fields in
+`output/`; replace mode safely replaces only an AgentCFD-owned prior result.

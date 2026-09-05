@@ -38,12 +38,12 @@ _CAPABILITIES = (
         ),
         evidence=(
             "common-workflow public API tests",
-            "inspectable bottom-baffle project plan",
-            "provider fail-closed compatibility tests",
+            "executable bottom-baffle project plan",
+            "OpenCFD v2606 mesh and short-run integration evidence",
         ),
         limitations=(
-            "The current OpenFOAM provider lowers only its bounded steady circular-pipe slices.",
-            "Channel/baffle meshing, transient solving, and generic report lowering are pending.",
+            "The first channel slice is limited to one bottom-attached baffle and low-Re laminar flow.",
+            "Imported geometry, turbulent channel flow, restart lowering, and vector surface reductions are pending.",
         ),
     ),
     Capability(
@@ -209,6 +209,25 @@ _CAPABILITIES = (
             "Downstream turbulent pipes remain limited to k-omega SST; k-epsilon is precursor-only.",
             "OpenCFD v2606 is the currently exercised runtime dialect.",
             "Each laminar or turbulent slice has its own validation and grid-evidence gate.",
+        ),
+    ),
+    Capability(
+        name="openfoam.transient-laminar-baffled-channel",
+        maturity="experimental",
+        scope=(
+            "OpenCFD v2606 transient incompressible laminar flow through a rectangular "
+            "channel containing one wall-attached baffle."
+        ),
+        evidence=(
+            "deterministic five-block conformal hexahedral case generation",
+            "23,880-cell Mesh OK OpenCFD v2606 integration run",
+            "potentialFoam and pimpleFoam process completion",
+            "mass-balance, pressure-drop, probe, surface-report, force, and field recovery",
+        ),
+        limitations=(
+            "Hydraulic inlet Reynolds number must be below 2300.",
+            "Only one bottom-attached baffle, structured uniform sizing, and constant Newtonian properties are supported.",
+            "No physical benchmark or time-step sensitivity certificate has yet promoted this capability beyond experimental.",
         ),
     ),
     Capability(

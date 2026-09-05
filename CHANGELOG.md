@@ -10,8 +10,13 @@
   from full-field frames, plus discoverable typed result queries.
 - Validate region coverage and roles across boundaries, mesh controls, and
   reports; require providers to reject unsupported step intent during planning.
-- Add a readable transient bottom-baffle wake project as the next OpenFOAM
-  lowering target without claiming unsupported numerical execution.
+- Add an executable low-Re transient bottom-baffle project and reusable
+  `baffle-channel` project template backed by OpenCFD v2606 `blockMesh`,
+  `potentialFoam`, and `pimpleFoam`.
+- Add deterministic five-block conformal channel meshing, Reynolds
+  applicability rejection, adaptive Courant control, mass/pressure histories,
+  canonical probe/surface/force recovery, field recovery, and mesh/runtime
+  evidence.
 - Add an installed `analysis-request` schema and a public complete-step content
   fingerprint for deterministic AI/GUI planning and comparison.
 
@@ -35,6 +40,9 @@
 - Move generated OpenFOAM cases and VTK conversion data into a hidden solver
   workspace, copy compact execution evidence into the published result, and
   discard backend bulk after success unless `--keep-workspace` is requested.
+- Mark a run directory as AgentCFD-owned before external execution so an
+  interrupted solver or field export remains diagnosable and can be safely
+  replaced on the next ordinary run.
 - Add a standard `agentcae.field-bundle/0.1.0` export with XDMF/HDF5 time
   series, pickle-free NPZ arrays, canonical CFD names and units, explicit
   point/cell and axis semantics, source context, and SHA-256 artifacts.
@@ -53,6 +61,10 @@
 - Make XDMF/HDF5 the ordinary portable output and NPZ an explicit opt-in via
   `--with-npz` or `OutputRequest.portable_formats`, avoiding duplicate storage
   and time-series array stacking in visualization-only workflows.
+- Honor `FieldFrames.include_initial` during OpenFOAM conversion with
+  `foamToVTK -noZero`, preventing missing derived fields at time zero; avoid
+  duplicating native field snapshots in published evidence unless the solver
+  workspace is explicitly retained.
 - Keep NumPy, h5py, and meshio optional under the `io` extra; the mandatory
   AgentCFD core remains dependency-free and Apache-2.0.
 

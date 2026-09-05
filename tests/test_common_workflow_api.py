@@ -210,16 +210,17 @@ def test_result_queries_are_discoverable_and_check_field_association():
         result.field("fluid.velocity")
 
 
-def test_baffle_example_produces_inspectable_fail_closed_plan():
+def test_baffle_example_produces_executable_inspectable_plan():
     root = Path(__file__).parents[1] / "examples" / "channel_baffle_project"
     plan = Project(root).plan()
     assert plan["readiness"]["model_valid"] is True
-    assert plan["readiness"]["provider_compatible"] is False
-    assert plan["decisions"]["mesh_strategy"] == "intent:automatic"
-    assert plan["decisions"]["solver"] == "unresolved-provider-lowering"
+    assert plan["readiness"]["provider_compatible"] is True
+    assert plan["decisions"]["mesh_strategy"] == "intent:structured"
+    assert plan["decisions"]["solver"] == "pimpleFoam"
     assert plan["decisions"]["required_capability"] == (
-        "openfoam.transient-incompressible-internal-flow"
+        "openfoam.transient-laminar-baffled-channel"
     )
+    assert plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 23880
     assert (
         plan["decisions"]["output_plan"]["channels"]["reports"]["retention"]
         == "all compact samples"

@@ -1,5 +1,9 @@
 # AgentCFD Roadmap
 
+The phase map below remains the concise public overview. The maintained CTO
+execution roadmap, release gates, architectural decisions, and product metrics
+are in [`docs/cto-roadmap.md`](docs/cto-roadmap.md).
+
 ## Product direction
 
 AgentCFD will become a dependable and unusually usable open-source CFD platform

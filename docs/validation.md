@@ -46,6 +46,24 @@ Numerical capabilities will add, as appropriate:
 - installed-runtime and parallel reproducibility evidence;
 - documented counterexamples and unsupported regimes.
 
+## Transient baffled-channel integration evidence
+
+The first non-pipe project integration is recorded in
+`docs/openfoam-v2606-baffled-channel-smoke.json`. OpenCFD v2606 generated and
+checked a 23,880-cell five-block conformal hexahedral channel mesh, converged a
+500-iteration `potentialFoam` initialization, and completed a short
+`pimpleFoam` run with relative inlet/outlet flow imbalance of approximately
+`4.0e-10`. The project recovered pressure loss, a point probe, a surface
+pressure report, baffle force, and U/p/vorticity fields. It exported only the
+requested nonzero physical-time frames to a 0.96 MB XDMF/H5 bundle and removed
+the solver workspace.
+
+This is deliberately integration evidence, not physical validation. The
+0.02-second run does not establish a developed wake, time-step independence,
+or agreement with a benchmark. The capability remains experimental and rejects
+hydraulic inlet Reynolds number at or above 2300 until turbulent channel
+physics has its own evidence boundary.
+
 ## Grid convergence
 
 `agentcfd.verification.grid_convergence_index` implements a solver-neutral

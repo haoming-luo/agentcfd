@@ -43,8 +43,10 @@ This follows mature CFD workflow boundaries without copying a backend API:
 
 The first demonstrator is
 [`examples/channel_baffle_project`](../examples/channel_baffle_project). It
-deliberately exercises the future channel/baffle lowering contract while the
-current OpenFOAM provider remains bounded to circular pipes.
+is now the first executable non-pipe slice: a deterministic structured
+five-block mesh, low-Re transient flow, compact reports, and standard field
+output. Higher-Re turbulence and general imported geometry remain separate
+capabilities rather than silent extensions of this example.
 
 ## Output and result ergonomics
 
@@ -69,7 +71,7 @@ record:
 ```python
 print(result.available_data())
 pressure_drop = result.quantity("flow.pressure_drop")
-probe_history = result.history("wake")
+probe_history = result.history("probe.wake.fluid.velocity.x")
 velocity_field = result.field("fluid.velocity", location="point")
 ```
 
@@ -82,10 +84,10 @@ The API object is not a capability claim. At this checkpoint:
 
 - circular-pipe steady laminar and bounded RANS lowering is available through
   the existing OpenFOAM provider;
-- rectangular-channel/baffle geometry, generic mesh intent, initialization,
-  and report definitions are serializable and validated public contracts;
-- provider lowering for those new contracts is pending and fails closed during
-  `agentcfd check` / `agentcfd plan`.
+- one bottom-attached rectangular-channel baffle is executable for transient,
+  incompressible, constant-property flow with hydraulic Re below 2300;
+- arbitrary channels, imported geometry, vector surface reductions, rolling
+  restart lowering, and turbulent baffle flow remain pending and fail closed.
 
 This separation lets the product language grow coherently while every numerical
 claim remains tied to implemented lowering and evidence.

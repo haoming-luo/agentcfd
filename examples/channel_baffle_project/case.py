@@ -1,4 +1,4 @@
-"""Readable wake-flow intent; backend lowering is intentionally still gated."""
+"""Executable low-Re wall-baffle wake project."""
 
 from agentcfd import (
     Model,
@@ -30,9 +30,9 @@ def build():
         study=studies.internal_flow(steady=False),
         domain=channel,
         fluid=fluids.newtonian(
-            "water",
-            density=998.2,
-            dynamic_viscosity=1.002e-3,
+            "viscous-liquid",
+            density=1000.0,
+            dynamic_viscosity=0.05,
         ),
     ).boundaries(
         inlet=boundaries.mean_velocity_inlet(0.5),
@@ -47,24 +47,11 @@ def build():
             maximum_time_step=0.005,
             maximum_courant_number=0.5,
         ),
-        initialization=initialization.potential_flow(),
-        mesh=meshing.automatic(
-            base_size=0.02,
-            local_sizing=(meshing.refine("baffle", size=0.005),),
-            boundary_layers=(
-                meshing.layers(
-                    "walls",
-                    "baffle",
-                    count=5,
-                    first_height=0.0008,
-                    growth_rate=1.2,
-                ),
-            ),
-        ),
+        initialization=initialization.potential_flow(maximum_iterations=500),
+        mesh=meshing.structured(base_size=0.01),
         output=outputs.animation(
             every=0.01,
             maximum_frames=201,
-            restart=outputs.checkpoints(every=0.25, keep=2),
             storage_budget="1 GiB",
             reports=(
                 outputs.probe(

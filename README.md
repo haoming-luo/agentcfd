@@ -35,6 +35,11 @@ own fluid-mechanics language, providers, validation evidence, and release cycle.
 - **FEM–CFD continuity** — versioned exchange records prepare pressure, traction,
   temperature, heat flux, and mesh motion for future AgentFEM coupling.
 
+The current product and engineering sequence is maintained in the
+[CTO roadmap](docs/cto-roadmap.md): executable separated internal flow first,
+then practical imported geometry, dependable turbulent equipment flow, heat
+and steam, and only later combustion and multiphase breadth.
+
 ## First executable workflow
 
 ```python
@@ -145,6 +150,12 @@ surface reductions, and force reports. See the
 [bottom-baffle project](examples/channel_baffle_project/case.py). New intent is
 checked against provider capabilities before execution and is never silently
 ignored.
+
+```bash
+agentcfd init wake-study --template baffle-channel
+agentcfd plan wake-study --json
+agentcfd run wake-study
+```
 
 Common pipe-loss screening is available without a CFD runtime:
 

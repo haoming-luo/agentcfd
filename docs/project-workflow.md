@@ -31,7 +31,7 @@ erase user files.
 
 The solver workspace is generated from the public model. After successful
 field conversion, AgentCFD copies provider logs, case identity, mesh identity,
-and final native evidence into `output/evidence/`, then removes the generated
+and compact report evidence into `output/evidence/`, then removes the generated
 OpenFOAM time directories and temporary VTK conversion. XDMF/HDF5 is the
 ordinary portable field product; NPZ remains explicit opt-in.
 

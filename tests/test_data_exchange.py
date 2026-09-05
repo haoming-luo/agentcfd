@@ -325,6 +325,21 @@ def test_container_conversion_uses_argument_list_and_writes_log(tmp_path, monkey
     assert (case / "log.foamToVTK").read_text() == "converted\n"
 
 
+def test_field_export_honors_excluded_initial_frame(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+    _write_frame(case, 10, 2.0)
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        convert=False,
+        include_initial=False,
+    )
+
+    assert bundle.times == (10.0,)
+
+
 def test_export_rejects_nonempty_destination(tmp_path):
     case = tmp_path / "case"
     _write_frame(case, 0, 1.0)

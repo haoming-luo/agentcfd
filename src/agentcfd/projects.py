@@ -16,9 +16,15 @@ from typing import Mapping
 
 from . import boundaries, data_exchange, engineering
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
+from .geometry import CircularPipe, RectangularChannel
 from .model import Step
 from .provenance import content_fingerprint, file_sha256
-from .providers import OpenFOAMMeshControls, OpenFOAMProvider, ReferencePipeProvider
+from .providers import (
+    OpenFOAMChannelProvider,
+    OpenFOAMMeshControls,
+    OpenFOAMProvider,
+    ReferencePipeProvider,
+)
 from .results import Artifact, FieldRecord, SimulationResult
 
 
@@ -237,7 +243,7 @@ def _resolved_output_plan(
         )
 
     estimated_cells: int | None = None
-    if provider == "openfoam" and hasattr(step.model.domain, "diameter"):
+    if provider == "openfoam" and isinstance(step.model.domain, CircularPipe):
         cross = int(openfoam.get("cross_section_cells", 8))
         axial_setting = openfoam.get("axial_cells")
         axial = (
@@ -254,6 +260,31 @@ def _resolved_output_plan(
             )
         )
         estimated_cells = 5 * cross * cross * axial
+    elif (
+        provider == "openfoam"
+        and isinstance(step.model.domain, RectangularChannel)
+        and step.mesh is not None
+        and step.mesh.method == "structured"
+        and len(step.model.domain.baffles) == 1
+    ):
+        domain = step.model.domain
+        baffle = domain.baffles[0]
+        size = step.mesh.base_size
+        nx = (
+            math.ceil(baffle.x / size - 1.0e-12),
+            math.ceil(baffle.thickness / size - 1.0e-12),
+            math.ceil((domain.length - baffle.x - baffle.thickness) / size - 1.0e-12),
+        )
+        ny = (
+            math.ceil(baffle.height / size - 1.0e-12),
+            math.ceil((domain.height - baffle.height) / size - 1.0e-12),
+        )
+        nz = math.ceil(domain.width / size - 1.0e-12)
+        estimated_cells = (
+            nx[0] * (ny[0] + ny[1])
+            + nx[1] * ny[1]
+            + nx[2] * (ny[0] + ny[1])
+        ) * nz
 
     components = {
         "fluid.velocity": 3,
@@ -375,6 +406,7 @@ class Project:
         self,
         name: str,
         *,
+        step: Step | None = None,
         case_directory: Path | None = None,
         container_image: str | None = None,
     ):
@@ -384,6 +416,11 @@ class Project:
             raise ProjectError(f"Unknown provider {name!r}.")
         settings = self._openfoam_settings()
         selected_image = container_image or settings.get("container_image")
+        if step is not None and isinstance(step.model.domain, RectangularChannel):
+            return OpenFOAMChannelProvider(
+                case_directory=case_directory,
+                container_image=str(selected_image) if selected_image else None,
+            )
         mesh = OpenFOAMMeshControls(
             cross_section_cells=settings.get("cross_section_cells", 8),
             axial_cells=settings.get("axial_cells"),
@@ -423,17 +460,18 @@ class Project:
             )
         selected = self._provider(
             selected_name,
+            step=step,
             container_image=container_image,
         )
         descriptor = selected.descriptor()
         study = step.model.study
         if selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
+        elif isinstance(step.model.domain, RectangularChannel):
+            required_capability = "openfoam.transient-laminar-baffled-channel"
         else:
             required_capability = (
-                "openfoam.transient-incompressible-internal-flow"
-                if not study.steady
-                else "openfoam.steady-laminar-circular-pipe"
+                "openfoam.steady-laminar-circular-pipe"
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
             )
@@ -555,6 +593,8 @@ class Project:
             "solver": (
                 "unresolved-provider-lowering"
                 if not provider_compatible
+                else "pimpleFoam"
+                if selected_name == "openfoam" and not study.steady
                 else "simpleFoam"
                 if selected_name == "openfoam"
                 else "Hagen-Poiseuille"
@@ -678,14 +718,39 @@ class Project:
         run_directory.mkdir(parents=True, exist_ok=not campaign_mode)
         plan_path = run_directory / "plan.json"
         plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        # Establish ownership before external execution. If a solver or exporter
+        # raises, the next replace run can safely recover this AgentCFD-owned
+        # directory instead of forcing the user to delete it manually.
+        (run_directory / "run.json").write_text(
+            json.dumps(
+                {
+                    "schema": "agentcfd.project-run/0.1",
+                    "run_id": run_id,
+                    "mode": "campaign" if campaign_mode else "replace",
+                    "directory": str(run_directory),
+                    "status": "preparing",
+                    "plan": str(plan_path),
+                    "plan_sha256": plan["plan_sha256"],
+                    "completed_at": None,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         workspace_root = self.root / ".agentcfd" / "work" / run_id
         case_directory = workspace_root / "openfoam"
         selected = self._provider(
             selected_name,
+            step=step,
             case_directory=case_directory if selected_name == "openfoam" else None,
             container_image=container_image,
         )
         result = selected.run(step)
+        retained_workspace = keep_workspace or bool(
+            self._openfoam_settings().get("keep_workspace", False)
+        )
         bundle = None
         if selected_name == "openfoam" and result.status == "completed" and bool(
             self._openfoam_settings().get("export_fields", True)
@@ -716,6 +781,7 @@ class Project:
                 formats=step.output.portable_formats,
                 compression=step.output.storage.compression,
                 maximum_bytes=step.output.storage.maximum_bytes,
+                include_initial=step.output.frames.include_initial,
             )
             portable_artifacts = [
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),
@@ -744,9 +810,17 @@ class Project:
                     description=record["description"],
                     processing={"operation": record["processing"]},
                 )
-        retained_workspace = keep_workspace or bool(
-            self._openfoam_settings().get("keep_workspace", False)
-        )
+            if not retained_workspace:
+                result.fields = {
+                    name: field
+                    for name, field in result.fields.items()
+                    if field.representation != "provider-native"
+                }
+                result.artifacts = {
+                    name: artifact
+                    for name, artifact in result.artifacts.items()
+                    if not name.startswith("field_")
+                }
         if selected_name == "openfoam":
             evidence_directory = run_directory / "evidence"
             copied_paths: dict[str, Path] = {}
@@ -830,19 +904,74 @@ def build():
 '''
 
 
+_BAFFLE_CHANNEL_TEMPLATE = '''"""Low-Re transient wake behind a bottom-attached baffle."""
+
+from agentcfd import Model, boundaries, fluids, geometry, initialization, meshing, outputs, procedures, studies
+
+
+def build():
+    channel = geometry.rectangular_channel(length=1.2, height=0.20, width=0.10).with_baffle(
+        name="baffle", x=0.35, height=0.12, thickness=0.01, attached_to="bottom"
+    )
+    model = Model(
+        name="bottom-baffle-wake",
+        study=studies.internal_flow(steady=False),
+        domain=channel,
+        fluid=fluids.newtonian("viscous-liquid", density=1000.0, dynamic_viscosity=0.05),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.5),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+        baffle=boundaries.no_slip_wall(),
+    )
+    return model.step(
+        procedure=procedures.transient(
+            end_time=2.0,
+            initial_time_step=0.001,
+            maximum_time_step=0.005,
+            maximum_courant_number=0.5,
+        ),
+        initialization=initialization.potential_flow(maximum_iterations=500),
+        mesh=meshing.structured(base_size=0.01),
+        output=outputs.animation(
+            every=0.01,
+            maximum_frames=201,
+            storage_budget="1 GiB",
+            reports=(
+                outputs.probe("near-wake", at=(0.50, 0.05, 0.05)),
+                outputs.surface_report(
+                    "outlet-pressure", region="outlet", field="fluid.pressure"
+                ),
+                outputs.force_report("baffle-drag", regions=("baffle",)),
+            ),
+        ),
+    )
+'''
+
+
 def init_project(
     directory: str | Path,
     *,
     provider: str = "reference",
+    template: str = "industrial-pipe",
 ) -> Project:
-    """Create a complete, editable industrial-pipe project without overwriting."""
+    """Create a complete editable project without overwriting user data."""
 
     if provider not in {"reference", "openfoam"}:
         raise ValueError("Project provider must be 'reference' or 'openfoam'.")
+    if template not in {"industrial-pipe", "baffle-channel"}:
+        raise ValueError("Project template must be 'industrial-pipe' or 'baffle-channel'.")
+    if template == "baffle-channel" and provider != "openfoam":
+        raise ValueError("The baffle-channel template requires provider='openfoam'.")
     root = Path(directory)
     if root.exists() and any(root.iterdir()):
         raise FileExistsError(f"Project directory is not empty: {root}")
     root.mkdir(parents=True, exist_ok=True)
+    pipe_mesh_settings = (
+        "cross_section_cells = 8\naxial_cells = 120\n"
+        if template == "industrial-pipe"
+        else ""
+    )
     manifest = f'''schema = "agentcfd.project/0.1"
 entrypoint = "case.py"
 factory = "build"
@@ -852,15 +981,16 @@ run_mode = "replace"
 
 [openfoam]
 container_image = "opencfd/openfoam-run:2606"
-cross_section_cells = 8
-axial_cells = 120
-export_fields = true
+{pipe_mesh_settings}export_fields = true
 keep_workspace = false
 '''
     (root / "agentcfd.toml").write_text(manifest, encoding="utf-8")
-    (root / "case.py").write_text(_CASE_TEMPLATE, encoding="utf-8")
+    (root / "case.py").write_text(
+        _BAFFLE_CHANNEL_TEMPLATE if template == "baffle-channel" else _CASE_TEMPLATE,
+        encoding="utf-8",
+    )
     (root / "README.md").write_text(
-        "# AgentCFD industrial pipe\n\n"
+        f"# AgentCFD {template}\n\n"
         "Edit `case.py`, then use `agentcfd check`, `agentcfd plan`, "
         "`agentcfd run`, and `agentcfd inspect`. Ordinary runs replace the managed "
         "`output/` directory. Use `agentcfd run . --campaign` to preserve an "

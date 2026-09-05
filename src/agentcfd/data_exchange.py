@@ -184,6 +184,7 @@ def convert_openfoam_fields(
     *,
     container_image: str | None = None,
     timeout_seconds: float = 3600.0,
+    include_initial: bool = True,
 ) -> tuple[Path, ...]:
     """Run foamToVTK without a shell and return the resulting internal series."""
 
@@ -226,6 +227,8 @@ def convert_openfoam_fields(
                 "Field export requires foamToVTK on PATH or --container-image."
             )
         argv = [converter, "-case", str(root), "-no-boundary"]
+    if not include_initial:
+        argv.append("-noZero")
     log = root / "log.foamToVTK"
     try:
         completed = subprocess.run(
@@ -830,8 +833,9 @@ def export_openfoam_case(
     formats: Iterable[str] = ("xdmf",),
     compression: str = "gzip",
     maximum_bytes: int | None = None,
+    include_initial: bool = True,
 ) -> FieldBundle:
-    """Export all OpenFOAM time directories to the standard field bundle."""
+    """Export selected OpenFOAM time directories to the standard field bundle."""
 
     case = Path(case_directory)
     files = (
@@ -839,10 +843,15 @@ def export_openfoam_case(
             case,
             container_image=container_image,
             timeout_seconds=timeout_seconds,
+            include_initial=include_initial,
         )
         if convert
         else openfoam_vtu_series(case)
     )
+    if not include_initial:
+        files = tuple(path for path in files if not math.isclose(_time_from_vtu(path), 0.0))
+        if not files:
+            raise ValueError("No non-initial OpenFOAM field frames are available for export.")
     selected_density = density if density is not None else _density_from_result(case)
     return export_vtu_series(
         files,

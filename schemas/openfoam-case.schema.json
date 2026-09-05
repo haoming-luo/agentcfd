@@ -18,6 +18,7 @@
       "enum": [
         "openfoam.steady-laminar-circular-pipe",
         "openfoam.steady-rans-smooth-circular-pipe",
+        "openfoam.transient-laminar-baffled-channel",
         "openfoam.periodic-k-omega-sst-circular-pipe-precursor"
       ]
     },

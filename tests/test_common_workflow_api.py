@@ -188,10 +188,15 @@ def test_result_queries_are_discoverable_and_check_field_association():
             )
         },
         fields={
-            "fluid.velocity": FieldRecord(
+            "fluid.velocity.point": FieldRecord(
                 unit="m/s",
                 location="point",
                 artifact="fields.xdmf",
+            ),
+            "fluid.velocity.cell": FieldRecord(
+                unit="m/s",
+                location="cell",
+                artifact="native-fields.h5",
             )
         },
         checks=(Check("complete", True, kind="runtime"),),
@@ -200,8 +205,9 @@ def test_result_queries_are_discoverable_and_check_field_association():
     assert result.history("wake.velocity").values[-1] == 0.2
     assert result.field("fluid.velocity", location="point").artifact == "fields.xdmf"
     assert result.available_data()["quantities"] == ("flow.pressure_drop",)
-    with pytest.raises(ValueError, match="not 'cell'"):
-        result.field("fluid.velocity", location="cell")
+    assert result.field("fluid.velocity", location="cell").artifact == "native-fields.h5"
+    with pytest.raises(ValueError, match="multiple associations"):
+        result.field("fluid.velocity")
 
 
 def test_baffle_example_produces_inspectable_fail_closed_plan():

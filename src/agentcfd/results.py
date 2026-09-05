@@ -323,11 +323,26 @@ class SimulationResult:
     def field(self, name: str, *, location: str | None = None) -> FieldRecord:
         """Return one external field record, optionally checking its association."""
 
-        try:
-            selected = self.fields[name]
-        except KeyError as error:
+        selected = self.fields.get(name)
+        if selected is None and location is not None:
+            selected = self.fields.get(f"{name}.{location}")
+        if selected is None and location is None:
+            candidates = [
+                record
+                for key, record in self.fields.items()
+                if key.startswith(f"{name}.")
+            ]
+            if len(candidates) == 1:
+                selected = candidates[0]
+            elif len(candidates) > 1:
+                associations = ", ".join(sorted(record.location for record in candidates))
+                raise ValueError(
+                    f"Field {name!r} has multiple associations ({associations}); "
+                    "select location='point' or location='cell'."
+                )
+        if selected is None:
             available = ", ".join(sorted(self.fields)) or "none"
-            raise KeyError(f"Unknown result field {name!r}; available: {available}.") from error
+            raise KeyError(f"Unknown result field {name!r}; available: {available}.")
         if location is not None and selected.location != location:
             raise ValueError(
                 f"Field {name!r} is associated with {selected.location!r}, not {location!r}."

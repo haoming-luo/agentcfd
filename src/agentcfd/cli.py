@@ -37,6 +37,7 @@ from .verification import (
     assess_turbulent_wall_study,
     assess_validation_point,
     grid_convergence_from_result_records,
+    time_step_sensitivity_from_result_records,
 )
 
 
@@ -540,6 +541,27 @@ def _grid_convergence_payload(
         "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
         **study.to_dict(),
         "acceptance": assess_grid_convergence(study),
+    }
+
+
+def _time_step_sensitivity_payload(
+    paths: list[Path],
+    *,
+    quantity: str,
+    maximum_relative_change: float,
+) -> dict[str, object]:
+    records = [read_result_record(path) for path in paths]
+    study = time_step_sensitivity_from_result_records(
+        records,
+        quantity=quantity,
+        maximum_relative_change=maximum_relative_change,
+    )
+    return {
+        **study.to_dict(),
+        "quantity": quantity,
+        "sources": [
+            {"path": str(path), "sha256": file_sha256(path)} for path in paths
+        ],
     }
 
 
@@ -1575,6 +1597,19 @@ def build_parser() -> argparse.ArgumentParser:
     grid.add_argument("results", nargs=3, type=Path)
     grid.add_argument("--quantity", required=True)
     grid.add_argument("--json", action="store_true", dest="as_json")
+    time_step = verify_subparsers.add_parser(
+        "time-step-sensitivity",
+        help="Compare two otherwise matched transient result records.",
+    )
+    time_step.add_argument("results", nargs=2, type=Path)
+    time_step.add_argument("--quantity", required=True)
+    time_step.add_argument(
+        "--maximum-relative-change",
+        type=float,
+        default=0.02,
+    )
+    time_step.add_argument("--output", type=Path)
+    time_step.add_argument("--json", action="store_true", dest="as_json")
     wall_study = verify_subparsers.add_parser(
         "turbulent-wall-study",
         help="Assess fixed-wall-cell precursor results without misusing GCI.",
@@ -2310,6 +2345,26 @@ def main(argv: list[str] | None = None) -> int:
                 f"fine relative GCI {relative_text}"
             )
         return 0 if payload["acceptance"]["accepted"] else 3
+    if args.command == "verify" and args.verification == "time-step-sensitivity":
+        payload = _time_step_sensitivity_payload(
+            args.results,
+            quantity=args.quantity,
+            maximum_relative_change=args.maximum_relative_change,
+        )
+        if args.output is not None:
+            _write_json_atomic(args.output, payload)
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            relative = payload["relative_change"]
+            relative_text = "undefined" if relative is None else f"{relative:.6g}"
+            print(
+                f"Time-step sensitivity {args.quantity} | relative change "
+                f"{relative_text} | accepted {str(payload['accepted']).lower()}"
+            )
+            if args.output is not None:
+                print(args.output)
+        return 0 if payload["accepted"] else 3
     if args.command == "verify" and args.verification == "turbulent-wall-study":
         payload = _turbulent_wall_study_payload(args.results)
         if args.output is not None:

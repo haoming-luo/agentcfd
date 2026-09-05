@@ -983,6 +983,53 @@ def test_cli_validation_point_uses_completed_unaccepted_status(capsys):
     assert rejected["accepted"] is False
 
 
+def test_cli_writes_content_addressed_time_step_sensitivity(tmp_path, capsys):
+    paths = []
+    for label, maximum, value in (("coarse", 0.02, 101.0), ("fine", 0.01, 100.0)):
+        path = tmp_path / f"{label}.json"
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="synthetic",
+            quantities={"report.drag": Quantity(value, "N")},
+            checks=(Check("synthetic-convergence", True, kind="verification"),),
+            provenance={"model_sha256": "a" * 64},
+            scientific_inputs={
+                "model": {"name": "matched"},
+                "procedure": {
+                    "type": "transient",
+                    "end_time": 1.0,
+                    "initial_time_step": maximum / 5,
+                    "maximum_time_step": maximum,
+                    "maximum_courant_number": 0.5,
+                },
+                "mesh": {"base_size": 0.01},
+                "output": {"histories": ["report.drag"]},
+            },
+        ).write(path)
+        paths.append(path)
+    output = tmp_path / "sensitivity.json"
+
+    assert main([
+        "verify",
+        "time-step-sensitivity",
+        *(str(path) for path in paths),
+        "--quantity",
+        "report.drag",
+        "--output",
+        str(output),
+        "--json",
+    ]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["relative_change"] == pytest.approx(0.01)
+    assert payload["claim"] == "pairwise-sensitivity-only"
+    assert all(len(source["sha256"]) == 64 for source in payload["sources"])
+    assert json.loads(output.read_text()) == payload
+    jsonschema.Draft202012Validator(
+        contracts.load("time-step-sensitivity.schema.json")
+    ).validate(payload)
+
+
 def test_cli_rejects_grid_study_above_uncertainty_limit(tmp_path, capsys):
     paths = []
     for index, (cells, value) in enumerate(((64, 3.56), (512, 1.64), (4096, 1.16))):

@@ -178,6 +178,17 @@ record deliberately calls itself pairwise sensitivity: two time-step levels
 can measure change, but cannot establish observed temporal order or numerical
 uncertainty.
 
+For agents and CI, the same contract is available without importing Python:
+
+```bash
+agentcfd verify time-step-sensitivity coarse/result.json fine/result.json \
+  --quantity report.baffle-drag --maximum-relative-change 0.02 \
+  --output time-step-sensitivity.json --json
+```
+
+Exit status is `0` inside the declared limit and `3` for a completed but
+unaccepted comparison. The evidence file includes both source paths and hashes.
+
 Numeric HDF5 datasets use chunked gzip compression by default. The field-bundle
 manifest records the conservative preflight estimate, uncompressed bytes per
 frame, selected compression, budget, and actual portable bytes. See

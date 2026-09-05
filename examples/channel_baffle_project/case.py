@@ -53,6 +53,7 @@ def build():
             every=0.01,
             maximum_frames=201,
             storage_budget="1 GiB",
+            restart=outputs.checkpoints(every=0.5, keep=2),
             reports=(
                 outputs.probe(
                     "near-wake",

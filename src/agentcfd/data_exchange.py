@@ -834,8 +834,20 @@ def export_openfoam_case(
     compression: str = "gzip",
     maximum_bytes: int | None = None,
     include_initial: bool = True,
+    time_interval: float | None = None,
+    latest_only: bool = False,
 ) -> FieldBundle:
-    """Export selected OpenFOAM time directories to the standard field bundle."""
+    """Export selected OpenFOAM times to the standard field bundle.
+
+    ``time_interval`` separates public field frames from denser native time
+    directories written for restart. ``latest_only`` implements final-state
+    output without retaining every native checkpoint in XDMF/HDF5.
+    """
+
+    if time_interval is not None:
+        time_interval = float(time_interval)
+        if not math.isfinite(time_interval) or time_interval <= 0.0:
+            raise ValueError("OpenFOAM export time_interval must be positive and finite.")
 
     case = Path(case_directory)
     files = (
@@ -852,6 +864,22 @@ def export_openfoam_case(
         files = tuple(path for path in files if not math.isclose(_time_from_vtu(path), 0.0))
         if not files:
             raise ValueError("No non-initial OpenFOAM field frames are available for export.")
+    if time_interval is not None:
+        files = tuple(
+            path
+            for path in files
+            if math.isclose(_time_from_vtu(path), 0.0, rel_tol=0.0, abs_tol=1.0e-12)
+            or math.isclose(
+                _time_from_vtu(path) / time_interval,
+                round(_time_from_vtu(path) / time_interval),
+                rel_tol=0.0,
+                abs_tol=1.0e-8,
+            )
+        )
+        if not files:
+            raise ValueError("No OpenFOAM times match the requested field-frame interval.")
+    if latest_only:
+        files = (max(files, key=_time_from_vtu),)
     selected_density = density if density is not None else _density_from_result(case)
     return export_vtu_series(
         files,

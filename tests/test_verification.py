@@ -6,6 +6,7 @@ from agentcfd.verification import (
     GridConvergencePolicy,
     GridConvergenceResult,
     GridSolution,
+    TimeStepSolution,
     assess_turbulent_model_study,
     assess_turbulent_model_sweep,
     assess_turbulent_precursor_grid_study,
@@ -15,6 +16,8 @@ from agentcfd.verification import (
     assess_grid_convergence,
     grid_convergence_from_result_records,
     grid_convergence_index,
+    time_step_sensitivity,
+    time_step_sensitivity_from_result_records,
 )
 
 
@@ -87,6 +90,60 @@ def test_grid_convergence_recovers_second_order_sequence():
     assert result.fine_grid_absolute_gci == pytest.approx(0.00625)
     assert result.fine_grid_relative_gci == pytest.approx(0.00625 / 1.005)
     assert result.asymptotic_ratio == pytest.approx(1.0)
+
+
+def test_two_level_time_step_sensitivity_is_explicitly_not_uncertainty():
+    result = time_step_sensitivity(
+        (
+            TimeStepSolution(0.01, 101.0, "coarse"),
+            TimeStepSolution(0.005, 100.0, "fine"),
+        ),
+        maximum_relative_change=0.02,
+    )
+
+    assert result.refinement_ratio == 2.0
+    assert result.relative_change == pytest.approx(0.01)
+    assert result.accepted is True
+    assert result.to_dict()["claim"] == "pairwise-sensitivity-only"
+    assert "cannot estimate" in result.to_dict()["limitations"][0]
+
+
+def test_time_step_sensitivity_reads_only_matched_transient_results():
+    def record(maximum_time_step, value):
+        return {
+            "status": "completed",
+            "converged": True,
+            "provenance": {"model_sha256": "a" * 64},
+            "quantities": {"report.drag": {"value": value, "unit": "N"}},
+            "scientific_inputs": {
+                "record": {
+                    "schema": "agentcfd.analysis-request/0.1",
+                    "model": {"name": "matched"},
+                    "procedure": {
+                        "type": "transient",
+                        "end_time": 1.0,
+                        "initial_time_step": maximum_time_step / 5,
+                        "maximum_time_step": maximum_time_step,
+                        "maximum_courant_number": 0.5,
+                    },
+                    "mesh": {"base_size": 0.01},
+                    "output": {"histories": ["report.drag"]},
+                }
+            },
+        }
+
+    result = time_step_sensitivity_from_result_records(
+        (record(0.01, 101.0), record(0.005, 100.0)),
+        quantity="report.drag",
+    )
+    assert result.accepted is True
+
+    changed = record(0.005, 100.0)
+    changed["scientific_inputs"]["record"]["procedure"]["end_time"] = 2.0
+    with pytest.raises(ValueError, match="must match"):
+        time_step_sensitivity_from_result_records(
+            (record(0.01, 101.0), changed), quantity="report.drag"
+        )
 
 
 def test_grid_convergence_promotion_policy_is_explicit():

@@ -109,6 +109,13 @@ Promotion gate: deterministic preparation, `Mesh OK`, bounded mass imbalance,
 declared convergence/stability evidence, complete requested outputs, a
 published field animation, and an installed-wheel end-to-end smoke test.
 
+Current M1 implementation publishes the rolling restart archive after successful
+completion, verifies its result trust, model identity, and every member before
+resume, and keeps public XDMF frames independent from checkpoint cadence.
+Crash-safe periodic publication remains an M3 long-run reliability item. A
+two-level temporal sensitivity API is available now; the formal matched study
+is still required before M1 numerical promotion.
+
 ### M2 — practical geometry and meshing
 
 - external STL/OBJ and common neutral CAD/mesh ingestion behind optional extras;

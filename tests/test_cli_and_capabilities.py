@@ -91,6 +91,7 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "turbulent-precursor-grid-study.schema.json" in contracts.available()
     assert "turbulent-model-sweep.schema.json" in contracts.available()
     assert "openfoam-turbulent-model-sweep.schema.json" in contracts.available()
+    assert "time-step-sensitivity.schema.json" in contracts.available()
     result_schema = contracts.load("simulation-result.schema.json")
     assert result_schema["$schema"].endswith("2020-12/schema")
     assert contracts.path("simulation-result.schema.json").is_file()

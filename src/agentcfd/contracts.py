@@ -29,6 +29,7 @@ _SCHEMAS = (
     "simulation-result.schema.json",
     "solution-plan.schema.json",
     "thermophysical-state.schema.json",
+    "time-step-sensitivity.schema.json",
     "turbulent-precursor-grid-study.schema.json",
     "turbulent-wall-function-study.schema.json",
     "turbulent-model-study.schema.json",

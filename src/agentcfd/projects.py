@@ -782,6 +782,12 @@ class Project:
                 compression=step.output.storage.compression,
                 maximum_bytes=step.output.storage.maximum_bytes,
                 include_initial=step.output.frames.include_initial,
+                time_interval=(
+                    step.output.frames.every
+                    if step.output.frames.mode == "interval"
+                    else None
+                ),
+                latest_only=step.output.frames.mode == "final",
             )
             portable_artifacts = [
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),
@@ -832,6 +838,8 @@ class Project:
                     continue
                 if name.startswith("log_"):
                     target_name = f"{name.removeprefix('log_')}.log"
+                elif name == "restart_bundle":
+                    target_name = "restart.zip"
                 elif source_path.suffix == ".json":
                     target_name = f"{name}.json"
                 else:

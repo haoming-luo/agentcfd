@@ -86,8 +86,10 @@ The API object is not a capability claim. At this checkpoint:
   the existing OpenFOAM provider;
 - one bottom-attached rectangular-channel baffle is executable for transient,
   incompressible, constant-property flow with hydraulic Re below 2300;
-- arbitrary channels, imported geometry, vector surface reductions, rolling
-  restart lowering, and turbulent baffle flow remain pending and fail closed.
+- arbitrary channels, imported geometry, vector surface reductions, crash-safe
+  in-run checkpoint publication, and turbulent baffle flow remain pending and
+  fail closed. Completed baffled-channel runs publish a verified rolling ZIP
+  and can resume from `initialization.previous_result(...)`.
 
 This separation lets the product language grow coherently while every numerical
 claim remains tied to implemented lowering and evidence.

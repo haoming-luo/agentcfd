@@ -105,8 +105,13 @@ Implemented now:
 - plan-time frame and peak-storage guards;
 - export-time selected-array budget enforcement;
 - chunked HDF5 compression and storage provenance;
-- binary, compressed OpenFOAM native output for generated pipe cases.
+- binary OpenFOAM native output for generated cases;
+- separated baffled-channel XDMF frame selection and content-addressed rolling
+  restart ZIPs, with trust/model/member verification before continuation.
 
-Next provider milestones are streaming frame conversion and rolling cleanup,
-then an in-situ extraction adapter. Those are execution optimizations, not new
-user concepts; existing `case.py` files keep the same API.
+The current restart ZIP is published after a successful solve and retains only
+the declared final `keep` checkpoints. It supports controlled continuation but
+does not claim crash-safe mid-run archival. Next provider milestones are
+streaming frame conversion, crash-safe checkpoint publication, and then an
+in-situ extraction adapter. Those are execution optimizations, not new user
+concepts; existing `case.py` files keep the same API.

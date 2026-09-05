@@ -22,10 +22,11 @@
     },
     "model": {
       "type": "object",
-      "required": ["name", "sha256", "summary", "reynolds_number"],
+      "required": ["name", "sha256", "analysis_sha256", "summary", "reynolds_number"],
       "properties": {
         "name": {"type": "string"},
         "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "analysis_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
         "summary": {"type": "object"},
         "reynolds_number": {"type": ["number", "null"]}
       },
@@ -34,13 +35,16 @@
     "decisions": {
       "type": "object",
       "required": [
-        "study", "procedure", "outputs", "provider", "required_capability",
+        "study", "procedure", "outputs", "initialization", "mesh_intent",
+        "provider", "required_capability",
         "mesh_strategy", "solver", "portable_field_bundle", "portable_formats"
       ],
       "properties": {
         "study": {"type": "object"},
         "procedure": {"type": "object"},
         "outputs": {"type": "object"},
+        "initialization": {"type": ["object", "null"]},
+        "mesh_intent": {"type": ["object", "null"]},
         "provider": {"type": "object"},
         "required_capability": {"type": "string"},
         "mesh_strategy": {"type": "string"},

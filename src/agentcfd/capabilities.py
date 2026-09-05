@@ -26,7 +26,25 @@ _CAPABILITIES = (
         maturity="release",
         scope="Typed study, domain, fluid, boundary, procedure, output, and result lifecycle.",
         evidence=("public API tests", "JSON round-trip tests"),
-        limitations=("The public geometry catalog is still limited to circular pipes.",),
+        limitations=("Provider support remains narrower than the solver-neutral public vocabulary.",),
+    ),
+    Capability(
+        name="workflow.common-cfd-intent",
+        maturity="experimental",
+        scope=(
+            "Named circular-pipe and rectangular-channel regions, attached baffles, "
+            "role-checked boundaries, initialization, mesh intent, compact reports, "
+            "and typed result discovery."
+        ),
+        evidence=(
+            "common-workflow public API tests",
+            "inspectable bottom-baffle project plan",
+            "provider fail-closed compatibility tests",
+        ),
+        limitations=(
+            "The current OpenFOAM provider lowers only its bounded steady circular-pipe slices.",
+            "Channel/baffle meshing, transient solving, and generic report lowering are pending.",
+        ),
     ),
     Capability(
         name="workflow.project-lifecycle",

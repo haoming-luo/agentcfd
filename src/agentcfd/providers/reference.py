@@ -5,6 +5,7 @@ from __future__ import annotations
 from .. import boundaries, engineering
 from .._version import __version__
 from ..errors import UnsupportedCaseError
+from ..geometry import CircularPipe
 from ..results import Check, History, Quantity, SimulationResult
 from .base import ProviderDescriptor
 
@@ -22,13 +23,46 @@ class ReferencePipeProvider:
             capabilities=("reference.hagen-poiseuille",),
         )
 
-    def run(self, step) -> SimulationResult:
+    def validate(self, step) -> None:
         model = step.model
         study = model.study
+        if not isinstance(model.domain, CircularPipe):
+            raise UnsupportedCaseError(
+                "The reference provider supports circular-pipe geometry only."
+            )
         if not study.steady or study.compressible or study.energy or study.reacting or not study.laminar:
             raise UnsupportedCaseError(
                 "The reference provider supports steady, incompressible, isothermal laminar internal flow only."
             )
+        if step.initialization is not None or step.mesh is not None:
+            raise UnsupportedCaseError(
+                "The analytical reference provider does not consume initialization or mesh intent."
+            )
+        if step.output.reports:
+            raise UnsupportedCaseError(
+                "The analytical reference provider does not yet evaluate requested reports."
+            )
+        inlets = [
+            value
+            for value in model.boundary_conditions.values()
+            if isinstance(
+                value,
+                (
+                    boundaries.MassFlowInlet,
+                    boundaries.MeanVelocityInlet,
+                    boundaries.FullyDevelopedVelocityInlet,
+                ),
+            )
+        ]
+        if len(inlets) != 1:
+            raise UnsupportedCaseError(
+                "The reference provider requires one mass-flow or velocity inlet."
+            )
+
+    def run(self, step) -> SimulationResult:
+        model = step.model
+        study = model.study
+        self.validate(step)
 
         inlet = next(
             value

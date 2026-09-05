@@ -24,6 +24,12 @@ AgentFEM exchange plus pickle-free NPZ for learned workflows, with canonical
 names, units, association, axis semantics, source identity, and hashes. These
 are the product backbone; numerical benchmarks remain evidence underneath it.
 
+The common-workflow contract now represents named domain regions, rectangular
+channels and attached baffles, role-checked boundaries, initialization, mesh
+intent, probes, surface reports, force reports, and typed result discovery.
+Provider lowering remains capability-gated: the next product slice is the
+transient bottom-baffle channel, not another round of smooth-pipe tuning.
+
 - stabilize the public engineering vocabulary and versioned model/result schemas;
 - release mesh import, named regions, boundary identity, and mesh-quality audits;
 - lower one bounded incompressible laminar workflow to a real numerical provider;

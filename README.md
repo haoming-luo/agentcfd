@@ -137,6 +137,15 @@ output = outputs.animation(
 storage before solving. XDMF/H5 numeric datasets are chunked and compressed by
 default; NPZ remains explicit opt-in.
 
+The backend-neutral workflow API also includes named regions, short rectangular
+channels with wall-attached baffles, pressure and mass-flow boundary variants,
+uniform/potential/previous-result initialization, mesh intent, compact probes,
+surface reductions, and force reports. See the
+[common workflow API](docs/common-workflow-api.md) and the readable
+[bottom-baffle project](examples/channel_baffle_project/case.py). New intent is
+checked against provider capabilities before execution and is never silently
+ignored.
+
 Common pipe-loss screening is available without a CFD runtime:
 
 ```bash

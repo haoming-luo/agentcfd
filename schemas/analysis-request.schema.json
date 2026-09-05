@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/analysis-request.schema.json",
+  "title": "AgentCFD solver-neutral analysis request 0.1",
+  "type": "object",
+  "required": ["schema", "model", "procedure", "output"],
+  "properties": {
+    "schema": {"const": "agentcfd.analysis-request/0.1"},
+    "model": {
+      "type": "object",
+      "required": ["schema", "name", "study", "domain", "fluid", "boundaries", "metadata"]
+    },
+    "procedure": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "relative_tolerance", "maximum_iterations"],
+          "properties": {"type": {"const": "steady"}}
+        },
+        {
+          "type": "object",
+          "required": [
+            "type", "end_time", "initial_time_step", "maximum_time_step",
+            "maximum_courant_number", "pressure_velocity_correctors"
+          ],
+          "properties": {"type": {"const": "transient"}}
+        }
+      ]
+    },
+    "initialization": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "velocity", "gauge_pressure", "temperature"],
+          "properties": {"type": {"const": "uniform"}}
+        },
+        {
+          "type": "object",
+          "required": ["type", "maximum_iterations"],
+          "properties": {"type": {"const": "potential-flow"}}
+        },
+        {
+          "type": "object",
+          "required": ["type", "result", "minimum_trust"],
+          "properties": {"type": {"const": "previous-result"}}
+        }
+      ]
+    },
+    "mesh": {
+      "type": "object",
+      "required": [
+        "method", "base_size", "growth_rate", "local_sizing",
+        "boundary_layers", "quality"
+      ],
+      "properties": {
+        "method": {"enum": ["automatic", "structured"]},
+        "base_size": {"type": "number", "exclusiveMinimum": 0},
+        "growth_rate": {"type": "number", "minimum": 1},
+        "local_sizing": {"type": "array"},
+        "boundary_layers": {"type": "array"},
+        "quality": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "output": {
+      "type": "object",
+      "required": [
+        "fields", "histories", "portable_profile", "portable_formats",
+        "frames", "checkpoints", "storage", "reports"
+      ],
+      "properties": {
+        "fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "histories": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "portable_profile": {"enum": ["visualization", "native", "both"]},
+        "portable_formats": {
+          "type": "array",
+          "items": {"enum": ["xdmf", "npz"]},
+          "uniqueItems": true,
+          "contains": {"const": "xdmf"}
+        },
+        "frames": {"type": "object"},
+        "checkpoints": {"type": "object"},
+        "storage": {"type": "object"},
+        "reports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "name", "every"],
+            "properties": {
+              "type": {"enum": ["point-probe", "surface-report", "force-report"]},
+              "name": {"type": "string", "minLength": 1},
+              "every": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -32,6 +32,15 @@ def test_machine_catalogs_validate_against_installed_contracts():
                 ).to_dict(),
             },
         ),
+        (
+            "time-step-sensitivity.schema.json",
+            verification.time_step_sensitivity(
+                (
+                    verification.TimeStepSolution(0.02, 101.0),
+                    verification.TimeStepSolution(0.01, 100.0),
+                )
+            ).to_dict(),
+        ),
     ):
         jsonschema.Draft202012Validator(contracts.load(schema_name)).validate(payload)
 

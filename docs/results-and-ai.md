@@ -143,9 +143,11 @@ presenting cell and point copies as peers to every user:
 
 The CLI defaults to `visualization`. A project takes its canonical field list
 and profile from `OutputRequest`; `outputs.standard()` therefore publishes only
-point velocity and physical pressure when density is known. Native solver
-restart files remain in the OpenFOAM case regardless of the portable profile,
-so reducing presentation noise does not discard the authoritative solution.
+point velocity and physical pressure when density is known. For the baffled
+channel workflow, native solver restart state is repacked into the
+content-addressed `evidence/restart.zip` independently of the portable profile.
+The disposable OpenFOAM workspace can therefore be removed without discarding
+the declared rolling continuation state.
 
 Use repeated canonical selectors when a workflow needs a smaller set:
 
@@ -169,6 +171,13 @@ restart intent; `outputs.storage(...)` declares a fail-closed byte budget and
 HDF5 compression. `agentcfd plan` reports the resolved channels and estimated
 temporary peak before execution.
 
+Two completed, otherwise matched transient results can be screened with
+`verification.time_step_sensitivity(...)` or
+`verification.time_step_sensitivity_from_result_records(...)`. The returned
+record deliberately calls itself pairwise sensitivity: two time-step levels
+can measure change, but cannot establish observed temporal order or numerical
+uncertainty.
+
 Numeric HDF5 datasets use chunked gzip compression by default. The field-bundle
 manifest records the conservative preflight estimate, uncompressed bytes per
 frame, selected compression, budget, and actual portable bytes. See
@@ -176,6 +185,7 @@ frame, selected compression, budget, and actual portable bytes. See
 
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,
 `schemas/result-exchange.schema.json`, `schemas/scientific-sample.schema.json`,
-and `schemas/field-bundle.schema.json`.
+`schemas/field-bundle.schema.json`, and
+`schemas/time-step-sensitivity.schema.json`.
 Release wheels also install them under `share/agentcfd/schemas` in the active
 Python environment so non-Python consumers can discover the same contracts.

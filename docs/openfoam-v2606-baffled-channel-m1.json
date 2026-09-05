@@ -1,0 +1,82 @@
+{
+  "schema": "agentcfd.integration-evidence/0.1",
+  "capability": "openfoam.transient-laminar-baffled-channel",
+  "evidence_kind": "formal-animation-restart-and-time-step-sensitivity",
+  "runtime": "OpenCFD 2606",
+  "validation_claim": false,
+  "model_sha256": "6ea63aa0eb6afa3c7948e096f37d0e3859321c7dc7d18d04f156406e80ebb639",
+  "formal_run": {
+    "analysis_sha256": "6d875e3245fb16cde2d7b20ad10fbce8c4f37fbbc8e0fc3bf0eefe1e06829c5e",
+    "case_sha256": "ef756e2a4c5aa66b9951108991a98d90c56730a1d2635c25a7b2ae953b8efa65",
+    "result_sha256": "c29c4af8ba289d0ce917f9a562f437a790907469d71c846c7420503437d4a1c3",
+    "status": "completed",
+    "converged": true,
+    "accepted": true,
+    "trust_level": "verified",
+    "end_time_seconds": 2.0,
+    "cell_count": 23880,
+    "time_step_count": 1185,
+    "maximum_actual_time_step_seconds": 0.0020000000000000018,
+    "maximum_courant_number": 0.5562943782,
+    "relative_mass_imbalance": 3.999999982416789e-10,
+    "pressure_drop_pa": 1521.8426027,
+    "baffle_drag_n": 20.728561109,
+    "tail_mean_drift": {
+      "pressure_drop": 0.0429972918030948,
+      "baffle_drag": 0.01554247280989869,
+      "near_wake_velocity_x": 1.4495772656168628
+    }
+  },
+  "portable_fields": {
+    "frame_count": 200,
+    "times_seconds": [0.01, 2.0],
+    "association": "point",
+    "names": ["fluid.velocity", "fluid.pressure", "fluid.vorticity"],
+    "actual_bytes": 109640512,
+    "hdf5_sha256": "768fa822c818800a133b44ceeb6569f48d9148b9907dd20d08e1ab60c3459ac9",
+    "xdmf_sha256": "0237f75dcf77c47a20f7a5d55616a5c02def1ed7cb429340e208b34a21dc2cd4",
+    "verified": true
+  },
+  "restart": {
+    "retained_times_seconds": [1.5, 2.0],
+    "archive_bytes": 3976319,
+    "archive_sha256": "9a86c4005e28ab412984eb020fd709d147cd625114467027782d2f13cfc5001a",
+    "real_continuation": {
+      "start_time_seconds": 2.0,
+      "end_time_seconds": 2.02,
+      "accepted": true,
+      "trust_level": "verified",
+      "all_checks_passed": true,
+      "result_sha256": "71dea9fb50596acec239f87dff98a2dee916384d612064f8fc1e929e0cac54f5"
+    }
+  },
+  "time_step_sensitivity": {
+    "end_time_seconds": 0.5,
+    "refinement_ratio": 2.0,
+    "coarse_maximum_time_step_seconds": 0.002,
+    "fine_maximum_time_step_seconds": 0.001,
+    "coarse_result_sha256": "a4f130b4e5560c462f7cd02a969e5935414bd3c2017e784fc92a5aeade7235f7",
+    "fine_result_sha256": "93294a2f951792512bee12942698b97ad727d069ae56f1728f51b4b5e31190af",
+    "both_sources_accepted": true,
+    "maximum_relative_change_limit": 0.02,
+    "observables": {
+      "baffle_drag": {
+        "coarse": 21.394789286,
+        "fine": 21.31995662,
+        "unit": "N",
+        "relative_change": 0.003509982094888638,
+        "accepted": true
+      },
+      "pressure_drop": {
+        "coarse": 1194.1631747000001,
+        "fine": 1190.5858793,
+        "unit": "Pa",
+        "relative_change": 0.003004651291600565,
+        "accepted": true
+      }
+    },
+    "claim": "pairwise-sensitivity-only",
+    "limitations": "Two levels and a 0.5 s startup state cannot establish observed temporal order, numerical uncertainty, wake stationarity, or physical validation."
+  },
+  "interpretation": "The project, output, restart, and temporal-screening pipelines are executable and verified. The 2.0 s wake remains evolving at the near-wake probe, so this evidence is not a statistically stationary wake or physical validation claim."
+}

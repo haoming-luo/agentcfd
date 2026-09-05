@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/time-step-sensitivity.schema.json",
+  "title": "AgentCFD two-level time-step sensitivity 0.1",
+  "type": "object",
+  "required": [
+    "schema",
+    "fine_time_step",
+    "coarse_time_step",
+    "refinement_ratio",
+    "fine_value",
+    "coarse_value",
+    "absolute_change",
+    "relative_change",
+    "maximum_relative_change",
+    "accepted",
+    "claim",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.time-step-sensitivity/0.1"},
+    "fine_time_step": {"type": "number", "exclusiveMinimum": 0},
+    "coarse_time_step": {"type": "number", "exclusiveMinimum": 0},
+    "refinement_ratio": {"type": "number", "exclusiveMinimum": 1},
+    "fine_value": {"type": "number"},
+    "coarse_value": {"type": "number"},
+    "absolute_change": {"type": "number", "minimum": 0},
+    "relative_change": {"type": ["number", "null"], "minimum": 0},
+    "maximum_relative_change": {"type": "number", "exclusiveMinimum": 0},
+    "accepted": {"type": "boolean"},
+    "claim": {"const": "pairwise-sensitivity-only"},
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "additionalProperties": false
+}

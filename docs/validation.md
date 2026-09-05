@@ -64,6 +64,21 @@ or agreement with a benchmark. The capability remains experimental and rejects
 hydraulic inlet Reynolds number at or above 2300 until turbulent channel
 physics has its own evidence boundary.
 
+The formal M1 follow-up is recorded in
+`docs/openfoam-v2606-baffled-channel-m1.json`. A 2.0-second run produced 200
+verified XDMF/H5 frames, retained only the 1.5 and 2.0-second native restart
+states in a 3.98 MB content-addressed ZIP, removed the disposable solver tree,
+and then completed a real 2.00-to-2.02-second continuation with every check
+passing. A matched 0.002/0.001-second maximum-time-step screen at 0.5 seconds
+changed baffle drag by 0.351% and pressure drop by 0.300%, both below its
+explicit 2% screening limit.
+
+This strengthens implementation and numerical-sensitivity evidence but is not
+physical validation. The two-level screen cannot estimate temporal order or
+uncertainty, and the formal run's latest-window near-wake velocity still drifts
+strongly. The 2.0-second field bundle is suitable for inspecting the developing
+wake animation; it is not evidence of a statistically stationary wake.
+
 ## Grid convergence
 
 `agentcfd.verification.grid_convergence_index` implements a solver-neutral

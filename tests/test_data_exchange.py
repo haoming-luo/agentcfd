@@ -102,6 +102,31 @@ def test_xdmf_h5_npz_bundle_round_trip_and_schema(tmp_path):
     }
 
 
+def test_openfoam_export_filters_restart_times_from_public_frames(tmp_path):
+    case = tmp_path / "case"
+    for time in range(5):
+        _write_frame(case, time, float(time + 1))
+
+    interval = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "interval",
+        convert=False,
+        density=1000.0,
+        include_initial=False,
+        time_interval=2.0,
+    )
+    final = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "final",
+        convert=False,
+        density=1000.0,
+        latest_only=True,
+    )
+
+    assert interval.times == (2.0, 4.0)
+    assert final.times == (4.0,)
+
+
 def test_agentfem_field_sample_bridge_is_pickle_free(tmp_path):
     case = tmp_path / "case"
     _write_frame(case, 0, 1.0)

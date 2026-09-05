@@ -34,6 +34,153 @@ class GridSolution:
 
 
 @dataclass(frozen=True, slots=True)
+class TimeStepSolution:
+    """One matched observable evaluated with one maximum physical time step."""
+
+    maximum_time_step: float
+    value: float
+    label: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "maximum_time_step",
+            positive_float(self.maximum_time_step, name="Maximum time step"),
+        )
+        object.__setattr__(self, "value", finite_float(self.value, name="Time-step value"))
+        if not isinstance(self.label, str):
+            raise ValueError("Time-step solution label must be a string.")
+
+
+@dataclass(frozen=True, slots=True)
+class TimeStepSensitivityResult:
+    """Transparent two-level temporal sensitivity, not an uncertainty estimate."""
+
+    fine_time_step: float
+    coarse_time_step: float
+    refinement_ratio: float
+    fine_value: float
+    coarse_value: float
+    absolute_change: float
+    relative_change: float | None
+    maximum_relative_change: float
+    accepted: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "schema": "agentcfd.time-step-sensitivity/0.1",
+            **asdict(self),
+            "claim": "pairwise-sensitivity-only",
+            "limitations": [
+                "Two levels cannot estimate observed temporal order or numerical uncertainty.",
+            ],
+        }
+
+
+def time_step_sensitivity(
+    solutions: Iterable[TimeStepSolution],
+    *,
+    maximum_relative_change: float = 0.02,
+) -> TimeStepSensitivityResult:
+    """Compare matched coarse/fine time-step results without overstating convergence."""
+
+    selected = tuple(solutions)
+    if len(selected) != 2 or any(not isinstance(item, TimeStepSolution) for item in selected):
+        raise ValueError("Exactly two TimeStepSolution records are required.")
+    limit = positive_float(maximum_relative_change, name="Maximum relative change")
+    fine, coarse = sorted(selected, key=lambda item: item.maximum_time_step)
+    ratio = coarse.maximum_time_step / fine.maximum_time_step
+    if ratio <= 1.0:
+        raise ValueError("Time-step levels must be distinct.")
+    absolute = abs(fine.value - coarse.value)
+    relative = None if fine.value == 0.0 else absolute / abs(fine.value)
+    return TimeStepSensitivityResult(
+        fine_time_step=fine.maximum_time_step,
+        coarse_time_step=coarse.maximum_time_step,
+        refinement_ratio=ratio,
+        fine_value=fine.value,
+        coarse_value=coarse.value,
+        absolute_change=absolute,
+        relative_change=relative,
+        maximum_relative_change=limit,
+        accepted=relative is not None and relative <= limit,
+    )
+
+
+def time_step_sensitivity_from_result_records(
+    records: Iterable[Mapping[str, object]],
+    *,
+    quantity: str,
+    maximum_relative_change: float = 0.02,
+) -> TimeStepSensitivityResult:
+    """Build a matched two-level temporal sensitivity from AgentCFD results."""
+
+    selected = tuple(records)
+    if len(selected) != 2:
+        raise ValueError("Exactly two AgentCFD result records are required.")
+    if not isinstance(quantity, str) or not quantity.strip():
+        raise ValueError("quantity must be a non-empty string.")
+    identities: set[str] = set()
+    units: set[str | None] = set()
+    controls: list[dict[str, object]] = []
+    solutions: list[TimeStepSolution] = []
+    for index, record in enumerate(selected, start=1):
+        if not isinstance(record, Mapping):
+            raise ValueError(f"Result {index} must be a mapping.")
+        if record.get("status") != "completed" or record.get("converged") is not True:
+            raise ValueError(f"Result {index} must be completed and converged.")
+        provenance = record.get("provenance")
+        identity = provenance.get("model_sha256") if isinstance(provenance, Mapping) else None
+        if (
+            not isinstance(identity, str)
+            or len(identity) != 64
+            or any(character not in "0123456789abcdef" for character in identity.lower())
+        ):
+            raise ValueError(f"Result {index} is missing a model SHA-256 identity.")
+        identities.add(identity)
+        quantities = record.get("quantities")
+        if not isinstance(quantities, Mapping):
+            raise ValueError(f"Result {index} is missing quantities.")
+        value = _record_quantity_value(quantities, quantity, index=index)
+        quantity_record = quantities[quantity]
+        assert isinstance(quantity_record, Mapping)
+        unit = quantity_record.get("unit")
+        if unit is not None and not isinstance(unit, str):
+            raise ValueError(f"Result {index} quantity {quantity!r} has an invalid unit.")
+        units.add(unit)
+        scientific = record.get("scientific_inputs")
+        public = scientific.get("record") if isinstance(scientific, Mapping) else None
+        procedure = public.get("procedure") if isinstance(public, Mapping) else None
+        if not isinstance(public, Mapping) or not isinstance(procedure, Mapping):
+            raise ValueError(f"Result {index} has no complete scientific input record.")
+        if procedure.get("type") != "transient":
+            raise ValueError(f"Result {index} is not transient.")
+        maximum = procedure.get("maximum_time_step")
+        if isinstance(maximum, bool) or not isinstance(maximum, (int, float)):
+            raise ValueError(f"Result {index} has no maximum time step.")
+        matched = json.loads(json.dumps(public, sort_keys=True))
+        matched_procedure = matched["procedure"]
+        matched_procedure.pop("initial_time_step", None)
+        matched_procedure.pop("maximum_time_step", None)
+        controls.append(matched)
+        solutions.append(
+            TimeStepSolution(float(maximum), value, label=f"result-{index}")
+        )
+    if len(identities) != 1:
+        raise ValueError("Time-step results must share one model SHA-256 identity.")
+    if len(units) != 1:
+        raise ValueError("Time-step result quantity units must match exactly.")
+    if controls[0] != controls[1]:
+        raise ValueError(
+            "Time-step results must match in model, mesh, end time, outputs, and controls other than time step."
+        )
+    return time_step_sensitivity(
+        solutions,
+        maximum_relative_change=maximum_relative_change,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class GridConvergenceResult:
     """Three-grid Richardson extrapolation and fine-grid GCI evidence."""
 
@@ -1748,6 +1895,8 @@ __all__ = [
     "GridConvergencePolicy",
     "GridConvergenceResult",
     "GridSolution",
+    "TimeStepSensitivityResult",
+    "TimeStepSolution",
     "ValidationPointAssessment",
     "assess_validation_point",
     "assess_grid_convergence",
@@ -1758,4 +1907,6 @@ __all__ = [
     "assess_turbulent_model_sweep",
     "grid_convergence_from_result_records",
     "grid_convergence_index",
+    "time_step_sensitivity",
+    "time_step_sensitivity_from_result_records",
 ]

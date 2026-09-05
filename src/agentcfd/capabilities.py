@@ -223,11 +223,15 @@ _CAPABILITIES = (
             "23,880-cell Mesh OK OpenCFD v2606 integration run",
             "potentialFoam and pimpleFoam process completion",
             "mass-balance, pressure-drop, probe, surface-report, force, and field recovery",
+            "separated XDMF field-frame cadence and verified rolling restart archive",
+            "adaptive time-step bound and Courant-control evidence",
+            "accepted 0.002/0.001-second pairwise time-step sensitivity at a matched 0.5-second startup state",
         ),
         limitations=(
             "Hydraulic inlet Reynolds number must be below 2300.",
             "Only one bottom-attached baffle, structured uniform sizing, and constant Newtonian properties are supported.",
-            "No physical benchmark or time-step sensitivity certificate has yet promoted this capability beyond experimental.",
+            "The two-level startup sensitivity screen cannot establish temporal order, uncertainty, wake stationarity, or physical validation.",
+            "Restart archives are published after successful completion and are not yet crash-safe during a running solve.",
         ),
     ),
     Capability(

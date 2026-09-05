@@ -10,15 +10,24 @@ import re
 import shutil
 import subprocess
 import time
+import zipfile
 from pathlib import Path, PurePosixPath
 
 from .. import boundaries, engineering, initialization, outputs, procedures
 from .._version import __version__
 from .._validation import positive_float
-from ..errors import ProviderUnavailableError, UnsupportedCaseError
+from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from ..geometry import RectangularChannel
 from .base import ProviderDescriptor
-from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
+from ..results import (
+    Artifact,
+    Check,
+    FieldRecord,
+    History,
+    Quantity,
+    SimulationResult,
+    read_result_record,
+)
 from .openfoam import (
     PreparedOpenFOAMCase,
     _analysis_sha256,
@@ -53,6 +62,14 @@ _REPORT_OPERATIONS = {
     "area-integral": "areaIntegrate",
     "uniformity": "uniformity",
 }
+_TRUST_ORDER = {
+    "not_computed": 0,
+    "computed": 1,
+    "converged": 2,
+    "verified": 3,
+    "validated": 4,
+}
+_ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 
 
 def _foam_name(value: str) -> str:
@@ -68,6 +85,204 @@ def _positive_cells(length: float, size: float) -> int:
 
 def _foam_scalar(value: float) -> str:
     return f"{value:.17g}"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _numeric_time_directories(case: Path) -> tuple[tuple[float, Path], ...]:
+    selected: list[tuple[float, Path]] = []
+    for path in case.iterdir():
+        if not path.is_dir():
+            continue
+        try:
+            value = float(path.name)
+        except ValueError:
+            continue
+        if value > 0.0 and math.isfinite(value):
+            selected.append((value, path))
+    return tuple(sorted(selected, key=lambda item: item[0]))
+
+
+def _zip_write_bytes(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
+    info = zipfile.ZipInfo(name, date_time=_ZIP_TIMESTAMP)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
+
+
+def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | None, tuple[float, ...]]:
+    policy = step.output.checkpoints
+    if not policy.enabled:
+        return None, ()
+    assert policy.every is not None
+    available = [
+        item
+        for item in _numeric_time_directories(prepared.directory)
+        if math.isclose(
+            item[0] / policy.every,
+            round(item[0] / policy.every),
+            rel_tol=0.0,
+            abs_tol=1.0e-8,
+        )
+    ]
+    retained = available[-policy.keep :]
+    if not retained:
+        return None, ()
+
+    members: dict[str, dict[str, object]] = {}
+    payloads: list[tuple[str, bytes]] = []
+    for _, time_directory in retained:
+        for path in sorted(time_directory.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = path.relative_to(time_directory).as_posix()
+            archive_name = f"times/{time_directory.name}/{relative}"
+            data = path.read_bytes()
+            members[archive_name] = {
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "size_bytes": len(data),
+            }
+            payloads.append((archive_name, data))
+    retained_times = tuple(value for value, _ in retained)
+    metadata = {
+        "schema": "agentcfd.openfoam-restart/0.1",
+        "provider_capability": _CAPABILITY,
+        "model_sha256": prepared.model_sha256,
+        "source_analysis_sha256": prepared.analysis_sha256,
+        "checkpoint_interval": policy.every,
+        "retained_times": list(retained_times),
+        "latest_time": retained_times[-1],
+        "members": members,
+    }
+    target = prepared.directory / "agentcfd-restart.zip"
+    with zipfile.ZipFile(target, "w") as archive:
+        _zip_write_bytes(
+            archive,
+            "restart.json",
+            (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+        )
+        for name, data in payloads:
+            _zip_write_bytes(archive, name, data)
+    return target, retained_times
+
+
+def _restore_previous_result(step, target: Path) -> float:
+    source = Path(step.initialization.result).expanduser().resolve()
+    try:
+        record = read_result_record(source)
+    except (FileNotFoundError, ValueError) as error:
+        raise CaseIntegrityError(
+            "The previous result failed AgentCFD evidence validation: " + str(error)
+        ) from error
+    actual_trust = record.get("trust_level")
+    required_trust = step.initialization.minimum_trust
+    if not isinstance(actual_trust, str) or _TRUST_ORDER.get(actual_trust, -1) < _TRUST_ORDER[required_trust]:
+        raise CaseIntegrityError(
+            f"Previous result trust {actual_trust!r} is below required {required_trust!r}."
+        )
+    provenance = record.get("provenance")
+    if not isinstance(provenance, dict) or provenance.get("model_sha256") != step.model.fingerprint():
+        raise CaseIntegrityError("The previous result belongs to a different scientific model.")
+    artifacts = record.get("artifact_records")
+    restart = artifacts.get("restart_bundle") if isinstance(artifacts, dict) else None
+    relative = restart.get("path") if isinstance(restart, dict) else None
+    if not isinstance(relative, str):
+        raise CaseIntegrityError("The previous result has no restart_bundle artifact.")
+    archive_path = Path(relative)
+    if not archive_path.is_absolute():
+        archive_path = source.parent / archive_path
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            metadata = json.loads(archive.read("restart.json"))
+            if (
+                metadata.get("schema") != "agentcfd.openfoam-restart/0.1"
+                or metadata.get("provider_capability") != _CAPABILITY
+                or metadata.get("model_sha256") != step.model.fingerprint()
+            ):
+                raise CaseIntegrityError("The restart bundle contract does not match this case.")
+            latest = float(metadata["latest_time"])
+            if latest >= step.procedure.end_time:
+                raise CaseIntegrityError(
+                    "The restart time must be earlier than the requested transient end time."
+                )
+            prefix = f"times/{_foam_scalar(latest)}/"
+            candidates = [name for name in archive.namelist() if name.startswith(prefix)]
+            if not candidates:
+                # OpenFOAM preserves its own compact time-directory spelling.
+                prefixes = {
+                    name.split("/", 2)[1]
+                    for name in archive.namelist()
+                    if name.startswith("times/") and name.count("/") >= 2
+                }
+                matching = [
+                    name for name in prefixes
+                    if math.isclose(float(name), latest, rel_tol=0.0, abs_tol=1.0e-10)
+                ]
+                if len(matching) != 1:
+                    raise CaseIntegrityError("The restart bundle latest time is missing or ambiguous.")
+                prefix = f"times/{matching[0]}/"
+                candidates = [name for name in archive.namelist() if name.startswith(prefix)]
+            members = metadata.get("members")
+            if not isinstance(members, dict):
+                raise CaseIntegrityError("The restart bundle member index is malformed.")
+            time_name = prefix.split("/")[1]
+            for name in sorted(candidates):
+                relative_name = PurePosixPath(name.removeprefix(prefix))
+                if not relative_name.parts or any(part in {"", ".", ".."} for part in relative_name.parts):
+                    raise CaseIntegrityError("The restart bundle contains an unsafe member path.")
+                data = archive.read(name)
+                identity = members.get(name)
+                if (
+                    not isinstance(identity, dict)
+                    or identity.get("size_bytes") != len(data)
+                    or identity.get("sha256") != hashlib.sha256(data).hexdigest()
+                ):
+                    raise CaseIntegrityError(f"Restart member {name!r} failed identity validation.")
+                destination = target / time_name / Path(*relative_name.parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
+    except (KeyError, OSError, ValueError, zipfile.BadZipFile) as error:
+        if isinstance(error, CaseIntegrityError):
+            raise
+        raise CaseIntegrityError("The previous result restart bundle is invalid.") from error
+    return latest
+
+
+def _tail_window_mean_drift(history: History) -> float | None:
+    """Relative drift between the two latest equal-duration 10% windows."""
+
+    if len(history.values) < 20:
+        return None
+    start = history.abscissa[0]
+    end = history.abscissa[-1]
+    span = end - start
+    if span <= 0.0:
+        return None
+    latest_start = end - 0.1 * span
+    previous_start = end - 0.2 * span
+    previous = [
+        value
+        for coordinate, value in zip(history.abscissa, history.values)
+        if previous_start <= coordinate < latest_start
+    ]
+    latest = [
+        value
+        for coordinate, value in zip(history.abscissa, history.values)
+        if latest_start <= coordinate <= end
+    ]
+    if not previous or not latest:
+        return None
+    previous_mean = sum(previous) / len(previous)
+    latest_mean = sum(latest) / len(latest)
+    return abs(latest_mean - previous_mean) / max(
+        abs(previous_mean), abs(latest_mean), 1.0e-30
+    )
 
 
 def _channel_block_mesh(domain: RectangularChannel, *, base_size: float) -> str:
@@ -392,8 +607,19 @@ def _control_dict(step) -> str:
     frames = step.output.frames
     field_interval = procedure.end_time if frames.mode == "final" else frames.every
     assert field_interval is not None
+    native_interval = min(
+        field_interval,
+        step.output.checkpoints.every
+        if step.output.checkpoints.enabled
+        else field_interval,
+    )
+    start_from = (
+        "latestTime"
+        if isinstance(step.initialization, initialization.PreviousResultInitialization)
+        else "startTime"
+    )
     return _header(object_name="controlDict", class_name="dictionary", location="system") + f"""application pimpleFoam;
-startFrom startTime;
+startFrom {start_from};
 startTime 0;
 stopAt endTime;
 endTime {_foam_scalar(procedure.end_time)};
@@ -402,7 +628,7 @@ adjustTimeStep yes;
 maxCo {_foam_scalar(procedure.maximum_courant_number)};
 maxDeltaT {_foam_scalar(procedure.maximum_time_step)};
 writeControl adjustableRunTime;
-writeInterval {_foam_scalar(field_interval)};
+writeInterval {_foam_scalar(native_interval)};
 purgeWrite 0;
 writeFormat binary;
 writePrecision 10;
@@ -539,7 +765,11 @@ class OpenFOAMChannelProvider:
             )
         if step.initialization is not None and not isinstance(
             step.initialization,
-            (initialization.UniformInitialization, initialization.PotentialFlowInitialization),
+            (
+                initialization.UniformInitialization,
+                initialization.PotentialFlowInitialization,
+                initialization.PreviousResultInitialization,
+            ),
         ):
             raise UnsupportedCaseError(
                 "The channel provider supports uniform or potential-flow initialization."
@@ -603,10 +833,6 @@ class OpenFOAMChannelProvider:
                 raise UnsupportedCaseError(
                     f"Force report {report.name!r} references an unknown surface region."
                 )
-        if step.output.checkpoints.enabled:
-            raise UnsupportedCaseError(
-                "Independent rolling checkpoint lowering is not yet implemented for the channel provider."
-            )
         frames = step.output.frames
         if (
             frames.mode == "interval"
@@ -622,6 +848,39 @@ class OpenFOAMChannelProvider:
                 "The current OpenFOAM channel writer requires the field-frame interval "
                 "to divide end_time when include_final=True."
             )
+        checkpoints = step.output.checkpoints
+        if checkpoints.enabled:
+            if checkpoints.coordinate != "physical-time":
+                raise UnsupportedCaseError(
+                    "Transient channel checkpoints require physical-time coordinates."
+                )
+            assert checkpoints.every is not None
+            if checkpoints.every > step.procedure.end_time:
+                raise UnsupportedCaseError(
+                    "Checkpoint interval must not exceed the transient end time."
+                )
+            if not math.isclose(
+                step.procedure.end_time / checkpoints.every,
+                round(step.procedure.end_time / checkpoints.every),
+                rel_tol=0.0,
+                abs_tol=1.0e-10,
+            ):
+                raise UnsupportedCaseError(
+                    "The current rolling restart writer requires checkpoint interval "
+                    "to divide end_time so the latest state is resumable."
+                )
+            field_interval = (
+                step.procedure.end_time if frames.mode == "final" else frames.every
+            )
+            assert field_interval is not None
+            ratio = max(field_interval, checkpoints.every) / min(
+                field_interval, checkpoints.every
+            )
+            if not math.isclose(ratio, round(ratio), rel_tol=0.0, abs_tol=1e-10):
+                raise UnsupportedCaseError(
+                    "Field-frame and checkpoint intervals must be integer multiples "
+                    "for deterministic OpenFOAM time directories."
+                )
         inlet = model.boundary_conditions["inlet"]
         reynolds = engineering.reynolds_number(
             density=model.fluid.density,
@@ -698,14 +957,19 @@ class OpenFOAMChannelProvider:
             ),
         }
         target.mkdir(parents=True, exist_ok=True)
-        hashes: dict[str, str] = {}
         for relative, content in sorted(rendered.items()):
             relative_path = PurePosixPath(relative)
             path = target.joinpath(*relative_path.parts)
             path.parent.mkdir(parents=True, exist_ok=True)
             data = content.encode("utf-8")
             path.write_bytes(data)
-            hashes[relative] = hashlib.sha256(data).hexdigest()
+        if isinstance(step.initialization, initialization.PreviousResultInitialization):
+            _restore_previous_result(step, target)
+        hashes = {
+            path.relative_to(target).as_posix(): _sha256(path)
+            for path in sorted(target.rglob("*"))
+            if path.is_file() and not path.is_symlink()
+        }
         case_identity = hashlib.sha256(
             json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
@@ -822,11 +1086,26 @@ class OpenFOAMChannelProvider:
         ]
         final_time = times_reached[-1] if times_reached else None
         maximum_courant = max(courant_values) if courant_values else None
+        time_steps = tuple(
+            right - left
+            for left, right in zip(times_reached, times_reached[1:])
+            if right > left
+        )
         if final_time is not None:
             quantities["solver.final_time"] = Quantity(final_time, "s", kind="runtime_metric")
         if maximum_courant is not None:
             quantities["solver.maximum_courant_number"] = Quantity(
                 maximum_courant, "1", kind="verification_metric"
+            )
+        if time_steps:
+            quantities["solver.time_step_count"] = Quantity(
+                len(time_steps), "1", kind="runtime_metric"
+            )
+            quantities["solver.minimum_time_step"] = Quantity(
+                min(time_steps), "s", kind="verification_metric"
+            )
+            quantities["solver.maximum_time_step"] = Quantity(
+                max(time_steps), "s", kind="verification_metric"
             )
         histories: dict[str, History] = {}
         if imbalance_values:
@@ -862,6 +1141,19 @@ class OpenFOAMChannelProvider:
         }
         if mesh_manifest is not None:
             artifacts["mesh_manifest"] = Artifact.from_path(mesh_manifest, role="mesh-manifest", media_type="application/json")
+        restart_bundle, checkpoint_times = _write_restart_bundle(step, prepared)
+        if restart_bundle is not None:
+            artifacts["restart_bundle"] = Artifact.from_path(
+                restart_bundle,
+                role="restart-checkpoints",
+                media_type="application/zip",
+            )
+            quantities["restart.checkpoint_count"] = Quantity(
+                len(checkpoint_times), "1", kind="runtime_metric"
+            )
+            quantities["restart.latest_time"] = Quantity(
+                checkpoint_times[-1], "s", kind="runtime_metric"
+            )
         fields: dict[str, FieldRecord] = {}
         latest = _latest_time_directory(prepared.directory)
         if latest is not None:
@@ -875,6 +1167,20 @@ class OpenFOAMChannelProvider:
                     fields[native] = FieldRecord(unit=unit, location="cell", artifact=str(path), components=components, mesh_sha256=mesh_sha)
                     artifacts[f"field_{native}"] = Artifact.from_path(path, role="native-field")
         self._recover_reports(step, prepared.directory, quantities, histories, artifacts)
+        for name, history in histories.items():
+            if name == "flow.relative_mass_imbalance":
+                continue
+            drift = _tail_window_mean_drift(history)
+            if drift is not None:
+                quantities[f"stability.{name}.tail_mean_drift"] = Quantity(
+                    drift,
+                    "1",
+                    kind="verification_metric",
+                    description=(
+                        "Relative change between means of the two latest equal-duration "
+                        "10% windows; diagnostic only, not a universal stationarity claim."
+                    ),
+                )
         mass_ok = bool(imbalance_values) and imbalance_values[-1] <= 1e-4
         time_ok = final_time is not None and math.isclose(
             final_time,
@@ -882,8 +1188,12 @@ class OpenFOAMChannelProvider:
             rel_tol=0.0,
             abs_tol=max(1e-12, step.procedure.end_time * 1e-10),
         )
-        courant_limit = step.procedure.maximum_courant_number * 1.05
+        # OpenFOAM's adaptive controller reacts after a completed step, so a small
+        # one-step overshoot is expected.  Keep a separate conservative hard gate.
+        courant_limit = min(1.0, step.procedure.maximum_courant_number * 1.25)
         courant_ok = maximum_courant is not None and maximum_courant <= courant_limit
+        time_step_limit = step.procedure.maximum_time_step
+        time_step_ok = bool(time_steps) and max(time_steps) <= time_step_limit * (1.0 + 1.0e-8)
         requested_history_map = {
             "flow.mass_balance": "flow.relative_mass_imbalance",
             "flow.pressure_drop": "flow.pressure_drop",
@@ -901,16 +1211,40 @@ class OpenFOAMChannelProvider:
             Check("solver-completion-marker", reached_end, value="found" if reached_end else "missing", limit="pimpleFoam log ends with End", kind="runtime"),
             Check("transient-time-horizon", time_ok, value=final_time, limit=step.procedure.end_time, observable="solver.time"),
             Check("courant-control", courant_ok, value=maximum_courant, limit=courant_limit, observable="solver.maximum_courant_number"),
+            Check(
+                "adaptive-time-step-bound",
+                time_step_ok,
+                value=max(time_steps) if time_steps else None,
+                limit=time_step_limit,
+                observable="solver.maximum_time_step",
+            ),
             Check("mesh-quality", return_codes.get("checkMesh") == 0 and "Mesh OK" in logs.get("checkMesh", ""), value="Mesh OK" if "Mesh OK" in logs.get("checkMesh", "") else "not confirmed", limit="checkMesh succeeds and reports Mesh OK"),
             *mesh_gate_checks,
             Check("transient-mass-balance", mass_ok, value=imbalance_values[-1] if imbalance_values else None, limit=1e-4, observable="flow.mass_balance"),
             Check("mesh-identity", mesh_sha is not None, value=mesh_sha or "missing", limit="content-addressed polyMesh exists"),
             Check("openfoam-runtime-version", runtime_version.startswith("v2606") or runtime_version == "2606", value=runtime_version, limit="OpenCFD v2606", kind="runtime"),
             Check("requested-output-completeness", not missing, value="complete" if not missing else ", ".join(missing), limit="all requested fields and histories recovered", kind="runtime"),
+            Check(
+                "checkpoint-retention",
+                (not step.output.checkpoints.enabled)
+                or (
+                    bool(checkpoint_times)
+                    and len(checkpoint_times) <= step.output.checkpoints.keep
+                    and math.isclose(
+                        checkpoint_times[-1],
+                        step.procedure.end_time,
+                        rel_tol=0.0,
+                        abs_tol=max(1e-12, step.procedure.end_time * 1e-10),
+                    )
+                ),
+                value=(len(checkpoint_times) if step.output.checkpoints.enabled else "disabled"),
+                limit=(f"1..{step.output.checkpoints.keep}, latest=end_time" if step.output.checkpoints.enabled else "disabled"),
+                kind="runtime",
+            ),
         )
         return SimulationResult(
             status="completed" if process_ok else "failed",
-            converged=reached_end and time_ok and courant_ok and mass_ok,
+            converged=reached_end and time_ok and courant_ok and time_step_ok and mass_ok,
             provider="openfoam",
             quantities=quantities,
             histories=histories,
@@ -947,7 +1281,7 @@ class OpenFOAMChannelProvider:
             elif isinstance(report, outputs.PointProbe):
                 for field_name in report.fields:
                     native = _FIELD_NAMES[field_name]
-                    rows = _read_numeric_rows(root / "0" / native)
+                    rows = _read_segmented_rows(root, native)
                     if not rows:
                         continue
                     factor = density if field_name == "fluid.pressure" else 1.0
@@ -965,7 +1299,7 @@ class OpenFOAMChannelProvider:
                         )
                         quantities[name] = Quantity(selected[-1][1], unit)
             elif isinstance(report, outputs.ForceReport):
-                rows = _read_numeric_rows(root / "0" / "force.dat")
+                rows = _read_segmented_rows(root, "force.dat")
                 selected = [
                     (row[0], sum(row[i + 1] * report.direction[i] for i in range(3)))
                     for row in rows
@@ -982,7 +1316,11 @@ class OpenFOAMChannelProvider:
             if root.is_dir():
                 for path in sorted(root.rglob("*")):
                     if path.is_file():
-                        artifacts[f"report_{function_name}_{path.name}"] = Artifact.from_path(
+                        relative = path.relative_to(root).as_posix()
+                        artifact_name = _foam_name(
+                            f"report_{function_name}_{relative.replace('/', '_')}"
+                        )
+                        artifacts[artifact_name] = Artifact.from_path(
                             path, role="compact-report", media_type="text/plain"
                         )
 
@@ -1012,6 +1350,25 @@ def _read_numeric_rows(path: Path) -> list[tuple[float, ...]]:
         if values and all(math.isfinite(value) for value in values):
             rows.append(values)
     return rows
+
+
+def _read_segmented_rows(root: Path, filename: str) -> list[tuple[float, ...]]:
+    """Merge OpenFOAM function-object files across restart start-time folders."""
+
+    by_time: dict[float, tuple[float, ...]] = {}
+    if not root.is_dir():
+        return []
+    candidates: list[tuple[float, Path]] = []
+    for path in root.glob(f"*/{filename}"):
+        try:
+            segment_start = float(path.parent.name)
+        except ValueError:
+            continue
+        candidates.append((segment_start, path))
+    for _, path in sorted(candidates):
+        for row in _read_numeric_rows(path):
+            by_time[row[0]] = row
+    return [by_time[time_value] for time_value in sorted(by_time)]
 
 
 def _report_recovered(report, histories: dict[str, History]) -> bool:

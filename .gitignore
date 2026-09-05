@@ -7,6 +7,7 @@ __pycache__/
 .runtime-venv/
 build/
 dist/
+examples/*/output/
 *.json
 !docs/*.json
 !schemas/*.json

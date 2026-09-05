@@ -24,6 +24,7 @@ from .. import boundaries, engineering
 from .._version import __version__
 from .._validation import integer_at_least, positive_float
 from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
+from ..geometry import CircularPipe
 from ..jsonio import strict_json_object
 from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
 from .base import ProviderDescriptor
@@ -709,6 +710,9 @@ class OpenFOAMTurbulentPrecursorProvider:
             capabilities=tuple(_CAPABILITIES.values()),
         )
 
+    def validate(self, step) -> None:
+        self._validate_supported(step)
+
     def prepare(self, step, directory: str | Path | None = None) -> PreparedOpenFOAMCase:
         step.model.validate()
         self._validate_supported(step)
@@ -906,6 +910,19 @@ class OpenFOAMTurbulentPrecursorProvider:
     def _validate_supported(self, step) -> None:
         model = step.model
         study = model.study
+        if not isinstance(model.domain, CircularPipe):
+            raise UnsupportedCaseError(
+                "The periodic precursor supports circular-pipe geometry only."
+            )
+        if step.initialization is not None or step.mesh is not None:
+            raise UnsupportedCaseError(
+                "Generic initialization and mesh intent are not lowered by the "
+                "periodic precursor."
+            )
+        if step.output.reports:
+            raise UnsupportedCaseError(
+                "Generic report lowering is not implemented by the periodic precursor."
+            )
         if (
             not study.steady
             or study.compressible
@@ -917,6 +934,22 @@ class OpenFOAMTurbulentPrecursorProvider:
             raise UnsupportedCaseError(
                 "The periodic pipe precursor supports steady incompressible isothermal "
                 "k-omega SST or k-epsilon flow with blended wall functions only."
+            )
+        supported_boundary_types = (
+            boundaries.TurbulentMeanVelocityInlet,
+            boundaries.PressureOutlet,
+            boundaries.NoSlipWall,
+        )
+        unsupported_boundaries = sorted(
+            name
+            for name, value in model.boundary_conditions.items()
+            if not isinstance(value, supported_boundary_types)
+        )
+        if unsupported_boundaries:
+            raise UnsupportedCaseError(
+                "The periodic precursor cannot lower boundary conditions on: "
+                + ", ".join(unsupported_boundaries)
+                + "."
             )
         if study.turbulence == "k-epsilon" and self.nut_wall_function != "nutkWallFunction":
             raise UnsupportedCaseError(

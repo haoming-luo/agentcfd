@@ -302,6 +302,49 @@ class SimulationResult:
             )
         return self
 
+    def quantity(self, name: str) -> Quantity:
+        """Return one named scalar quantity with a compact discovery error."""
+
+        try:
+            return self.quantities[name]
+        except KeyError as error:
+            available = ", ".join(sorted(self.quantities)) or "none"
+            raise KeyError(f"Unknown result quantity {name!r}; available: {available}.") from error
+
+    def history(self, name: str) -> History:
+        """Return one named monitor or report history."""
+
+        try:
+            return self.histories[name]
+        except KeyError as error:
+            available = ", ".join(sorted(self.histories)) or "none"
+            raise KeyError(f"Unknown result history {name!r}; available: {available}.") from error
+
+    def field(self, name: str, *, location: str | None = None) -> FieldRecord:
+        """Return one external field record, optionally checking its association."""
+
+        try:
+            selected = self.fields[name]
+        except KeyError as error:
+            available = ", ".join(sorted(self.fields)) or "none"
+            raise KeyError(f"Unknown result field {name!r}; available: {available}.") from error
+        if location is not None and selected.location != location:
+            raise ValueError(
+                f"Field {name!r} is associated with {selected.location!r}, not {location!r}."
+            )
+        return selected
+
+    def available_data(self) -> dict[str, tuple[str, ...]]:
+        """List stable result names without loading external field artifacts."""
+
+        return {
+            "quantities": tuple(sorted(self.quantities)),
+            "histories": tuple(sorted(self.histories)),
+            "fields": tuple(sorted(self.fields)),
+            "arrays": tuple(sorted(self.arrays)),
+            "artifacts": tuple(sorted(self.artifacts)),
+        }
+
     def scientific_input_manifest(self) -> dict[str, object]:
         from .provenance import scientific_input_manifest
 

@@ -15,7 +15,7 @@ from types import ModuleType
 from typing import Mapping
 
 from . import boundaries, data_exchange, engineering
-from .errors import ModelValidationError, ProjectError
+from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
 from .model import Step
 from .provenance import content_fingerprint, file_sha256
 from .providers import OpenFOAMMeshControls, OpenFOAMProvider, ReferencePipeProvider
@@ -183,7 +183,7 @@ def _inlet_reynolds(step: Step) -> float | None:
     return engineering.reynolds_number(
         density=step.model.fluid.density,
         mean_velocity=velocity,
-        hydraulic_diameter=step.model.domain.diameter,
+        hydraulic_diameter=step.model.domain.hydraulic_diameter,
         dynamic_viscosity=step.model.fluid.dynamic_viscosity,
     )
 
@@ -284,6 +284,10 @@ def _resolved_output_plan(
             "histories": {
                 "names": list(step.output.histories),
                 "retention": "all scalar samples",
+            },
+            "reports": {
+                "definitions": [item.to_dict() for item in step.output.reports],
+                "retention": "all compact samples",
             },
             "field_frames": {
                 **frames.to_dict(),
@@ -425,36 +429,36 @@ class Project:
         study = step.model.study
         if selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
-            provider_compatible = (
-                model_valid
-                and study.steady
-                and not study.compressible
-                and not study.energy
-                and not study.reacting
-                and study.laminar
-            )
         else:
             required_capability = (
-                "openfoam.steady-laminar-circular-pipe"
+                "openfoam.transient-incompressible-internal-flow"
+                if not study.steady
+                else "openfoam.steady-laminar-circular-pipe"
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
             )
-            provider_compatible = (
-                model_valid
-                and study.steady
-                and not study.compressible
-                and not study.energy
-                and not study.reacting
-                and required_capability in descriptor.capabilities
-            )
+        provider_compatible = model_valid
+        compatibility_detail = "model validation failed"
+        if model_valid:
+            validate_provider = getattr(selected, "validate", None)
+            if validate_provider is None:
+                provider_compatible = False
+                compatibility_detail = "provider has no validation contract"
+            else:
+                try:
+                    validate_provider(step)
+                except UnsupportedCaseError as error:
+                    provider_compatible = False
+                    compatibility_detail = str(error)
         if not provider_compatible:
             issues.append(
                 ProjectIssue(
                     "PROVIDER_INCOMPATIBLE",
                     "error",
-                    f"Provider {selected_name!r} does not support the resolved Study.",
-                    "case.py:study",
-                    "Choose a compatible provider or change the explicit physical Study.",
+                    f"Provider {selected_name!r} does not support this step: "
+                    f"{compatibility_detail.rstrip('.')}.",
+                    "case.py",
+                    "Choose a compatible provider or simplify the explicit step intent.",
                 )
             )
 
@@ -537,10 +541,24 @@ class Project:
             "study": study.to_dict(),
             "procedure": step.procedure.to_dict(),
             "outputs": step.output.to_dict(),
+            "initialization": None if step.initialization is None else step.initialization.to_dict(),
+            "mesh_intent": None if step.mesh is None else step.mesh.to_dict(),
             "provider": asdict(descriptor),
             "required_capability": required_capability,
-            "mesh_strategy": "structured-circular-pipe-o-grid" if selected_name == "openfoam" else "analytical",
-            "solver": "simpleFoam" if selected_name == "openfoam" else "Hagen-Poiseuille",
+            "mesh_strategy": (
+                f"intent:{step.mesh.method}"
+                if step.mesh is not None
+                else "structured-circular-pipe-o-grid"
+                if selected_name == "openfoam"
+                else "analytical"
+            ),
+            "solver": (
+                "unresolved-provider-lowering"
+                if not provider_compatible
+                else "simpleFoam"
+                if selected_name == "openfoam"
+                else "Hagen-Poiseuille"
+            ),
             "portable_field_bundle": export_fields,
             "portable_formats": (
                 [
@@ -564,6 +582,7 @@ class Project:
             "model": {
                 "name": step.model.name,
                 "sha256": step.model.fingerprint() if model_valid else None,
+                "analysis_sha256": step.fingerprint() if model_valid else None,
                 "summary": step.model.to_dict(),
                 "reynolds_number": reynolds,
             },

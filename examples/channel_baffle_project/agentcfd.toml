@@ -1,0 +1,11 @@
+schema = "agentcfd.project/0.1"
+entrypoint = "case.py"
+factory = "build"
+default_provider = "openfoam"
+run_directory = "output"
+run_mode = "replace"
+
+[openfoam]
+container_image = "opencfd/openfoam-run:2606"
+export_fields = true
+keep_workspace = false

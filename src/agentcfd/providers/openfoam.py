@@ -23,6 +23,7 @@ from .. import boundaries, engineering
 from .._version import __version__
 from .._validation import integer_at_least, positive_float
 from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
+from ..geometry import CircularPipe
 from ..jsonio import strict_json_object
 from ..results import (
     Artifact,
@@ -73,6 +74,10 @@ def _analysis_sha256(step) -> str:
         "procedure": step.procedure.to_dict(),
         "output_request": step.output.to_dict(),
     }
+    if step.initialization is not None:
+        payload["initialization"] = step.initialization.to_dict()
+    if step.mesh is not None:
+        payload["mesh"] = step.mesh.to_dict()
     encoded = json.dumps(
         payload,
         sort_keys=True,
@@ -1603,6 +1608,11 @@ class OpenFOAMProvider:
             capabilities=(_LAMINAR_CAPABILITY, _TURBULENT_CAPABILITY),
         )
 
+    def validate(self, step) -> None:
+        """Validate this provider's bounded lowering contract without execution."""
+
+        self._validate_supported(step)
+
     def prepare(self, step, directory: str | Path | None = None) -> PreparedOpenFOAMCase:
         """Validate and write a deterministic OpenFOAM case.
 
@@ -2407,6 +2417,20 @@ class OpenFOAMProvider:
     def _validate_supported(self, step) -> None:
         model = step.model
         study = model.study
+        if not isinstance(model.domain, CircularPipe):
+            raise UnsupportedCaseError(
+                "The current OpenFOAM provider supports circular-pipe geometry only."
+            )
+        if step.initialization is not None or step.mesh is not None:
+            raise UnsupportedCaseError(
+                "Generic initialization and mesh-intent lowering are not implemented "
+                "by the current OpenFOAM pipe provider."
+            )
+        if step.output.reports:
+            raise UnsupportedCaseError(
+                "Generic point and surface report lowering is not implemented by the "
+                "current OpenFOAM pipe provider."
+            )
         unsupported_fields = sorted(set(step.output.fields) - _OUTPUT_FIELD_KEYS.keys())
         unsupported_histories = sorted(
             set(step.output.histories) - _OUTPUT_HISTORY_KEYS.keys()
@@ -2429,6 +2453,25 @@ class OpenFOAMProvider:
             raise UnsupportedCaseError(
                 "The k-omega-sst pipe slice currently supports only the explicitly "
                 "declared blended-wall-functions treatment."
+            )
+        supported_boundary_types = (
+            boundaries.MassFlowInlet,
+            boundaries.MeanVelocityInlet,
+            boundaries.FullyDevelopedVelocityInlet,
+            boundaries.TurbulentMeanVelocityInlet,
+            boundaries.PressureOutlet,
+            boundaries.NoSlipWall,
+        )
+        unsupported_boundaries = sorted(
+            name
+            for name, value in model.boundary_conditions.items()
+            if not isinstance(value, supported_boundary_types)
+        )
+        if unsupported_boundaries:
+            raise UnsupportedCaseError(
+                "The OpenFOAM pipe provider cannot lower boundary conditions on: "
+                + ", ".join(unsupported_boundaries)
+                + "."
             )
         if model.domain.roughness != 0.0:
             raise UnsupportedCaseError("The initial OpenFOAM provider requires a smooth pipe.")

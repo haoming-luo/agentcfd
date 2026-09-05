@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add backend-neutral named regions, rectangular channels with wall-attached
+  baffles, pressure-inlet, mass-flow-outlet, slip, and symmetry boundaries.
+- Add explicit uniform, potential-flow, and previous-result initialization plus
+  global/local mesh intent, wall layers, and mesh-quality gates.
+- Add compact point probes, surface reductions, and force reports independently
+  from full-field frames, plus discoverable typed result queries.
+- Validate region coverage and roles across boundaries, mesh controls, and
+  reports; require providers to reject unsupported step intent during planning.
+- Add a readable transient bottom-baffle wake project as the next OpenFOAM
+  lowering target without claiming unsupported numerical execution.
+- Add an installed `analysis-request` schema and a public complete-step content
+  fingerprint for deterministic AI/GUI planning and comparison.
+
 - Separate full-field frames, scalar histories, and native restart checkpoints
   in the public output contract; add `outputs.animation`, `outputs.checkpoints`,
   human-readable storage budgets, hard frame caps, and transient procedures.

@@ -62,7 +62,7 @@ def test_model_requires_engineering_boundaries():
         domain=geometry.circular_pipe(length=1.0, diameter=0.1),
         fluid=fluids.newtonian("test", density=1.0, dynamic_viscosity=1.0),
     )
-    with pytest.raises(ModelValidationError, match="Exactly one"):
+    with pytest.raises(ModelValidationError, match="At least one"):
         model.step().run()
 
 

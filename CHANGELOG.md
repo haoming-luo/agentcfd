@@ -7,6 +7,10 @@
   physical time/iteration, conservative ETA range for transient runs, latest
   residuals and Courant number, compact mass/pressure monitors, and opt-in
   workspace size.
+- Apply live logging consistently to steady pipe, transient channel, and
+  turbulent precursor providers; treat permission-denied PID probes as proof
+  of liveness across managed execution boundaries instead of falsely reporting
+  an active run as interrupted.
 - Discover the nearest project manifest from any nested file or directory and
   keep recommended commands short when the user is already somewhere inside
   the project.

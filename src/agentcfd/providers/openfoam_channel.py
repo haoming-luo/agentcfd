@@ -1019,31 +1019,41 @@ class OpenFOAMChannelProvider:
         durations: dict[str, float] = {}
         for name, command in commands.items():
             assert command is not None
+            log_path = prepared.directory / f"log.{name}"
             cidfile = prepared.directory / f".agentcfd-{name}.cid" if self.container_image else None
             started = time.monotonic()
             try:
-                completed = subprocess.run(
-                    self._argv(name, command, prepared.directory, cidfile),
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout_seconds,
-                )
-                combined = completed.stdout + completed.stderr
+                with log_path.open("w", encoding="utf-8") as log_stream:
+                    completed = subprocess.run(
+                        self._argv(name, command, prepared.directory, cidfile),
+                        check=False,
+                        stdout=log_stream,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        timeout=self.timeout_seconds,
+                    )
+                    captured = (completed.stdout or "") + (completed.stderr or "")
+                    if captured:
+                        log_stream.write(captured)
                 return_codes[name] = completed.returncode
             except subprocess.TimeoutExpired as error:
                 stdout = error.stdout.decode() if isinstance(error.stdout, bytes) else (error.stdout or "")
                 stderr = error.stderr.decode() if isinstance(error.stderr, bytes) else (error.stderr or "")
-                combined = stdout + stderr + f"\nAgentCFD timeout after {self.timeout_seconds:g} seconds.\n"
+                timeout_note = stdout + stderr + f"\nAgentCFD timeout after {self.timeout_seconds:g} seconds.\n"
                 if cidfile is not None:
-                    combined += _stop_timed_out_container(command, cidfile)
+                    timeout_note += _stop_timed_out_container(command, cidfile)
+                with log_path.open("a", encoding="utf-8") as log_stream:
+                    log_stream.write(timeout_note)
                 return_codes[name] = -124
             finally:
                 durations[name] = time.monotonic() - started
                 if cidfile is not None:
                     cidfile.unlink(missing_ok=True)
+            try:
+                combined = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                combined = ""
             logs[name] = combined
-            (prepared.directory / f"log.{name}").write_text(combined, encoding="utf-8")
             if return_codes[name] != 0:
                 break
         return self._recover(step, prepared, logs, return_codes, durations)

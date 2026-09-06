@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
+import subprocess
 import zipfile
 
 import pytest
@@ -36,6 +37,35 @@ def test_channel_provider_prepares_deterministic_five_block_case(tmp_path):
     assert "writeCompression off;" in control
     assert "agentcfd_inlet_flow" in control
     assert "near_wake" in control
+
+
+def test_channel_provider_streams_command_output_to_live_log(tmp_path, monkeypatch):
+    step = Project(EXAMPLE).load_step()
+    provider = OpenFOAMChannelProvider(case_directory=tmp_path / "case")
+    monkeypatch.setattr(
+        provider,
+        "_commands",
+        lambda _step: {"blockMesh": "/runtime/blockMesh"},
+    )
+
+    def fake_run(argv, **kwargs):
+        assert "capture_output" not in kwargs
+        stream = kwargs["stdout"]
+        stream.write("streamed while command is active\n")
+        stream.flush()
+        assert (provider.case_directory / "log.blockMesh").read_text() == (
+            "streamed while command is active\n"
+        )
+        return subprocess.CompletedProcess(argv, 1, stdout=None, stderr=None)
+
+    monkeypatch.setattr("agentcfd.providers.openfoam_channel.subprocess.run", fake_run)
+
+    result = provider.run(step)
+
+    assert result.status == "failed"
+    assert (provider.case_directory / "log.blockMesh").read_text() == (
+        "streamed while command is active\n"
+    )
 
 
 def test_channel_provider_rejects_high_re_laminar_misuse(tmp_path):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import errno
 import json
 import math
 import os
@@ -269,7 +270,15 @@ def _process_is_alive(pid: object) -> bool:
         return False
     try:
         os.kill(pid, 0)
-    except (OSError, ValueError):
+    except PermissionError:
+        # EPERM proves that the process exists even though this observer cannot
+        # signal it (common across managed execution boundaries).
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError as error:
+        return error.errno == errno.EPERM
+    except ValueError:
         return False
     return True
 

@@ -12,6 +12,15 @@ from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
 
+def test_process_liveness_treats_permission_denied_as_existing(monkeypatch):
+    def denied(_pid, _signal):
+        raise PermissionError("managed process boundary")
+
+    monkeypatch.setattr(projects.os, "kill", denied)
+
+    assert projects._process_is_alive(12345) is True
+
+
 def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)

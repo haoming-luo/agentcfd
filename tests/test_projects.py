@@ -1,6 +1,7 @@
 import json
 import os
 import shlex
+import shutil
 from pathlib import Path
 
 import jsonschema
@@ -291,6 +292,24 @@ def test_project_status_next_command_preserves_paths_with_spaces(tmp_path):
     command = project.status()["next_action"]["command"]
 
     assert shlex.split(command) == ["agentcfd", "run", str(project.root)]
+
+
+def test_project_status_is_portable_when_a_legacy_run_directory_moves(tmp_path):
+    original = projects.init_project(tmp_path / "original")
+    original.run()
+    record_path = original.run_root / "run.json"
+    record = json.loads(record_path.read_text())
+    record.pop("analysis_sha256", None)
+    record.pop("execution_sha256", None)
+    record_path.write_text(json.dumps(record))
+    moved_root = tmp_path / "moved project"
+    shutil.copytree(original.root, moved_root)
+
+    report = projects.Project(moved_root).status()
+
+    assert report["state"] == "complete"
+    assert report["inputs_changed"] is False
+    assert report["postprocess"]["result"] == str(moved_root / "output" / "result.json")
 
 
 def test_project_status_detects_operational_provider_setting_changes(tmp_path):

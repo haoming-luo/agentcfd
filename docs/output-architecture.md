@@ -71,12 +71,21 @@ the budget; AgentCFD never silently drops requested scientific data.
 - compression and budget decisions;
 - an addressable `OUTPUT_POLICY_INVALID` or `OUTPUT_BUDGET_EXCEEDED` issue.
 
-The temporary estimate is deliberately conservative. The external OpenFOAM
-adapter now passes requested time directories and native field names directly
+The temporary estimate includes a measured 1.25 headroom factor over native,
+VTK, and portable staging. A 23,880-cell, 20-frame OpenCFD v2606 baffled-channel
+run occupied 122.05 MiB with its workspace deliberately retained, versus a
+101.84 MiB raw staging estimate; the calibrated preflight is 127.30 MiB. The
+factor and evidence are visible in `estimate_calibration`, rather than hidden
+as an unexplained constant.
+
+The adapter passes requested time directories and native field names directly
 to `foamToVTK`, avoiding VTK copies for unused checkpoints and variables. It
 still stages the selected native, VTK, and HDF5 representations; future
 streaming and in-situ adapters can lower that remaining amplification without
-changing the public output contract.
+changing the public output contract. Generated channel cases use binary native
+fields. OpenCFD v2606 explicitly disables `writeCompression` for non-ASCII
+format, so requesting compression there only adds a warning and no savings;
+compression is applied to the durable HDF5 product instead.
 
 ## Portable storage
 
@@ -105,6 +114,7 @@ Implemented now:
 - typed frame, checkpoint, compression, and budget policies;
 - transient procedure intent with study/procedure consistency checks;
 - plan-time frame and peak-storage guards;
+- measured temporary-staging headroom with inspectable calibration evidence;
 - export-time selected-array budget enforcement;
 - chunked HDF5 compression and storage provenance;
 - binary OpenFOAM native output for generated cases;

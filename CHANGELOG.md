@@ -17,6 +17,10 @@
   recipes. Runs publish portable ParaView Python scripts and a versioned recipe
   manifest that share the existing XDMF/HDF5 payload; `view --recipe --launch`
   opens the reproducible pipeline directly.
+- Calibrate temporary-output preflight with 1.25 measured headroom after a real
+  20-frame v2606 run exposed the gap between raw staging arithmetic and managed
+  peak usage; keep native channel fields binary and avoid ineffective
+  non-ASCII `writeCompression`.
 - Add a unified project `status` state machine with one shell-safe next action,
   input-change detection, run phase, acceptance summary, and post-processing
   target for both human and JSON clients.

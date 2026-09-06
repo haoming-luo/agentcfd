@@ -36,10 +36,13 @@ from .jsonio import strict_json_object
 from .model import Model
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
+    execute_imported_mesh,
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     OpenFOAMTurbulentPrecursorProvider,
     prepare_pipe_grid_study,
+    plan_imported_mesh,
+    prepare_imported_mesh,
     prepare_turbulent_model_study,
     prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
@@ -1384,6 +1387,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     geometry_check.add_argument("--json", action="store_true", dest="as_json")
 
+    mesh = subparsers.add_parser(
+        "mesh",
+        help="Plan, prepare, and verify an imported-surface OpenFOAM mesh.",
+    )
+    mesh.add_argument("project", nargs="?", type=Path, default=Path("."))
+    mesh.add_argument(
+        "--output",
+        type=Path,
+        help="New directory for the inspectable mesh-only OpenFOAM case.",
+    )
+    mesh.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Resolve cell/refinement/quality budgets without writing or running.",
+    )
+    mesh.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Write the mesh case but do not start OpenFOAM.",
+    )
+    mesh.add_argument("--container-image")
+    mesh.add_argument("--timeout", type=float, default=3600.0)
+    mesh.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
+    mesh.add_argument("--json", action="store_true", dest="as_json")
+
     status = subparsers.add_parser(
         "status",
         help="Show project state and the single recommended next action.",
@@ -2383,6 +2416,70 @@ def main(argv: list[str] | None = None) -> int:
             args.roles is None or report["readiness"]["boundary_roles_ready"]
         )
         return 0 if ready else 3
+    if args.command == "mesh":
+        project = projects.Project.discover(args.project)
+        step = project.load_step(_project_parameters(args.param))
+        domain = step.model.domain
+        if not isinstance(domain, geometry.ImportedSurface):
+            raise ProjectError("The mesh command requires ImportedSurface geometry.")
+        source = projects._safe_project_path(
+            project.root,
+            domain.asset,
+            label="imported surface asset",
+        )
+        if not source.is_file():
+            raise ProjectError(f"Imported geometry asset is missing: {domain.asset}.")
+        if "sha256:" + file_sha256(source) != domain.source_sha256:
+            raise ProjectError(
+                "Imported geometry bytes changed; reinspect and explicitly update model intent."
+            )
+        mesh_plan = plan_imported_mesh(step)
+        if args.plan_only:
+            report = mesh_plan.to_dict()
+            if args.as_json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+            else:
+                print(
+                    "Imported mesh plan | background "
+                    f"{report['background_cell_count']} cells | hard maximum "
+                    f"{report['maximum_cells']}"
+                )
+                print("next: rerun with --output DIRECTORY")
+            return 0
+        if args.output is None:
+            raise ProjectError(
+                "Imported mesh preparation requires an explicit new --output directory."
+            )
+        prepared = prepare_imported_mesh(
+            step,
+            source=source,
+            directory=args.output,
+        )
+        if args.prepare_only:
+            report = prepared.to_dict()
+            accepted = True
+        else:
+            image = args.container_image or project.manifest.openfoam.get(
+                "container_image"
+            )
+            result = execute_imported_mesh(
+                prepared,
+                container_image=str(image) if image else None,
+                timeout_seconds=args.timeout,
+            )
+            report = result.to_dict()
+            accepted = result.accepted
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            mode = "prepared" if args.prepare_only else "accepted" if accepted else "failed"
+            print(f"Imported mesh {mode} | {prepared.directory}")
+            if not args.prepare_only:
+                print(
+                    f"checks {len(report['checks'])} | "
+                    f"accepted {str(accepted).lower()}"
+                )
+        return 0 if accepted else 3
     if args.command == "watch":
         if not math.isfinite(args.interval) or args.interval < 0.2:
             raise ValueError(

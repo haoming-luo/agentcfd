@@ -60,7 +60,7 @@ confirmed roles:
 import json
 from pathlib import Path
 
-from agentcfd import Model, boundaries, fluids, geometry, studies
+from agentcfd import Model, boundaries, fluids, geometry, meshing, studies
 
 
 def build():
@@ -69,6 +69,7 @@ def build():
     domain = geometry.imported_surface_from_inspection(
         inspection,
         asset="geometry/duct.obj",
+        interior_point_m=(0.15, 0.03, 0.03),
     )
     return Model(
         name="imported-duct",
@@ -81,22 +82,47 @@ def build():
         inlet_main=boundaries.mean_velocity_inlet(1.0),
         outlet_main=boundaries.pressure_outlet(),
         housing=boundaries.no_slip_wall(),
-    ).step()
+    ).step(mesh=meshing.automatic(base_size=0.005, maximum_cells=2_000_000))
 ```
 
 `agentcfd plan .` verifies the asset still exists and still matches the
 inspected SHA-256 before any provider action. Missing or changed geometry has
 its own `input_assets_ready: false` state. This is separate from provider
 compatibility so an agent can distinguish “repair the input” from “the released
-OpenFOAM adapter does not lower this geometry yet.” Volume CFD intent rejects
+OpenFOAM flow-solver adapter does not solve this geometry yet.” Volume CFD intent rejects
 an intentionally open surface even when inspection was run with `--allow-open`.
+
+Plan, prepare, or execute the mesh without starting a flow solver:
+
+```bash
+agentcfd mesh . --plan-only
+agentcfd mesh . --output mesh-case --prepare-only
+agentcfd mesh . --output mesh-case
+```
+
+The execution path runs `blockMesh`, native `snappyHexMesh -checkGeometry
+-dry-run`, `snappyHexMesh -overwrite`, and `checkMesh -allGeometry
+-allTopology`. It accepts the mesh only when every command succeeds, checkMesh
+reports `Mesh OK`, and observed cell count, non-orthogonality, skewness, and
+aspect ratio satisfy public intent. `-overwrite` avoids retaining one full mesh
+for every snappy stage. The first slice deliberately rejects prism layers,
+non-OpenFOAM region names, unsupported boundary roles, missing interior points,
+and background grids already over budget.
+
+The checked-in `examples/imported_duct_mesh` vertical slice produced an
+accepted 6,400-cell OpenCFD v2606 mesh from a 2,688-cell background in about
+1.65 seconds of container utility time. Its native gates measured 15.74°
+maximum non-orthogonality, 0.104 maximum skewness, and 1.383 maximum aspect
+ratio. This is workflow/mesh evidence, not flow-physics validation; the compact
+record is `docs/openfoam-v2606-imported-duct-mesh.json`.
 
 STEP/IGES are recognized but not silently tessellated. A future CAD adapter
 must make tessellation tolerance, units, face-name retention, and source hash
 explicit. Similarly, `geometry_ready: true` means that the released preflight
 found no blocking defect; `ready_for_import_setup` means the surface can enter
-the public `Model`, while `ready_to_mesh` remains false until AgentCFD ships and
-validates imported `snappyHexMesh` lowering.
+the public `Model`. The inspection alone keeps `ready_to_mesh` false because the
+interior seed and mesh budget live in `case.py`; `agentcfd mesh --plan-only`
+resolves that second gate.
 
 This boundary mirrors OpenFOAM's documented workflow: `snappyHexMesh` consumes
 triangulated surfaces such as STL/OBJ/VTK, supports multiple surfaces and

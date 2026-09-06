@@ -62,7 +62,7 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
         "geometry_ready": True,
         "boundary_roles_ready": False,
         "ready_for_import_setup": False,
-        "agentcfd_imported_mesh_lowering_available": False,
+        "agentcfd_imported_mesh_lowering_available": True,
         "ready_to_mesh": False,
     }
     assert report["source"]["encoding"] == "ascii"
@@ -85,7 +85,7 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     )
     assert confirmed["readiness"]["boundary_roles_ready"] is True
     assert confirmed["readiness"]["ready_for_import_setup"] is True
-    assert confirmed["next_action"]["kind"] == "provider-roadmap"
+    assert confirmed["next_action"]["kind"] == "model-setup"
     roles = tmp_path / "roles.json"
     roles.write_text(
         json.dumps(
@@ -130,6 +130,7 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
     domain = geometry.imported_surface_from_inspection(
         report,
         asset="geometry/fluid.stl",
+        interior_point_m=(0.0001, 0.0001, 0.0001),
     )
     model = Model(
         name="imported-duct",
@@ -145,6 +146,7 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
     model.validate()
     assert domain.asset == "geometry/fluid.stl"
     assert domain.to_dict()["boundary_roles"] == roles
+    assert domain.to_dict()["interior_point_m"] == [0.0001, 0.0001, 0.0001]
     assert str(surface) not in str(domain.to_dict())
     assert len(model.fingerprint()) == 64
 
@@ -190,6 +192,21 @@ def test_imported_volume_intent_rejects_open_surface_report(tmp_path):
 
     with pytest.raises(ValueError, match="watertight surface"):
         geometry.imported_surface_from_inspection(report, asset="geometry/open.stl")
+
+
+def test_imported_surface_interior_point_must_be_inside_bounds():
+    with pytest.raises(ValueError, match="strictly inside"):
+        geometry.ImportedSurface(
+            asset="geometry/fluid.stl",
+            source_sha256="sha256:" + "0" * 64,
+            source_format="stl",
+            unit="m",
+            scale_to_m=1.0,
+            boundary_roles=(("walls", "wall"),),
+            bounds_m=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+            enclosed_volume_m3=1.0,
+            interior_point_m=(0.0, 0.5, 0.5),
+        )
 
 
 def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_path):

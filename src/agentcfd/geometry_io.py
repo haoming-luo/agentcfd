@@ -634,7 +634,7 @@ def inspect_geometry(
             "geometry_ready": geometry_ready,
             "boundary_roles_ready": boundary_roles_ready,
             "ready_for_import_setup": geometry_ready and boundary_roles_ready,
-            "agentcfd_imported_mesh_lowering_available": False,
+            "agentcfd_imported_mesh_lowering_available": True,
             "ready_to_mesh": False,
         },
         "issues": issues,
@@ -663,10 +663,10 @@ def inspect_geometry(
             }
             if not boundary_roles_ready
             else {
-                "kind": "provider-roadmap",
+                "kind": "model-setup",
                 "message": (
-                    "Geometry and roles pass released preflight; imported snappyHexMesh "
-                    "lowering is not yet claimed."
+                    "Create ImportedSurface model intent with an explicit interior point "
+                    "and automatic mesh budget, then run agentcfd mesh --plan-only."
                 ),
             }
         ),

@@ -91,7 +91,7 @@
         "geometry_ready": {"type": "boolean"},
         "boundary_roles_ready": {"type": "boolean"},
         "ready_for_import_setup": {"type": "boolean"},
-        "agentcfd_imported_mesh_lowering_available": {"const": false},
+        "agentcfd_imported_mesh_lowering_available": {"const": true},
         "ready_to_mesh": {"const": false}
       },
       "additionalProperties": false

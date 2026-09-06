@@ -33,6 +33,7 @@ from .providers import (
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     ReferencePipeProvider,
+    plan_imported_mesh,
 )
 from .providers.openfoam_channel import materialize_interrupted_restart
 from .results import Artifact, FieldRecord, SimulationResult, read_result_record
@@ -1170,7 +1171,7 @@ class Project:
         descriptor = selected.descriptor()
         study = step.model.study
         if isinstance(step.model.domain, ImportedSurface):
-            required_capability = "openfoam.imported-surface"
+            required_capability = "openfoam.imported-surface-flow"
         elif selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
         elif isinstance(step.model.domain, RectangularChannel):
@@ -1181,6 +1182,22 @@ class Project:
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
             )
+        mesh_intent_ready = True
+        imported_mesh_plan = None
+        if isinstance(step.model.domain, ImportedSurface) and model_valid:
+            try:
+                imported_mesh_plan = plan_imported_mesh(step).to_dict()
+            except UnsupportedCaseError as error:
+                mesh_intent_ready = False
+                issues.append(
+                    ProjectIssue(
+                        "IMPORTED_MESH_INTENT_UNSUPPORTED",
+                        "error",
+                        str(error),
+                        "case.py:mesh",
+                        "Declare supported automatic mesh intent, an interior point, and a hard cell budget.",
+                    )
+                )
         provider_compatible = model_valid
         compatibility_detail = "model validation failed"
         if model_valid:
@@ -1314,6 +1331,7 @@ class Project:
             and io_ready
             and output_ready
             and input_assets_ready
+            and mesh_intent_ready
         )
         decisions = {
             "study": study.to_dict(),
@@ -1357,6 +1375,7 @@ class Project:
                 else []
             ),
             "output_plan": output_plan,
+            "imported_mesh_plan": imported_mesh_plan,
         }
         plan: dict[str, object] = {
             "schema": "agentcfd.solution-plan/0.1",
@@ -1381,6 +1400,7 @@ class Project:
                 "runtime_available": runtime_available,
                 "portable_io_available": io_ready,
                 "input_assets_ready": input_assets_ready,
+                "mesh_intent_ready": mesh_intent_ready,
                 "ready_to_run": ready_to_run,
             },
             "issues": [issue.to_dict() for issue in issues],

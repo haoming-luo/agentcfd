@@ -27,6 +27,8 @@ _SCHEMAS = (
     "license-catalog.schema.json",
     "openfoam-case.schema.json",
     "openfoam-grid-study.schema.json",
+    "openfoam-imported-mesh-plan.schema.json",
+    "openfoam-imported-mesh-result.schema.json",
     "openfoam-mesh.schema.json",
     "openfoam-precursor-map.schema.json",
     "openfoam-turbulent-wall-study.schema.json",

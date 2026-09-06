@@ -40,6 +40,7 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
         "runtime_available": True,
         "portable_io_available": True,
         "input_assets_ready": True,
+        "mesh_intent_ready": True,
         "ready_to_run": True,
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
@@ -78,7 +79,7 @@ def test_project_plan_verifies_imported_geometry_asset_identity(tmp_path):
     asset.write_bytes(b"content-addressed-test-surface")
     digest = hashlib.sha256(asset.read_bytes()).hexdigest()
     (root / "case.py").write_text(
-        f"""from agentcfd import Model, boundaries, fluids, geometry, studies
+        f"""from agentcfd import Model, boundaries, fluids, geometry, meshing, studies
 
 def build():
     domain = geometry.ImportedSurface(
@@ -90,6 +91,7 @@ def build():
         boundary_roles=(("inlet", "inlet"), ("outlet", "outlet"), ("walls", "wall")),
         bounds_m=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
         enclosed_volume_m3=1.0,
+        interior_point_m=(0.5, 0.5, 0.5),
     )
     return Model(
         study=studies.internal_flow(),
@@ -99,7 +101,7 @@ def build():
         inlet=boundaries.mean_velocity_inlet(1.0),
         outlet=boundaries.pressure_outlet(),
         walls=boundaries.no_slip_wall(),
-    ).step()
+    ).step(mesh=meshing.automatic(base_size=0.1, maximum_cells=100000))
 """
     )
 
@@ -107,7 +109,9 @@ def build():
     assert plan["readiness"]["model_valid"] is True
     assert plan["readiness"]["input_assets_ready"] is True
     assert plan["readiness"]["provider_compatible"] is False
-    assert plan["decisions"]["required_capability"] == "openfoam.imported-surface"
+    assert plan["decisions"]["required_capability"] == "openfoam.imported-surface-flow"
+    assert plan["readiness"]["mesh_intent_ready"] is True
+    assert plan["decisions"]["imported_mesh_plan"]["maximum_cells"] == 100_000
     assert {issue["code"] for issue in plan["issues"]} == {"PROVIDER_INCOMPATIBLE"}
     jsonschema.Draft202012Validator(
         contracts.load("solution-plan.schema.json")

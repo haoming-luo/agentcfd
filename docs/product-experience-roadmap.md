@@ -121,8 +121,8 @@ files stay hidden and reproducible.
 
 ### Next: eliminate repeated setup work
 
-1. Controlled STEP/IGES tessellation and imported snappyHexMesh lowering, with
-   explicit boundary-role mapping and `surfaceCheck`/dry-run gates.
+1. Complete imported-volume flow solving and controlled STEP/IGES tessellation;
+   the first budgeted snappyHexMesh preparation/native-check slice is now present.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
 3. Extend the shipped filter recipes with multi-view layout and explicit normal

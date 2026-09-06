@@ -103,6 +103,7 @@ def test_transient_step_serializes_mesh_initialization_and_reports():
     )
     mesh = meshing.automatic(
         base_size=0.02,
+        maximum_cells=750_000,
         local_sizing=(meshing.refine("baffle", size=0.005),),
         boundary_layers=(
             meshing.layers(
@@ -123,6 +124,7 @@ def test_transient_step_serializes_mesh_initialization_and_reports():
 
     record = step.to_dict()
     assert record["mesh"]["local_sizing"][0]["regions"] == ["baffle"]
+    assert record["mesh"]["maximum_cells"] == 750_000
     assert record["initialization"]["type"] == "potential-flow"
     assert record["output"]["reports"][0]["name"] == "wake-probe"
     assert mesh.boundary_layers[0].total_thickness == pytest.approx(0.005368)
@@ -151,6 +153,9 @@ def test_mesh_and_report_region_references_fail_early():
             base_size=0.01,
             local_sizing=(meshing.refine("baffle", size=0.02),),
         )
+
+    with pytest.raises(ValueError, match="at least 1000"):
+        meshing.automatic(base_size=0.01, maximum_cells=999)
 
     normalized = outputs.force_report(
         "drag", regions=("baffle",), direction=(2.0, 0.0, 0.0)
@@ -197,7 +202,7 @@ def test_result_queries_are_discoverable_and_check_field_association():
                 unit="m/s",
                 location="cell",
                 artifact="native-fields.h5",
-            )
+            ),
         },
         checks=(Check("complete", True, kind="runtime"),),
     )
@@ -205,7 +210,9 @@ def test_result_queries_are_discoverable_and_check_field_association():
     assert result.history("wake.velocity").values[-1] == 0.2
     assert result.field("fluid.velocity", location="point").artifact == "fields.xdmf"
     assert result.available_data()["quantities"] == ("flow.pressure_drop",)
-    assert result.field("fluid.velocity", location="cell").artifact == "native-fields.h5"
+    assert (
+        result.field("fluid.velocity", location="cell").artifact == "native-fields.h5"
+    )
     with pytest.raises(ValueError, match="multiple associations"):
         result.field("fluid.velocity")
 

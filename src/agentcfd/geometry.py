@@ -25,6 +25,7 @@ class ImportedSurface:
     bounds_m: tuple[tuple[float, float, float], tuple[float, float, float]]
     enclosed_volume_m3: float | None = None
     merge_tolerance_native: float = 0.0
+    interior_point_m: tuple[float, float, float] | None = None
     name: str = "imported-fluid"
 
     def __post_init__(self) -> None:
@@ -75,6 +76,20 @@ class ImportedSurface:
                 "Imported surface SI bounds must have positive extent on every axis."
             )
         object.__setattr__(self, "bounds_m", bounds)
+        if self.interior_point_m is not None:
+            point = tuple(float(value) for value in self.interior_point_m)
+            if len(point) != 3 or any(not math.isfinite(value) for value in point):
+                raise ValueError(
+                    "Imported surface interior point must be a finite 3-vector."
+                )
+            if any(
+                value <= low or value >= high
+                for value, low, high in zip(point, bounds[0], bounds[1])
+            ):
+                raise ValueError(
+                    "Imported surface interior point must lie strictly inside its SI bounds."
+                )
+            object.__setattr__(self, "interior_point_m", point)
         if self.enclosed_volume_m3 is not None:
             object.__setattr__(
                 self,
@@ -115,6 +130,9 @@ class ImportedSurface:
             "merge_tolerance_native": self.merge_tolerance_native,
             "bounds_m": [list(point) for point in self.bounds_m],
             "enclosed_volume_m3": self.enclosed_volume_m3,
+            "interior_point_m": (
+                None if self.interior_point_m is None else list(self.interior_point_m)
+            ),
             "boundary_roles": dict(self.boundary_roles),
             "regions": [item.to_dict() for item in self.regions],
         }
@@ -125,6 +143,7 @@ def imported_surface_from_inspection(
     *,
     asset: str,
     name: str = "imported-fluid",
+    interior_point_m: tuple[float, float, float] | None = None,
 ) -> ImportedSurface:
     """Create deterministic model intent from a geometry-check report."""
 
@@ -174,6 +193,7 @@ def imported_surface_from_inspection(
         bounds_m=(tuple(minimum), tuple(maximum)),
         enclosed_volume_m3=surface_record.get("enclosed_volume_m3"),
         merge_tolerance_native=float(policy.get("merge_tolerance_native", 0.0)),
+        interior_point_m=interior_point_m,
         name=name,
     )
 

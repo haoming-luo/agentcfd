@@ -50,7 +50,7 @@
       "type": "object",
       "required": [
         "method", "base_size", "growth_rate", "local_sizing",
-        "boundary_layers", "quality"
+        "boundary_layers", "quality", "maximum_cells"
       ],
       "properties": {
         "method": {"enum": ["automatic", "structured"]},
@@ -58,7 +58,8 @@
         "growth_rate": {"type": "number", "minimum": 1},
         "local_sizing": {"type": "array"},
         "boundary_layers": {"type": "array"},
-        "quality": {"type": "object"}
+        "quality": {"type": "object"},
+        "maximum_cells": {"type": "integer", "minimum": 1000}
       },
       "additionalProperties": false
     },

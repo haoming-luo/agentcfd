@@ -9,6 +9,14 @@ from .openfoam import (
 )
 from .reference import ReferencePipeProvider
 from .openfoam_channel import OpenFOAMChannelProvider
+from .openfoam_imported import (
+    execute_imported_mesh,
+    ImportedMeshPlan,
+    ImportedMeshResult,
+    PreparedImportedMesh,
+    plan_imported_mesh,
+    prepare_imported_mesh,
+)
 from .openfoam_precursor import (
     OpenFOAMTurbulentPrecursorProvider,
     PreparedOpenFOAMTurbulentModelStudy,
@@ -31,10 +39,16 @@ __all__ = [
     "PreparedOpenFOAMTurbulentWallStudy",
     "PreparedOpenFOAMTurbulentWallFunctionStudy",
     "PreparedOpenFOAMTurbulentModelStudy",
+    "ImportedMeshPlan",
+    "ImportedMeshResult",
+    "PreparedImportedMesh",
     "Provider",
     "ProviderDescriptor",
     "ReferencePipeProvider",
     "prepare_pipe_grid_study",
+    "plan_imported_mesh",
+    "prepare_imported_mesh",
+    "execute_imported_mesh",
     "prepare_turbulent_wall_study",
     "turbulent_pipe_wall_mesh_screen",
     "prepare_turbulent_wall_function_study",

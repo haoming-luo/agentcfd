@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-imported-mesh-result.schema.json",
+  "title": "AgentCFD OpenFOAM imported-surface mesh result 0.1",
+  "type": "object",
+  "required": [
+    "schema", "directory", "accepted", "checks", "quantities",
+    "return_codes", "durations_seconds"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-imported-mesh-result/0.1"},
+    "directory": {"type": "string"},
+    "accepted": {"type": "boolean"},
+    "checks": {"type": "array", "items": {"type": "object"}},
+    "quantities": {"type": "object"},
+    "return_codes": {
+      "type": "object", "additionalProperties": {"type": "integer"}
+    },
+    "durations_seconds": {
+      "type": "object", "additionalProperties": {"type": "number", "minimum": 0}
+    }
+  },
+  "additionalProperties": false
+}

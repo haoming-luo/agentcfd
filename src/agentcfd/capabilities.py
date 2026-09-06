@@ -26,7 +26,9 @@ _CAPABILITIES = (
         maturity="release",
         scope="Typed study, domain, fluid, boundary, procedure, output, and result lifecycle.",
         evidence=("public API tests", "JSON round-trip tests"),
-        limitations=("Provider support remains narrower than the solver-neutral public vocabulary.",),
+        limitations=(
+            "Provider support remains narrower than the solver-neutral public vocabulary.",
+        ),
     ),
     Capability(
         name="workflow.common-cfd-intent",
@@ -78,15 +80,38 @@ _CAPABILITIES = (
         ),
         limitations=(
             "STEP/IGES are recognized but require controlled tessellation.",
-            "Imported snappyHexMesh lowering is not released yet.",
+            "Solver lowering for imported meshes is not released yet.",
             "The standard-library check does not replace OpenFOAM surfaceCheck before meshing.",
+        ),
+    ),
+    Capability(
+        name="openfoam.imported-surface-mesh",
+        maturity="experimental",
+        scope=(
+            "Content-addressed STL/OBJ volume meshing through a padded blockMesh "
+            "background, native geometry dry-run, snappyHexMesh, and checkMesh gates."
+        ),
+        evidence=(
+            "deterministic mesh-plan and prepared-case tests",
+            "explicit locationInMesh and maxGlobalCells lowering",
+            "native command, cell-budget, non-orthogonality, skewness, and aspect-ratio gates",
+            "6,400-cell accepted OpenCFD v2606 imported-duct integration mesh",
+        ),
+        limitations=(
+            "Requires a user-confirmed interior point and OpenFOAM-compatible region names.",
+            "The first slice supports no prism layers and only inlet/outlet/wall/symmetry/empty roles.",
+            "Full imported-geometry flow solution and real-geometry validation are pending.",
         ),
     ),
     Capability(
         name="reference.hagen-poiseuille",
         maturity="release",
         scope="Steady fully developed incompressible Newtonian laminar flow in a circular pipe.",
-        evidence=("closed-form Hagen-Poiseuille relation", "Darcy-Weisbach identity", "mass balance"),
+        evidence=(
+            "closed-form Hagen-Poiseuille relation",
+            "Darcy-Weisbach identity",
+            "mass balance",
+        ),
         limitations=("Re < 2300", "constant properties", "straight circular pipe"),
     ),
     Capability(
@@ -141,7 +166,9 @@ _CAPABILITIES = (
         maturity="experimental",
         scope="Provider-neutral field exchange contract for AgentCFD, AgentFEM, learning, and coupling tools.",
         evidence=("schema and direction validation tests",),
-        limitations=("No conservative mesh mapper or coupled time integrator is released yet.",),
+        limitations=(
+            "No conservative mesh mapper or coupled time integrator is released yet.",
+        ),
     ),
     Capability(
         name="interoperability.portable-field-bundle",

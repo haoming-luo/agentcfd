@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-imported-mesh-plan.schema.json",
+  "title": "AgentCFD OpenFOAM imported-surface mesh plan 0.1",
+  "type": "object",
+  "required": [
+    "schema", "capability", "source_sha256", "background_bounds_m",
+    "background_cells", "background_cell_count", "maximum_cells",
+    "surface_levels", "interior_point_m", "quality_limits", "add_layers",
+    "plan_sha256"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-imported-mesh-plan/0.1"},
+    "capability": {"const": "openfoam.imported-surface-mesh"},
+    "source_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "background_bounds_m": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "number"}}
+    },
+    "background_cells": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "background_cell_count": {"type": "integer", "minimum": 1},
+    "maximum_cells": {"type": "integer", "minimum": 1000},
+    "surface_levels": {
+      "type": "object", "minProperties": 1,
+      "additionalProperties": {"type": "integer", "minimum": 1}
+    },
+    "interior_point_m": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "quality_limits": {
+      "type": "object",
+      "required": ["maximum_non_orthogonality", "maximum_skewness", "maximum_aspect_ratio"],
+      "properties": {
+        "maximum_non_orthogonality": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 90},
+        "maximum_skewness": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_aspect_ratio": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "add_layers": {"const": false},
+    "plan_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

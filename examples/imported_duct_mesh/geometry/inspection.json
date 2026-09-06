@@ -1,0 +1,135 @@
+{
+  "boundary_roles": {
+    "allowed_roles": [
+      "empty",
+      "farfield",
+      "inlet",
+      "interface",
+      "opening",
+      "outlet",
+      "periodic",
+      "symmetry",
+      "wall"
+    ],
+    "confirmed": {
+      "inlet": "inlet",
+      "outlet": "outlet",
+      "walls": "wall"
+    },
+    "suggestions": {
+      "inlet": {
+        "basis": [
+          "inlet"
+        ],
+        "confidence": "name-match",
+        "requires_confirmation": true,
+        "role": "inlet"
+      },
+      "outlet": {
+        "basis": [
+          "outlet"
+        ],
+        "confidence": "name-match",
+        "requires_confirmation": true,
+        "role": "outlet"
+      },
+      "walls": {
+        "basis": [
+          "walls"
+        ],
+        "confidence": "name-match",
+        "requires_confirmation": true,
+        "role": "wall"
+      }
+    }
+  },
+  "issues": [],
+  "next_action": {
+    "kind": "model-setup",
+    "message": "Create ImportedSurface model intent with an explicit interior point and automatic mesh budget, then run agentcfd mesh --plan-only."
+  },
+  "observation_cost": {
+    "external_processes_started": 0,
+    "field_payloads_opened": 0,
+    "source_bytes_hashed": 1553
+  },
+  "policy": {
+    "internal_flow": true,
+    "merge_tolerance_native": 0.0,
+    "require_watertight": true,
+    "topology_triangle_limit": 1000000
+  },
+  "readiness": {
+    "agentcfd_imported_mesh_lowering_available": true,
+    "boundary_roles_ready": true,
+    "geometry_ready": true,
+    "ready_for_import_setup": true,
+    "ready_to_mesh": false
+  },
+  "schema": "agentcfd.geometry-inspection/0.1",
+  "source": {
+    "bytes": 1553,
+    "encoding": "ascii",
+    "format": "stl",
+    "path": "geometry/fluid.stl",
+    "scale_to_m": 1.0,
+    "sha256": "sha256:010c8a05cc5d0c16910ea12ef87add15cc81362790a31599411e596aff31c537",
+    "unit": "m"
+  },
+  "surface": {
+    "boundary_edge_count": 0,
+    "bounds": {
+      "maximum": [
+        1.0,
+        0.5,
+        0.2
+      ],
+      "minimum": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "bounds_m": {
+      "maximum": [
+        1.0,
+        0.5,
+        0.2
+      ],
+      "minimum": [
+        0.0,
+        0.0,
+        0.0
+      ]
+    },
+    "degenerate_triangle_count": 0,
+    "dimensions": [
+      1.0,
+      0.5,
+      0.2
+    ],
+    "dimensions_m": [
+      1.0,
+      0.5,
+      0.2
+    ],
+    "enclosed_volume_m3": 0.09999999999999999,
+    "non_manifold_edge_count": 0,
+    "orientation_conflict_count": 0,
+    "region_names": [
+      "inlet",
+      "outlet",
+      "walls"
+    ],
+    "signed_volume_native": 0.09999999999999999,
+    "topology_complete": true,
+    "triangle_count": 12,
+    "unique_vertex_count": 8,
+    "watertight": true
+  },
+  "tools": {
+    "gmsh": "/opt/homebrew/Caskroom/miniforge/base/envs/fenicsx-env/bin/gmsh",
+    "snappyHexMesh": null,
+    "surfaceCheck": null
+  }
+}

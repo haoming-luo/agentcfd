@@ -73,6 +73,7 @@ files stay hidden and reproducible.
 - bounded-memory live provider logs and field-free progress snapshots with
   coordinate, residual, Courant, mass/pressure monitor, elapsed, and optional
   workspace-size evidence;
+- terminal-aware `watch` streaming for people and JSON-Line agents;
 - one-command post-processing target and self-documenting output directory;
 - JSON Schemas for status, storage, cleanup, and repairable errors.
 

@@ -217,6 +217,31 @@ def test_project_paths_cannot_escape_root(tmp_path):
         projects.Project(project.root)
 
 
+def test_project_discovers_nearest_manifest_from_nested_directories_and_files(tmp_path):
+    outer = projects.init_project(tmp_path / "outer")
+    inner = projects.init_project(outer.root / "input" / "nested-project")
+    deep = inner.root / "output" / "fields"
+    deep.mkdir(parents=True)
+
+    assert projects.Project(deep).root == inner.root
+    assert projects.Project.discover(deep).root == inner.root
+    assert projects.Project(inner.entrypoint).root == inner.root
+
+
+def test_project_next_action_uses_dot_from_any_nested_working_directory(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(tmp_path / "pipe with spaces")
+    nested = project.root / "input" / "cad"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+
+    report = projects.Project.discover().status()
+
+    assert report["root"] == str(project.root)
+    assert shlex.split(report["next_action"]["command"]) == ["agentcfd", "run", "."]
+
+
 def test_project_cli_init_check_run_and_inspect(tmp_path, capsys):
     root = tmp_path / "cli-pipe"
 
@@ -456,6 +481,7 @@ GAMG: Solving for p, Initial residual = 8e-4, Final residual = 9e-7, No Iteratio
     )
     progress = report["progress"]
     assert report["state"] == "running"
+    assert report["next_action"]["command"].startswith("agentcfd watch ")
     assert progress["current_command"] == "pimpleFoam"
     assert progress["coordinate"] == {
         "name": "physical_time",
@@ -519,6 +545,51 @@ def test_project_status_rereads_atomic_completion_before_reporting_interrupted(
     assert report["state"] == "complete"
     assert report["latest_run"]["phase"] == "complete"
     assert report["progress"] is None
+
+
+def test_watch_follows_running_project_until_atomic_completion(
+    tmp_path, monkeypatch, capsys
+):
+    project = projects.init_project(tmp_path / "pipe")
+    plan = project.plan()
+    project.run_root.mkdir()
+    marker = project.run_root / "run.json"
+    initial = {
+        "schema": "agentcfd.project-run/0.1",
+        "run_id": "watched",
+        "mode": "replace",
+        "directory": str(project.run_root),
+        "status": "running",
+        "phase": "solver",
+        "pid": os.getpid(),
+        "analysis_sha256": plan["model"]["analysis_sha256"],
+        "started_at": "2026-09-06T00:00:00+00:00",
+        "completed_at": None,
+    }
+    marker.write_text(json.dumps(initial))
+
+    def complete(_interval):
+        (project.run_root / "result.json").write_text("{}")
+        marker.write_text(
+            json.dumps(
+                {
+                    **initial,
+                    "status": "completed",
+                    "phase": "complete",
+                    "pid": None,
+                    "accepted": True,
+                    "completed_at": "2026-09-06T00:00:01+00:00",
+                }
+            )
+        )
+
+    monkeypatch.setattr("agentcfd.cli.time.sleep", complete)
+
+    assert entrypoint(["watch", str(project.root), "--interval", "0.2", "--json"]) == 0
+    snapshots = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [snapshot["state"] for snapshot in snapshots] == ["running", "complete"]
+    assert snapshots[0]["next_action"]["command"].startswith("agentcfd watch ")
+    assert snapshots[1]["postprocess"]["result"].endswith("output/result.json")
 
 
 def test_project_status_surfaces_failed_acceptance_checks(tmp_path):

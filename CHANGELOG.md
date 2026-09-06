@@ -7,6 +7,12 @@
   physical time/iteration, conservative ETA range for transient runs, latest
   residuals and Courant number, compact mass/pressure monitors, and opt-in
   workspace size.
+- Discover the nearest project manifest from any nested file or directory and
+  keep recommended commands short when the user is already somewhere inside
+  the project.
+- Add `agentcfd watch` for low-overhead polling until a terminal state, with
+  compact human lines or machine-friendly JSON Lines; active project status now
+  recommends this hands-off path.
 - Add a unified project `status` state machine with one shell-safe next action,
   input-change detection, run phase, acceptance summary, and post-processing
   target for both human and JSON clients.

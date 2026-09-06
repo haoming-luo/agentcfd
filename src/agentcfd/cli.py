@@ -9,6 +9,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
@@ -100,6 +101,44 @@ def _doctor() -> dict[str, object]:
             ),
         ],
     }
+
+
+def _watch_summary(report: dict[str, object]) -> str:
+    """Render one compact append-only progress line for terminals and logs."""
+
+    parts = [str(report["state"]).upper()]
+    progress = report.get("progress")
+    if not isinstance(progress, dict):
+        return " | ".join(parts)
+    if progress.get("current_command"):
+        parts.append(str(progress["current_command"]))
+    coordinate = progress.get("coordinate")
+    if isinstance(coordinate, dict) and coordinate.get("current") is not None:
+        current = float(coordinate["current"])
+        target = coordinate.get("target")
+        unit = "s" if coordinate.get("unit") == "s" else "iter"
+        position = f"{current:g}{unit}"
+        if target is not None:
+            position += f"/{float(target):g}{unit}"
+        if coordinate.get("fraction") is not None:
+            position += f" {100.0 * float(coordinate['fraction']):.1f}%"
+        parts.append(position)
+    residuals = progress.get("latest_residuals")
+    if isinstance(residuals, dict) and residuals:
+        worst = max(float(item["initial"]) for item in residuals.values())
+        parts.append(f"residual≤{worst:.3g}")
+    monitors = progress.get("monitors")
+    if (
+        isinstance(monitors, dict)
+        and monitors.get("relative_mass_imbalance") is not None
+    ):
+        parts.append(f"imbalance={float(monitors['relative_mass_imbalance']):.3g}")
+    if progress.get("elapsed_display"):
+        parts.append(str(progress["elapsed_display"]))
+    workspace = progress.get("workspace")
+    if isinstance(workspace, dict) and workspace.get("display") is not None:
+        parts.append(str(workspace["display"]))
+    return " | ".join(parts)
 
 
 def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
@@ -1153,6 +1192,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status.add_argument("--json", action="store_true", dest="as_json")
 
+    watch = subparsers.add_parser(
+        "watch",
+        help="Follow lightweight project progress until the run reaches a terminal state.",
+    )
+    watch.add_argument("project", nargs="?", type=Path, default=Path("."))
+    watch.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Polling interval in seconds (minimum 0.2; default: 2).",
+    )
+    watch.add_argument(
+        "--storage",
+        action="store_true",
+        help="Include recursive workspace size in every snapshot (higher I/O).",
+    )
+    watch.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Emit one project-status JSON object per line.",
+    )
+
     storage_command = subparsers.add_parser(
         "storage",
         help="Inventory outputs, campaigns, and reclaimable temporary data.",
@@ -1893,6 +1955,23 @@ def main(argv: list[str] | None = None) -> int:
                     f"trust {report['latest_run']['trust_level']}"
                 )
         return 0
+    if args.command == "watch":
+        if not math.isfinite(args.interval) or args.interval < 0.2:
+            raise ValueError("Watch interval must be a finite value of at least 0.2 seconds.")
+        project = projects.Project.discover(args.project)
+        try:
+            while True:
+                report = project.status(include_storage=args.storage)
+                if args.as_json:
+                    print(json.dumps(report, sort_keys=True), flush=True)
+                else:
+                    print(_watch_summary(report), flush=True)
+                if report["state"] != "running":
+                    break
+                time.sleep(args.interval)
+        except KeyboardInterrupt:
+            return 130
+        return 0 if report["state"] not in {"blocked", "failed"} else 3
     if args.command == "status":
         report = projects.Project(args.project).status(include_storage=args.storage)
         if args.as_json:

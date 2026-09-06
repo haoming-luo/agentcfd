@@ -74,10 +74,12 @@ files stay hidden and reproducible.
   coordinate, residual, Courant, mass/pressure monitor, elapsed, and optional
   workspace-size evidence;
 - terminal-aware `watch` streaming for people and JSON-Line agents;
+- automatic failed-workspace retention and bounded project-aware solver-log
+  access with phase selection and a versioned agent contract;
 - declarative plane slices, scalar contours, and line-seeded streamlines that
   generate portable ParaView scripts without copying field payloads;
 - one-command post-processing target and self-documenting output directory;
-- JSON Schemas for status, storage, cleanup, and repairable errors.
+- JSON Schemas for status, logs, storage, cleanup, and repairable errors.
 
 ### Next: eliminate repeated setup work
 

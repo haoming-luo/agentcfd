@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Preserve the generated solver workspace automatically after a failed run and
+  add `agentcfd logs` as a bounded, project-aware diagnostic surface. It reads
+  either the live workspace or compact published evidence, supports explicit
+  provider-command selection, and returns a versioned JSON contract for agents.
 - Stream OpenFOAM command output to bounded-memory live logs and expose a
   field-free progress snapshot through `status`: command, elapsed time,
   physical time/iteration, conservative ETA range for transient runs, latest
@@ -38,7 +42,7 @@
   canonical variables, and point/cell association without loading HDF5.
 - Select OpenFOAM time directories and native fields before `foamToVTK`, record
   that selection in field provenance, and avoid staging unused VTK data.
-- Add versioned project status, storage, cleanup, view, and structured error
+- Add versioned project status, logs, storage, cleanup, view, and structured error
   JSON Schemas; JSON failures now include code, repair, and retry guidance.
 
 - Add backend-neutral named regions, rectangular channels with wall-attached

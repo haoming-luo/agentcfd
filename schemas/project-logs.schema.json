@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-logs.schema.json",
+  "title": "AgentCFD bounded solver-log view 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "run_id", "run_status", "command",
+    "available_commands", "source", "path", "requested_lines",
+    "returned_lines", "total_bytes", "bytes_read", "truncated", "tail",
+    "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-logs/0.1"},
+    "root": {"type": "string"},
+    "run_id": {"type": ["string", "null"]},
+    "run_status": {"type": ["string", "null"]},
+    "command": {"type": "string", "minLength": 1},
+    "available_commands": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "source": {"enum": ["workspace", "published-evidence"]},
+    "path": {"type": "string", "minLength": 1},
+    "requested_lines": {"type": "integer", "minimum": 1, "maximum": 1000},
+    "returned_lines": {"type": "integer", "minimum": 0},
+    "total_bytes": {"type": "integer", "minimum": 0},
+    "bytes_read": {"type": "integer", "minimum": 0, "maximum": 1048576},
+    "truncated": {"type": "boolean"},
+    "tail": {"type": "string"},
+    "next_action": {
+      "type": "object",
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string"},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

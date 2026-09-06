@@ -41,6 +41,10 @@ python -m pytest -q
     accounting is needed.
 13. Use `Project.discover()` or ordinary CLI `.` from nested project paths;
     never hard-code an output directory as if it were the project root.
+14. On `failed` or `interrupted`, follow `status.next_action` to `logs --json`,
+    select a provider phase with `--command` when necessary, and read the
+    bounded tail before changing inputs or retrying. Never recursively ingest a
+    retained OpenFOAM workspace just to locate the last error.
 
 ## Current boundary
 

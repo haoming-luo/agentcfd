@@ -55,6 +55,16 @@ compact append-only line per sample; `watch --json` emits JSON Lines for an AI
 agent, service, or log collector. The active state's recommended next action is
 therefore `watch`, so waiting does not require repeated manual commands.
 
+When a provider reports failure, AgentCFD preserves that run's generated
+workspace automatically. `status` recommends `agentcfd logs .` whenever a log
+exists. The command reads at most 1 MiB and returns only the requested final
+lines (80 by default), so a person or agent can inspect the decisive evidence
+without loading a multi-gigabyte case or guessing a backend path. Use
+`logs --command pimpleFoam`, for example, when several phase logs exist;
+`logs --json` carries the available commands, source, truncation state, and one
+safe retry action. Successful runs still remove disposable native bulk after
+copying small logs to `output/evidence/`.
+
 `view` reads only the small field manifest before opening anything. It reports
 frame count, physical/iteration axis range, portable size, canonical variables,
 and whether each variable is a visualization point field or native cell field.
@@ -115,3 +125,7 @@ cycle.
 `agentcfd.toml` with `keep_workspace = true` under `[openfoam]`. This is a
 debugging and provider-development surface; changing it does not change the
 declared scientific intent in `case.py`.
+
+Failure retention is automatic and does not require this option. After the
+cause is repaired and a new replace-mode run completes, stale failed
+workspaces become reclaimable through the normal preview-first `clean` flow.

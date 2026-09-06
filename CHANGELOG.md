@@ -16,6 +16,9 @@
 - Add `agentcfd promote` to turn one accepted immutable summary point into a
   provenance-linked full-field campaign result. Promotion fails on changed
   analysis intent and reuses an existing accepted full-field identity.
+- Add preview-first `agentcfd compact` for accepted full-field campaign points.
+  Explicit `--apply` preserves engineering metadata, logs, and derived
+  CSV/images while removing regenerable spatial bulk and updating identity.
 - Add `agentcfd campaigns` as a field-free design-point index over immutable
   project runs. New run markers carry compact canonical quantities; optional
   recursive storage accounting and unit-preserving CSV export are explicit,

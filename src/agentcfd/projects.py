@@ -35,7 +35,7 @@ from .providers import (
     ReferencePipeProvider,
 )
 from .providers.openfoam_channel import materialize_interrupted_restart
-from .results import Artifact, FieldRecord, SimulationResult
+from .results import Artifact, FieldRecord, SimulationResult, read_result_record
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +236,17 @@ def _human_bytes(value: int) -> str:
         if value >= divisor:
             return f"{value / divisor:.2f} {unit}"
     return f"{value} B"
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
+    """Replace one managed JSON object without exposing a partial record."""
+
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _tree_usage(path: Path) -> tuple[int, int]:
@@ -2074,6 +2085,207 @@ class Project:
                 "solver_processes_started": solver_processes_started,
             },
         }
+
+    def compact_campaign_run(
+        self,
+        run_id: str,
+        *,
+        apply: bool = False,
+    ) -> dict[str, object]:
+        """Preview or remove reproducible full-field bulk from one campaign run."""
+
+        if not isinstance(apply, bool):
+            raise ProjectError("Campaign compaction apply flag must be boolean.")
+        source = self._select_run_record(run_id)
+        assert source is not None
+        if source.get("mode") != "campaign":
+            raise ProjectError("Only immutable campaign runs can be compacted.")
+        if source.get("status") != "completed" or source.get("accepted") is not True:
+            raise ProjectError("Only completed, accepted campaign runs can be compacted.")
+        if source.get("result_profile", "full-fields") != "full-fields":
+            raise ProjectError(f"Run {run_id!r} is already summary-only.")
+        if self.manifest.default_provider != "openfoam":
+            raise ProjectError("Field compaction currently requires an OpenFOAM project.")
+        run_directory = self._record_directory(source)
+        if run_directory is None or not run_directory.is_dir():
+            raise ProjectError("Campaign run directory is missing.")
+        result_path = run_directory / "result.json"
+        if not result_path.is_file():
+            raise ProjectError("Campaign result.json is missing; refusing compaction.")
+        analysis_sha256 = source.get("analysis_sha256")
+        parameters = source.get("parameters", {})
+        if not isinstance(parameters, Mapping):
+            raise ProjectError("Source campaign parameters are missing or malformed.")
+        current_plan = self.plan(parameters=parameters, portable_fields=True)
+        if current_plan["model"]["analysis_sha256"] != analysis_sha256:
+            raise ProjectError(
+                "Current case.py no longer matches the full-field source; refusing "
+                "to rewrite its result identity."
+            )
+        expected_full_identity = self._result_execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+            portable_fields=True,
+        )
+        if source.get("result_execution_sha256") != expected_full_identity:
+            raise ProjectError(
+                "Current OpenFOAM result settings do not match the source run; "
+                "refusing ambiguous compaction."
+            )
+        result = read_result_record(result_path, verify_artifacts=False)
+        artifact_records = result.get("artifact_records", {})
+        if not isinstance(artifact_records, dict):
+            raise ProjectError("Campaign artifact records are malformed.")
+        removable_names = {
+            name
+            for name, record in artifact_records.items()
+            if isinstance(name, str)
+            and isinstance(record, dict)
+            and (
+                name.startswith("fields.")
+                or name.startswith("postprocess.")
+                or record.get("role") == "portable-field-bundle"
+            )
+        }
+        candidates: set[Path] = set()
+        fields_directory = run_directory / "fields"
+        if fields_directory.exists():
+            candidates.add(fields_directory)
+        for name in removable_names:
+            artifact = artifact_records[name]
+            path_value = artifact.get("path")
+            if not isinstance(path_value, str) or not path_value:
+                continue
+            path = Path(path_value)
+            resolved = (
+                path.resolve()
+                if path.is_absolute()
+                else (run_directory / path).resolve()
+            )
+            try:
+                resolved.relative_to(run_directory.resolve())
+            except ValueError as error:
+                raise ProjectError(
+                    f"Refusing to compact artifact outside the campaign: {resolved}"
+                ) from error
+            if resolved.exists():
+                candidates.add(resolved)
+        roots = sorted(
+            (
+                candidate
+                for candidate in candidates
+                if not any(
+                    candidate != parent and candidate.is_relative_to(parent)
+                    for parent in candidates
+                )
+            ),
+            key=lambda path: str(path),
+        )
+        targets = []
+        candidate_bytes = 0
+        candidate_files = 0
+        for path in roots:
+            size, files = _tree_usage(path)
+            candidate_bytes += size
+            candidate_files += files
+            targets.append(
+                {
+                    "path": str(path),
+                    "bytes": size,
+                    "display": _human_bytes(size),
+                    "file_count": files,
+                }
+            )
+        summary_identity = self._result_execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+            portable_fields=False,
+        )
+        report = {
+            "schema": "agentcfd.campaign-compaction/0.1",
+            "root": str(self.root),
+            "run_id": run_id,
+            "directory": str(run_directory),
+            "applied": apply,
+            "from_profile": "full-fields",
+            "to_profile": "summary-only",
+            "targets": targets,
+            "candidate_bytes": candidate_bytes,
+            "candidate_display": _human_bytes(candidate_bytes),
+            "candidate_file_count": candidate_files,
+            "reclaimed_bytes": candidate_bytes if apply else 0,
+            "result_execution_sha256": summary_identity,
+            "preserved": [
+                "result.json",
+                "run.json",
+                "plan.json",
+                "README.md",
+                "quantities",
+                "checks",
+                "histories",
+                "logs-and-evidence",
+                "derived-csv-png-mp4-not-listed-as-field-artifacts",
+            ],
+            "observation_cost": {"field_payloads_opened": 0},
+        }
+        if not apply:
+            return report
+
+        compacted_at = datetime.now(UTC).isoformat()
+        result["fields"] = {}
+        result["field_records"] = []
+        result["artifacts"] = {
+            name: path
+            for name, path in result.get("artifacts", {}).items()
+            if name not in removable_names
+        }
+        result["artifact_records"] = {
+            name: record
+            for name, record in artifact_records.items()
+            if name not in removable_names
+        }
+        provenance = result.get("provenance", {})
+        if not isinstance(provenance, dict):
+            provenance = {}
+        provenance["result_profile"] = "summary-only"
+        provenance["compaction"] = {
+            "compacted_at": compacted_at,
+            "source_result_execution_sha256": expected_full_identity,
+            "reclaimed_bytes": candidate_bytes,
+        }
+        result["provenance"] = provenance
+        messages = result.get("messages", [])
+        if not isinstance(messages, list):
+            messages = []
+        messages.append(
+            "Full fields were explicitly compacted; use campaign promotion to regenerate them."
+        )
+        result["messages"] = messages
+        _write_json_atomic(result_path, result)
+
+        updated_source = dict(source)
+        updated_source["result_profile"] = "summary-only"
+        updated_source["result_execution_sha256"] = summary_identity
+        updated_source["compaction"] = provenance["compaction"]
+        _write_json_atomic(run_directory / "run.json", updated_source)
+        guide = run_directory / "README.md"
+        guide_text = guide.read_text(encoding="utf-8") if guide.is_file() else ""
+        note = (
+            "\n## Compacted fields\n\n"
+            "This accepted campaign point now keeps summaries and evidence only. "
+            f"Regenerate standard XDMF/HDF5 with `agentcfd promote . {run_id}`.\n"
+        )
+        if "## Compacted fields" not in guide_text:
+            temporary_guide = guide.with_suffix(".md.tmp")
+            temporary_guide.write_text(guide_text.rstrip() + note, encoding="utf-8")
+            temporary_guide.replace(guide)
+        for path in roots:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
+        read_result_record(result_path, verify_artifacts=True)
+        return report
 
     def _active_run_ids(self) -> set[str]:
         return {

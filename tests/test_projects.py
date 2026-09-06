@@ -956,6 +956,131 @@ def test_historical_campaign_failure_remains_diagnosable_by_run_id(
         project.logs(run_id="missing-run")
 
 
+def test_campaign_compaction_is_preview_first_and_preserves_derived_outputs(
+    tmp_path, monkeypatch, capsys
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: True)
+    parameters = {"mean_velocity": 0.5, "baffle_height": 0.12}
+    plan = project.plan(parameters=parameters, portable_fields=True)
+    run_id = "accepted-full-fields"
+    run_directory = project.root / "campaigns" / run_id
+    fields = run_directory / "fields"
+    postprocess = run_directory / "postprocess"
+    evidence = run_directory / "evidence"
+    fields.mkdir(parents=True)
+    postprocess.mkdir()
+    evidence.mkdir()
+    xdmf = fields / "fields.xdmf"
+    h5 = fields / "fields.h5"
+    manifest = fields / "manifest.json"
+    xdmf.write_text("<Xdmf/>\n")
+    h5.write_bytes(b"portable-volume-fields" * 100)
+    manifest.write_text("{}\n")
+    recipe_manifest = postprocess / "manifest.json"
+    recipe_script = postprocess / "midplane.py"
+    derived_csv = postprocess / "centerline.csv"
+    recipe_manifest.write_text("{}\n")
+    recipe_script.write_text("# generated recipe\n")
+    derived_csv.write_text("distance_m,fluid.pressure\n0,1\n")
+    log = evidence / "pimpleFoam.log"
+    log.write_text("End\n")
+    result = projects.SimulationResult(
+        status="completed",
+        converged=True,
+        provider="openfoam",
+        quantities={},
+        checks=(Check("execution", True, kind="runtime"),),
+        fields={
+            "fluid.pressure.cell": FieldRecord(
+                unit="Pa",
+                location="cell",
+                artifact=str(xdmf),
+                components=("scalar",),
+                representation="xdmf-hdf5",
+            )
+        },
+        artifacts={
+            "fields.xdmf": Artifact.from_path(xdmf, role="portable-field-bundle"),
+            "fields.hdf5": Artifact.from_path(h5, role="portable-field-bundle"),
+            "fields.manifest": Artifact.from_path(
+                manifest, role="portable-field-bundle"
+            ),
+            "postprocess.manifest": Artifact.from_path(
+                recipe_manifest, role="post-processing-recipe-index"
+            ),
+            "postprocess.midplane": Artifact.from_path(
+                recipe_script, role="paraview-python-recipe"
+            ),
+            "log_pimpleFoam": Artifact.from_path(log, role="solver-log"),
+        },
+        provenance={"result_profile": "full-fields"},
+    )
+    result.write(run_directory / "result.json")
+    full_identity = project._result_execution_fingerprint(
+        plan["model"]["analysis_sha256"],
+        provider="openfoam",
+        portable_fields=True,
+    )
+    (run_directory / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": run_id,
+                "mode": "campaign",
+                "directory": str(run_directory),
+                "status": "completed",
+                "accepted": True,
+                "result_profile": "full-fields",
+                "analysis_sha256": plan["model"]["analysis_sha256"],
+                "result_execution_sha256": full_identity,
+                "parameters": parameters,
+                "design_point_name": "base",
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    (run_directory / "plan.json").write_text(json.dumps(plan))
+    (run_directory / "README.md").write_text("# Full result\n")
+
+    assert (
+        entrypoint(
+            ["compact", str(project.root), run_id, "--json"]
+        )
+        == 0
+    )
+    preview = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-compaction.schema.json")
+    ).validate(preview)
+    assert preview["applied"] is False
+    assert preview["candidate_bytes"] > 0
+    assert h5.is_file()
+    assert derived_csv.is_file()
+
+    applied = project.compact_campaign_run(run_id, apply=True)
+    compacted_result = projects.read_result_record(
+        run_directory / "result.json", verify_artifacts=True
+    )
+    compacted_marker = json.loads((run_directory / "run.json").read_text())
+
+    assert applied["reclaimed_bytes"] == preview["candidate_bytes"]
+    assert not fields.exists()
+    assert not recipe_manifest.exists()
+    assert not recipe_script.exists()
+    assert derived_csv.is_file()
+    assert log.is_file()
+    assert compacted_result["fields"] == {}
+    assert set(compacted_result["artifacts"]) == {"log_pimpleFoam"}
+    assert compacted_result["provenance"]["result_profile"] == "summary-only"
+    assert compacted_marker["result_profile"] == "summary-only"
+    assert compacted_marker["result_execution_sha256"] != full_identity
+    with pytest.raises(ProjectError, match="already summary-only"):
+        project.compact_campaign_run(run_id)
+
+
 def test_project_replace_mode_refuses_unmanaged_output(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)

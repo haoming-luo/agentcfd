@@ -109,6 +109,8 @@ files stay hidden and reproducible.
   evidence retention, lower temporary-storage estimates, and no permanent H5;
 - one-command, identity-gated promotion of accepted lightweight points into
   provenance-linked full-field results, with exact accepted reuse;
+- preview-first reversible-by-recomputation campaign compaction that removes
+  spatial bulk without H5 reads while preserving engineering/derived evidence;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

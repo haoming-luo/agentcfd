@@ -1463,6 +1463,19 @@ def build_parser() -> argparse.ArgumentParser:
     promote.add_argument("--container-image")
     promote.add_argument("--json", action="store_true", dest="as_json")
 
+    compact = subparsers.add_parser(
+        "compact",
+        help="Preview removal of reproducible full-field bulk from one campaign run.",
+    )
+    compact.add_argument("project", type=Path)
+    compact.add_argument("run_id")
+    compact.add_argument(
+        "--apply",
+        action="store_true",
+        help="Rewrite the run as summary-only and remove listed field artifacts.",
+    )
+    compact.add_argument("--json", action="store_true", dest="as_json")
+
     clean = subparsers.add_parser(
         "clean",
         help="Preview removal of temporary solver workspaces while preserving results.",
@@ -2565,6 +2578,22 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"fields: {report['target']['directory']}")
         return 0 if report["successful"] else 3
+    if args.command == "compact":
+        report = projects.Project.discover(args.project).compact_campaign_run(
+            args.run_id,
+            apply=args.apply,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            action = "Reclaimed" if report["applied"] else "Would reclaim"
+            print(
+                f"{action} {report['candidate_display']} from {report['run_id']} "
+                f"({report['candidate_file_count']} files)"
+            )
+            if not report["applied"]:
+                print("preview only; add --apply to compact this accepted run")
+        return 0
     if args.command == "clean":
         report = projects.Project(args.project).clean(
             apply=args.apply,

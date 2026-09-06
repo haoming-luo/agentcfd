@@ -269,6 +269,17 @@ still has the same analysis fingerprint, forces standard portable fields, and
 records the source run in the new result provenance. An already accepted exact
 full-field identity is reused without starting another solver.
 
+Existing accepted full-field campaign points can be slimmed with
+`agentcfd compact . <run-id>`. The default is a non-mutating inventory of exact
+managed targets, bytes, and files; `--apply` is required to rewrite the point
+as summary-only and remove reproducible volume fields plus recipes that would
+otherwise reference them. Compact quantities, checks, histories, run metadata,
+logs/evidence, and independently generated CSV/PNG/MP4 products are preserved.
+Compaction never opens the HDF5 payload and fails closed if the current model or
+OpenFOAM result settings cannot reproduce the source identity. Because the
+rewritten point has the canonical summary fingerprint, `promote` can later
+regenerate a provenance-linked full-field result.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

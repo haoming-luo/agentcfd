@@ -103,6 +103,12 @@ stages. It is fail-closed on changed model intent, a rejected source, or missing
 portable-I/O capability, and its versioned report states whether a full-field
 identity was executed or reused and whether any solver process started.
 
+`agentcfd compact . <run-id> --json` is the inverse storage transition and is
+preview-only unless `--apply` is explicit. It removes regenerable spatial bulk
+without reading HDF5, preserves compact engineering and derived evidence, and
+updates result identity so an agent can no longer mistake the point for a
+field-bearing sample.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

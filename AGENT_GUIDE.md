@@ -80,6 +80,9 @@ python -m pytest -q
     animation, spatial review, AgentFEM exchange, or learned field data.
 23. Diagnose campaign failures by immutable `--run-id`; never assume the latest
     run is the failed point after a continue-on-error sweep.
+24. Treat `compact <run-id>` as destructive despite its safe default. Inspect
+    the preview first and use `--apply` only when full fields are reproducible
+    and no downstream consumer still needs that exact stored field payload.
 
 ## Current boundary
 

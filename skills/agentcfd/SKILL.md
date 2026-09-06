@@ -25,6 +25,8 @@ model.
    when an accepted candidate needs XDMF/HDF5 fields or spatial postprocessing.
 10. Use `logs` and `diagnose` with the failed point's immutable `--run-id`
     after any continue-on-error campaign.
+11. Never apply `compact <run-id> --apply` without first showing its preview and
+    confirming that the exact full-field payload is no longer required.
 
 ## Current capability boundary
 

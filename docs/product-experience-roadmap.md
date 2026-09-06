@@ -99,6 +99,8 @@ files stay hidden and reproducible.
   into every design point and rejected on unknown names before execution;
 - all-points-first sweep preflight, accepted-identity reuse, atomic progress,
   serial execution, and continue/fail-fast runtime policy;
+- zero-solve sweep preview with request-level deduplication and stale-result
+  rejection before accepted markers may suppress computation;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

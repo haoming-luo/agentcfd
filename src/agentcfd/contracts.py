@@ -12,6 +12,7 @@ _SCHEMAS = (
     "analysis-request.schema.json",
     "benchmark-catalog.schema.json",
     "campaign-index.schema.json",
+    "campaign-plan.schema.json",
     "campaign-request.schema.json",
     "campaign-sweep.schema.json",
     "capability-catalog.schema.json",

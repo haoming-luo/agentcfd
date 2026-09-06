@@ -1523,6 +1523,122 @@ class Project:
         report["exported_csv"] = str(target)
         return target, report
 
+    def _reusable_campaign_records(self) -> dict[str, dict[str, object]]:
+        """Index accepted campaign markers whose compact result still exists."""
+
+        reusable = {}
+        for record in self._run_records():
+            identity = record.get("result_execution_sha256")
+            directory = self._record_directory(record)
+            if (
+                record.get("mode") == "campaign"
+                and record.get("status") == "completed"
+                and record.get("accepted") is True
+                and isinstance(identity, str)
+                and directory is not None
+                and (directory / "result.json").is_file()
+            ):
+                reusable[identity] = record
+        return reusable
+
+    def plan_campaign(
+        self,
+        points: Mapping[str, Mapping[str, object]],
+        *,
+        provider: str | None = None,
+        container_image: str | None = None,
+    ) -> dict[str, object]:
+        """Preview campaign readiness and reuse without starting a solver."""
+
+        if not isinstance(points, Mapping) or not points:
+            raise ProjectError("A campaign sweep requires at least one named point.")
+        selected_provider = provider or self.manifest.default_provider
+        reusable = self._reusable_campaign_records()
+        rows = []
+        planned_identities: set[str] = set()
+        for name, raw_parameters in points.items():
+            parameters: dict[str, object] = {}
+            try:
+                if (
+                    not isinstance(name, str)
+                    or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name) is None
+                ):
+                    raise ProjectError(
+                        "Point names must start with a letter and contain only letters, "
+                        "numbers, underscores, or hyphens."
+                    )
+                parameters = self._parameters(raw_parameters)
+                plan = self.plan(
+                    provider=selected_provider,
+                    container_image=container_image,
+                    parameters=parameters,
+                )
+            except ProjectError as error:
+                rows.append(
+                    {
+                        "name": str(name),
+                        "parameters": parameters,
+                        "ready": False,
+                        "issues": [],
+                        "plan_sha256": None,
+                        "result_execution_sha256": None,
+                        "reusable": False,
+                        "reuse_source": None,
+                        "source_run_id": None,
+                        "error": str(error),
+                    }
+                )
+                continue
+            ready = plan["readiness"]["ready_to_run"] is True
+            identity = self._result_execution_fingerprint(
+                plan["model"]["analysis_sha256"],
+                provider=selected_provider,
+                container_image=container_image,
+            )
+            cached = reusable.get(identity)
+            request_duplicate = identity in planned_identities
+            is_reusable = ready and (cached is not None or request_duplicate)
+            rows.append(
+                {
+                    "name": name,
+                    "parameters": parameters,
+                    "ready": ready,
+                    "issues": plan["issues"],
+                    "plan_sha256": plan["plan_sha256"],
+                    "result_execution_sha256": identity,
+                    "reusable": is_reusable,
+                    "reuse_source": (
+                        "existing-campaign"
+                        if cached is not None
+                        else "request-duplicate"
+                        if request_duplicate
+                        else None
+                    ),
+                    "source_run_id": None if cached is None else cached.get("run_id"),
+                    "error": None,
+                }
+            )
+            if ready:
+                planned_identities.add(identity)
+        all_ready = all(row["ready"] is True for row in rows)
+        reusable_count = sum(row["reusable"] is True for row in rows)
+        return {
+            "schema": "agentcfd.campaign-plan/0.1",
+            "root": str(self.root),
+            "provider": selected_provider,
+            "point_count": len(rows),
+            "ready_count": sum(row["ready"] is True for row in rows),
+            "reusable_count": reusable_count,
+            "would_execute_count": len(rows) - reusable_count if all_ready else 0,
+            "all_ready": all_ready,
+            "points": rows,
+            "observation_cost": {
+                "result_manifests_opened": 0,
+                "field_payloads_opened": 0,
+                "solver_processes_started": 0,
+            },
+        }
+
     def run_campaign(
         self,
         points: Mapping[str, Mapping[str, object]],
@@ -1565,14 +1681,7 @@ class Project:
             )
             prepared.append((name, parameters, plan, identity))
 
-        reusable = {
-            str(record["result_execution_sha256"]): record
-            for record in self._run_records()
-            if record.get("mode") == "campaign"
-            and record.get("status") == "completed"
-            and record.get("accepted") is True
-            and isinstance(record.get("result_execution_sha256"), str)
-        }
+        reusable = self._reusable_campaign_records()
         progress_path = self.root / "campaigns" / "last-sweep.json"
         rows: list[dict[str, object]] = []
 

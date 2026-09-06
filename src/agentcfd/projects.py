@@ -848,6 +848,21 @@ class Project:
             and record.get("run_id")
         }
 
+    def _record_directory(self, record: Mapping[str, object] | None) -> Path | None:
+        if record is None:
+            return None
+        run_id = str(record.get("run_id", ""))
+        local_candidates = (
+            (self.run_root,)
+            if record.get("mode") == "replace"
+            else (self.root / "campaigns" / run_id, self.run_root / run_id)
+        )
+        local = next((path for path in local_candidates if path.is_dir()), None)
+        if local is not None:
+            return local
+        recorded = Path(str(record.get("directory", "")))
+        return recorded if recorded.is_absolute() else self.root / recorded
+
     def storage(self) -> dict[str, object]:
         """Inventory managed project data without reading field arrays."""
 
@@ -984,6 +999,7 @@ class Project:
         )
         runs = self._run_records()
         latest = runs[0] if runs else None
+        run_directory = self._record_directory(latest)
         error_issues = [
             issue for issue in plan["issues"] if issue.get("severity") == "error"
         ]
@@ -999,6 +1015,14 @@ class Project:
             else:
                 latest_execution = latest.get("execution_sha256")
                 latest_analysis = latest.get("analysis_sha256")
+                if latest_analysis is None and run_directory is not None:
+                    try:
+                        saved_plan = json.loads(
+                            (run_directory / "plan.json").read_text(encoding="utf-8")
+                        )
+                        latest_analysis = saved_plan["model"]["analysis_sha256"]
+                    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+                        pass
                 if isinstance(latest_execution, str):
                     changed = latest_execution != current_execution_sha256
                 elif isinstance(latest_analysis, str):
@@ -1019,18 +1043,6 @@ class Project:
         ):
             state = "blocked"
 
-        run_directory = None
-        if latest is not None:
-            run_id = str(latest.get("run_id", ""))
-            local_candidates = (
-                (self.run_root,)
-                if latest.get("mode") == "replace"
-                else (self.root / "campaigns" / run_id, self.run_root / run_id)
-            )
-            run_directory = next((path for path in local_candidates if path.is_dir()), None)
-            if run_directory is None:
-                recorded = Path(str(latest.get("directory", "")))
-                run_directory = recorded if recorded.is_absolute() else self.root / recorded
         result_path = None if run_directory is None else run_directory / "result.json"
         fields_path = None if run_directory is None else run_directory / "fields" / "fields.xdmf"
         if fields_path is not None and not fields_path.is_file():

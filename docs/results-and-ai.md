@@ -57,6 +57,13 @@ CLI failures requested with `--json` use `agentcfd.error/0.1` with a stable code
 plain message, repair guidance, and `safe_to_retry`; agents do not need to parse
 human stderr. Active solver workspaces are protected from cleanup.
 
+`output.views` carries named, typed post-processing intent in the same analysis
+fingerprint. After field publication, `output/postprocess/manifest.json` maps
+canonical fields to their exported point/cell arrays and portable ParaView
+scripts. An agent can list `status.postprocess.recipes`, select one by name, and
+call `agentcfd view . --recipe NAME --launch`; it never needs to synthesize a
+ParaView trace or duplicate the HDF5 payload.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

@@ -33,13 +33,14 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
     assert plan["decisions"]["portable_formats"] == []
-    assert plan["decisions"]["output_plan"]["channels"]["field_frames"][
-        "resolved_count"
-    ] == 1
-    assert plan["plan_sha256"].startswith("sha256:")
-    jsonschema.Draft202012Validator(contracts.load("solution-plan.schema.json")).validate(
-        plan
+    assert (
+        plan["decisions"]["output_plan"]["channels"]["field_frames"]["resolved_count"]
+        == 1
     )
+    assert plan["plan_sha256"].startswith("sha256:")
+    jsonschema.Draft202012Validator(
+        contracts.load("solution-plan.schema.json")
+    ).validate(plan)
 
     completed = project.run()
     assert completed.result.accepted is True
@@ -163,7 +164,11 @@ def test_project_init_refuses_to_overwrite_user_directory(tmp_path):
 def test_project_plan_returns_addressable_physics_issue(tmp_path):
     project = projects.init_project(tmp_path / "pipe")
     path = project.root / "case.py"
-    path.write_text(path.read_text().replace("mean_velocity_inlet(0.02)", "mean_velocity_inlet(1.0)"))
+    path.write_text(
+        path.read_text().replace(
+            "mean_velocity_inlet(0.02)", "mean_velocity_inlet(1.0)"
+        )
+    )
 
     plan = project.plan()
 
@@ -261,13 +266,21 @@ def test_project_cli_init_check_run_and_inspect(tmp_path, capsys):
 def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, capsys):
     root = tmp_path / "wake"
 
-    assert entrypoint(["init", str(root), "--template", "baffle-channel", "--json"]) == 0
+    assert (
+        entrypoint(["init", str(root), "--template", "baffle-channel", "--json"]) == 0
+    )
     initialized = json.loads(capsys.readouterr().out)
     assert initialized["provider"] == "openfoam"
     plan = projects.Project(root).plan()
     assert plan["readiness"]["provider_compatible"] is True
     assert plan["decisions"]["solver"] == "pimpleFoam"
     assert plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 23880
+    assert [
+        item["name"]
+        for item in plan["decisions"]["output_plan"]["channels"]["views"][
+            "definitions"
+        ]
+    ] == ["midplane-vorticity", "wake-streamlines"]
 
 
 def test_baffle_channel_template_rejects_reference_provider(tmp_path):
@@ -290,9 +303,9 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     project = projects.init_project(tmp_path / "pipe")
 
     ready = project.status()
-    jsonschema.Draft202012Validator(contracts.load("project-status.schema.json")).validate(
-        ready
-    )
+    jsonschema.Draft202012Validator(
+        contracts.load("project-status.schema.json")
+    ).validate(ready)
     assert ready["state"] == "ready"
     assert ready["next_action"]["command"].startswith("agentcfd run ")
     assert ready["postprocess"]["primary"] is None
@@ -304,7 +317,9 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     assert complete["postprocess"]["result"].endswith("output/result.json")
 
     case = project.entrypoint
-    case.write_text(case.read_text().replace('name="water-pipe"', 'name="water-pipe-v2"'))
+    case.write_text(
+        case.read_text().replace('name="water-pipe"', 'name="water-pipe-v2"')
+    )
     modified = project.status()
     assert modified["state"] == "modified"
     assert modified["inputs_changed"] is True
@@ -476,9 +491,9 @@ GAMG: Solving for p, Initial residual = 8e-4, Final residual = 9e-7, No Iteratio
 
     report = project.status(include_storage=True)
 
-    jsonschema.Draft202012Validator(contracts.load("project-status.schema.json")).validate(
-        report
-    )
+    jsonschema.Draft202012Validator(
+        contracts.load("project-status.schema.json")
+    ).validate(report)
     progress = report["progress"]
     assert report["state"] == "running"
     assert report["next_action"]["command"].startswith("agentcfd watch ")
@@ -634,9 +649,9 @@ def test_storage_inventory_and_clean_preserve_results(tmp_path):
     assert inventory["next_action"]["command"].endswith(" --apply")
 
     preview = project.clean()
-    jsonschema.Draft202012Validator(contracts.load("project-clean.schema.json")).validate(
-        preview
-    )
+    jsonschema.Draft202012Validator(
+        contracts.load("project-clean.schema.json")
+    ).validate(preview)
     assert preview["applied"] is False
     assert (workspace / "native-field").is_file()
     applied = project.clean(apply=True)
@@ -690,9 +705,9 @@ def test_status_storage_clean_and_view_cli_are_human_and_agent_friendly(
     assert entrypoint(["view", str(root), "--json"]) == 0
     view = json.loads(capsys.readouterr().out)
     assert view["kind"] == "result-json"
-    jsonschema.Draft202012Validator(contracts.load("project-view.schema.json")).validate(
-        view
-    )
+    jsonschema.Draft202012Validator(
+        contracts.load("project-view.schema.json")
+    ).validate(view)
 
 
 def test_status_summarizes_xdmf_without_loading_field_payload(tmp_path):
@@ -738,7 +753,9 @@ def test_json_mode_returns_structured_repairable_error(tmp_path, capsys):
 
     assert entrypoint(["status", str(missing), "--json"]) == 2
     payload = json.loads(capsys.readouterr().out)
-    jsonschema.Draft202012Validator(contracts.load("error.schema.json")).validate(payload)
+    jsonschema.Draft202012Validator(contracts.load("error.schema.json")).validate(
+        payload
+    )
     assert payload["schema"] == "agentcfd.error/0.1"
     assert payload["error"]["code"] == "FILE_NOT_FOUND_ERROR"
     assert payload["error"]["repair"]

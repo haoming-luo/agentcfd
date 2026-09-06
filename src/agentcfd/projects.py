@@ -17,7 +17,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Mapping
 
-from . import boundaries, data_exchange, engineering
+from . import boundaries, data_exchange, engineering, postprocessing
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
 from .geometry import CircularPipe, RectangularChannel
 from .model import Step
@@ -61,7 +61,9 @@ class ProjectManifest:
         try:
             payload = tomllib.loads(path.read_text(encoding="utf-8"))
         except (OSError, tomllib.TOMLDecodeError) as error:
-            raise ProjectError(f"Cannot read AgentCFD project manifest {path}: {error}") from error
+            raise ProjectError(
+                f"Cannot read AgentCFD project manifest {path}: {error}"
+            ) from error
         allowed = {
             "schema",
             "entrypoint",
@@ -80,11 +82,18 @@ class ProjectManifest:
             name: payload.get(name)
             for name in ("entrypoint", "factory", "default_provider", "run_directory")
         }
-        if any(not isinstance(value, str) or not value.strip() for value in strings.values()):
-            raise ProjectError("Project entrypoint, factory, provider, and run directory are required strings.")
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in strings.values()
+        ):
+            raise ProjectError(
+                "Project entrypoint, factory, provider, and run directory are required strings."
+            )
         provider = str(strings["default_provider"]).strip()
         if provider not in {"reference", "openfoam"}:
-            raise ProjectError("Project default_provider must be 'reference' or 'openfoam'.")
+            raise ProjectError(
+                "Project default_provider must be 'reference' or 'openfoam'."
+            )
         openfoam = payload.get("openfoam", {})
         if not isinstance(openfoam, dict):
             raise ProjectError("Project [openfoam] settings must be a table.")
@@ -202,7 +211,9 @@ def _inlet_reynolds(step: Step) -> float | None:
     if inlet is None:
         return None
     if isinstance(inlet, boundaries.MassFlowInlet):
-        velocity = inlet.mass_flow_rate / (step.model.fluid.density * step.model.domain.area)
+        velocity = inlet.mass_flow_rate / (
+            step.model.fluid.density * step.model.domain.area
+        )
     else:
         velocity = inlet.velocity
     return engineering.reynolds_number(
@@ -307,7 +318,10 @@ def _latest_numeric_row(path: Path) -> tuple[list[float] | None, int]:
         if not stripped or stripped.startswith("#"):
             continue
         try:
-            values = [float(value) for value in stripped.replace("(", " ").replace(")", " ").split()]
+            values = [
+                float(value)
+                for value in stripped.replace("(", " ").replace(")", " ").split()
+            ]
         except ValueError:
             continue
         if len(values) >= 2 and all(math.isfinite(value) for value in values):
@@ -347,7 +361,9 @@ def _run_progress_snapshot(
         else []
     )
     current_log = log_paths[-1] if log_paths else None
-    current_command = None if current_log is None else current_log.name.removeprefix("log.")
+    current_command = (
+        None if current_log is None else current_log.name.removeprefix("log.")
+    )
     if record.get("status") == "exporting":
         current_command = "portable-field-export"
     tail, tail_bytes = (
@@ -531,7 +547,9 @@ def _run_progress_snapshot(
         "current_command": current_command,
         "observed_at": observed_at,
         "updated_at": updated_at,
-        "elapsed_seconds": None if elapsed_seconds is None else round(elapsed_seconds, 3),
+        "elapsed_seconds": None
+        if elapsed_seconds is None
+        else round(elapsed_seconds, 3),
         "elapsed_display": (
             None if elapsed_seconds is None else _human_duration(elapsed_seconds)
         ),
@@ -561,7 +579,9 @@ def _run_progress_snapshot(
             "exists": workspace is not None and workspace.exists(),
             "native_time_directory_count": len(native_coordinates),
             "bytes": workspace_bytes,
-            "display": None if workspace_bytes is None else _human_bytes(workspace_bytes),
+            "display": None
+            if workspace_bytes is None
+            else _human_bytes(workspace_bytes),
             "file_count": workspace_files,
         },
         "observation_cost": {
@@ -593,6 +613,16 @@ def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
             (
                 "Open `fields/fields.xdmf` in ParaView for mesh and field animation.",
                 "The adjacent compressed HDF5 file is its payload; keep both together.",
+                "",
+            )
+        )
+    recipe_manifest = postprocessing.read_recipe_manifest(run.directory)
+    if recipe_manifest is not None and recipe_manifest.get("recipes"):
+        lines.extend(
+            (
+                "Reusable ParaView recipes are in `postprocess/`; launch one with "
+                "`agentcfd view . --recipe NAME --launch`.",
+                "These scripts share `fields/fields.h5` and do not duplicate volume data.",
                 "",
             )
         )
@@ -748,9 +778,7 @@ def _resolved_output_plan(
         )
         nz = math.ceil(domain.width / size - 1.0e-12)
         estimated_cells = (
-            nx[0] * (ny[0] + ny[1])
-            + nx[1] * ny[1]
-            + nx[2] * (ny[0] + ny[1])
+            nx[0] * (ny[0] + ny[1]) + nx[1] * ny[1] + nx[2] * (ny[0] + ny[1])
         ) * nz
 
     components = {
@@ -771,7 +799,9 @@ def _resolved_output_plan(
         )
         field_bytes = requested_frames * entities * scalar_components * 8
         mesh_bytes = estimated_cells * 8 * 10
-        estimated_portable_bytes = math.ceil(1.10 * (field_bytes + mesh_bytes) + 1024**2)
+        estimated_portable_bytes = math.ceil(
+            1.10 * (field_bytes + mesh_bytes) + 1024**2
+        )
         if "npz" in step.output.portable_formats:
             estimated_portable_bytes += field_bytes + mesh_bytes
         # Current external adapter stages solver-native and VTK data before publishing HDF5.
@@ -787,6 +817,10 @@ def _resolved_output_plan(
                 "definitions": [item.to_dict() for item in step.output.reports],
                 "retention": "all compact samples",
             },
+            "views": {
+                "definitions": [item.to_dict() for item in step.output.views],
+                "retention": "scripts and state only; shared portable fields",
+            },
             "field_frames": {
                 **frames.to_dict(),
                 "resolved_count": requested_frames,
@@ -796,7 +830,9 @@ def _resolved_output_plan(
         "estimated_mesh_cells": estimated_cells,
         "estimated_portable_bytes": estimated_portable_bytes,
         "estimated_portable_display": (
-            None if estimated_portable_bytes is None else _human_bytes(estimated_portable_bytes)
+            None
+            if estimated_portable_bytes is None
+            else _human_bytes(estimated_portable_bytes)
         ),
         "estimated_temporary_peak_bytes": estimated_temporary_peak_bytes,
         "estimated_temporary_peak_display": (
@@ -1078,7 +1114,9 @@ class Project:
             "study": study.to_dict(),
             "procedure": step.procedure.to_dict(),
             "outputs": step.output.to_dict(),
-            "initialization": None if step.initialization is None else step.initialization.to_dict(),
+            "initialization": None
+            if step.initialization is None
+            else step.initialization.to_dict(),
             "mesh_intent": None if step.mesh is None else step.mesh.to_dict(),
             "provider": asdict(descriptor),
             "required_capability": required_capability,
@@ -1394,22 +1432,43 @@ class Project:
             state = "blocked"
 
         result_path = None if run_directory is None else run_directory / "result.json"
-        fields_path = None if run_directory is None else run_directory / "fields" / "fields.xdmf"
+        fields_path = (
+            None if run_directory is None else run_directory / "fields" / "fields.xdmf"
+        )
         if fields_path is not None and not fields_path.is_file():
             fields_path = None
         if result_path is not None and not result_path.is_file():
             result_path = None
         postprocess = {
-            "primary": str(fields_path or result_path) if fields_path or result_path else None,
+            "primary": str(fields_path or result_path)
+            if fields_path or result_path
+            else None,
             "fields": None if fields_path is None else str(fields_path),
             "result": None if result_path is None else str(result_path),
             "command": (
-                f"agentcfd view {project_argument}" if fields_path or result_path else None
+                f"agentcfd view {project_argument}"
+                if fields_path or result_path
+                else None
             ),
             "field_summary": (
                 None if fields_path is None else _field_bundle_summary(fields_path)
             ),
+            "recipes": [],
         }
+        if run_directory is not None:
+            recipe_manifest = postprocessing.read_recipe_manifest(run_directory)
+            if isinstance(recipe_manifest, dict) and isinstance(
+                recipe_manifest.get("recipes"), list
+            ):
+                postprocess["recipes"] = [
+                    {
+                        **recipe,
+                        "script": str(run_directory / "postprocess" / recipe["script"]),
+                    }
+                    for recipe in recipe_manifest["recipes"]
+                    if isinstance(recipe, dict)
+                    and isinstance(recipe.get("script"), str)
+                ]
         progress = _run_progress_snapshot(
             self.root,
             latest,
@@ -1514,7 +1573,9 @@ class Project:
         assert isinstance(readiness, dict)
         if readiness["ready_to_run"] is not True:
             codes = ", ".join(issue["code"] for issue in plan["issues"])
-            raise ProjectError(f"Project is not ready to run: {codes or 'unknown issue'}")
+            raise ProjectError(
+                f"Project is not ready to run: {codes or 'unknown issue'}"
+            )
         output_plan = plan["decisions"]["output_plan"]
         estimated_peak = output_plan.get("estimated_temporary_peak_bytes")
         campaign_mode = campaign or self.manifest.run_mode == "campaign"
@@ -1533,19 +1594,28 @@ class Project:
         run_directory = (
             self.root / "campaigns" / run_id if campaign_mode else self.run_root
         )
-        if not campaign_mode and run_directory.exists() and any(run_directory.iterdir()):
+        if (
+            not campaign_mode
+            and run_directory.exists()
+            and any(run_directory.iterdir())
+        ):
             marker = run_directory / "run.json"
             try:
                 owned = json.loads(marker.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 owned = None
-            if not isinstance(owned, dict) or owned.get("schema") != "agentcfd.project-run/0.1":
+            if (
+                not isinstance(owned, dict)
+                or owned.get("schema") != "agentcfd.project-run/0.1"
+            ):
                 raise ProjectError(
                     f"Refusing to replace unmanaged output directory: {run_directory}"
                 )
-            if owned.get("status") in {"preparing", "running", "exporting"} and _process_is_alive(
-                owned.get("pid")
-            ):
+            if owned.get("status") in {
+                "preparing",
+                "running",
+                "exporting",
+            } and _process_is_alive(owned.get("pid")):
                 raise ProjectError(
                     "Refusing to replace an active AgentCFD run. Use `agentcfd status .` "
                     "to inspect its current phase."
@@ -1553,7 +1623,9 @@ class Project:
             shutil.rmtree(run_directory)
         run_directory.mkdir(parents=True, exist_ok=not campaign_mode)
         plan_path = run_directory / "plan.json"
-        plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        plan_path.write_text(
+            json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
         # Establish ownership before external execution. If a solver or exporter
         # raises, the next replace run can safely recover this AgentCFD-owned
         # directory instead of forcing the user to delete it manually.
@@ -1618,8 +1690,10 @@ class Project:
             self._openfoam_settings().get("keep_workspace", False)
         )
         bundle = None
-        if selected_name == "openfoam" and result.status == "completed" and bool(
-            self._openfoam_settings().get("export_fields", True)
+        if (
+            selected_name == "openfoam"
+            and result.status == "completed"
+            and bool(self._openfoam_settings().get("export_fields", True))
         ):
             write_marker(status="exporting", phase="portable-fields")
             try:
@@ -1629,7 +1703,9 @@ class Project:
                     container_image=selected.container_image,
                     density=step.model.fluid.density,
                     axis={
-                        "name": "solver_iteration" if step.model.study.steady else "time",
+                        "name": "solver_iteration"
+                        if step.model.study.steady
+                        else "time",
                         "unit": "1" if step.model.study.steady else "s",
                         "physical_time": not step.model.study.steady,
                         "description": (
@@ -1697,6 +1773,25 @@ class Project:
                     description=record["description"],
                     processing={"operation": record["processing"]},
                 )
+            if step.output.views:
+                recipe_manifest, recipe_scripts = (
+                    postprocessing.publish_paraview_recipes(
+                        run_directory,
+                        step.output.views,
+                        manifest,
+                    )
+                )
+                result.artifacts["postprocess.manifest"] = Artifact.from_path(
+                    recipe_manifest,
+                    role="post-processing-recipe-index",
+                    media_type="application/json",
+                )
+                for script in recipe_scripts:
+                    result.artifacts[f"postprocess.{script.stem}"] = Artifact.from_path(
+                        script,
+                        role="paraview-python-recipe",
+                        media_type="text/x-python",
+                    )
             if not retained_workspace:
                 result.fields = {
                     name: field
@@ -1740,7 +1835,10 @@ class Project:
                     result.fields[name] = replace(field, artifact=str(copied))
             if not retained_workspace and workspace_root.is_dir():
                 shutil.rmtree(workspace_root)
-                for empty_parent in (workspace_root.parent, workspace_root.parent.parent):
+                for empty_parent in (
+                    workspace_root.parent,
+                    workspace_root.parent.parent,
+                ):
                     try:
                         empty_parent.rmdir()
                     except OSError:
@@ -1839,6 +1937,20 @@ def build():
                 ),
                 outputs.force_report("baffle-drag", regions=("baffle",)),
             ),
+            views=(
+                outputs.slice_view(
+                    "midplane-vorticity",
+                    field="fluid.vorticity",
+                    origin=(0.6, 0.1, 0.05),
+                    normal=(0.0, 0.0, 1.0),
+                ),
+                outputs.streamline_view(
+                    "wake-streamlines",
+                    seed_start=(0.02, 0.01, 0.05),
+                    seed_end=(0.02, 0.19, 0.05),
+                    seeds=40,
+                ),
+            ),
         ),
     )
 '''
@@ -1855,7 +1967,9 @@ def init_project(
     if provider not in {"reference", "openfoam"}:
         raise ValueError("Project provider must be 'reference' or 'openfoam'.")
     if template not in {"industrial-pipe", "baffle-channel"}:
-        raise ValueError("Project template must be 'industrial-pipe' or 'baffle-channel'.")
+        raise ValueError(
+            "Project template must be 'industrial-pipe' or 'baffle-channel'."
+        )
     if template == "baffle-channel" and provider != "openfoam":
         raise ValueError("The baffle-channel template requires provider='openfoam'.")
     root = Path(directory)

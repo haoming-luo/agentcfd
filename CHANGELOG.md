@@ -13,6 +13,10 @@
 - Add `agentcfd watch` for low-overhead polling until a terminal state, with
   compact human lines or machine-friendly JSON Lines; active project status now
   recommends this hands-off path.
+- Add typed plane-slice, scalar-contour, and line-seeded streamline output
+  recipes. Runs publish portable ParaView Python scripts and a versioned recipe
+  manifest that share the existing XDMF/HDF5 payload; `view --recipe --launch`
+  opens the reproducible pipeline directly.
 - Add a unified project `status` state machine with one shell-safe next action,
   input-change detection, run phase, acceptance summary, and post-processing
   target for both human and JSON clients.

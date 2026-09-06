@@ -13,7 +13,22 @@ import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from . import benchmarks, boundaries, capabilities, contracts, data_exchange, engineering, fluids, geometry, licensing, outputs, procedures, projects, properties, studies
+from . import (
+    benchmarks,
+    boundaries,
+    capabilities,
+    contracts,
+    data_exchange,
+    engineering,
+    fluids,
+    geometry,
+    licensing,
+    outputs,
+    procedures,
+    projects,
+    properties,
+    studies,
+)
 from ._version import __version__
 from .errors import AgentCFDError, ProjectError
 from .jsonio import strict_json_object
@@ -95,7 +110,9 @@ def _doctor() -> dict[str, object]:
                 else []
             ),
             *(
-                ["Install OpenFOAM locally or use a configured container image for numerical CFD."]
+                [
+                    "Install OpenFOAM locally or use a configured container image for numerical CFD."
+                ]
                 if not openfoam.available
                 else []
             ),
@@ -250,7 +267,11 @@ def _turbulent_pipe_model(
 
 
 def _pipe_demo(output_path: Path) -> dict[str, object]:
-    result = _pipe_model().step(procedure=procedures.steady(), output=outputs.standard()).run()
+    result = (
+        _pipe_model()
+        .step(procedure=procedures.steady(), output=outputs.standard())
+        .run()
+    )
     result.write(output_path)
     return result.to_dict()
 
@@ -272,7 +293,11 @@ def _prepare_openfoam_pipe(
         axial_cells=axial_cells,
         nominal_wall_cell_fraction=nominal_wall_cell_fraction,
     )
-    return OpenFOAMProvider(case_directory=case_directory, mesh=mesh).prepare(step).to_dict()
+    return (
+        OpenFOAMProvider(case_directory=case_directory, mesh=mesh)
+        .prepare(step)
+        .to_dict()
+    )
 
 
 def _run_openfoam_pipe(
@@ -451,7 +476,9 @@ def _prepare_openfoam_turbulent_model_study(
         "turbulence_length_scale": turbulence_length_scale,
     }
     sst_step = _turbulent_pipe_step(turbulence_model="k-omega-sst", **common)
-    fraction = 0.0625 if nominal_wall_cell_fraction is None else nominal_wall_cell_fraction
+    fraction = (
+        0.0625 if nominal_wall_cell_fraction is None else nominal_wall_cell_fraction
+    )
     if target_y_plus is not None:
         fraction = float(
             turbulent_pipe_wall_mesh_screen(
@@ -495,11 +522,15 @@ def _prepare_openfoam_turbulent_model_sweep(
         raise ValueError("A turbulent model sweep requires at least three velocities.")
     selected = tuple(float(value) for value in velocities)
     if any(not math.isfinite(value) or value <= 0.0 for value in selected):
-        raise ValueError("Turbulent model sweep velocities must be finite and positive.")
+        raise ValueError(
+            "Turbulent model sweep velocities must be finite and positive."
+        )
     if len(set(selected)) != len(selected):
         raise ValueError("Turbulent model sweep velocities must be distinct.")
     if directory.exists() and any(directory.iterdir()):
-        raise FileExistsError(f"OpenFOAM model-sweep directory is not empty: {directory}")
+        raise FileExistsError(
+            f"OpenFOAM model-sweep directory is not empty: {directory}"
+        )
     directory.mkdir(parents=True, exist_ok=True)
     point_records: list[dict[str, object]] = []
     for index, velocity in enumerate(sorted(selected), start=1):
@@ -567,7 +598,9 @@ def _run_openfoam_turbulent_model_sweep(
         raise ValueError("OpenFOAM turbulent model-sweep campaign identity changed.")
     points = plan.get("points")
     if not isinstance(points, list) or len(points) < 3:
-        raise ValueError("OpenFOAM turbulent model sweep requires at least three points.")
+        raise ValueError(
+            "OpenFOAM turbulent model sweep requires at least three points."
+        )
     root = directory.resolve()
     assessments: list[Path] = []
     progress: dict[str, object] = {
@@ -586,7 +619,9 @@ def _run_openfoam_turbulent_model_sweep(
         try:
             point_directory.relative_to(root)
         except ValueError as error:
-            raise ValueError("OpenFOAM model-sweep point escapes its directory.") from error
+            raise ValueError(
+                "OpenFOAM model-sweep point escapes its directory."
+            ) from error
         nested_plan = point_directory / "agentcfd-turbulent-model-study.json"
         if file_sha256(nested_plan) != point.get("plan_sha256"):
             raise ValueError("OpenFOAM model-sweep point plan identity changed.")
@@ -658,9 +693,7 @@ def _time_step_sensitivity_payload(
     return {
         **study.to_dict(),
         "quantity": quantity,
-        "sources": [
-            {"path": str(path), "sha256": file_sha256(path)} for path in paths
-        ],
+        "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
     }
 
 
@@ -669,9 +702,7 @@ def _turbulent_wall_study_payload(paths: list[Path]) -> dict[str, object]:
     assessment = assess_turbulent_wall_study(records)
     return {
         **assessment,
-        "sources": [
-            {"path": str(path), "sha256": file_sha256(path)} for path in paths
-        ],
+        "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
     }
 
 
@@ -680,9 +711,7 @@ def _turbulent_precursor_grid_study_payload(paths: list[Path]) -> dict[str, obje
     assessment = assess_turbulent_precursor_grid_study(records)
     return {
         **assessment,
-        "sources": [
-            {"path": str(path), "sha256": file_sha256(path)} for path in paths
-        ],
+        "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
     }
 
 
@@ -691,9 +720,7 @@ def _turbulent_wall_function_study_payload(paths: list[Path]) -> dict[str, objec
     assessment = assess_turbulent_wall_function_study(records)
     return {
         **assessment,
-        "sources": [
-            {"path": str(path), "sha256": file_sha256(path)} for path in paths
-        ],
+        "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
     }
 
 
@@ -702,9 +729,7 @@ def _turbulent_model_study_payload(paths: list[Path]) -> dict[str, object]:
     assessment = assess_turbulent_model_study(records)
     return {
         **assessment,
-        "sources": [
-            {"path": str(path), "sha256": file_sha256(path)} for path in paths
-        ],
+        "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
     }
 
 
@@ -719,9 +744,7 @@ def _turbulent_model_sweep_payload(paths: list[Path]) -> dict[str, object]:
     assessment = assess_turbulent_model_sweep(studies)
     return {
         **assessment,
-        "sources": [
-            {"path": str(path), "sha256": file_sha256(path)} for path in paths
-        ],
+        "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
     }
 
 
@@ -743,7 +766,9 @@ def _run_openfoam_pipe_grid(
         output=outputs.standard(),
     )
     if plan.get("model_sha256") != step.model.fingerprint():
-        raise ValueError("OpenFOAM grid-study plan belongs to a different benchmark model.")
+        raise ValueError(
+            "OpenFOAM grid-study plan belongs to a different benchmark model."
+        )
     expected_inputs = json.loads(
         json.dumps(
             {
@@ -771,7 +796,9 @@ def _run_openfoam_pipe_grid(
         try:
             case_directory.relative_to(root)
         except ValueError as error:
-            raise ValueError("OpenFOAM grid-study case escapes the study directory.") from error
+            raise ValueError(
+                "OpenFOAM grid-study case escapes the study directory."
+            ) from error
         manifest_path = case_directory / "agentcfd-case.json"
         manifest = strict_json_object(
             manifest_path.read_text(encoding="utf-8"),
@@ -835,16 +862,22 @@ def _run_openfoam_turbulent_wall_study(
         )
     )
     if plan.get("scientific_inputs") != expected_inputs:
-        raise ValueError("OpenFOAM turbulent wall-study inputs changed after preparation.")
+        raise ValueError(
+            "OpenFOAM turbulent wall-study inputs changed after preparation."
+        )
     fraction = plan.get("nominal_wall_cell_fraction")
     if isinstance(fraction, bool) or not isinstance(fraction, (int, float)):
-        raise ValueError("OpenFOAM turbulent wall-study has an invalid wall-cell fraction.")
+        raise ValueError(
+            "OpenFOAM turbulent wall-study has an invalid wall-cell fraction."
+        )
     nut_wall_function = plan.get("nut_wall_function")
     if not isinstance(nut_wall_function, str):
         raise ValueError("OpenFOAM turbulent wall-study has no momentum wall function.")
     cases = plan.get("cases")
     if not isinstance(cases, list) or len(cases) != 3:
-        raise ValueError("OpenFOAM turbulent wall-study must contain exactly three cases.")
+        raise ValueError(
+            "OpenFOAM turbulent wall-study must contain exactly three cases."
+        )
 
     root = directory.resolve()
     result_paths: list[Path] = []
@@ -869,7 +902,9 @@ def _run_openfoam_turbulent_wall_study(
         if isinstance(cross_cells, bool) or not isinstance(cross_cells, int):
             raise ValueError("OpenFOAM turbulent wall-study grid count is invalid.")
         if isinstance(iteration_limit, bool) or not isinstance(iteration_limit, int):
-            raise ValueError("OpenFOAM turbulent wall-study iteration limit is invalid.")
+            raise ValueError(
+                "OpenFOAM turbulent wall-study iteration limit is invalid."
+            )
         provider = OpenFOAMTurbulentPrecursorProvider(
             case_directory=case_directory,
             cross_section_cells=cross_cells,
@@ -914,7 +949,9 @@ def _run_openfoam_turbulent_wall_function_study(
         turbulence_length_scale=0.007,
     )
     if plan.get("model_sha256") != step.model.fingerprint():
-        raise ValueError("OpenFOAM turbulent wall-function study uses a different model.")
+        raise ValueError(
+            "OpenFOAM turbulent wall-function study uses a different model."
+        )
     expected_inputs = json.loads(
         json.dumps(
             {
@@ -938,7 +975,9 @@ def _run_openfoam_turbulent_wall_function_study(
         raise ValueError("OpenFOAM wall-function study iteration limit is invalid.")
     cases = plan.get("cases")
     if not isinstance(cases, list) or len(cases) != 3:
-        raise ValueError("OpenFOAM wall-function study must contain exactly three cases.")
+        raise ValueError(
+            "OpenFOAM wall-function study must contain exactly three cases."
+        )
 
     root = directory.resolve()
     result_paths: list[Path] = []
@@ -949,7 +988,9 @@ def _run_openfoam_turbulent_wall_function_study(
         try:
             case_directory.relative_to(root)
         except ValueError as error:
-            raise ValueError("OpenFOAM wall-function case escapes its study directory.") from error
+            raise ValueError(
+                "OpenFOAM wall-function case escapes its study directory."
+            ) from error
         manifest = strict_json_object(
             (case_directory / "agentcfd-case.json").read_text(encoding="utf-8"),
             label=f"OpenFOAM case manifest {case_directory}",
@@ -958,7 +999,9 @@ def _run_openfoam_turbulent_wall_function_study(
             raise ValueError("OpenFOAM wall-function case identity changed.")
         wall_function = case.get("nut_wall_function")
         if not isinstance(wall_function, str):
-            raise ValueError("OpenFOAM wall-function case has no implementation identity.")
+            raise ValueError(
+                "OpenFOAM wall-function case has no implementation identity."
+            )
         result = OpenFOAMTurbulentPrecursorProvider(
             case_directory=case_directory,
             cross_section_cells=cross_cells,
@@ -1015,12 +1058,16 @@ def _run_openfoam_turbulent_model_study(
     planned_boundaries = (
         planned_model.get("boundaries") if isinstance(planned_model, dict) else None
     )
-    planned_inlets = [
-        value
-        for value in planned_boundaries.values()
-        if isinstance(value, dict)
-        and value.get("type") == "turbulent-mean-velocity-inlet"
-    ] if isinstance(planned_boundaries, dict) else []
+    planned_inlets = (
+        [
+            value
+            for value in planned_boundaries.values()
+            if isinstance(value, dict)
+            and value.get("type") == "turbulent-mean-velocity-inlet"
+        ]
+        if isinstance(planned_boundaries, dict)
+        else []
+    )
     if len(planned_inlets) != 1:
         raise ValueError("OpenFOAM model study has no unique turbulent inlet input.")
     planned_inlet = planned_inlets[0]
@@ -1030,9 +1077,7 @@ def _run_openfoam_turbulent_model_study(
         "turbulence_length_scale": planned_inlet.get("turbulence_length_scale"),
     }
     steps = {
-        "k-omega-sst": _turbulent_pipe_step(
-            turbulence_model="k-omega-sst", **common
-        ),
+        "k-omega-sst": _turbulent_pipe_step(turbulence_model="k-omega-sst", **common),
         "k-epsilon": _turbulent_pipe_step(turbulence_model="k-epsilon", **common),
     }
     expected_inputs = json.loads(
@@ -1054,14 +1099,18 @@ def _run_openfoam_turbulent_model_study(
         raise ValueError("OpenFOAM turbulent model-study inputs changed.")
     planned_screen = plan.get("wall_resolution_screen")
     if not isinstance(planned_screen, dict):
-        raise ValueError("OpenFOAM turbulent model-study has no wall-resolution screen.")
+        raise ValueError(
+            "OpenFOAM turbulent model-study has no wall-resolution screen."
+        )
     expected_screen = turbulent_pipe_wall_mesh_screen(
         steps["k-omega-sst"],
         nominal_wall_cell_fraction=float(fraction),
         target_y_plus=planned_screen.get("target_y_plus"),
     )
     if plan.get("wall_resolution_screen") != expected_screen:
-        raise ValueError("OpenFOAM turbulent model-study wall-resolution screen changed.")
+        raise ValueError(
+            "OpenFOAM turbulent model-study wall-resolution screen changed."
+        )
     cases = plan.get("cases")
     if not isinstance(cases, list) or len(cases) != 2:
         raise ValueError("OpenFOAM model study must contain exactly two cases.")
@@ -1090,7 +1139,9 @@ def _run_openfoam_turbulent_model_study(
         try:
             case_directory.relative_to(root)
         except ValueError as error:
-            raise ValueError("OpenFOAM model-study case escapes its directory.") from error
+            raise ValueError(
+                "OpenFOAM model-study case escapes its directory."
+            ) from error
         manifest = strict_json_object(
             (case_directory / "agentcfd-case.json").read_text(encoding="utf-8"),
             label=f"OpenFOAM case manifest {case_directory}",
@@ -1131,7 +1182,9 @@ def build_parser() -> argparse.ArgumentParser:
             "and follow its recommended next action."
         ),
     )
-    parser.add_argument("--version", action="version", version=f"AgentCFD {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"AgentCFD {__version__}"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor = subparsers.add_parser("doctor", help="Inspect the installed runtime.")
@@ -1239,10 +1292,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Locate the latest result and optionally launch ParaView for XDMF fields.",
     )
     view.add_argument("project", nargs="?", type=Path, default=Path("."))
+    view.add_argument(
+        "--recipe",
+        help="Select a named reproducible slice, contour, or streamline recipe.",
+    )
     view.add_argument("--launch", action="store_true")
     view.add_argument("--json", action="store_true", dest="as_json")
 
-    catalog = subparsers.add_parser("capabilities", help="Show truthful capability boundaries.")
+    catalog = subparsers.add_parser(
+        "capabilities", help="Show truthful capability boundaries."
+    )
     catalog.add_argument("--json", action="store_true", dest="as_json")
 
     benchmark_catalog = subparsers.add_parser(
@@ -1402,10 +1461,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     demo = subparsers.add_parser("demo", help="Run a bundled verified workflow.")
     demo_subparsers = demo.add_subparsers(dest="demo", required=True)
-    pipe = demo_subparsers.add_parser("pipe", help="Run the laminar circular-pipe reference workflow.")
+    pipe = demo_subparsers.add_parser(
+        "pipe", help="Run the laminar circular-pipe reference workflow."
+    )
     pipe.add_argument("--output", type=Path, default=Path("agentcfd-pipe-result.json"))
 
-    prepare = subparsers.add_parser("prepare", help="Generate a provider case without executing it.")
+    prepare = subparsers.add_parser(
+        "prepare", help="Generate a provider case without executing it."
+    )
     prepare_subparsers = prepare.add_subparsers(dest="provider", required=True)
     openfoam = prepare_subparsers.add_parser(
         "openfoam-pipe",
@@ -1441,7 +1504,9 @@ def build_parser() -> argparse.ArgumentParser:
     turbulent_prepare.add_argument("case_directory", type=Path)
     turbulent_prepare.add_argument("--velocity", type=float, default=1.0)
     turbulent_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
-    turbulent_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    turbulent_prepare.add_argument(
+        "--turbulence-length-scale", type=float, default=0.007
+    )
     turbulent_prepare.add_argument("--cross-section-cells", type=int, default=8)
     turbulent_prepare.add_argument("--axial-cells", type=int, default=120)
     turbulent_prepare.add_argument("--nominal-wall-cell-fraction", type=float)
@@ -1458,7 +1523,9 @@ def build_parser() -> argparse.ArgumentParser:
     precursor_prepare.add_argument("case_directory", type=Path)
     precursor_prepare.add_argument("--velocity", type=float, default=1.0)
     precursor_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
-    precursor_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    precursor_prepare.add_argument(
+        "--turbulence-length-scale", type=float, default=0.007
+    )
     precursor_prepare.add_argument(
         "--turbulence-model",
         choices=("k-omega-sst", "k-epsilon"),
@@ -1532,7 +1599,9 @@ def build_parser() -> argparse.ArgumentParser:
     model_study_prepare.add_argument("directory", type=Path)
     model_study_prepare.add_argument("--velocity", type=float, default=1.0)
     model_study_prepare.add_argument("--turbulence-intensity", type=float, default=0.05)
-    model_study_prepare.add_argument("--turbulence-length-scale", type=float, default=0.007)
+    model_study_prepare.add_argument(
+        "--turbulence-length-scale", type=float, default=0.007
+    )
     model_study_prepare.add_argument("--cross-section-cells", type=int, default=16)
     wall_selection = model_study_prepare.add_mutually_exclusive_group()
     wall_selection.add_argument(
@@ -1586,7 +1655,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     grid_prepare.add_argument("--json", action="store_true", dest="as_json")
 
-    run = subparsers.add_parser("run", help="Prepare, execute, and recover a provider result.")
+    run = subparsers.add_parser(
+        "run", help="Prepare, execute, and recover a provider result."
+    )
     run_subparsers = run.add_subparsers(dest="provider", required=True)
     project_run = run_subparsers.add_parser(
         "project",
@@ -1756,7 +1827,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_grid.add_argument("--json", action="store_true", dest="as_json")
 
-    verify = subparsers.add_parser("verify", help="Create numerical verification evidence.")
+    verify = subparsers.add_parser(
+        "verify", help="Create numerical verification evidence."
+    )
     verify_subparsers = verify.add_subparsers(dest="verification", required=True)
     grid = verify_subparsers.add_parser(
         "grid-convergence",
@@ -1833,7 +1906,9 @@ def build_parser() -> argparse.ArgumentParser:
     validation_point.add_argument("--reference", type=float, required=True)
     validation_point.add_argument("--numerical-uncertainty", type=float, required=True)
     validation_point.add_argument("--input-uncertainty", type=float, required=True)
-    validation_point.add_argument("--experimental-uncertainty", type=float, required=True)
+    validation_point.add_argument(
+        "--experimental-uncertainty", type=float, required=True
+    )
     validation_point.add_argument("--coverage-factor", type=float, default=2.0)
     validation_point.add_argument("--json", action="store_true", dest="as_json")
     return parser
@@ -1852,11 +1927,15 @@ def main(argv: list[str] | None = None) -> int:
         "openfoam-turbulent-model-sweep",
         "openfoam-pipe-grid",
     }
-    if selected_argv and selected_argv[0] == "run" and (
-        len(selected_argv) == 1
-        or (
-            selected_argv[1] not in legacy_run_targets
-            and selected_argv[1] not in {"-h", "--help"}
+    if (
+        selected_argv
+        and selected_argv[0] == "run"
+        and (
+            len(selected_argv) == 1
+            or (
+                selected_argv[1] not in legacy_run_targets
+                and selected_argv[1] not in {"-h", "--help"}
+            )
         )
     ):
         selected_argv.insert(1, "project")
@@ -1866,11 +1945,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print(f"AgentCFD {report['agentcfd']} | Python {report['python']} | healthy")
-            print(f"Reference provider: ready | OpenFOAM runtime: {'found' if report['providers']['openfoam-runtime'] else 'not found (optional)'}")
+            print(
+                f"AgentCFD {report['agentcfd']} | Python {report['python']} | healthy"
+            )
+            print(
+                f"Reference provider: ready | OpenFOAM runtime: {'found' if report['providers']['openfoam-runtime'] else 'not found (optional)'}"
+            )
             print(
                 "Portable XDMF/HDF5: "
-                + ("ready" if report["providers"]["portable-xdmf-hdf5"] else "not installed")
+                + (
+                    "ready"
+                    if report["providers"]["portable-xdmf-hdf5"]
+                    else "not installed"
+                )
             )
             for action in report["next_actions"]:
                 print(f"next: {action}")
@@ -1878,7 +1965,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "init":
         project = projects.init_project(
             args.directory,
-            provider=args.provider or ("openfoam" if args.template == "baffle-channel" else "reference"),
+            provider=args.provider
+            or ("openfoam" if args.template == "baffle-channel" else "reference"),
             template=args.template,
         )
         report = {
@@ -1957,7 +2045,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "watch":
         if not math.isfinite(args.interval) or args.interval < 0.2:
-            raise ValueError("Watch interval must be a finite value of at least 0.2 seconds.")
+            raise ValueError(
+                "Watch interval must be a finite value of at least 0.2 seconds."
+            )
         project = projects.Project.discover(args.project)
         try:
             while True:
@@ -1982,8 +2072,7 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(latest, dict) and latest.get("accepted") is not None:
                 decision = f" | accepted {str(latest['accepted']).lower()}"
             print(
-                f"{report['model']['name']} | {str(report['state']).upper()}"
-                f"{decision}"
+                f"{report['model']['name']} | {str(report['state']).upper()}{decision}"
             )
             if isinstance(latest, dict) and report["state"] in {
                 "running",
@@ -2004,9 +2093,7 @@ def main(argv: list[str] | None = None) -> int:
                     unit = " s" if coordinate.get("unit") == "s" else ""
                     fraction = coordinate.get("fraction")
                     percent = (
-                        ""
-                        if fraction is None
-                        else f" ({100.0 * float(fraction):.1f}%)"
+                        "" if fraction is None else f" ({100.0 * float(fraction):.1f}%)"
                     )
                     parts.append(f"{current:g}{unit} / {target:g}{unit}{percent}")
                 if progress.get("elapsed_display"):
@@ -2033,9 +2120,7 @@ def main(argv: list[str] | None = None) -> int:
                         f"{float(monitors['relative_mass_imbalance']):.3g}"
                     )
                     if monitors.get("pressure_drop") is not None:
-                        monitor_line += (
-                            f" | pressure drop {float(monitors['pressure_drop']):.6g} Pa"
-                        )
+                        monitor_line += f" | pressure drop {float(monitors['pressure_drop']):.6g} Pa"
                     print(monitor_line)
             print(
                 f"next: {report['next_action']['command']} | "
@@ -2089,7 +2174,30 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "view":
         status = projects.Project(args.project).status()
-        target = status["postprocess"]["primary"]
+        selected_recipe = None
+        if args.recipe is not None:
+            selected_recipe = next(
+                (
+                    recipe
+                    for recipe in status["postprocess"]["recipes"]
+                    if recipe.get("name") == args.recipe
+                ),
+                None,
+            )
+            if selected_recipe is None:
+                available = ", ".join(
+                    recipe["name"] for recipe in status["postprocess"]["recipes"]
+                )
+                raise ProjectError(
+                    f"Unknown post-processing recipe {args.recipe!r}. Available: "
+                    + (available or "none; declare output views in case.py and rerun")
+                    + "."
+                )
+        target = (
+            selected_recipe["script"]
+            if selected_recipe is not None
+            else status["postprocess"]["primary"]
+        )
         if target is None:
             raise ProjectError(
                 "No completed result is available. Follow `agentcfd status .` first."
@@ -2097,14 +2205,19 @@ def main(argv: list[str] | None = None) -> int:
         launched = False
         viewer = None
         if args.launch:
-            if str(target).endswith(".xdmf"):
+            if str(target).endswith((".xdmf", ".py")):
                 viewer = _paraview_executable()
                 if viewer is None:
                     raise ProjectError(
                         "ParaView is not on PATH. Open the reported fields.xdmf file "
                         "manually or install the ParaView command-line launcher."
                     )
-                subprocess.Popen([viewer, str(target)])
+                command = (
+                    [viewer, "--script", str(target)]
+                    if str(target).endswith(".py")
+                    else [viewer, str(target)]
+                )
+                subprocess.Popen(command)
                 launched = True
             else:
                 raise ProjectError(
@@ -2114,8 +2227,18 @@ def main(argv: list[str] | None = None) -> int:
             "schema": "agentcfd.project-view/0.1",
             "project_state": status["state"],
             "target": str(target),
-            "kind": "xdmf" if str(target).endswith(".xdmf") else "result-json",
-            "summary": status["postprocess"]["field_summary"],
+            "kind": (
+                "paraview-script"
+                if str(target).endswith(".py")
+                else "xdmf"
+                if str(target).endswith(".xdmf")
+                else "result-json"
+            ),
+            "summary": (
+                selected_recipe
+                if selected_recipe is not None
+                else status["postprocess"]["field_summary"]
+            ),
             "launched": launched,
             "viewer": viewer,
         }
@@ -2124,7 +2247,14 @@ def main(argv: list[str] | None = None) -> int:
         else:
             prefix = "Opened" if launched else "Latest post-processing target"
             print(f"{prefix}: {target}")
-            if report["summary"] is not None:
+            if report["kind"] == "paraview-script":
+                summary = report["summary"]
+                print(
+                    f"recipe: {summary['name']} | {summary['type']} | "
+                    f"field {summary['field']}"
+                )
+                print("shares fields/fields.h5; no volume data was duplicated")
+            elif report["summary"] is not None:
                 summary = report["summary"]
                 axis = summary["axis"]
                 print(
@@ -2139,8 +2269,17 @@ def main(argv: list[str] | None = None) -> int:
                         for field in summary["fields"]
                     )
                 )
-            if not launched and report["kind"] == "xdmf":
-                print("launch with: agentcfd view . --launch")
+                recipes = status["postprocess"]["recipes"]
+                if recipes:
+                    print(
+                        "recipes: "
+                        + ", ".join(recipe["name"] for recipe in recipes)
+                    )
+            if not launched and report["kind"] in {"xdmf", "paraview-script"}:
+                recipe_option = (
+                    f" --recipe {args.recipe}" if args.recipe is not None else ""
+                )
+                print(f"launch with: agentcfd view .{recipe_option} --launch")
         return 0
     if args.command == "capabilities":
         report = capabilities.as_dict()
@@ -2219,7 +2358,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print(f"Exported tensor-ready field sample | {args.field}:{args.association}")
+            print(
+                f"Exported tensor-ready field sample | {args.field}:{args.association}"
+            )
             print(output)
         return 0
     if args.command == "calculate" and args.calculation == "pipe-loss":
@@ -2298,11 +2439,15 @@ def main(argv: list[str] | None = None) -> int:
             )
         return 0
     if args.command == "properties" and args.property_operation == "state":
-        state = properties.CoolPropPropertyProvider().at_pressure_temperature(
-            args.fluid,
-            pressure=args.pressure,
-            temperature=args.temperature,
-        ).to_dict()
+        state = (
+            properties.CoolPropPropertyProvider()
+            .at_pressure_temperature(
+                args.fluid,
+                pressure=args.pressure,
+                temperature=args.temperature,
+            )
+            .to_dict()
+        )
         if args.as_json:
             print(json.dumps(state, indent=2, sort_keys=True))
         else:
@@ -2315,7 +2460,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "demo" and args.demo == "pipe":
         result = _pipe_demo(args.output)
         pressure_drop = result["quantities"]["flow.pressure_drop"]
-        print(f"Accepted laminar pipe result | pressure drop {pressure_drop['value']:.6g} {pressure_drop['unit']}")
+        print(
+            f"Accepted laminar pipe result | pressure drop {pressure_drop['value']:.6g} {pressure_drop['unit']}"
+        )
         print(args.output)
         return 0
     if args.command == "prepare" and args.provider == "openfoam-pipe":
@@ -2339,13 +2486,17 @@ def main(argv: list[str] | None = None) -> int:
             turbulence_intensity=args.turbulence_intensity,
             turbulence_length_scale=args.turbulence_length_scale,
         )
-        manifest = _turbulent_openfoam_provider(
-            args.case_directory,
-            cross_section_cells=args.cross_section_cells,
-            axial_cells=args.axial_cells,
-            nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
-            precursor_case=args.precursor_case,
-        ).prepare(step).to_dict()
+        manifest = (
+            _turbulent_openfoam_provider(
+                args.case_directory,
+                cross_section_cells=args.cross_section_cells,
+                axial_cells=args.axial_cells,
+                nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+                precursor_case=args.precursor_case,
+            )
+            .prepare(step)
+            .to_dict()
+        )
         if args.as_json:
             print(json.dumps(manifest, indent=2, sort_keys=True))
         else:
@@ -2360,27 +2511,28 @@ def main(argv: list[str] | None = None) -> int:
             turbulence_intensity=args.turbulence_intensity,
             turbulence_length_scale=args.turbulence_length_scale,
         )
-        manifest = _turbulent_precursor_provider(
-            args.case_directory,
-            cross_section_cells=args.cross_section_cells,
-            maximum_iterations=args.maximum_iterations,
-            nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
-            nut_wall_function=(
-                args.nut_wall_function
-                or (
-                    "nutkWallFunction"
-                    if args.turbulence_model == "k-epsilon"
-                    else "nutUBlendedWallFunction"
-                )
-            ),
-        ).prepare(step).to_dict()
+        manifest = (
+            _turbulent_precursor_provider(
+                args.case_directory,
+                cross_section_cells=args.cross_section_cells,
+                maximum_iterations=args.maximum_iterations,
+                nominal_wall_cell_fraction=args.nominal_wall_cell_fraction,
+                nut_wall_function=(
+                    args.nut_wall_function
+                    or (
+                        "nutkWallFunction"
+                        if args.turbulence_model == "k-epsilon"
+                        else "nutUBlendedWallFunction"
+                    )
+                ),
+            )
+            .prepare(step)
+            .to_dict()
+        )
         if args.as_json:
             print(json.dumps(manifest, indent=2, sort_keys=True))
         else:
-            print(
-                "Prepared periodic OpenFOAM "
-                f"{args.turbulence_model} inlet precursor"
-            )
+            print(f"Prepared periodic OpenFOAM {args.turbulence_model} inlet precursor")
             print(args.case_directory)
             print(f"case sha256: {manifest['case_sha256']}")
         return 0
@@ -2414,10 +2566,7 @@ def main(argv: list[str] | None = None) -> int:
             print("Prepared identical-mesh OpenFOAM wall-function study")
             print(args.directory / "agentcfd-turbulent-wall-function-study.json")
         return 0
-    if (
-        args.command == "prepare"
-        and args.provider == "openfoam-turbulent-model-study"
-    ):
+    if args.command == "prepare" and args.provider == "openfoam-turbulent-model-study":
         plan = _prepare_openfoam_turbulent_model_study(
             args.directory,
             velocity=args.velocity,
@@ -2441,12 +2590,11 @@ def main(argv: list[str] | None = None) -> int:
                 "runtime verification required"
             )
             if screen["predicted_high_re_wall_function_applicable"] is not True:
-                print("warning: predicted y+ is outside the high-Re wall-function range")
+                print(
+                    "warning: predicted y+ is outside the high-Re wall-function range"
+                )
         return 0
-    if (
-        args.command == "prepare"
-        and args.provider == "openfoam-turbulent-model-sweep"
-    ):
+    if args.command == "prepare" and args.provider == "openfoam-turbulent-model-sweep":
         plan = _prepare_openfoam_turbulent_model_sweep(
             args.directory,
             velocities=tuple(args.velocities),
@@ -2637,10 +2785,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(target)
         return 0 if payload["acceptance"]["screening_accepted"] else 3
-    if (
-        args.command == "run"
-        and args.provider == "openfoam-turbulent-model-study"
-    ):
+    if args.command == "run" and args.provider == "openfoam-turbulent-model-study":
         payload, target = _run_openfoam_turbulent_model_study(
             args.directory,
             container_image=args.container_image,
@@ -2659,10 +2804,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(target)
         return 0 if payload["acceptance"]["screening_accepted"] else 3
-    if (
-        args.command == "run"
-        and args.provider == "openfoam-turbulent-model-sweep"
-    ):
+    if args.command == "run" and args.provider == "openfoam-turbulent-model-sweep":
         payload, target = _run_openfoam_turbulent_model_sweep(
             args.directory,
             container_image=args.container_image,
@@ -2775,11 +2917,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.output is not None:
                 print(args.output)
-        return (
-            0
-            if payload["acceptance"]["uncertainty_promotion_accepted"]
-            else 3
-        )
+        return 0 if payload["acceptance"]["uncertainty_promotion_accepted"] else 3
     if (
         args.command == "verify"
         and args.verification == "turbulent-wall-function-study"

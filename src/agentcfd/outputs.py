@@ -141,7 +141,9 @@ class ForceReport:
         magnitude = math.sqrt(sum(value * value for value in direction))
         if magnitude == 0.0:
             raise ValueError("Force direction cannot be the zero vector.")
-        object.__setattr__(self, "direction", tuple(value / magnitude for value in direction))
+        object.__setattr__(
+            self, "direction", tuple(value / magnitude for value in direction)
+        )
         if self.center is not None:
             if not isinstance(self.center, (tuple, list)) or len(self.center) != 3:
                 raise ValueError("Force center must contain three coordinates.")
@@ -171,6 +173,138 @@ class ForceReport:
 
 
 Report = PointProbe | SurfaceReport | ForceReport
+
+
+def _view_name(value: str) -> str:
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", value) is None
+    ):
+        raise ValueError(
+            "Post-processing view names must start with a letter and contain only "
+            "letters, numbers, underscores, or hyphens."
+        )
+    return value
+
+
+def _view_vector(
+    value: tuple[float, float, float], *, label: str
+) -> tuple[float, float, float]:
+    if not isinstance(value, (tuple, list)) or len(value) != 3:
+        raise ValueError(f"{label} must contain three coordinates.")
+    return tuple(finite_float(item, name=f"{label} coordinate") for item in value)
+
+
+@dataclass(frozen=True, slots=True)
+class SliceView:
+    """A reproducible plane slice colored by one canonical field."""
+
+    name: str
+    field: str
+    origin: tuple[float, float, float]
+    normal: tuple[float, float, float]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", _view_name(self.name))
+        if not isinstance(self.field, str) or not self.field.strip():
+            raise ValueError("Slice field must be a non-empty canonical name.")
+        object.__setattr__(
+            self, "origin", _view_vector(self.origin, label="Slice origin")
+        )
+        normal = _view_vector(self.normal, label="Slice normal")
+        magnitude = math.sqrt(sum(value * value for value in normal))
+        if magnitude == 0.0:
+            raise ValueError("Slice normal cannot be the zero vector.")
+        object.__setattr__(self, "normal", tuple(value / magnitude for value in normal))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "slice",
+            "name": self.name,
+            "field": self.field,
+            "origin": list(self.origin),
+            "normal": list(self.normal),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ContourView:
+    """Reproducible scalar isosurfaces at explicit engineering values."""
+
+    name: str
+    field: str
+    values: tuple[float, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", _view_name(self.name))
+        if not isinstance(self.field, str) or not self.field.strip():
+            raise ValueError("Contour field must be a non-empty canonical name.")
+        values = tuple(
+            finite_float(value, name="Contour value") for value in self.values
+        )
+        if not values:
+            raise ValueError("Contour values cannot be empty.")
+        if len(set(values)) != len(values):
+            raise ValueError("Contour values must not contain duplicates.")
+        object.__setattr__(self, "values", values)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "contour",
+            "name": self.name,
+            "field": self.field,
+            "values": list(self.values),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class StreamlineView:
+    """Reproducible streamlines seeded from a physical line segment."""
+
+    name: str
+    field: str = "fluid.velocity"
+    seed_start: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    seed_end: tuple[float, float, float] = (0.0, 1.0, 0.0)
+    seeds: int = 40
+    direction: str = "both"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", _view_name(self.name))
+        if not isinstance(self.field, str) or not self.field.strip():
+            raise ValueError("Streamline field must be a non-empty canonical name.")
+        object.__setattr__(
+            self,
+            "seed_start",
+            _view_vector(self.seed_start, label="Streamline seed start"),
+        )
+        object.__setattr__(
+            self,
+            "seed_end",
+            _view_vector(self.seed_end, label="Streamline seed end"),
+        )
+        if self.seed_start == self.seed_end:
+            raise ValueError("Streamline seed line must have nonzero length.")
+        object.__setattr__(
+            self,
+            "seeds",
+            integer_at_least(self.seeds, name="Streamline seed count", minimum=2),
+        )
+        if self.direction not in {"forward", "backward", "both"}:
+            raise ValueError("Streamline direction must be forward, backward, or both.")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "streamlines",
+            "name": self.name,
+            "field": self.field,
+            "seed_start": list(self.seed_start),
+            "seed_end": list(self.seed_end),
+            "seeds": self.seeds,
+            "direction": self.direction,
+        }
+
+
+ViewRecipe = SliceView | ContourView | StreamlineView
 
 
 def parse_storage_size(value: int | str) -> int:
@@ -309,6 +443,7 @@ class OutputRequest:
     checkpoints: Checkpoints = field(default_factory=Checkpoints)
     storage: StoragePolicy = field(default_factory=StoragePolicy)
     reports: tuple[Report, ...] = ()
+    views: tuple[ViewRecipe, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("fields", "histories"):
@@ -350,6 +485,24 @@ class OutputRequest:
         if len({item.name for item in selected_reports}) != len(selected_reports):
             raise ValueError("Output report names must be unique.")
         object.__setattr__(self, "reports", selected_reports)
+        selected_views = tuple(self.views)
+        if any(
+            not isinstance(item, (SliceView, ContourView, StreamlineView))
+            for item in selected_views
+        ):
+            raise TypeError("Output views must be AgentCFD view recipes.")
+        if len({item.name for item in selected_views}) != len(selected_views):
+            raise ValueError("Output view names must be unique.")
+        unavailable_fields = sorted(
+            {item.field for item in selected_views} - set(self.fields)
+        )
+        if unavailable_fields:
+            raise ValueError(
+                "Post-processing views require their fields in output.fields; missing: "
+                + ", ".join(unavailable_fields)
+                + "."
+            )
+        object.__setattr__(self, "views", selected_views)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -361,6 +514,7 @@ class OutputRequest:
             "checkpoints": self.checkpoints.to_dict(),
             "storage": self.storage.to_dict(),
             "reports": [item.to_dict() for item in self.reports],
+            "views": [item.to_dict() for item in self.views],
         }
 
 
@@ -408,6 +562,44 @@ def force_report(
     )
 
 
+def slice_view(
+    name: str,
+    *,
+    field: str,
+    origin: tuple[float, float, float],
+    normal: tuple[float, float, float],
+) -> SliceView:
+    return SliceView(name=name, field=field, origin=origin, normal=normal)
+
+
+def contour_view(
+    name: str,
+    *,
+    field: str,
+    values: tuple[float, ...],
+) -> ContourView:
+    return ContourView(name=name, field=field, values=values)
+
+
+def streamline_view(
+    name: str,
+    *,
+    seed_start: tuple[float, float, float],
+    seed_end: tuple[float, float, float],
+    seeds: int = 40,
+    direction: str = "both",
+    field: str = "fluid.velocity",
+) -> StreamlineView:
+    return StreamlineView(
+        name=name,
+        field=field,
+        seed_start=seed_start,
+        seed_end=seed_end,
+        seeds=seeds,
+        direction=direction,
+    )
+
+
 def checkpoints(
     *,
     every: float,
@@ -434,6 +626,7 @@ def standard(
     portable_formats: tuple[str, ...] = ("xdmf",),
     storage_policy: StoragePolicy | None = None,
     reports: tuple[Report, ...] = (),
+    views: tuple[ViewRecipe, ...] = (),
 ) -> OutputRequest:
     """Keep the final full field plus compact histories."""
 
@@ -446,6 +639,7 @@ def standard(
         checkpoints=Checkpoints(coordinate="solver-iteration"),
         storage=storage_policy or storage(),
         reports=reports,
+        views=views,
     )
 
 
@@ -465,6 +659,7 @@ def animation(
     portable_profile: str = "visualization",
     portable_formats: tuple[str, ...] = ("xdmf",),
     reports: tuple[Report, ...] = (),
+    views: tuple[ViewRecipe, ...] = (),
 ) -> OutputRequest:
     """Request physical-time animation without equating frames to solver steps."""
 
@@ -482,6 +677,7 @@ def animation(
         checkpoints=restart or Checkpoints(),
         storage=storage(storage_budget, compression=compression),
         reports=reports,
+        views=views,
     )
 
 
@@ -491,6 +687,7 @@ def turbulent_internal_flow(
     portable_profile: str = "visualization",
     portable_formats: tuple[str, ...] = ("xdmf",),
     reports: tuple[Report, ...] = (),
+    views: tuple[ViewRecipe, ...] = (),
 ) -> OutputRequest:
     """Request the minimum auditable field set for two-equation RANS flow."""
 
@@ -523,25 +720,33 @@ def turbulent_internal_flow(
         frames=FieldFrames(coordinate="solver-iteration"),
         checkpoints=Checkpoints(coordinate="solver-iteration"),
         reports=reports,
+        views=views,
     )
 
 
 __all__ = [
     "Checkpoints",
+    "ContourView",
     "FieldFrames",
     "ForceReport",
     "OutputRequest",
     "PointProbe",
     "Report",
     "StoragePolicy",
+    "StreamlineView",
     "SurfaceReport",
+    "SliceView",
+    "ViewRecipe",
     "animation",
     "checkpoints",
+    "contour_view",
     "force_report",
     "parse_storage_size",
     "probe",
+    "slice_view",
     "standard",
     "storage",
     "surface_report",
+    "streamline_view",
     "turbulent_internal_flow",
 ]

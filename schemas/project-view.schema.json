@@ -10,7 +10,7 @@
       "enum": ["blocked", "ready", "running", "interrupted", "modified", "complete", "review", "failed"]
     },
     "target": {"type": "string", "minLength": 1},
-    "kind": {"enum": ["xdmf", "result-json"]},
+    "kind": {"enum": ["xdmf", "result-json", "paraview-script"]},
     "summary": {"type": ["object", "null"]},
     "launched": {"type": "boolean"},
     "viewer": {"type": ["string", "null"]}

@@ -1442,6 +1442,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Stop after the first runtime failure; preflight always checks every point.",
     )
+    sweep.add_argument(
+        "--max-runs",
+        type=int,
+        help="Fail before execution if more than this many new solver runs are needed.",
+    )
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
     clean = subparsers.add_parser(
@@ -2493,6 +2498,7 @@ def main(argv: list[str] | None = None) -> int:
                 provider=args.provider,
                 container_image=args.container_image,
                 fail_fast=args.fail_fast,
+                maximum_solver_runs=args.max_runs,
             )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2511,7 +2517,9 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Sweep {report['processed_count']}/{report['requested_count']} | "
                 f"executed {report['executed_count']} | reused "
-                f"{report['reused_count']} | accepted {report['accepted_count']}"
+                f"{report['reused_count']} | deduplicated "
+                f"{report['deduplicated_count']} | accepted "
+                f"{report['accepted_count']}"
             )
             for point in report["points"]:
                 print(

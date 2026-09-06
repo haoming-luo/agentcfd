@@ -123,6 +123,7 @@ agentcfd campaigns .             # read-only design-point index; no H5 access
 agentcfd run . --campaign --param mean_velocity=0.03
 agentcfd sweep . sweep.json       # preflight all, execute/reuse design points
 agentcfd sweep . sweep.json --plan-only  # zero-solve cost/reuse preview
+agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace

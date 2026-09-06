@@ -246,6 +246,15 @@ request, and would actually start a solver; the contract records
 and a still-present compact `result.json`; a stale success marker beside deleted
 results never suppresses recomputation.
 
+For unattended or agent-triggered work, add `--max-runs N`. AgentCFD computes
+the number of unique new solver executions after accepted-cache reuse and
+aborts the complete request before starting a process if the explicit limit is
+exceeded. The final report records the limit, planned new runs, and actual
+processes started. Equivalent points inside one request never execute twice,
+including when the first execution fails or reaches review rather than
+acceptance; they share the same immutable evidence while retaining their own
+design-point names in the sweep table.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

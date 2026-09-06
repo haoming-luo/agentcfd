@@ -103,6 +103,8 @@ files stay hidden and reproducible.
   rejection before accepted markers may suppress computation;
 - immutable run-scoped campaign logs and diagnosis, with failed-vs-review
   semantics and copyable recovery commands in the sweep report;
+- hard pre-execution solver-count budgets and request-level deduplication even
+  for failed or review outcomes, preventing agents from repeating wasted work;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

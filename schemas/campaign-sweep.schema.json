@@ -5,9 +5,9 @@
   "type": "object",
   "required": [
     "schema", "root", "provider", "requested_count", "processed_count",
-    "executed_count", "reused_count", "accepted_count", "failed_count",
+    "executed_count", "reused_count", "deduplicated_count", "accepted_count", "failed_count",
     "unaccepted_count", "complete", "successful", "progress", "points",
-    "observation_cost"
+    "solver_budget", "observation_cost"
   ],
   "properties": {
     "schema": {"const": "agentcfd.campaign-sweep/0.1"},
@@ -17,6 +17,7 @@
     "processed_count": {"type": "integer", "minimum": 0},
     "executed_count": {"type": "integer", "minimum": 0},
     "reused_count": {"type": "integer", "minimum": 0},
+    "deduplicated_count": {"type": "integer", "minimum": 0},
     "accepted_count": {"type": "integer", "minimum": 0},
     "failed_count": {"type": "integer", "minimum": 0},
     "unaccepted_count": {"type": "integer", "minimum": 0},
@@ -37,7 +38,7 @@
           "parameters": {"type": "object"},
           "plan_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
           "result_execution_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-          "execution": {"enum": ["executed", "reused"]},
+          "execution": {"enum": ["executed", "reused", "deduplicated"]},
           "outcome": {"enum": ["accepted", "review", "failed"]},
           "run_id": {"type": ["string", "null"]},
           "directory": {"type": ["string", "null"]},
@@ -60,6 +61,16 @@
         },
         "additionalProperties": false
       }
+    },
+    "solver_budget": {
+      "type": "object",
+      "required": ["maximum_runs", "planned_new_runs", "solver_processes_started"],
+      "properties": {
+        "maximum_runs": {"type": ["integer", "null"], "minimum": 0},
+        "planned_new_runs": {"type": "integer", "minimum": 0},
+        "solver_processes_started": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
     },
     "observation_cost": {
       "type": "object",

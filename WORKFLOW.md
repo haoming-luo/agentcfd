@@ -48,7 +48,9 @@ commands remain available through progressive disclosure.
 18. Return one SimulationResult whose acceptance state and provenance travel
     with every artifact.
 19. Publish volumetric results through the standard XDMF/H5/NPZ field bundle;
-    keep native cell and interpolated point associations explicit.
+    keep native cell and interpolated point associations explicit. For broad
+    campaigns, screen summary-only first and promote selected accepted points
+    to full fields instead of permanently storing every volume solution.
 20. Run mesh, timestep, iterative, and model-form sensitivity appropriate to
     the decision before claiming engineering verification.
 21. Admit observations to campaigns or learning datasets only under a named

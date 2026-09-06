@@ -1454,6 +1454,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
+    promote = subparsers.add_parser(
+        "promote",
+        help="Rerun one accepted summary-only campaign point with full fields.",
+    )
+    promote.add_argument("project", type=Path)
+    promote.add_argument("run_id")
+    promote.add_argument("--container-image")
+    promote.add_argument("--json", action="store_true", dest="as_json")
+
     clean = subparsers.add_parser(
         "clean",
         help="Preview removal of temporary solver workspaces while preserving results.",
@@ -2539,6 +2548,22 @@ def main(argv: list[str] | None = None) -> int:
             print(f"progress: {report['progress']}")
         if args.plan_only:
             return 0 if report["all_ready"] else 3
+        return 0 if report["successful"] else 3
+    if args.command == "promote":
+        report = projects.Project.discover(args.project).promote_campaign_run(
+            args.run_id,
+            container_image=args.container_image,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Promotion {report['execution']} | source "
+                f"{report['source']['run_id']} | target "
+                f"{report['target']['run_id']} | accepted "
+                f"{str(report['target']['accepted']).lower()}"
+            )
+            print(f"fields: {report['target']['directory']}")
         return 0 if report["successful"] else 3
     if args.command == "clean":
         report = projects.Project(args.project).clean(

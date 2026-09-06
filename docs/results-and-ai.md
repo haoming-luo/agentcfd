@@ -98,6 +98,11 @@ two-stage loop: screen many points cheaply, then rerun the small promoted set
 with standard XDMF/HDF5 output for visual review, AgentFEM exchange, or learned
 field workflows.
 
+`agentcfd promote . <run-id> --json` is the explicit transition between those
+stages. It is fail-closed on changed model intent, a rejected source, or missing
+portable-I/O capability, and its versioned report states whether a full-field
+identity was executed or reused and whether any solver process started.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

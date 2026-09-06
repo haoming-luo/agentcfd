@@ -333,6 +333,54 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
     )
     assert json.loads(capsys.readouterr().out)["result_profile"] == "summary-only"
 
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: True)
+    promotion_calls = []
+
+    def publish_full_fields(_project, **kwargs):
+        promotion_calls.append(kwargs)
+        target = project.root / "campaigns" / "promoted-target"
+        target.mkdir(exist_ok=True)
+        promoted_result = projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+        )
+        result_path = promoted_result.write(target / "result.json")
+        plan_path = target / "plan.json"
+        plan_path.write_text("{}\n")
+        return projects.ProjectRun(
+            run_id="promoted-target",
+            directory=target,
+            result=promoted_result,
+            result_path=result_path,
+            plan_path=plan_path,
+            field_bundle=None,
+            mode="campaign",
+            solver_workspace=None,
+        )
+
+    monkeypatch.setattr(projects.Project, "run", publish_full_fields)
+    source_run_id = report["points"][0]["run_id"]
+    promotion = project.promote_campaign_run(source_run_id)
+
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-promotion.schema.json")
+    ).validate(promotion)
+    assert promotion["execution"] == "executed"
+    assert promotion["target"]["result_profile"] == "full-fields"
+    assert promotion["observation_cost"]["solver_processes_started"] == 1
+    assert promotion_calls[0]["portable_fields"] is True
+    assert promotion_calls[0]["_promotion_source_run_id"] == source_run_id
+    assert (
+        entrypoint(
+            ["promote", str(project.root), source_run_id, "--json"]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["target"]["result_profile"] == "full-fields"
+
 
 def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
     project = projects.init_project(

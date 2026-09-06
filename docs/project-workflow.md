@@ -263,7 +263,11 @@ removes disposable bulk after publishing compact evidence. The plan reports a
 lower temporary-storage estimate and does not require optional portable-I/O
 packages. Summary-only and full-field runs have different result fingerprints,
 so an accepted lightweight point cannot masquerade as an animation-ready one;
-rerun only selected candidates without the flag to publish standard fields.
+promote only a selected candidate with `agentcfd promote . <run-id>`. Promotion
+requires an accepted immutable summary result, verifies that current `case.py`
+still has the same analysis fingerprint, forces standard portable fields, and
+records the source run in the new result provenance. An already accepted exact
+full-field identity is reused without starting another solver.
 
 ## Expert workspace retention
 

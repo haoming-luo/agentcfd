@@ -74,6 +74,12 @@ python -m pytest -q
     `would_execute_count` as the actual proposed solver-start count after
     request deduplication; never trust an accepted marker whose `result.json`
     is missing.
+22. Put an explicit `--max-runs` boundary on unattended sweeps. Use
+    `--summary-only` when the decision needs quantities and checks rather than
+    fields, then call `promote <run-id>` only for accepted candidates that need
+    animation, spatial review, AgentFEM exchange, or learned field data.
+23. Diagnose campaign failures by immutable `--run-id`; never assume the latest
+    run is the failed point after a continue-on-error sweep.
 
 ## Current boundary
 

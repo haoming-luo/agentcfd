@@ -13,6 +13,9 @@
   quantities, checks, logs, and provenance while skipping VTK/XDMF/HDF5 and
   removing provider-native bulk; a distinct fingerprint prevents lightweight
   results from satisfying later full-field requests.
+- Add `agentcfd promote` to turn one accepted immutable summary point into a
+  provenance-linked full-field campaign result. Promotion fails on changed
+  analysis intent and reuses an existing accepted full-field identity.
 - Add `agentcfd campaigns` as a field-free design-point index over immutable
   project runs. New run markers carry compact canonical quantities; optional
   recursive storage accounting and unit-preserving CSV export are explicit,

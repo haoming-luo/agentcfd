@@ -125,6 +125,7 @@ agentcfd sweep . sweep.json       # preflight all, execute/reuse design points
 agentcfd sweep . sweep.json --plan-only  # zero-solve cost/reuse preview
 agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
 agentcfd sweep . sweep.json --summary-only # metrics/evidence, no permanent H5
+agentcfd promote . <run-id>      # publish full fields for one screened point
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace

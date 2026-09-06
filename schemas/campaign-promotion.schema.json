@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/campaign-promotion.schema.json",
+  "title": "AgentCFD summary-to-full-field promotion 0.1",
+  "type": "object",
+  "required": ["schema", "root", "source", "target", "execution", "successful", "observation_cost"],
+  "properties": {
+    "schema": {"const": "agentcfd.campaign-promotion/0.1"},
+    "root": {"type": "string"},
+    "source": {
+      "type": "object",
+      "required": ["run_id", "directory", "result_profile", "parameters"],
+      "properties": {
+        "run_id": {"type": "string", "minLength": 1},
+        "directory": {"type": ["string", "null"]},
+        "result_profile": {"const": "summary-only"},
+        "parameters": {"type": "object"}
+      },
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "required": ["run_id", "directory", "result_profile", "result_execution_sha256", "plan_sha256", "accepted"],
+      "properties": {
+        "run_id": {"type": ["string", "null"]},
+        "directory": {"type": ["string", "null"]},
+        "result_profile": {"const": "full-fields"},
+        "result_execution_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "plan_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "accepted": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "execution": {"enum": ["executed", "reused"]},
+    "successful": {"type": "boolean"},
+    "observation_cost": {
+      "type": "object",
+      "required": ["field_payloads_opened", "solver_processes_started"],
+      "properties": {
+        "field_payloads_opened": {"const": 0},
+        "solver_processes_started": {"type": "integer", "minimum": 0, "maximum": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

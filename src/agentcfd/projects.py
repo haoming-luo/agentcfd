@@ -1969,6 +1969,112 @@ class Project:
             write_progress()
         return report()
 
+    def promote_campaign_run(
+        self,
+        run_id: str,
+        *,
+        container_image: str | None = None,
+    ) -> dict[str, object]:
+        """Publish full fields for one accepted summary-only campaign point."""
+
+        source = self._select_run_record(run_id)
+        assert source is not None
+        if source.get("mode") != "campaign":
+            raise ProjectError("Only immutable campaign runs can be promoted.")
+        if source.get("result_profile") != "summary-only":
+            raise ProjectError(
+                f"Run {run_id!r} is not summary-only; no field promotion is needed."
+            )
+        if source.get("accepted") is not True:
+            raise ProjectError(
+                f"Run {run_id!r} is not accepted; review its checks before promotion."
+            )
+        if self.manifest.default_provider != "openfoam":
+            raise ProjectError("Full-field campaign promotion requires OpenFOAM.")
+        parameters = source.get("parameters", {})
+        if not isinstance(parameters, Mapping):
+            raise ProjectError("Source campaign parameters are missing or malformed.")
+        selected_parameters = self._parameters(parameters)
+        plan = self.plan(
+            provider="openfoam",
+            container_image=container_image,
+            parameters=selected_parameters,
+            portable_fields=True,
+        )
+        if plan["model"]["analysis_sha256"] != source.get("analysis_sha256"):
+            raise ProjectError(
+                "Current case.py no longer matches the summary-only source. Restore "
+                "the source model before promoting fields."
+            )
+        if plan["readiness"]["ready_to_run"] is not True:
+            codes = ", ".join(issue["code"] for issue in plan["issues"])
+            raise ProjectError(
+                f"Full-field promotion is not ready: {codes or 'unknown issue'}."
+            )
+        identity = self._result_execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider="openfoam",
+            container_image=container_image,
+            portable_fields=True,
+        )
+        cached = self._reusable_campaign_records().get(identity)
+        source_directory = self._record_directory(source)
+        if cached is not None:
+            target_run_id = cached.get("run_id")
+            target_directory = self._record_directory(cached)
+            execution = "reused"
+            accepted = True
+            solver_processes_started = 0
+        else:
+            source_name = source.get("design_point_name")
+            target_name = (
+                f"{source_name}-full"
+                if isinstance(source_name, str) and source_name
+                else "promoted-full"
+            )
+            completed = self.run(
+                provider="openfoam",
+                container_image=container_image,
+                campaign=True,
+                parameters=selected_parameters,
+                design_point_name=target_name,
+                portable_fields=True,
+                _promotion_source_run_id=run_id,
+            )
+            target_run_id = completed.run_id
+            target_directory = completed.directory
+            execution = "executed"
+            accepted = completed.result.accepted
+            solver_processes_started = 1
+        return {
+            "schema": "agentcfd.campaign-promotion/0.1",
+            "root": str(self.root),
+            "source": {
+                "run_id": run_id,
+                "directory": (
+                    None if source_directory is None else str(source_directory)
+                ),
+                "result_profile": "summary-only",
+                "parameters": selected_parameters,
+            },
+            "target": {
+                "run_id": target_run_id,
+                "directory": (
+                    None if target_directory is None else str(target_directory)
+                ),
+                "result_profile": "full-fields",
+                "result_execution_sha256": identity,
+                "plan_sha256": plan["plan_sha256"],
+                "accepted": accepted,
+            },
+            "execution": execution,
+            "successful": accepted is True,
+            "observation_cost": {
+                "field_payloads_opened": 0,
+                "solver_processes_started": solver_processes_started,
+            },
+        }
+
     def _active_run_ids(self) -> set[str]:
         return {
             str(record["run_id"])
@@ -2998,6 +3104,7 @@ class Project:
         portable_fields: bool | None = None,
         _resume_archive: Path | None = None,
         _resume_source_run_id: str | None = None,
+        _promotion_source_run_id: str | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
         if design_point_name is not None and re.fullmatch(
@@ -3124,6 +3231,12 @@ class Project:
                 "source_run_id": _resume_source_run_id,
                 "archive_sha256": file_sha256(_resume_archive),
             }
+        if _promotion_source_run_id is not None:
+            marker_record["promotion"] = {
+                "source_run_id": _promotion_source_run_id,
+                "source_result_profile": "summary-only",
+                "target_result_profile": "full-fields",
+            }
 
         def write_marker(**updates: object) -> None:
             marker_record.update(updates)
@@ -3222,6 +3335,8 @@ class Project:
                 protected=retention_reason in {"explicit-cli", "manifest-policy"},
             )
         result.provenance["result_profile"] = marker_record["result_profile"]
+        if _promotion_source_run_id is not None:
+            result.provenance["promotion"] = marker_record["promotion"]
         bundle = None
         if (
             selected_name == "openfoam"
@@ -3414,6 +3529,8 @@ class Project:
         }
         if _resume_archive is not None:
             run_record["resume"] = marker_record["resume"]
+        if _promotion_source_run_id is not None:
+            run_record["promotion"] = marker_record["promotion"]
         _write_output_guide(completed, model_name=step.model.name)
         (run_directory / "run.json").write_text(
             json.dumps(run_record, indent=2, sort_keys=True) + "\n",

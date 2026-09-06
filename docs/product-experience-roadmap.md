@@ -107,6 +107,8 @@ files stay hidden and reproducible.
   for failed or review outcomes, preventing agents from repeating wasted work;
 - summary-only campaign screening with distinct full-field identity, compact
   evidence retention, lower temporary-storage estimates, and no permanent H5;
+- one-command, identity-gated promotion of accepted lightweight points into
+  provenance-linked full-field results, with exact accepted reuse;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

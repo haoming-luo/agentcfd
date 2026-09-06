@@ -13,6 +13,7 @@ from .openfoam_imported import (
     execute_imported_mesh,
     ImportedMeshPlan,
     ImportedMeshResult,
+    OpenFOAMImportedProvider,
     PreparedImportedMesh,
     plan_imported_mesh,
     prepare_imported_mesh,
@@ -30,6 +31,7 @@ from .openfoam_precursor import (
 
 __all__ = [
     "OpenFOAMMeshControls",
+    "OpenFOAMImportedProvider",
     "OpenFOAMChannelProvider",
     "OpenFOAMProvider",
     "OpenFOAMValidationPolicy",

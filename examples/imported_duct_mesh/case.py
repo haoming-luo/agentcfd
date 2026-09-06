@@ -24,7 +24,7 @@ def build(*, base_size=0.05):
             dynamic_viscosity=1.002e-3,
         ),
     ).boundaries(
-        inlet=boundaries.mean_velocity_inlet(0.5),
+        inlet=boundaries.velocity_inlet((0.5, 0.0, 0.0)),
         outlet=boundaries.pressure_outlet(),
         walls=boundaries.no_slip_wall(),
     )

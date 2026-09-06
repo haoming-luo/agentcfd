@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-imported-flow-evidence.schema.json",
+  "title": "AgentCFD imported-flow integration evidence 0.1",
+  "type": "object",
+  "required": [
+    "schema", "runtime", "case", "source_sha256", "model_sha256",
+    "analysis_sha256", "solver_iterations", "mesh", "flow", "portable_fields",
+    "accepted", "claim"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-imported-flow-evidence/0.1"},
+    "runtime": {"type": "string"},
+    "case": {"type": "string"},
+    "source_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "solver_iterations": {"type": "integer", "minimum": 1},
+    "mesh": {
+      "type": "object",
+      "required": ["cells", "maximum_non_orthogonality_deg", "maximum_skewness", "maximum_aspect_ratio"],
+      "properties": {
+        "cells": {"type": "integer", "minimum": 1},
+        "maximum_non_orthogonality_deg": {"type": "number", "minimum": 0},
+        "maximum_skewness": {"type": "number", "minimum": 0},
+        "maximum_aspect_ratio": {"type": "number", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "flow": {
+      "type": "object",
+      "required": ["relative_mass_imbalance", "pressure_drop_pa"],
+      "properties": {
+        "relative_mass_imbalance": {"type": "number", "minimum": 0},
+        "pressure_drop_pa": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "portable_fields": {
+      "type": "object",
+      "required": ["formats", "frames", "points", "bytes"],
+      "properties": {
+        "formats": {"type": "array", "items": {"enum": ["xdmf", "hdf5"]}, "uniqueItems": true},
+        "frames": {"type": "integer", "minimum": 1},
+        "points": {"type": "integer", "minimum": 1},
+        "bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "accepted": {"const": true},
+    "claim": {"const": "workflow-and-numerical-gates-not-physical-validation"}
+  },
+  "additionalProperties": false
+}

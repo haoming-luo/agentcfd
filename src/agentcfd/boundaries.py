@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import math
 
 from ._validation import finite_float, nonnegative_float, positive_float
 
@@ -35,6 +36,31 @@ class MeanVelocityInlet:
 
     def to_dict(self) -> dict[str, object]:
         return {"type": "mean-velocity-inlet", **asdict(self)}
+
+
+@dataclass(frozen=True, slots=True)
+class VelocityInlet:
+    """Explicit Cartesian inlet velocity vector in metres per second."""
+
+    velocity: tuple[float, float, float]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.velocity, (tuple, list)) or len(self.velocity) != 3:
+            raise ValueError("Velocity inlet requires exactly three components.")
+        selected = tuple(
+            finite_float(value, name="Velocity inlet component")
+            for value in self.velocity
+        )
+        if math.sqrt(sum(value * value for value in selected)) == 0.0:
+            raise ValueError("Velocity inlet vector cannot be zero.")
+        object.__setattr__(self, "velocity", selected)
+
+    @property
+    def magnitude(self) -> float:
+        return math.sqrt(sum(value * value for value in self.velocity))
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "velocity-inlet", "velocity": list(self.velocity)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +205,8 @@ class Symmetry:
 Boundary = (
     MassFlowInlet
     | MeanVelocityInlet
+    | VelocityInlet
+    | VelocityInlet
     | FullyDevelopedVelocityInlet
     | TurbulentMeanVelocityInlet
     | PressureInlet
@@ -196,6 +224,10 @@ def mass_flow_inlet(value: float) -> MassFlowInlet:
 
 def mean_velocity_inlet(value: float) -> MeanVelocityInlet:
     return MeanVelocityInlet(velocity=value)
+
+
+def velocity_inlet(value: tuple[float, float, float]) -> VelocityInlet:
+    return VelocityInlet(velocity=value)
 
 
 def fully_developed_velocity_inlet(value: float) -> FullyDevelopedVelocityInlet:
@@ -270,6 +302,7 @@ __all__ = [
     "SlipWall",
     "Symmetry",
     "TurbulentMeanVelocityInlet",
+    "VelocityInlet",
     "Wall",
     "fully_developed_velocity_inlet",
     "mass_flow_inlet",
@@ -281,4 +314,5 @@ __all__ = [
     "slip_wall",
     "symmetry",
     "turbulent_mean_velocity_inlet",
+    "velocity_inlet",
 ]

@@ -109,7 +109,10 @@ def build():
     assert plan["readiness"]["model_valid"] is True
     assert plan["readiness"]["input_assets_ready"] is True
     assert plan["readiness"]["provider_compatible"] is False
-    assert plan["decisions"]["required_capability"] == "openfoam.imported-surface-flow"
+    assert (
+        plan["decisions"]["required_capability"]
+        == "openfoam.steady-laminar-imported-surface"
+    )
     assert plan["readiness"]["mesh_intent_ready"] is True
     assert plan["decisions"]["imported_mesh_plan"]["maximum_cells"] == 100_000
     assert {issue["code"] for issue in plan["issues"]} == {"PROVIDER_INCOMPATIBLE"}

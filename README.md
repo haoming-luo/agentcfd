@@ -131,6 +131,7 @@ agentcfd geometry-check fluid.stl --unit mm --roles roles.json \
   --internal-flow --output geometry/inspection.json
 agentcfd mesh . --plan-only     # imported-surface cell/refinement/quality budget
 agentcfd mesh . --output mesh-case # native dry-run + snappy + checkMesh gates
+agentcfd run .                      # bounded imported laminar flow + XDMF/H5
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace

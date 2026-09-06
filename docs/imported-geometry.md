@@ -79,7 +79,7 @@ def build():
             "water", density=998.2, dynamic_viscosity=1.002e-3
         ),
     ).boundaries(
-        inlet_main=boundaries.mean_velocity_inlet(1.0),
+        inlet_main=boundaries.velocity_inlet((1.0, 0.0, 0.0)),
         outlet_main=boundaries.pressure_outlet(),
         housing=boundaries.no_slip_wall(),
     ).step(mesh=meshing.automatic(base_size=0.005, maximum_cells=2_000_000))
@@ -89,7 +89,7 @@ def build():
 inspected SHA-256 before any provider action. Missing or changed geometry has
 its own `input_assets_ready: false` state. This is separate from provider
 compatibility so an agent can distinguish “repair the input” from “the released
-OpenFOAM flow-solver adapter does not solve this geometry yet.” Volume CFD intent rejects
+OpenFOAM flow slice does not support this physics or boundary intent.” Volume CFD intent rejects
 an intentionally open surface even when inspection was run with `--allow-open`.
 
 Plan, prepare, or execute the mesh without starting a flow solver:
@@ -115,6 +115,21 @@ accepted 6,400-cell OpenCFD v2606 mesh from a 2,688-cell background in about
 maximum non-orthogonality, 0.104 maximum skewness, and 1.383 maximum aspect
 ratio. This is workflow/mesh evidence, not flow-physics validation; the compact
 record is `docs/openfoam-v2606-imported-duct-mesh.json`.
+
+The same project now runs end to end with `agentcfd run .` for the deliberately
+narrow steady incompressible isothermal laminar slice. Arbitrary geometry uses
+`boundaries.velocity_inlet((ux, uy, uz))`; AgentCFD refuses to infer direction
+from a scalar. The first executable slice requires exactly one vector-velocity
+inlet, one pressure outlet, default initialization, and velocity/pressure plus
+mass-balance/pressure-drop outputs. It does not silently ignore turbulence,
+heat, roughness, layers, reactions, or custom reports.
+
+The checked OpenCFD v2606 run converged by SIMPLE residual control in 344
+iterations with `1.8e-10` relative mass imbalance and 1.179 Pa pressure drop.
+Its verified one-frame XDMF/H5 bundle contains 7,749 points and occupies about
+190 KiB; the complete ordinary output is about 633 KiB. The source-linked
+record is `docs/openfoam-v2606-imported-duct-flow.json`. These are numerical and
+workflow gates, not an experimental validation claim.
 
 STEP/IGES are recognized but not silently tessellated. A future CAD adapter
 must make tessellation tolerance, units, face-name retention, and source hash

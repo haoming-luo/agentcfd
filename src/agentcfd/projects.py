@@ -30,6 +30,7 @@ from .model import Step
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
     OpenFOAMChannelProvider,
+    OpenFOAMImportedProvider,
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     ReferencePipeProvider,
@@ -820,6 +821,14 @@ def _resolved_output_plan(
         estimated_cells = (
             nx[0] * (ny[0] + ny[1]) + nx[1] * ny[1] + nx[2] * (ny[0] + ny[1])
         ) * nz
+    elif (
+        provider == "openfoam"
+        and isinstance(step.model.domain, ImportedSurface)
+        and step.mesh is not None
+    ):
+        # snappy refinement is geometry-dependent; use the public hard stop as
+        # a conservative storage bound rather than inventing a precise count.
+        estimated_cells = step.mesh.maximum_cells
 
     components = {
         "fluid.velocity": 3,
@@ -859,9 +868,14 @@ def _resolved_output_plan(
         estimated_temporary_peak_bytes = math.ceil(
             temporary_peak_safety_factor * raw_staging_bytes
         )
+        imported_bound = isinstance(step.model.domain, ImportedSurface)
         estimate_calibration = {
             "method": (
-                "native-plus-vtk-plus-portable-with-measured-headroom"
+                "snappy-hard-cell-bound-plus-export-staging"
+                if imported_bound and export_fields
+                else "snappy-hard-cell-bound-native-only"
+                if imported_bound
+                else "native-plus-vtk-plus-portable-with-measured-headroom"
                 if export_fields
                 else "native-solver-only-summary-with-conservative-headroom"
             ),
@@ -869,7 +883,10 @@ def _resolved_output_plan(
             "raw_staging_bytes": raw_staging_bytes,
             "safety_factor": temporary_peak_safety_factor,
             "evidence": (
-                "OpenCFD-v2606 baffled-channel 20-frame run: 122.05 MiB managed "
+                "Imported geometry uses maximum_cells/maxGlobalCells as a fail-safe "
+                "upper bound; the checked duct resolved 6,400 of 200,000 allowed cells."
+                if imported_bound
+                else "OpenCFD-v2606 baffled-channel 20-frame run: 122.05 MiB managed "
                 "during retained-workspace publication versus 101.84 MiB raw estimate"
             ),
         }
@@ -1036,6 +1053,18 @@ class Project:
         settings = self._openfoam_settings()
         selected_image = container_image or settings.get("container_image")
         timeout_seconds = float(settings.get("timeout_seconds", 3600.0))
+        if step is not None and isinstance(step.model.domain, ImportedSurface):
+            source = _safe_project_path(
+                self.root,
+                step.model.domain.asset,
+                label="imported surface asset",
+            )
+            return OpenFOAMImportedProvider(
+                source=source,
+                case_directory=case_directory,
+                container_image=str(selected_image) if selected_image else None,
+                timeout_seconds=timeout_seconds,
+            )
         if step is not None and isinstance(step.model.domain, RectangularChannel):
             return OpenFOAMChannelProvider(
                 case_directory=case_directory,
@@ -1171,7 +1200,7 @@ class Project:
         descriptor = selected.descriptor()
         study = step.model.study
         if isinstance(step.model.domain, ImportedSurface):
-            required_capability = "openfoam.imported-surface-flow"
+            required_capability = "openfoam.steady-laminar-imported-surface"
         elif selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
         elif isinstance(step.model.domain, RectangularChannel):

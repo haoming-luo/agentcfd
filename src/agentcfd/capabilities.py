@@ -104,6 +104,24 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="openfoam.steady-laminar-imported-surface",
+        maturity="experimental",
+        scope=(
+            "Steady incompressible isothermal laminar simpleFoam solution on a "
+            "content-addressed, role-confirmed imported fluid volume."
+        ),
+        evidence=(
+            "explicit Cartesian velocity-inlet and pressure-outlet lowering tests",
+            "solver, SIMPLE convergence, mesh, conservation, runtime, and output gates",
+            "accepted 6,400-cell OpenCFD v2606 duct run with verified XDMF/H5",
+        ),
+        limitations=(
+            "Exactly one velocity inlet and one pressure outlet are currently supported.",
+            "No turbulence, heat, compressibility, reactions, prism layers, or compact report lowering yet.",
+            "Acceptance is workflow/numerical evidence and does not claim physical validation.",
+        ),
+    ),
+    Capability(
         name="reference.hagen-poiseuille",
         maturity="release",
         scope="Steady fully developed incompressible Newtonian laminar flow in a circular pipe.",
@@ -251,7 +269,7 @@ _CAPABILITIES = (
             "OpenCFD v2606 k-omega SST and k-epsilon precursor execution evidence",
         ),
         limitations=(
-            "Only steady incompressible isothermal flow in a smooth circular pipe is lowered.",
+            "Steady imported-volume flow is limited to the explicit laminar slice.",
             "Downstream turbulent pipes remain limited to k-omega SST; k-epsilon is precursor-only.",
             "OpenCFD v2606 is the currently exercised runtime dialect.",
             "Each laminar or turbulent slice has its own validation and grid-evidence gate.",

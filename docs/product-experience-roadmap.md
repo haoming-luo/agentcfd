@@ -76,10 +76,14 @@ files stay hidden and reproducible.
 - terminal-aware `watch` streaming for people and JSON-Line agents;
 - automatic failed-workspace retention and bounded project-aware solver-log
   access with phase selection and a versioned agent contract;
+- evidence-linked deterministic classification of common resource,
+  configuration, mesh, numerical, and runtime failures without unreviewed
+  automatic model edits;
 - declarative plane slices, scalar contours, and line-seeded streamlines that
   generate portable ParaView scripts without copying field payloads;
 - one-command post-processing target and self-documenting output directory;
-- JSON Schemas for status, logs, storage, cleanup, and repairable errors.
+- JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
+  errors.
 
 ### Next: eliminate repeated setup work
 

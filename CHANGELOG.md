@@ -6,6 +6,11 @@
   add `agentcfd logs` as a bounded, project-aware diagnostic surface. It reads
   either the live workspace or compact published evidence, supports explicit
   provider-command selection, and returns a versioned JSON contract for agents.
+- Add deterministic `agentcfd diagnose` classification for storage/memory,
+  missing files, boundary and dictionary configuration, mesh quality,
+  numerical divergence, MPI, timeout, killed process, and generic OpenFOAM
+  failures. Findings retain the exact bounded-log evidence, confidence, a
+  conservative repair, and an explicit no-automatic-repair decision.
 - Stream OpenFOAM command output to bounded-memory live logs and expose a
   field-free progress snapshot through `status`: command, elapsed time,
   physical time/iteration, conservative ETA range for transient runs, latest

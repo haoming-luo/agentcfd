@@ -18,7 +18,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Mapping
 
-from . import boundaries, data_exchange, engineering, postprocessing
+from . import boundaries, data_exchange, diagnostics, engineering, postprocessing
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
 from .geometry import CircularPipe, RectangularChannel
 from .model import Step
@@ -1375,6 +1375,111 @@ class Project:
             },
         }
 
+    def diagnose(
+        self,
+        *,
+        command: str | None = None,
+    ) -> dict[str, object]:
+        """Classify bounded provider evidence into conservative repair guidance."""
+
+        runs = self._run_records()
+        latest = runs[0] if runs else None
+        run_directory = self._record_directory(latest)
+        candidates = self._log_candidates(latest, run_directory)
+        available = sorted({name for name, _path, _source in candidates})
+        if command is not None:
+            candidates = tuple(item for item in candidates if item[0] == command)
+            if not candidates:
+                raise ProjectError(
+                    f"No log exists for command {command!r}. Available: "
+                    + (", ".join(available) or "none")
+                    + "."
+                )
+        elif not candidates:
+            raise ProjectError(
+                "No solver log is available. Run the project or inspect its readiness first."
+            )
+
+        newest_by_command: dict[str, tuple[str, Path, str]] = {}
+        for candidate in candidates:
+            newest_by_command[candidate[0]] = candidate
+        selected = tuple(newest_by_command.values())[-8:]
+        observations: list[diagnostics.LogObservation] = []
+        scanned: list[dict[str, object]] = []
+        total_bytes_read = 0
+        for name, path, source in selected:
+            try:
+                text, bytes_read = _read_text_tail(path, maximum_bytes=256 * 1024)
+            except OSError:
+                continue
+            observations.append(
+                diagnostics.LogObservation(command=name, source=source, text=text)
+            )
+            total_bytes_read += bytes_read
+            scanned.append(
+                {
+                    "command": name,
+                    "source": source,
+                    "path": str(path),
+                    "bytes_read": bytes_read,
+                }
+            )
+        if not observations:
+            raise ProjectError("Solver logs disappeared before they could be diagnosed.")
+
+        findings = [dict(item) for item in diagnostics.diagnose(observations)]
+        primary = findings[0] if findings else None
+        project_argument = self._cli_project_argument()
+        if primary is None:
+            fallback_command = observations[-1].command
+            next_action = {
+                "command": (
+                    f"agentcfd logs {project_argument} --command "
+                    f"{shlex.quote(fallback_command)} --lines 200"
+                ),
+                "reason": (
+                    "No supported deterministic signature was found; inspect the "
+                    "bounded raw evidence without changing generated files."
+                ),
+            }
+        else:
+            next_step = primary.pop("next_step")
+            for finding in findings[1:]:
+                finding.pop("next_step", None)
+            evidence = primary["evidence"]
+            evidence_command = str(evidence["command"])
+            action_commands = {
+                "clean": f"agentcfd clean {project_argument}",
+                "plan": f"agentcfd plan {project_argument}",
+                "check": f"agentcfd check {project_argument}",
+                "logs": (
+                    f"agentcfd logs {project_argument} --command "
+                    f"{shlex.quote(evidence_command)} --lines 200"
+                ),
+            }
+            next_action = {
+                "command": action_commands[str(next_step)],
+                "reason": str(primary["repair"]),
+            }
+
+        return {
+            "schema": "agentcfd.project-diagnosis/0.1",
+            "root": str(self.root),
+            "run_id": None if latest is None else latest.get("run_id"),
+            "run_status": None if latest is None else latest.get("status"),
+            "available_commands": available,
+            "logs_scanned": scanned,
+            "findings": findings,
+            "primary_finding": primary,
+            "observation_cost": {
+                "field_payloads_opened": 0,
+                "log_files_opened": len(scanned),
+                "maximum_bytes_per_log": 256 * 1024,
+                "total_bytes_read": total_bytes_read,
+            },
+            "next_action": next_action,
+        }
+
     def storage(self) -> dict[str, object]:
         """Inventory managed project data without reading field arrays."""
 
@@ -1636,12 +1741,12 @@ class Project:
             has_logs = bool(self._log_candidates(latest, run_directory))
             next_action = {
                 "command": (
-                    f"agentcfd logs {project_argument}"
+                    f"agentcfd diagnose {project_argument}"
                     if has_logs
                     else f"agentcfd run {project_argument}"
                 ),
                 "reason": (
-                    "Read the bounded final solver log before retrying."
+                    "Classify bounded solver evidence before retrying."
                     if has_logs
                     else "Retry the managed run; no solver log was produced."
                 ),

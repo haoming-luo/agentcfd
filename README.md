@@ -100,7 +100,8 @@ cd my-flow
 agentcfd status .       # one state, one recommended next action
 agentcfd run .
 agentcfd watch .        # follow a long active run, then stop automatically
-agentcfd logs .         # bounded diagnostic tail after a failed/interrupted run
+agentcfd diagnose .     # classify bounded evidence and recommend one safe action
+agentcfd logs .         # raw bounded tail when deeper evidence is needed
 agentcfd view .         # prints the latest XDMF or result target
 ```
 
@@ -155,11 +156,13 @@ live disk growth matters enough to justify a recursive scan on every poll.
 
 Failed runs retain their generated solver workspace automatically, even when
 ordinary successful runs would clean it. `agentcfd status .` then recommends
-`agentcfd logs .`, which returns a bounded tail from the newest live log or the
+`agentcfd diagnose .`. The deterministic classifier recognizes common
+resource, configuration, mesh, numerical, and runtime signatures and always
+attaches the exact evidence line, confidence, conservative repair, and a
+machine-readable statement that it did not modify the model automatically.
+`agentcfd logs .` returns a bounded raw tail from the newest live log or the
 small published evidence copy. Select a phase with `--command checkMesh` or
-`--command pimpleFoam`; use `--json` for the versioned diagnostic contract.
-After repairing `case.py` or runtime configuration, the reported next action is
-the same safe replace-mode `agentcfd run .`.
+`--command pimpleFoam`; use `--json` for either versioned contract.
 
 Output is declared by purpose instead of by OpenFOAM directory frequency. For
 example, a transient run can keep frequent scalar histories, one visualization

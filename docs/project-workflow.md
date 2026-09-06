@@ -56,14 +56,20 @@ agent, service, or log collector. The active state's recommended next action is
 therefore `watch`, so waiting does not require repeated manual commands.
 
 When a provider reports failure, AgentCFD preserves that run's generated
-workspace automatically. `status` recommends `agentcfd logs .` whenever a log
-exists. The command reads at most 1 MiB and returns only the requested final
-lines (80 by default), so a person or agent can inspect the decisive evidence
-without loading a multi-gigabyte case or guessing a backend path. Use
-`logs --command pimpleFoam`, for example, when several phase logs exist;
-`logs --json` carries the available commands, source, truncation state, and one
-safe retry action. Successful runs still remove disposable native bulk after
-copying small logs to `output/evidence/`.
+workspace automatically. `status` recommends `agentcfd diagnose .` whenever a
+log exists. Diagnosis opens no field payload and scans at most 256 KiB from up
+to eight newest phase logs. Known storage, memory, missing-file, boundary,
+dictionary, mesh, numerical, MPI, timeout, and process failures become stable
+codes with an evidence line, confidence, conservative repair, and one next
+command. It never edits `case.py` or generated provider files automatically.
+
+`agentcfd logs .` is the raw drill-down. It reads at most 1 MiB and returns only
+the requested final lines (80 by default), so a person or agent can inspect the
+decisive evidence without loading a multi-gigabyte case or guessing a backend
+path. Use `logs --command pimpleFoam`, for example, when several phase logs
+exist; `logs --json` carries the available commands, source, truncation state,
+and one safe retry action. Successful runs still remove disposable native bulk
+after copying small logs to `output/evidence/`.
 
 `view` reads only the small field manifest before opening anything. It reports
 frame count, physical/iteration axis range, portable size, canonical variables,

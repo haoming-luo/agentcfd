@@ -1281,6 +1281,18 @@ def build_parser() -> argparse.ArgumentParser:
     logs.add_argument("--lines", type=int, default=80)
     logs.add_argument("--json", action="store_true", dest="as_json")
 
+    diagnose = subparsers.add_parser(
+        "diagnose",
+        help="Classify bounded solver evidence and recommend a safe next action.",
+    )
+    diagnose.add_argument("project", nargs="?", type=Path, default=Path("."))
+    diagnose.add_argument(
+        "--command",
+        dest="solver_command",
+        help="Limit diagnosis to one provider command, for example pimpleFoam.",
+    )
+    diagnose.add_argument("--json", action="store_true", dest="as_json")
+
     storage_command = subparsers.add_parser(
         "storage",
         help="Inventory outputs, campaigns, and reclaimable temporary data.",
@@ -2092,6 +2104,29 @@ def main(argv: list[str] | None = None) -> int:
                 print(report["tail"], end="")
             print(f"next: {report['next_action']['command']}")
         return 0
+    if args.command == "diagnose":
+        report = projects.Project.discover(args.project).diagnose(
+            command=args.solver_command,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            primary = report["primary_finding"]
+            if primary is None:
+                print("No known deterministic failure signature found.")
+            else:
+                print(
+                    f"{primary['code']} | {primary['confidence']} confidence | "
+                    f"{primary['title']}"
+                )
+                evidence = primary["evidence"]
+                print(
+                    f"evidence: {evidence['command']}:{evidence['line']} | "
+                    f"{evidence['excerpt']}"
+                )
+                print(f"repair: {primary['repair']}")
+            print(f"next: {report['next_action']['command']}")
+        return 0 if report["primary_finding"] is not None else 2
     if args.command == "status":
         report = projects.Project(args.project).status(include_storage=args.storage)
         if args.as_json:

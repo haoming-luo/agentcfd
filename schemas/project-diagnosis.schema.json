@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-diagnosis.schema.json",
+  "title": "AgentCFD deterministic project diagnosis 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "run_id", "run_status", "available_commands",
+    "logs_scanned", "findings", "primary_finding", "observation_cost",
+    "next_action"
+  ],
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "code", "category", "severity", "confidence", "title", "evidence",
+        "repair", "automatic_repair"
+      ],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "category": {
+          "enum": [
+            "resource", "configuration", "boundary-condition", "mesh",
+            "numerics", "runtime", "provider"
+          ]
+        },
+        "severity": {"const": "error"},
+        "confidence": {"enum": ["high", "medium"]},
+        "title": {"type": "string", "minLength": 1},
+        "evidence": {
+          "type": "object",
+          "required": ["command", "source", "line", "excerpt"],
+          "properties": {
+            "command": {"type": "string", "minLength": 1},
+            "source": {"enum": ["workspace", "published-evidence"]},
+            "line": {"type": "integer", "minimum": 1},
+            "excerpt": {"type": "string", "minLength": 1, "maxLength": 500}
+          },
+          "additionalProperties": false
+        },
+        "repair": {"type": "string", "minLength": 1},
+        "automatic_repair": {"const": false}
+      },
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "schema": {"const": "agentcfd.project-diagnosis/0.1"},
+    "root": {"type": "string"},
+    "run_id": {"type": ["string", "null"]},
+    "run_status": {"type": ["string", "null"]},
+    "available_commands": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "logs_scanned": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["command", "source", "path", "bytes_read"],
+        "properties": {
+          "command": {"type": "string", "minLength": 1},
+          "source": {"enum": ["workspace", "published-evidence"]},
+          "path": {"type": "string", "minLength": 1},
+          "bytes_read": {"type": "integer", "minimum": 0, "maximum": 262144}
+        },
+        "additionalProperties": false
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "primary_finding": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/finding"}
+      ]
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": [
+        "field_payloads_opened", "log_files_opened",
+        "maximum_bytes_per_log", "total_bytes_read"
+      ],
+      "properties": {
+        "field_payloads_opened": {"const": 0},
+        "log_files_opened": {"type": "integer", "minimum": 1, "maximum": 8},
+        "maximum_bytes_per_log": {"const": 262144},
+        "total_bytes_read": {"type": "integer", "minimum": 0, "maximum": 2097152}
+      },
+      "additionalProperties": false
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

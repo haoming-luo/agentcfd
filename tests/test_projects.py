@@ -161,7 +161,15 @@ def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
     assert completed.solver_workspace is not None
     assert completed.solver_workspace.is_dir()
     assert status["state"] == "failed"
-    assert status["next_action"]["command"].startswith("agentcfd logs ")
+    assert status["next_action"]["command"].startswith("agentcfd diagnose ")
+
+    diagnosis = project.diagnose()
+    jsonschema.Draft202012Validator(
+        contracts.load("project-diagnosis.schema.json")
+    ).validate(diagnosis)
+    assert diagnosis["primary_finding"]["code"] == "OPENFOAM_FATAL_ERROR"
+    assert diagnosis["observation_cost"]["field_payloads_opened"] == 0
+    assert diagnosis["next_action"]["command"].startswith("agentcfd logs ")
 
 
 def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
@@ -244,6 +252,36 @@ def test_logs_cli_can_select_published_provider_evidence(tmp_path, capsys):
     report = json.loads(capsys.readouterr().out)
     assert report["source"] == "published-evidence"
     assert report["tail"] == "End\n"
+
+
+def test_diagnose_cli_reports_storage_failure_and_safe_preview(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    plan = project.plan()
+    project.run_root.mkdir()
+    evidence = project.run_root / "evidence"
+    evidence.mkdir()
+    (evidence / "simpleFoam.log").write_text(
+        "FOAM FATAL ERROR\nNo space left on device\n"
+    )
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "failed-storage",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "failed",
+                "accepted": False,
+                "analysis_sha256": plan["model"]["analysis_sha256"],
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+
+    assert entrypoint(["diagnose", str(project.root), "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["primary_finding"]["code"] == "DISK_SPACE_EXHAUSTED"
+    assert report["next_action"]["command"].startswith("agentcfd clean ")
 
 
 def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):

@@ -14,7 +14,7 @@
     "geometry": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "unit", "boundary_roles"],
+      "required": ["path", "unit"],
       "properties": {
         "path": {"type": "string", "minLength": 1},
         "unit": {"enum": ["m", "mm", "cm", "um", "in", "ft"]},
@@ -24,8 +24,13 @@
           "additionalProperties": {
             "enum": ["inlet", "outlet", "wall", "symmetry", "empty"]
           }
-        }
-      }
+        },
+        "role_confirmation": {"const": "accept-name-suggestions"}
+      },
+      "oneOf": [
+        {"required": ["boundary_roles"]},
+        {"required": ["role_confirmation"]}
+      ]
     },
     "interior_point_m": {"$ref": "#/$defs/vector3"},
     "inlet_velocity_m_s": {"$ref": "#/$defs/vector3"},

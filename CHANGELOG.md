@@ -9,6 +9,9 @@
 - Add a strict, versioned project-creation request API and `init --request` for
   agents and future GUIs; relative geometry paths resolve beside the request,
   while generated `case.py` remains the sole long-lived scientific source.
+- Add explicit `--accept-name-roles` and the matching versioned request gesture
+  for well-named geometry. Every surface suggestion must be unambiguous; no
+  fallback role is invented and failure occurs before project files are written.
 - Make the public analysis-request fingerprint the sole project/provider result
   identity and refuse to publish a provider result carrying a different one.
 - Lower imported-volume point probes, scalar pressure surface reports, and wall

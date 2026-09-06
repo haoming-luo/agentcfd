@@ -1306,7 +1306,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument("--geometry", type=Path)
     init.add_argument("--unit", choices=("m", "mm", "cm", "um", "in", "ft"))
-    init.add_argument("--roles", type=Path)
+    init_roles = init.add_mutually_exclusive_group()
+    init_roles.add_argument("--roles", type=Path)
+    init_roles.add_argument(
+        "--accept-name-roles",
+        action="store_true",
+        help=(
+            "Explicitly confirm every unambiguous name-based role suggestion; "
+            "fail if any surface name is ambiguous."
+        ),
+    )
     init.add_argument(
         "--interior-point-m",
         nargs=3,
@@ -2330,6 +2339,7 @@ def main(argv: list[str] | None = None) -> int:
             args.geometry,
             args.unit,
             args.roles,
+            True if args.accept_name_roles else None,
             args.interior_point_m,
             args.inlet_velocity_m_s,
             args.base_size_m,
@@ -2372,6 +2382,7 @@ def main(argv: list[str] | None = None) -> int:
                 geometry_path=args.geometry,
                 geometry_unit=args.unit,
                 boundary_roles=_boundary_role_map(args.roles),
+                accept_name_roles=args.accept_name_roles,
                 interior_point_m=(
                     tuple(args.interior_point_m)
                     if args.interior_point_m is not None

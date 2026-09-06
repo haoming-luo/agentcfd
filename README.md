@@ -125,6 +125,11 @@ cd my-duct
 agentcfd status .
 ```
 
+When every surface carries an unambiguous name such as `inlet`, `outlet`, and
+`walls`, replace `--roles boundary-roles.json` with
+`--accept-name-roles`. That flag is the explicit confirmation gesture; it
+fails before writing the project if even one region name is ambiguous.
+
 The new project owns a copy of the surface plus its content hash, normalized
 role map, and portable inspection record. The generated Python remains the
 editable source for velocity, fluid properties, mesh size, cell budget, and
@@ -140,7 +145,10 @@ agentcfd init my-duct --request project-request.json
 Relative geometry paths resolve beside that JSON file. The request is an
 auditable creation boundary, not a second project language: after creation,
 only the generated `case.py` controls the scientific model. A complete example
-lives at `examples/imported_duct_mesh/project-request.json`.
+lives at `examples/imported_duct_mesh/project-request.json`. Automation may
+provide an exact `boundary_roles` object or explicitly set
+`"role_confirmation": "accept-name-suggestions"`; it cannot request a silent
+fallback wall.
 
 Imported projects use the same compact decision-output API as parametric
 channels. Add `outputs.probe(...)`, a scalar-pressure

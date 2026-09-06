@@ -252,6 +252,32 @@ def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_pat
     assert complete["boundary_roles"]["suggestions"]["outlet_main"]["role"] == "outlet"
 
 
+def test_name_role_suggestions_require_explicit_complete_acceptance(tmp_path):
+    surface = tmp_path / "named.stl"
+    surface.write_text(_named_tetra_stl())
+    inspection = geometry_io.inspect_geometry(
+        surface,
+        unit="m",
+        internal_flow=True,
+    )
+
+    assert geometry_io.accept_name_role_suggestions(inspection) == {
+        "inlet": "inlet",
+        "outlet": "outlet",
+        "walls": "wall",
+    }
+
+    ambiguous = tmp_path / "ambiguous.stl"
+    ambiguous.write_text(_ascii_stl("face_1", (((0, 0, 0), (1, 0, 0), (0, 1, 0)),)))
+    ambiguous_inspection = geometry_io.inspect_geometry(
+        ambiguous,
+        unit="m",
+        require_watertight=False,
+    )
+    with pytest.raises(geometry_io.GeometryInspectionError, match="face_1"):
+        geometry_io.accept_name_role_suggestions(ambiguous_inspection)
+
+
 def test_open_surface_requires_units_and_can_be_intentionally_allowed(tmp_path):
     surface = tmp_path / "open.stl"
     surface.write_text(

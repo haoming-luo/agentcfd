@@ -8,7 +8,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Artifact, Check, FieldRecord, contracts, projects
+from agentcfd import Artifact, Check, FieldRecord, contracts, geometry_io, projects
 from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
@@ -196,6 +196,74 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
     assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
 
 
+def test_cli_can_explicitly_accept_unambiguous_name_roles(tmp_path, capsys):
+    example = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry"
+    root = tmp_path / "accepted-name-roles"
+
+    assert (
+        entrypoint(
+            [
+                "init",
+                str(root),
+                "--template",
+                "imported-internal-flow",
+                "--geometry",
+                str(example / "fluid.stl"),
+                "--unit",
+                "m",
+                "--accept-name-roles",
+                "--interior-point-m",
+                "0.5",
+                "0.25",
+                "0.1",
+                "--inlet-velocity-m-s",
+                "0.5",
+                "0",
+                "0",
+                "--base-size-m",
+                "0.05",
+                "--maximum-cells",
+                "200000",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["template"] == "imported-internal-flow"
+    assert json.loads((root / "geometry/boundary-roles.json").read_text())["regions"] == {
+        "inlet": "inlet",
+        "outlet": "outlet",
+        "walls": "wall",
+    }
+
+
+def test_name_role_acceptance_fails_closed_before_project_write(tmp_path):
+    source = tmp_path / "ambiguous.stl"
+    source.write_text(
+        "solid face_1\n"
+        "facet normal 0 0 1\nouter loop\n"
+        "vertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\n"
+        "endloop\nendfacet\nendsolid face_1\n"
+    )
+    root = tmp_path / "should-not-exist"
+
+    with pytest.raises(geometry_io.GeometryInspectionError, match="face_1"):
+        projects.init_project(
+            root,
+            provider="openfoam",
+            template="imported-internal-flow",
+            geometry_path=source,
+            geometry_unit="m",
+            accept_name_roles=True,
+            interior_point_m=(0.2, 0.2, 0.01),
+            inlet_velocity_m_s=(0.5, 0.0, 0.0),
+            base_size_m=0.05,
+            maximum_cells=10_000,
+        )
+    assert not root.exists()
+
+
 def test_versioned_creation_request_resolves_owned_geometry_beside_request(
     tmp_path, capsys
 ):
@@ -244,6 +312,32 @@ def test_versioned_creation_request_resolves_owned_geometry_beside_request(
     assert report["request_sha256"] == projects.content_fingerprint(request)
     assert (root / "geometry/fluid.stl").read_bytes() == source.read_bytes()
     assert projects.Project(root).plan()["readiness"]["ready_to_run"] is True
+
+
+def test_creation_request_can_confirm_unambiguous_name_roles(tmp_path):
+    source = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "imported-internal-flow",
+        "provider": "openfoam",
+        "geometry": {
+            "path": str(source),
+            "unit": "m",
+            "role_confirmation": "accept-name-suggestions",
+        },
+        "interior_point_m": [0.5, 0.25, 0.1],
+        "inlet_velocity_m_s": [0.5, 0.0, 0.0],
+        "mesh": {"base_size_m": 0.05, "maximum_cells": 200_000},
+    }
+    jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    ).validate(request)
+
+    project = projects.init_project_from_request(tmp_path / "request-project", request)
+
+    assert json.loads(
+        (project.root / "geometry/boundary-roles.json").read_text()
+    )["regions"] == {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
 
 
 def test_creation_request_rejects_unknown_automation_intent_before_writing(tmp_path):

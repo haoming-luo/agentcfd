@@ -4231,7 +4231,8 @@ def init_project_from_request(
     if not isinstance(mesh_record, Mapping):
         raise ProjectError("Project creation mesh must be an object.")
     geometry_unknown = sorted(
-        set(geometry_record) - {"path", "unit", "boundary_roles"}
+        set(geometry_record)
+        - {"path", "unit", "boundary_roles", "role_confirmation"}
     )
     mesh_unknown = sorted(set(mesh_record) - {"base_size_m", "maximum_cells"})
     if geometry_unknown:
@@ -4247,7 +4248,7 @@ def init_project_from_request(
             + "."
         )
     geometry_missing = sorted(
-        key for key in ("path", "unit", "boundary_roles") if key not in geometry_record
+        key for key in ("path", "unit") if key not in geometry_record
     )
     mesh_missing = sorted(
         key for key in ("base_size_m", "maximum_cells") if key not in mesh_record
@@ -4265,13 +4266,24 @@ def init_project_from_request(
         )
     geometry_path = geometry_record["path"]
     geometry_unit = geometry_record["unit"]
-    boundary_roles = geometry_record["boundary_roles"]
+    boundary_roles = geometry_record.get("boundary_roles")
+    role_confirmation = geometry_record.get("role_confirmation")
     if not isinstance(geometry_path, str) or not geometry_path.strip():
         raise ProjectError("Project creation geometry.path must be a non-empty string.")
     if not isinstance(geometry_unit, str):
         raise ProjectError("Project creation geometry.unit must be a string.")
-    if not isinstance(boundary_roles, Mapping):
+    if (boundary_roles is None) == (role_confirmation is None):
+        raise ProjectError(
+            "Project creation geometry requires exactly one of boundary_roles or "
+            "role_confirmation."
+        )
+    if boundary_roles is not None and not isinstance(boundary_roles, Mapping):
         raise ProjectError("Project creation geometry.boundary_roles must be an object.")
+    if role_confirmation is not None and role_confirmation != "accept-name-suggestions":
+        raise ProjectError(
+            "Project creation geometry.role_confirmation must be "
+            "'accept-name-suggestions'."
+        )
     source = Path(geometry_path).expanduser()
     if not source.is_absolute():
         base = (
@@ -4287,6 +4299,7 @@ def init_project_from_request(
         geometry_path=source,
         geometry_unit=geometry_unit,
         boundary_roles=boundary_roles,
+        accept_name_roles=role_confirmation == "accept-name-suggestions",
         interior_point_m=payload["interior_point_m"],
         inlet_velocity_m_s=payload["inlet_velocity_m_s"],
         base_size_m=mesh_record["base_size_m"],
@@ -4302,6 +4315,7 @@ def init_project(
     geometry_path: str | Path | None = None,
     geometry_unit: str | None = None,
     boundary_roles: Mapping[str, str] | None = None,
+    accept_name_roles: bool = False,
     interior_point_m: tuple[float, float, float] | None = None,
     inlet_velocity_m_s: tuple[float, float, float] | None = None,
     base_size_m: float | None = None,
@@ -4326,13 +4340,14 @@ def init_project(
         geometry_path,
         geometry_unit,
         boundary_roles,
+        accept_name_roles,
         interior_point_m,
         inlet_velocity_m_s,
         base_size_m,
         maximum_cells,
     )
     if template != "imported-internal-flow" and any(
-        value is not None for value in imported_options
+        value is not None and value is not False for value in imported_options
     ):
         raise ValueError(
             "Imported geometry options require template='imported-internal-flow'."
@@ -4344,12 +4359,18 @@ def init_project(
     normalized_roles: dict[str, str] | None = None
     case_template: str
     if template == "imported-internal-flow":
+        if not isinstance(accept_name_roles, bool):
+            raise ValueError("accept_name_roles must be a boolean.")
+        if boundary_roles is not None and accept_name_roles:
+            raise ValueError(
+                "Choose either explicit boundary_roles or accept_name_roles, not both."
+            )
         missing = [
             name
             for name, value in (
                 ("geometry_path", geometry_path),
                 ("geometry_unit", geometry_unit),
-                ("boundary_roles", boundary_roles),
+                ("boundary_roles or accept_name_roles", boundary_roles or accept_name_roles),
                 ("interior_point_m", interior_point_m),
                 ("inlet_velocity_m_s", inlet_velocity_m_s),
                 ("base_size_m", base_size_m),
@@ -4365,18 +4386,27 @@ def init_project(
             )
         assert geometry_path is not None
         assert geometry_unit is not None
-        assert boundary_roles is not None
         assert interior_point_m is not None
         assert inlet_velocity_m_s is not None
         assert base_size_m is not None
         assert maximum_cells is not None
-        if not isinstance(boundary_roles, Mapping):
-            raise ValueError("Imported boundary_roles must be a mapping.")
         imported_source = Path(geometry_path).expanduser().resolve()
-        normalized_roles = {
-            str(name): str(role).strip().lower()
-            for name, role in boundary_roles.items()
-        }
+        if boundary_roles is None:
+            preliminary_report = geometry_io.inspect_geometry(
+                imported_source,
+                unit=geometry_unit,
+                internal_flow=True,
+            )
+            normalized_roles = geometry_io.accept_name_role_suggestions(
+                preliminary_report
+            )
+        else:
+            if not isinstance(boundary_roles, Mapping):
+                raise ValueError("Imported boundary_roles must be a mapping.")
+            normalized_roles = {
+                str(name): str(role).strip().lower()
+                for name, role in boundary_roles.items()
+            }
         imported_report = geometry_io.inspect_geometry(
             imported_source,
             unit=geometry_unit,

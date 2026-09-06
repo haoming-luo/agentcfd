@@ -38,6 +38,22 @@ opening, and empty. AgentCFD will suggest roles from recognizable tokens but
 sets `requires_confirmation: true`; it never converts a filename guess into a
 physical boundary condition.
 
+For well-named surfaces, the confirmation can be made directly while creating
+the project:
+
+```bash
+agentcfd init my-duct --template imported-internal-flow \
+  --geometry duct.obj --unit mm --accept-name-roles \
+  --interior-point-m 0.15 0.03 0.03 \
+  --inlet-velocity-m-s 1 0 0 --base-size-m 0.005 \
+  --maximum-cells 500000
+```
+
+This is acceptance, not automatic inference. It succeeds only when every exact
+surface name has one recognized role token. Any ambiguous name causes a
+fail-closed error before the destination directory is written, at which point
+the explicit versioned role map is the repair path.
+
 The released inspector supports binary/ASCII STL and OBJ. It hashes the source,
 converts bounds to SI, discovers surface region names, counts triangles and
 unique vertices, detects zero-area triangles, boundary and non-manifold edges,
@@ -105,10 +121,12 @@ interior point, and the hard cell limit are required rather than guessed.
 
 For automation, `agentcfd init DESTINATION --request REQUEST.json` accepts the
 installed `project-creation-request.schema.json` contract. Its geometry path is
-resolved relative to the request file, roles are explicit inline data, and the
-response includes the request fingerprint. The JSON is only a creation
-envelope; it generates the same readable `case.py` and does not become a shadow
-source of model truth.
+resolved relative to the request file, and the response includes the request
+fingerprint. Geometry must contain exactly one of an explicit inline
+`boundary_roles` map or
+`"role_confirmation": "accept-name-suggestions"`. The JSON is only a
+creation envelope; it generates the same readable `case.py` and does not become
+a shadow source of model truth.
 
 `agentcfd plan .` verifies the asset still exists and still matches the
 inspected SHA-256 before any provider action. Missing or changed geometry has

@@ -76,6 +76,7 @@ _CAPABILITIES = (
             "closed and open ASCII STL topology tests",
             "binary STL and OBJ polygon tests",
             "explicit internal-flow boundary-role mapping tests",
+            "fail-closed explicit acceptance of complete name-role suggestions",
             "installed geometry-inspection JSON contract",
         ),
         limitations=(

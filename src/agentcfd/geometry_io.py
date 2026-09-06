@@ -67,6 +67,63 @@ def _role_suggestions(regions: tuple[str, ...]) -> dict[str, dict[str, object]]:
     return suggestions
 
 
+def accept_name_role_suggestions(
+    inspection: Mapping[str, object],
+) -> dict[str, str]:
+    """Return an explicitly accepted, complete name-based role map.
+
+    The caller supplies the confirmation gesture. This helper never invents a
+    fallback role: every discovered region must have exactly one name match.
+    """
+
+    if inspection.get("schema") != "agentcfd.geometry-inspection/0.1":
+        raise GeometryInspectionError(
+            "Name-role acceptance requires an AgentCFD geometry inspection."
+        )
+    surface = inspection.get("surface")
+    boundary_roles = inspection.get("boundary_roles")
+    if not isinstance(surface, Mapping) or not isinstance(boundary_roles, Mapping):
+        raise GeometryInspectionError(
+            "Geometry inspection lacks surface or boundary-role records."
+        )
+    region_names = surface.get("region_names")
+    suggestions = boundary_roles.get("suggestions")
+    if not isinstance(region_names, list) or not isinstance(suggestions, Mapping):
+        raise GeometryInspectionError(
+            "Geometry inspection lacks stable region names or role suggestions."
+        )
+    accepted: dict[str, str] = {}
+    unresolved: list[str] = []
+    for raw_name in region_names:
+        if not isinstance(raw_name, str):
+            raise GeometryInspectionError(
+                "Geometry inspection contains a non-string region name."
+            )
+        suggestion = suggestions.get(raw_name)
+        role = suggestion.get("role") if isinstance(suggestion, Mapping) else None
+        confidence = (
+            suggestion.get("confidence")
+            if isinstance(suggestion, Mapping)
+            else None
+        )
+        if (
+            not isinstance(role, str)
+            or role not in _BOUNDARY_ROLES
+            or confidence != "name-match"
+        ):
+            unresolved.append(raw_name)
+            continue
+        accepted[raw_name] = str(role)
+    if unresolved or not accepted:
+        detail = ", ".join(unresolved) if unresolved else "no named regions"
+        raise GeometryInspectionError(
+            "Cannot accept name-based roles because these regions are ambiguous: "
+            + detail
+            + ". Provide an explicit versioned role map instead."
+        )
+    return accepted
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -678,4 +735,8 @@ def inspect_geometry(
     }
 
 
-__all__ = ["GeometryInspectionError", "inspect_geometry"]
+__all__ = [
+    "GeometryInspectionError",
+    "accept_name_role_suggestions",
+    "inspect_geometry",
+]

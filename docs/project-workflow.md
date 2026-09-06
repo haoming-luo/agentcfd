@@ -71,6 +71,46 @@ exist; `logs --json` carries the available commands, source, truncation state,
 and one safe retry action. Successful runs still remove disposable native bulk
 after copying small logs to `output/evidence/`.
 
+## Checkpoint recovery
+
+Transient full-field frames are for interpretation; checkpoints are sparse
+native solver state for recovery. The default baffle template keeps two rolling
+states every `0.5 s`. If a run fails or its owner process disappears,
+`status.recovery` reports whether the latest complete `U` and `p` state is
+usable. Diagnosis keeps its immediate repair as the one next action and exposes
+`resume_after_repair` separately.
+
+`agentcfd resume .` is fail-closed. It currently supports the transient
+OpenFOAM channel capability in replace mode and requires the current analysis
+fingerprint and execution fingerprint to equal the source run. AgentCFD checks
+the generated case identity, checkpoint metadata and every restored archive
+member, stages the checkpoint before replacing `output/`, changes only
+`startFrom` to `latestTime`, and skips repeated potential-flow initialization.
+The new result records source run ID, checkpoint time, and archive hash.
+Compact function-object histories travel in the restart archive as well, so a
+terminal checkpoint can still satisfy conservation and requested-report gates
+without re-reading discarded native field frames. An exact end-time checkpoint
+is valid for termination/publication recovery even when the interrupted log
+did not have time to print its final `End` marker.
+
+Execution timeout, workspace retention, and portable-export enablement are
+publication/operational controls, not solver state. They may change before
+resume (for example, increasing `timeout_seconds` after a diagnosed timeout);
+container identity, mesh controls, analysis inputs, and all other
+solver-affecting settings must remain identical.
+
+Cleanup cannot remove a workspace that contains the only complete recovery
+checkpoint. After successful resumed publication, the superseded source
+workspace is removed automatically; failed resume attempts retain both sources
+for diagnosis. This trades a small, explicit checkpoint cost for avoiding a
+full recomputation.
+
+The recovery path was exercised against OpenCFD v2606 with a deliberately
+one-second-limited 3,020-cell channel. The first run published
+`PROCESS_TIMED_OUT` plus 0.45/0.5 s checkpoints; resuming the complete 0.5 s
+state performed only OpenFOAM termination confirmation and produced a verified,
+accepted result with source-run provenance.
+
 `view` reads only the small field manifest before opening anything. It reports
 frame count, physical/iteration axis range, portable size, canonical variables,
 and whether each variable is a visualization point field or native cell field.
@@ -112,6 +152,8 @@ for animation, checkpoint, compression, and budget examples.
 intentional campaigns, and hidden temporary workspaces. `agentcfd clean .` is a
 non-destructive preview. `agentcfd clean . --apply` can remove only hidden
 temporary solver workspaces; it always preserves `output/` and `campaigns/`.
+If a failed workspace holds the only complete recovery checkpoint, it is also
+protected and excluded from reclaimable bytes.
 
 The OpenFOAM-to-XDMF adapter passes selected native times and field names to
 `foamToVTK`, so a sparse public animation no longer requires staging every
@@ -133,5 +175,6 @@ debugging and provider-development surface; changing it does not change the
 declared scientific intent in `case.py`.
 
 Failure retention is automatic and does not require this option. After the
-cause is repaired and a new replace-mode run completes, stale failed
-workspaces become reclaimable through the normal preview-first `clean` flow.
+cause is repaired and a fresh or resumed replace-mode run completes, stale
+failed workspaces become reclaimable through the normal preview-first `clean`
+flow.

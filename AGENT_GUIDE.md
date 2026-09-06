@@ -47,6 +47,10 @@ python -m pytest -q
     raw drill-down. Never recursively ingest a retained OpenFOAM workspace just
     to locate the last error, and never turn a diagnosis into an unreviewed
     model mutation.
+15. If `diagnosis.resume_after_repair` is present, repair the diagnosed cause
+    first and then execute that exact `resume` command. Never resume after an
+    analysis or execution fingerprint change, and never delete a
+    `protected_recovery_run_ids` workspace.
 
 ## Current boundary
 

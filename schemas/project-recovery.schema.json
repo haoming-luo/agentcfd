@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-recovery.schema.json",
+  "title": "AgentCFD checkpoint recovery eligibility 0.1",
+  "type": "object",
+  "required": [
+    "schema", "available", "source_run_id", "source", "coordinate",
+    "identity_match", "reason", "command"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-recovery/0.1"},
+    "available": {"type": "boolean"},
+    "source_run_id": {"type": ["string", "null"]},
+    "source": {
+      "type": ["string", "null"],
+      "enum": ["published-checkpoint", "retained-workspace", null]
+    },
+    "coordinate": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["name", "value", "unit"],
+          "properties": {
+            "name": {"const": "time"},
+            "value": {"type": "number", "exclusiveMinimum": 0},
+            "unit": {"const": "s"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "identity_match": {"type": "boolean"},
+    "reason": {"type": "string", "minLength": 1},
+    "command": {"type": ["string", "null"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"available": {"const": true}}},
+      "then": {
+        "properties": {
+          "source_run_id": {"type": "string"},
+          "source": {"type": "string"},
+          "coordinate": {"type": "object"},
+          "identity_match": {"const": true},
+          "command": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -6,7 +6,7 @@
   "required": [
     "schema", "root", "applied", "scope", "targets", "preserved",
     "candidate_bytes", "candidate_display", "candidate_file_count",
-    "protected_active_run_ids",
+    "protected_active_run_ids", "protected_recovery_run_ids",
     "reclaimed_bytes", "reclaimed_display"
   ],
   "properties": {
@@ -17,6 +17,7 @@
     "targets": {"type": "array", "items": {"type": "object"}},
     "preserved": {"type": "array", "items": {"type": "string"}},
     "protected_active_run_ids": {"type": "array", "items": {"type": "string"}},
+    "protected_recovery_run_ids": {"type": "array", "items": {"type": "string"}},
     "candidate_bytes": {"type": "integer", "minimum": 0},
     "candidate_display": {"type": "string"},
     "candidate_file_count": {"type": "integer", "minimum": 0},

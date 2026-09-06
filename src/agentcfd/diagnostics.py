@@ -134,7 +134,11 @@ _RULES = (
         "PROCESS_TIMED_OUT",
         "runtime",
         "The provider command exceeded its execution limit",
-        _pattern(r"timed out", r"timeout expired", r"time limit exceeded"),
+        _pattern(
+            r"timed out",
+            r"timeout (?:expired|after)",
+            r"time limit exceeded",
+        ),
         "Increase the declared execution limit only after checking that progress was advancing and resource demand is acceptable.",
         "logs",
         "medium",
@@ -163,7 +167,10 @@ _RULES = (
 def _evidence_line(text: str, expression: re.Pattern[str]) -> tuple[int, str] | None:
     lines = text.splitlines()
     for index in range(len(lines) - 1, -1, -1):
-        if expression.search(lines[index]):
+        if expression.search(lines[index]) and not (
+            "trapfpe" in lines[index].lower()
+            and "trapping enabled" in lines[index].lower()
+        ):
             normalized = " ".join(lines[index].strip().split())
             return index + 1, normalized[:500]
     return None

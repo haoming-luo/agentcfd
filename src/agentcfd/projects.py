@@ -1338,6 +1338,30 @@ class Project:
                 return {run_id}
         return set()
 
+    def _protected_retained_run_ids(self) -> set[str]:
+        """Return workspaces that a person or project policy explicitly retained."""
+
+        root = self.root / ".agentcfd" / "work"
+        if not root.is_dir():
+            return set()
+        retained = set()
+        for workspace in root.iterdir():
+            marker = workspace / ".agentcfd-workspace.json"
+            try:
+                record = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if (
+                isinstance(record, dict)
+                and record.get("schema") == "agentcfd.workspace/0.1"
+                and record.get("run_id") == workspace.name
+                and record.get("protected") is True
+                and record.get("retention_reason")
+                in {"explicit-cli", "manifest-policy"}
+            ):
+                retained.add(workspace.name)
+        return retained
+
     def _record_directory(self, record: Mapping[str, object] | None) -> Path | None:
         if record is None:
             return None
@@ -1754,12 +1778,16 @@ class Project:
         managed = sum(int(item["bytes"]) for item in categories.values())
         active_run_ids = self._active_run_ids()
         recovery_run_ids = self._protected_recovery_run_ids()
-        protected_run_ids = active_run_ids | recovery_run_ids
+        retained_run_ids = self._protected_retained_run_ids()
+        protected_run_ids = active_run_ids | recovery_run_ids | retained_run_ids
         active_workspace_bytes = sum(
             _tree_usage(workspace_root / run_id)[0] for run_id in active_run_ids
         )
         recovery_workspace_bytes = sum(
             _tree_usage(workspace_root / run_id)[0] for run_id in recovery_run_ids
+        )
+        retained_workspace_bytes = sum(
+            _tree_usage(workspace_root / run_id)[0] for run_id in retained_run_ids
         )
         workspace_bytes = int(categories["temporary_workspaces"]["bytes"])
         protected_workspace_bytes = sum(
@@ -1779,6 +1807,13 @@ class Project:
         )
         categories["temporary_workspaces"]["protected_recovery_run_ids"] = sorted(
             recovery_run_ids
+        )
+        categories["temporary_workspaces"]["retained_bytes"] = retained_workspace_bytes
+        categories["temporary_workspaces"]["retained_display"] = _human_bytes(
+            retained_workspace_bytes
+        )
+        categories["temporary_workspaces"]["protected_retained_run_ids"] = sorted(
+            retained_run_ids
         )
         disk = shutil.disk_usage(self.root)
         return {
@@ -1811,12 +1846,20 @@ class Project:
             ),
         }
 
-    def clean(self, *, apply: bool = False) -> dict[str, object]:
+    def clean(
+        self,
+        *,
+        apply: bool = False,
+        include_retained: bool = False,
+    ) -> dict[str, object]:
         """Preview or remove hidden temporary workspaces; preserve all results."""
 
         workspace_root = self.root / ".agentcfd" / "work"
         active_run_ids = self._active_run_ids()
         recovery_run_ids = self._protected_recovery_run_ids()
+        retained_run_ids = (
+            set() if include_retained else self._protected_retained_run_ids()
+        )
         before = 0
         file_count = 0
         targets = []
@@ -1825,7 +1868,10 @@ class Project:
                 size, files = _tree_usage(path)
                 protected_active = path.name in active_run_ids
                 protected_recovery = path.name in recovery_run_ids
-                protected = protected_active or protected_recovery
+                protected_retained = path.name in retained_run_ids
+                protected = (
+                    protected_active or protected_recovery or protected_retained
+                )
                 targets.append(
                     {
                         "path": str(path),
@@ -1834,6 +1880,7 @@ class Project:
                         "file_count": files,
                         "protected_active_run": protected_active,
                         "protected_recovery_checkpoint": protected_recovery,
+                        "protected_retained_workspace": protected_retained,
                     }
                 )
                 if not protected:
@@ -1843,7 +1890,7 @@ class Project:
             for target in targets:
                 if target["protected_active_run"] or target[
                     "protected_recovery_checkpoint"
-                ]:
+                ] or target["protected_retained_workspace"]:
                     continue
                 path = Path(str(target["path"]))
                 if path.is_dir() and not path.is_symlink():
@@ -1860,16 +1907,19 @@ class Project:
             for target in targets
             if not target["protected_active_run"]
             and not target["protected_recovery_checkpoint"]
+            and not target["protected_retained_workspace"]
         )
         return {
             "schema": "agentcfd.project-clean/0.1",
             "root": str(self.root),
             "applied": apply,
+            "include_retained": include_retained,
             "scope": "temporary-workspaces-only",
             "targets": targets,
             "preserved": [str(self.run_root), str(self.root / "campaigns")],
             "protected_active_run_ids": sorted(active_run_ids),
             "protected_recovery_run_ids": sorted(recovery_run_ids),
+            "protected_retained_run_ids": sorted(retained_run_ids),
             "candidate_bytes": before,
             "candidate_display": _human_bytes(before),
             "candidate_file_count": file_count,
@@ -2373,6 +2423,32 @@ class Project:
         write_marker()
         workspace_root = self.root / ".agentcfd" / "work" / run_id
         case_directory = workspace_root / "openfoam"
+
+        def write_workspace_marker(
+            *, retention_reason: str, protected: bool
+        ) -> None:
+            if selected_name != "openfoam":
+                return
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            marker = workspace_root / ".agentcfd-workspace.json"
+            temporary = marker.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(
+                    {
+                        "schema": "agentcfd.workspace/0.1",
+                        "run_id": run_id,
+                        "retention_reason": retention_reason,
+                        "protected": protected,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(marker)
+
+        write_workspace_marker(retention_reason="active-run", protected=False)
         selected = self._provider(
             selected_name,
             step=step,
@@ -2398,6 +2474,7 @@ class Project:
             else:
                 result = selected.run(step)
         except Exception as error:
+            write_workspace_marker(retention_reason="failure", protected=False)
             write_marker(
                 status="failed",
                 phase="solver",
@@ -2410,9 +2487,26 @@ class Project:
                 },
             )
             raise
-        retained_workspace = keep_workspace or bool(
+        manifest_retention = bool(
             self._openfoam_settings().get("keep_workspace", False)
-        ) or result.status != "completed"
+        )
+        retained_workspace = selected_name == "openfoam" and (
+            keep_workspace or manifest_retention or result.status != "completed"
+        )
+        retention_reason = (
+            "explicit-cli"
+            if selected_name == "openfoam" and keep_workspace
+            else "manifest-policy"
+            if selected_name == "openfoam" and manifest_retention
+            else "failure"
+            if selected_name == "openfoam" and result.status != "completed"
+            else "none"
+        )
+        if retained_workspace:
+            write_workspace_marker(
+                retention_reason=retention_reason,
+                protected=retention_reason in {"explicit-cli", "manifest-policy"},
+            )
         bundle = None
         if (
             selected_name == "openfoam"
@@ -2588,6 +2682,12 @@ class Project:
         run_record["pid"] = None
         run_record["started_at"] = started_at
         run_record["completed_at"] = datetime.now(UTC).isoformat()
+        run_record["workspace_retention"] = {
+            "retained": retained_workspace,
+            "reason": retention_reason,
+            "protected_from_default_cleanup": retention_reason
+            in {"explicit-cli", "manifest-policy"},
+        }
         if _resume_archive is not None:
             run_record["resume"] = marker_record["resume"]
         _write_output_guide(completed, model_name=step.model.name)

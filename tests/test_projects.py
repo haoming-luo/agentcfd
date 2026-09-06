@@ -172,6 +172,49 @@ def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
     assert diagnosis["next_action"]["command"].startswith("agentcfd logs ")
 
 
+def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    project.manifest_path.write_text(
+        project.manifest_path.read_text().replace(
+            "export_fields = true", "export_fields = false"
+        )
+    )
+    project = projects.Project(project.root)
+
+    def complete(provider, _step):
+        provider.case_directory.mkdir(parents=True)
+        (provider.case_directory / "native-field").write_bytes(b"retained")
+        return projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+        )
+
+    monkeypatch.setattr("agentcfd.projects.OpenFOAMChannelProvider.run", complete)
+
+    completed = project.run(keep_workspace=True)
+    marker = json.loads(
+        (completed.solver_workspace / ".agentcfd-workspace.json").read_text()
+    )
+    record = json.loads((completed.directory / "run.json").read_text())
+
+    assert marker["retention_reason"] == "explicit-cli"
+    assert marker["protected"] is True
+    assert record["workspace_retention"] == {
+        "retained": True,
+        "reason": "explicit-cli",
+        "protected_from_default_cleanup": True,
+    }
+    project.clean(apply=True)
+    assert completed.solver_workspace.is_dir()
+
+
 def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
@@ -1041,6 +1084,38 @@ def test_clean_protects_live_run_workspace(tmp_path):
     assert live.is_dir()
     assert not stale.exists()
     assert report["reclaimed_bytes"] == len(b"stale")
+
+
+def test_clean_requires_explicit_scope_to_remove_retained_workspace(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    retained = project.root / ".agentcfd" / "work" / "retained-run"
+    retained.mkdir(parents=True)
+    (retained / "native-field").write_bytes(b"retained")
+    (retained / ".agentcfd-workspace.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.workspace/0.1",
+                "run_id": "retained-run",
+                "retention_reason": "explicit-cli",
+                "protected": True,
+            }
+        )
+    )
+
+    inventory = project.storage()
+    assert inventory["reclaimable_bytes"] == 0
+    assert inventory["categories"]["temporary_workspaces"][
+        "protected_retained_run_ids"
+    ] == ["retained-run"]
+    protected = project.clean(apply=True)
+    assert protected["protected_retained_run_ids"] == ["retained-run"]
+    assert retained.is_dir()
+
+    preview = project.clean(include_retained=True)
+    assert preview["candidate_bytes"] > 0
+    removed = project.clean(apply=True, include_retained=True)
+    assert removed["reclaimed_bytes"] > 0
+    assert not retained.exists()
 
 
 def test_status_storage_clean_and_view_cli_are_human_and_agent_friendly(

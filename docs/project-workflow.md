@@ -162,6 +162,13 @@ temporary solver workspaces; it always preserves `output/` and `campaigns/`.
 If a failed workspace holds the only complete recovery checkpoint, it is also
 protected and excluded from reclaimable bytes.
 
+Workspaces retained deliberately by `--keep-workspace` or
+`[openfoam].keep_workspace = true` are a separate protected class. Normal
+cleanup never deletes them. Preview their release with
+`agentcfd clean . --include-retained`, then repeat with `--apply` only when the
+listed paths are no longer needed. Active workspaces and sole recovery
+checkpoints remain protected even in this expanded scope.
+
 The OpenFOAM-to-XDMF adapter passes selected native times and field names to
 `foamToVTK`, so a sparse public animation no longer requires staging every
 restart time or unused solver field as temporary VTK data.
@@ -185,3 +192,7 @@ Failure retention is automatic and does not require this option. After the
 cause is repaired and a fresh or resumed replace-mode run completes, stale
 failed workspaces become reclaimable through the normal preview-first `clean`
 flow.
+
+Explicit retention persists as user intent across later commands. It does not
+silently become ordinary reclaimable cache; use the dedicated
+`--include-retained` cleanup scope to revoke that intent.

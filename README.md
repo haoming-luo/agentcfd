@@ -120,6 +120,7 @@ agentcfd run . --campaign
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
+# agentcfd clean . --include-retained --apply  # release expert copies
 ```
 
 All project commands discover the nearest `agentcfd.toml` while walking upward,
@@ -178,6 +179,11 @@ checkpoint copy is protected from `clean`; it becomes reclaimable only after a
 published checkpoint exists or a resumed run succeeds.
 Operational limits such as `timeout_seconds` may be relaxed before resume;
 solver-affecting model, mesh, and runtime identity must remain unchanged.
+
+An expert workspace retained by `--keep-workspace` or project policy is also
+protected from ordinary cleanup. Releasing that deliberate copy requires the
+separate, previewable `agentcfd clean . --include-retained` scope; add `--apply`
+only after reviewing the exact candidate paths and bytes.
 
 `agentcfd doctor .` is the deliberate heavier preflight: it combines readiness,
 latest-run health, recovery, recursive managed storage, output-budget and free

@@ -5,8 +5,8 @@
   "type": "object",
   "required": [
     "schema", "root", "run_id", "run_status", "available_commands",
-    "logs_scanned", "findings", "primary_finding", "observation_cost",
-    "next_action"
+    "logs_scanned", "findings", "primary_finding", "recovery",
+    "resume_after_repair", "observation_cost", "next_action"
   ],
   "$defs": {
     "finding": {
@@ -76,6 +76,21 @@
       "oneOf": [
         {"type": "null"},
         {"$ref": "#/$defs/finding"}
+      ]
+    },
+    "recovery": {"type": "object"},
+    "resume_after_repair": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["command", "reason"],
+          "properties": {
+            "command": {"type": "string", "minLength": 1},
+            "reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
       ]
     },
     "observation_cost": {

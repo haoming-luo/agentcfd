@@ -9,11 +9,12 @@ import zipfile
 import pytest
 
 from agentcfd import Artifact, Check, SimulationResult, fluids, initialization, procedures
-from agentcfd.errors import UnsupportedCaseError
+from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
 from agentcfd.projects import Project
 from agentcfd.providers.openfoam_channel import (
     OpenFOAMChannelProvider,
     _write_restart_bundle,
+    materialize_interrupted_restart,
 )
 
 
@@ -195,3 +196,82 @@ def test_channel_restart_bundle_is_rolling_deterministic_and_restorable(tmp_path
     assert (target / "2" / "p").read_bytes() == b"pressure-2"
     assert "startFrom latestTime;" in (target / "system" / "controlDict").read_text()
     assert "potentialFoam" not in OpenFOAMChannelProvider()._commands(resumed)
+
+
+def test_interrupted_checkpoint_requires_identity_and_complete_native_fields(tmp_path):
+    step = Project(EXAMPLE).load_step()
+    case = tmp_path / "interrupted-case"
+    prepared = OpenFOAMChannelProvider(case_directory=case).prepare(step)
+    incomplete = case / "0.5"
+    incomplete.mkdir()
+    (incomplete / "U").write_text("incomplete")
+    complete = case / "1"
+    complete.mkdir()
+    (complete / "U").write_text("velocity")
+    (complete / "p").write_text("pressure")
+
+    archive, latest = materialize_interrupted_restart(
+        step,
+        case,
+        expected_analysis_sha256=prepared.analysis_sha256,
+    )
+
+    assert archive.is_file()
+    assert latest == 1.0
+    with zipfile.ZipFile(archive) as bundle:
+        assert "times/0.5/U" not in bundle.namelist()
+        assert "times/1/U" in bundle.namelist()
+
+    (case / "system" / "fvSchemes").write_text("tampered")
+    with pytest.raises(CaseIntegrityError, match="changed after preparation"):
+        materialize_interrupted_restart(
+            step,
+            case,
+            expected_analysis_sha256=prepared.analysis_sha256,
+        )
+
+
+def test_channel_provider_resume_restores_checkpoint_and_skips_initialization(
+    tmp_path, monkeypatch
+):
+    step = Project(EXAMPLE).load_step()
+    source = tmp_path / "source"
+    prepared = OpenFOAMChannelProvider(case_directory=source).prepare(step)
+    checkpoint = source / "0.5"
+    checkpoint.mkdir()
+    (checkpoint / "U").write_text("velocity")
+    (checkpoint / "p").write_text("pressure")
+    archive, _times = _write_restart_bundle(step, prepared)
+    assert archive is not None
+
+    target = tmp_path / "target"
+    provider = OpenFOAMChannelProvider(case_directory=target)
+    monkeypatch.setattr(
+        provider,
+        "_commands",
+        lambda _step: {
+            "potentialFoam": "/runtime/potentialFoam",
+            "pimpleFoam": "/runtime/pimpleFoam",
+        },
+    )
+    executed = []
+
+    def fake_run(argv, **_kwargs):
+        executed.append(Path(argv[0]).name)
+        return subprocess.CompletedProcess(argv, 1, stdout=None, stderr=None)
+
+    monkeypatch.setattr("agentcfd.providers.openfoam_channel.subprocess.run", fake_run)
+
+    result = provider.run(
+        step,
+        restart_archive=archive,
+        source_run_id="source-run",
+        expected_analysis_sha256=step.fingerprint(),
+    )
+
+    assert executed == ["pimpleFoam"]
+    assert (target / "0.5" / "U").read_text() == "velocity"
+    assert "startFrom latestTime;" in (target / "system" / "controlDict").read_text()
+    assert result.provenance["resumed_from_run_id"] == "source-run"
+    assert result.quantities["restart.resumed_from_time"].value == 0.5
+    assert "resume_manifest" in result.artifacts

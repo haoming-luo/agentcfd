@@ -102,6 +102,7 @@ agentcfd run .
 agentcfd watch .        # follow a long active run, then stop automatically
 agentcfd diagnose .     # classify bounded evidence and recommend one safe action
 agentcfd logs .         # raw bounded tail when deeper evidence is needed
+agentcfd resume .       # continue an identical interrupted transient checkpoint
 agentcfd view .         # prints the latest XDMF or result target
 ```
 
@@ -163,6 +164,17 @@ machine-readable statement that it did not modify the model automatically.
 `agentcfd logs .` returns a bounded raw tail from the newest live log or the
 small published evidence copy. Select a phase with `--command checkMesh` or
 `--command pimpleFoam`; use `--json` for either versioned contract.
+
+Transient templates declare sparse rolling checkpoints independently from
+visualization frames. After a failed or interrupted run, `status` and
+`diagnose` report whether an identity-matched checkpoint is resumable and from
+which physical time. `agentcfd resume .` refuses changed project or runtime
+inputs, validates generated-case and archive-member hashes, skips repeated
+initialization, and records the source run in the new result. The sole native
+checkpoint copy is protected from `clean`; it becomes reclaimable only after a
+published checkpoint exists or a resumed run succeeds.
+Operational limits such as `timeout_seconds` may be relaxed before resume;
+solver-affecting model, mesh, and runtime identity must remain unchanged.
 
 Output is declared by purpose instead of by OpenFOAM directory frequency. For
 example, a transient run can keep frequent scalar histories, one visualization

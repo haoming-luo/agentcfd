@@ -45,6 +45,7 @@ def test_diagnosis_does_not_treat_ordinary_convergence_log_as_failure():
     findings = diagnostics.diagnose(
         [
             observation(
+                "trapFpe: Floating point exception trapping enabled (FOAM_SIGFPE).\n"
                 "Time = 0.1\n"
                 "Courant Number mean: 0.1 max: 0.4\n"
                 "Solving for Ux, Initial residual = 0.02, Final residual = 1e-6\n"
@@ -54,3 +55,17 @@ def test_diagnosis_does_not_treat_ordinary_convergence_log_as_failure():
     )
 
     assert findings == ()
+
+
+def test_diagnosis_recognizes_agentcfd_timeout_without_sigfpe_startup_false_positive():
+    findings = diagnostics.diagnose(
+        [
+            observation(
+                "trapFpe: Floating point exception trapping enabled (FOAM_SIGFPE).\n"
+                "Time = 0.45\n"
+                "AgentCFD timeout after 1 seconds.\n"
+            )
+        ]
+    )
+
+    assert [item["code"] for item in findings] == ["PROCESS_TIMED_OUT"]

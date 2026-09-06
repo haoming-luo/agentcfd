@@ -79,6 +79,9 @@ files stay hidden and reproducible.
 - evidence-linked deterministic classification of common resource,
   configuration, mesh, numerical, and runtime failures without unreviewed
   automatic model edits;
+- identity-gated transient checkpoint recovery with explicit `resume`, source
+  provenance, automatic initialization skipping, and cleanup protection for the
+  sole recoverable workspace;
 - declarative plane slices, scalar contours, and line-seeded streamlines that
   generate portable ParaView scripts without copying field payloads;
 - one-command post-processing target and self-documenting output directory;
@@ -91,11 +94,9 @@ files stay hidden and reproducible.
    boundary-role audit before meshing.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
-3. Crash-safe checkpoint publication and explicit `resume`, keeping model and
-   mesh identity gates.
-4. Extend the shipped filter recipes with camera, plot, image/video, and
+3. Extend the shipped filter recipes with camera, plot, image/video, and
    multi-view layout intent while preserving one shared field payload.
-5. Persist bounded progress history and learned ETA calibration across runs,
+4. Persist bounded progress history and learned ETA calibration across runs,
    without converting monitoring into high-frequency field output.
 
 ### Then: scale without scaling attention

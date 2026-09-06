@@ -11,7 +11,9 @@ import re
 import shlex
 import shutil
 import sys
+import tempfile
 import tomllib
+import zipfile
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +31,7 @@ from .providers import (
     OpenFOAMProvider,
     ReferencePipeProvider,
 )
+from .providers.openfoam_channel import materialize_interrupted_restart
 from .results import Artifact, FieldRecord, SimulationResult
 
 
@@ -936,6 +939,7 @@ class Project:
             "nominal_wall_cell_fraction",
             "export_fields",
             "keep_workspace",
+            "timeout_seconds",
         }
         unknown = sorted(set(settings) - allowed)
         if unknown:
@@ -956,10 +960,12 @@ class Project:
             raise ProjectError(f"Unknown provider {name!r}.")
         settings = self._openfoam_settings()
         selected_image = container_image or settings.get("container_image")
+        timeout_seconds = float(settings.get("timeout_seconds", 3600.0))
         if step is not None and isinstance(step.model.domain, RectangularChannel):
             return OpenFOAMChannelProvider(
                 case_directory=case_directory,
                 container_image=str(selected_image) if selected_image else None,
+                timeout_seconds=timeout_seconds,
             )
         mesh = OpenFOAMMeshControls(
             cross_section_cells=settings.get("cross_section_cells", 8),
@@ -970,6 +976,7 @@ class Project:
             case_directory=case_directory,
             container_image=str(selected_image) if selected_image else None,
             mesh=mesh,
+            timeout_seconds=timeout_seconds,
         )
 
     def _execution_fingerprint(
@@ -989,6 +996,58 @@ class Project:
                 "analysis_sha256": analysis_sha256,
                 "provider": provider,
                 "provider_settings": settings,
+            }
+        )
+
+    def _resume_execution_fingerprint(
+        self,
+        analysis_sha256: object,
+        *,
+        provider: str,
+        container_image: str | None = None,
+    ) -> str:
+        """Fingerprint solver-affecting settings while excluding execution limits."""
+
+        settings: dict[str, object] = {}
+        if provider == "openfoam":
+            settings = self._openfoam_settings()
+            for operational in (
+                "timeout_seconds",
+                "keep_workspace",
+                "export_fields",
+            ):
+                settings.pop(operational, None)
+            if container_image is not None:
+                settings["container_image"] = container_image
+        return content_fingerprint(
+            {
+                "analysis_sha256": analysis_sha256,
+                "provider": provider,
+                "solver_affecting_provider_settings": settings,
+            }
+        )
+
+    def _result_execution_fingerprint(
+        self,
+        analysis_sha256: object,
+        *,
+        provider: str,
+        container_image: str | None = None,
+    ) -> str:
+        """Fingerprint settings that can change the published result surface."""
+
+        settings: dict[str, object] = {}
+        if provider == "openfoam":
+            settings = self._openfoam_settings()
+            settings.pop("timeout_seconds", None)
+            settings.pop("keep_workspace", None)
+            if container_image is not None:
+                settings["container_image"] = container_image
+        return content_fingerprint(
+            {
+                "analysis_sha256": analysis_sha256,
+                "provider": provider,
+                "result_affecting_provider_settings": settings,
             }
         )
 
@@ -1247,6 +1306,38 @@ class Project:
             and record.get("run_id")
         }
 
+    def _protected_recovery_run_ids(self) -> set[str]:
+        """Protect the latest workspace when it is the only checkpoint copy."""
+
+        runs = self._run_records()
+        latest = runs[0] if runs else None
+        if latest is None:
+            return set()
+        run_id = latest.get("run_id")
+        status = str(latest.get("status", "unknown"))
+        interrupted = status in {"preparing", "running", "exporting"} and not _process_is_alive(
+            latest.get("pid")
+        )
+        if not isinstance(run_id, str) or (status != "failed" and not interrupted):
+            return set()
+        run_directory = self._record_directory(latest)
+        if (
+            run_directory is not None
+            and (run_directory / "evidence" / "restart.zip").is_file()
+        ):
+            return set()
+        case = self.root / ".agentcfd" / "work" / run_id / "openfoam"
+        if not case.is_dir():
+            return set()
+        for path in case.iterdir():
+            try:
+                value = float(path.name)
+            except ValueError:
+                continue
+            if value > 0 and all((path / field).is_file() for field in ("U", "p")):
+                return {run_id}
+        return set()
+
     def _record_directory(self, record: Mapping[str, object] | None) -> Path | None:
         if record is None:
             return None
@@ -1314,6 +1405,155 @@ class Project:
                 key=lambda item: (modified(item), item[0]),
             )
         )
+
+    def _recovery_status(
+        self,
+        step: Step,
+        plan: Mapping[str, object],
+        latest: Mapping[str, object] | None,
+    ) -> dict[str, object]:
+        project_argument = self._cli_project_argument()
+        unavailable = {
+            "schema": "agentcfd.project-recovery/0.1",
+            "available": False,
+            "source_run_id": None,
+            "source": None,
+            "coordinate": None,
+            "identity_match": False,
+            "reason": "No eligible failed or interrupted checkpoint is available.",
+            "command": None,
+        }
+        if latest is None:
+            return unavailable
+        run_id = latest.get("run_id")
+        native_status = str(latest.get("status", "unknown"))
+        interrupted = native_status in {"preparing", "running", "exporting"} and not _process_is_alive(
+            latest.get("pid")
+        )
+        if native_status != "failed" and not interrupted:
+            return unavailable
+        if (
+            not isinstance(run_id, str)
+            or not run_id
+            or self.manifest.default_provider != "openfoam"
+            or not isinstance(step.model.domain, RectangularChannel)
+            or step.model.study.steady
+            or not step.output.checkpoints.enabled
+        ):
+            return {
+                **unavailable,
+                "source_run_id": run_id if isinstance(run_id, str) else None,
+                "reason": "The latest run does not use a resumable transient capability and checkpoint policy.",
+            }
+        analysis_sha256 = plan["model"]["analysis_sha256"]
+        expected_execution = self._execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+        )
+        expected_resume_execution = self._resume_execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+        )
+        source_resume_execution = latest.get("resume_execution_sha256")
+        identity_match = (
+            latest.get("analysis_sha256") == analysis_sha256
+            and (
+                source_resume_execution == expected_resume_execution
+                if isinstance(source_resume_execution, str)
+                else latest.get("execution_sha256") == expected_execution
+            )
+        )
+        if not identity_match:
+            return {
+                **unavailable,
+                "source_run_id": run_id,
+                "reason": "Current project or runtime inputs differ from the checkpoint source.",
+            }
+        run_directory = self._record_directory(latest)
+        archive = (
+            run_directory / "evidence" / "restart.zip"
+            if run_directory is not None
+            else None
+        )
+        latest_time: float | None = None
+        source: str | None = None
+        if archive is not None and archive.is_file():
+            try:
+                with zipfile.ZipFile(archive) as bundle:
+                    metadata = json.loads(bundle.read("restart.json"))
+                if (
+                    metadata.get("schema") == "agentcfd.openfoam-restart/0.1"
+                    and metadata.get("model_sha256") == step.model.fingerprint()
+                ):
+                    retained_times = tuple(
+                        float(value) for value in metadata["retained_times"]
+                    )
+                    candidates = tuple(
+                        value
+                        for value in retained_times
+                        if 0 < value <= step.procedure.end_time
+                    )
+                    latest_time = max(candidates) if candidates else None
+                    source = "published-checkpoint"
+            except (KeyError, OSError, TypeError, ValueError, zipfile.BadZipFile):
+                latest_time = None
+        if latest_time is None:
+            workspace_case = (
+                self.root / ".agentcfd" / "work" / run_id / "openfoam"
+            )
+            interval = step.output.checkpoints.every
+            assert interval is not None
+            times = []
+            if workspace_case.is_dir():
+                for path in workspace_case.iterdir():
+                    try:
+                        value = float(path.name)
+                    except ValueError:
+                        continue
+                    if (
+                        value > 0
+                        and value <= step.procedure.end_time
+                        and math.isclose(
+                            value / interval,
+                            round(value / interval),
+                            rel_tol=0.0,
+                            abs_tol=1.0e-8,
+                        )
+                        and all((path / field).is_file() for field in ("U", "p"))
+                    ):
+                        times.append(value)
+            if times:
+                latest_time = max(times)
+                source = "retained-workspace"
+        if latest_time is None or latest_time > step.procedure.end_time * (1.0 + 1e-10):
+            return {
+                **unavailable,
+                "source_run_id": run_id,
+                "identity_match": True,
+                "reason": "No complete checkpoint at or before the requested end time is available.",
+            }
+        return {
+            **unavailable,
+            "available": True,
+            "source_run_id": run_id,
+            "source": source,
+            "coordinate": {
+                "name": "time",
+                "value": latest_time,
+                "unit": "s",
+            },
+            "identity_match": True,
+            "reason": "An identity-matched complete checkpoint can avoid recomputing earlier time steps.",
+            "command": f"agentcfd resume {project_argument}",
+        }
+
+    def recovery(self) -> dict[str, object]:
+        """Report checkpoint-resume eligibility without opening field payloads."""
+
+        step = self.load_step()
+        plan = self.plan(_step=step)
+        runs = self._run_records()
+        return self._recovery_status(step, plan, runs[0] if runs else None)
 
     def logs(
         self,
@@ -1462,6 +1702,8 @@ class Project:
                 "reason": str(primary["repair"]),
             }
 
+        recovery = self.recovery()
+
         return {
             "schema": "agentcfd.project-diagnosis/0.1",
             "root": str(self.root),
@@ -1471,6 +1713,15 @@ class Project:
             "logs_scanned": scanned,
             "findings": findings,
             "primary_finding": primary,
+            "recovery": recovery,
+            "resume_after_repair": (
+                {
+                    "command": recovery["command"],
+                    "reason": recovery["reason"],
+                }
+                if recovery["available"]
+                else None
+            ),
             "observation_cost": {
                 "field_payloads_opened": 0,
                 "log_files_opened": len(scanned),
@@ -1502,16 +1753,33 @@ class Project:
             }
         managed = sum(int(item["bytes"]) for item in categories.values())
         active_run_ids = self._active_run_ids()
+        recovery_run_ids = self._protected_recovery_run_ids()
+        protected_run_ids = active_run_ids | recovery_run_ids
         active_workspace_bytes = sum(
             _tree_usage(workspace_root / run_id)[0] for run_id in active_run_ids
         )
+        recovery_workspace_bytes = sum(
+            _tree_usage(workspace_root / run_id)[0] for run_id in recovery_run_ids
+        )
         workspace_bytes = int(categories["temporary_workspaces"]["bytes"])
-        reclaimable = max(0, workspace_bytes - active_workspace_bytes)
+        protected_workspace_bytes = sum(
+            _tree_usage(workspace_root / run_id)[0] for run_id in protected_run_ids
+        )
+        reclaimable = max(0, workspace_bytes - protected_workspace_bytes)
         categories["temporary_workspaces"]["active_bytes"] = active_workspace_bytes
         categories["temporary_workspaces"]["active_display"] = _human_bytes(
             active_workspace_bytes
         )
         categories["temporary_workspaces"]["active_run_ids"] = sorted(active_run_ids)
+        categories["temporary_workspaces"]["recovery_checkpoint_bytes"] = (
+            recovery_workspace_bytes
+        )
+        categories["temporary_workspaces"]["recovery_checkpoint_display"] = (
+            _human_bytes(recovery_workspace_bytes)
+        )
+        categories["temporary_workspaces"]["protected_recovery_run_ids"] = sorted(
+            recovery_run_ids
+        )
         disk = shutil.disk_usage(self.root)
         return {
             "schema": "agentcfd.project-storage/0.1",
@@ -1548,20 +1816,24 @@ class Project:
 
         workspace_root = self.root / ".agentcfd" / "work"
         active_run_ids = self._active_run_ids()
+        recovery_run_ids = self._protected_recovery_run_ids()
         before = 0
         file_count = 0
         targets = []
         if workspace_root.is_dir():
             for path in sorted(workspace_root.iterdir()):
                 size, files = _tree_usage(path)
-                protected = path.name in active_run_ids
+                protected_active = path.name in active_run_ids
+                protected_recovery = path.name in recovery_run_ids
+                protected = protected_active or protected_recovery
                 targets.append(
                     {
                         "path": str(path),
                         "bytes": size,
                         "display": _human_bytes(size),
                         "file_count": files,
-                        "protected_active_run": protected,
+                        "protected_active_run": protected_active,
+                        "protected_recovery_checkpoint": protected_recovery,
                     }
                 )
                 if not protected:
@@ -1569,7 +1841,9 @@ class Project:
                     file_count += files
         if apply and workspace_root.exists():
             for target in targets:
-                if target["protected_active_run"]:
+                if target["protected_active_run"] or target[
+                    "protected_recovery_checkpoint"
+                ]:
                     continue
                 path = Path(str(target["path"]))
                 if path.is_dir() and not path.is_symlink():
@@ -1585,6 +1859,7 @@ class Project:
             _tree_usage(Path(str(target["path"])))[0]
             for target in targets
             if not target["protected_active_run"]
+            and not target["protected_recovery_checkpoint"]
         )
         return {
             "schema": "agentcfd.project-clean/0.1",
@@ -1594,6 +1869,7 @@ class Project:
             "targets": targets,
             "preserved": [str(self.run_root), str(self.root / "campaigns")],
             "protected_active_run_ids": sorted(active_run_ids),
+            "protected_recovery_run_ids": sorted(recovery_run_ids),
             "candidate_bytes": before,
             "candidate_display": _human_bytes(before),
             "candidate_file_count": file_count,
@@ -1604,8 +1880,13 @@ class Project:
     def status(self, *, include_storage: bool = False) -> dict[str, object]:
         """Return one human/agent decision surface for the whole project."""
 
-        plan = self.plan()
+        step = self.load_step()
+        plan = self.plan(_step=step)
         current_execution_sha256 = self._execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider=self.manifest.default_provider,
+        )
+        current_result_execution_sha256 = self._result_execution_fingerprint(
             plan["model"]["analysis_sha256"],
             provider=self.manifest.default_provider,
         )
@@ -1645,6 +1926,7 @@ class Project:
                 state = "running" if active else "interrupted"
             else:
                 latest_execution = latest.get("execution_sha256")
+                latest_result_execution = latest.get("result_execution_sha256")
                 latest_analysis = latest.get("analysis_sha256")
                 if latest_analysis is None and run_directory is not None:
                     try:
@@ -1654,7 +1936,11 @@ class Project:
                         latest_analysis = saved_plan["model"]["analysis_sha256"]
                     except (OSError, KeyError, TypeError, json.JSONDecodeError):
                         pass
-                if isinstance(latest_execution, str):
+                if isinstance(latest_result_execution, str):
+                    changed = (
+                        latest_result_execution != current_result_execution_sha256
+                    )
+                elif isinstance(latest_execution, str):
                     changed = latest_execution != current_execution_sha256
                 elif isinstance(latest_analysis, str):
                     changed = latest_analysis != plan["model"]["analysis_sha256"]
@@ -1718,6 +2004,7 @@ class Project:
             plan,
             include_storage=include_storage,
         )
+        recovery = self._recovery_status(step, plan, latest)
         if state == "blocked":
             next_action = {
                 "command": f"agentcfd check {project_argument}",
@@ -1785,6 +2072,7 @@ class Project:
             "latest_run": latest,
             "progress": progress,
             "postprocess": postprocess,
+            "recovery": recovery,
             "next_action": next_action,
         }
         if include_storage:
@@ -1806,6 +2094,7 @@ class Project:
             "latest_run": status["latest_run"],
             "progress": status["progress"],
             "postprocess": status["postprocess"],
+            "recovery": status["recovery"],
             "next_action": status["next_action"],
         }
 
@@ -1816,6 +2105,8 @@ class Project:
         container_image: str | None = None,
         campaign: bool = False,
         keep_workspace: bool = False,
+        _resume_archive: Path | None = None,
+        _resume_source_run_id: str | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
         step = self.load_step()
@@ -1891,6 +2182,16 @@ class Project:
             provider=selected_name,
             container_image=container_image,
         )
+        resume_execution_sha256 = self._resume_execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider=selected_name,
+            container_image=container_image,
+        )
+        result_execution_sha256 = self._result_execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider=selected_name,
+            container_image=container_image,
+        )
         marker_record: dict[str, object] = {
             "schema": "agentcfd.project-run/0.1",
             "run_id": run_id,
@@ -1903,9 +2204,16 @@ class Project:
             "plan_sha256": plan["plan_sha256"],
             "analysis_sha256": plan["model"]["analysis_sha256"],
             "execution_sha256": execution_sha256,
+            "resume_execution_sha256": resume_execution_sha256,
+            "result_execution_sha256": result_execution_sha256,
             "started_at": started_at,
             "completed_at": None,
         }
+        if _resume_archive is not None:
+            marker_record["resume"] = {
+                "source_run_id": _resume_source_run_id,
+                "archive_sha256": file_sha256(_resume_archive),
+            }
 
         def write_marker(**updates: object) -> None:
             marker_record.update(updates)
@@ -1927,7 +2235,22 @@ class Project:
         )
         write_marker(status="running", phase="solver")
         try:
-            result = selected.run(step)
+            if _resume_archive is not None:
+                if not isinstance(selected, OpenFOAMChannelProvider):
+                    raise ProjectError(
+                        "Managed checkpoint resume currently supports the transient "
+                        "OpenFOAM channel provider only."
+                    )
+                result = selected.run(
+                    step,
+                    restart_archive=_resume_archive,
+                    source_run_id=_resume_source_run_id,
+                    expected_analysis_sha256=str(
+                        plan["model"]["analysis_sha256"]
+                    ),
+                )
+            else:
+                result = selected.run(step)
         except Exception as error:
             write_marker(
                 status="failed",
@@ -2113,16 +2436,131 @@ class Project:
         run_record["plan_sha256"] = plan["plan_sha256"]
         run_record["analysis_sha256"] = plan["model"]["analysis_sha256"]
         run_record["execution_sha256"] = execution_sha256
+        run_record["resume_execution_sha256"] = resume_execution_sha256
+        run_record["result_execution_sha256"] = result_execution_sha256
         run_record["phase"] = "complete"
         run_record["pid"] = None
         run_record["started_at"] = started_at
         run_record["completed_at"] = datetime.now(UTC).isoformat()
+        if _resume_archive is not None:
+            run_record["resume"] = marker_record["resume"]
         _write_output_guide(completed, model_name=step.model.name)
         (run_directory / "run.json").write_text(
             json.dumps(run_record, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        if (
+            _resume_source_run_id is not None
+            and result.status == "completed"
+            and not keep_workspace
+        ):
+            source_workspace = (
+                self.root / ".agentcfd" / "work" / _resume_source_run_id
+            )
+            if source_workspace.is_dir() and source_workspace != workspace_root:
+                shutil.rmtree(source_workspace)
         return completed
+
+    def resume(
+        self,
+        *,
+        container_image: str | None = None,
+        keep_workspace: bool = False,
+    ) -> ProjectRun:
+        """Resume an identical failed/interrupted transient run from a checkpoint."""
+
+        if self.manifest.run_mode != "replace":
+            raise ProjectError(
+                "Managed resume currently requires replace mode; campaign retries keep "
+                "their own immutable orchestration state."
+            )
+        step = self.load_step()
+        if (
+            self.manifest.default_provider != "openfoam"
+            or not isinstance(step.model.domain, RectangularChannel)
+            or step.model.study.steady
+        ):
+            raise ProjectError(
+                "Managed resume currently supports transient OpenFOAM channel projects only."
+            )
+        if not step.output.checkpoints.enabled:
+            raise ProjectError(
+                "This project declares no restart checkpoints. Add "
+                "`restart=outputs.checkpoints(...)` to the output request before the run."
+            )
+        plan = self.plan(container_image=container_image, _step=step)
+        if plan["readiness"]["ready_to_run"] is not True:
+            raise ProjectError("The current project is not ready for checkpoint resume.")
+        runs = self._run_records()
+        latest = runs[0] if runs else None
+        if latest is None:
+            raise ProjectError("No failed or interrupted run exists to resume.")
+        native_status = str(latest.get("status", "unknown"))
+        interrupted = native_status in {"preparing", "running", "exporting"} and not _process_is_alive(
+            latest.get("pid")
+        )
+        if native_status != "failed" and not interrupted:
+            raise ProjectError(
+                "Only a failed or interrupted inactive run can be resumed."
+            )
+        analysis_sha256 = str(plan["model"]["analysis_sha256"])
+        if latest.get("analysis_sha256") != analysis_sha256:
+            raise ProjectError(
+                "Project inputs changed after the interrupted run; start a fresh run "
+                "instead of applying an incompatible checkpoint."
+            )
+        execution_sha256 = self._execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+            container_image=container_image,
+        )
+        resume_execution_sha256 = self._resume_execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+            container_image=container_image,
+        )
+        source_resume_execution = latest.get("resume_execution_sha256")
+        execution_matches = (
+            source_resume_execution == resume_execution_sha256
+            if isinstance(source_resume_execution, str)
+            else latest.get("execution_sha256") == execution_sha256
+        )
+        if not execution_matches:
+            raise ProjectError(
+                "Solver-affecting provider settings changed after the interrupted run; "
+                "resume requires the identical mesh/runtime identity."
+            )
+        run_id = latest.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
+            raise ProjectError("The source run has no stable run identity.")
+        run_directory = self._record_directory(latest)
+        published_archive = (
+            run_directory / "evidence" / "restart.zip"
+            if run_directory is not None
+            else None
+        )
+        source_case = self.root / ".agentcfd" / "work" / run_id / "openfoam"
+        if published_archive is not None and published_archive.is_file():
+            archive = published_archive
+        elif source_case.is_dir():
+            archive, _latest_time = materialize_interrupted_restart(
+                step,
+                source_case,
+                expected_analysis_sha256=analysis_sha256,
+            )
+        else:
+            raise ProjectError(
+                "No published or retained complete checkpoint exists for the latest run."
+            )
+        with tempfile.TemporaryDirectory(prefix="agentcfd-resume-") as temporary:
+            staged_archive = Path(temporary) / "restart.zip"
+            shutil.copy2(archive, staged_archive)
+            return self.run(
+                container_image=container_image,
+                keep_workspace=keep_workspace,
+                _resume_archive=staged_archive,
+                _resume_source_run_id=run_id,
+            )
 
 
 _CASE_TEMPLATE = '''"""Readable AgentCFD engineering model: edit this file, not backend dictionaries."""
@@ -2185,6 +2623,7 @@ def build():
             every=0.01,
             maximum_frames=201,
             storage_budget="2 GiB",
+            restart=outputs.checkpoints(every=0.5, keep=2),
             reports=(
                 outputs.probe("near-wake", at=(0.50, 0.05, 0.05)),
                 outputs.surface_report(
@@ -2247,6 +2686,7 @@ run_mode = "replace"
 container_image = "opencfd/openfoam-run:2606"
 {pipe_mesh_settings}export_fields = true
 keep_workspace = false
+timeout_seconds = 3600
 '''
     (root / "agentcfd.toml").write_text(manifest, encoding="utf-8")
     (root / "case.py").write_text(
@@ -2258,7 +2698,9 @@ keep_workspace = false
         "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
         "next action. The normal loop is `agentcfd run .` followed by "
         "`agentcfd view .`; `check`, `plan`, and `inspect` remain available for deeper "
-        "diagnosis. Ordinary runs replace the managed `output/` directory. Use "
+        "diagnosis. Failed transient runs expose identity-gated `agentcfd resume .` "
+        "when a complete checkpoint exists. Ordinary runs replace the managed "
+        "`output/` directory. Use "
         "`agentcfd run . --campaign` to preserve an immutable run, "
         "`agentcfd storage .` to audit space, or `--keep-workspace` only for expert "
         "solver debugging.\n",
@@ -2270,7 +2712,8 @@ keep_workspace = false
         "`agentcfd status . --json`, execute only its `next_action.command`, and re-read "
         "status after each action. Do not edit generated OpenFOAM dictionaries to "
         "change scientific intent. Preserve plan, result, XDMF/H5, selected NPZ, and "
-        "failed checks together. Never promote a result whose `accepted` value is false.\n",
+        "failed checks together. Follow `resume_after_repair` only after the diagnosed "
+        "cause is fixed. Never promote a result whose `accepted` value is false.\n",
         encoding="utf-8",
     )
     (root / ".gitignore").write_text(

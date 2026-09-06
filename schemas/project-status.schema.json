@@ -6,7 +6,7 @@
   "required": [
     "schema", "root", "state", "active", "inputs_changed", "model",
     "readiness", "issues", "run_count", "latest_run", "progress",
-    "postprocess", "next_action"
+    "postprocess", "recovery", "next_action"
   ],
   "properties": {
     "schema": {"const": "agentcfd.project-status/0.1"},
@@ -168,6 +168,7 @@
       },
       "additionalProperties": false
     },
+    "recovery": {"type": "object"},
     "next_action": {
       "type": "object",
       "required": ["command", "reason"],

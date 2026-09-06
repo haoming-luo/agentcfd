@@ -1293,6 +1293,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     diagnose.add_argument("--json", action="store_true", dest="as_json")
 
+    resume = subparsers.add_parser(
+        "resume",
+        help="Resume an identical failed transient project from its last checkpoint.",
+    )
+    resume.add_argument("project", nargs="?", type=Path, default=Path("."))
+    resume.add_argument("--container-image")
+    resume.add_argument(
+        "--keep-workspace",
+        action="store_true",
+        help="Retain the new generated workspace after successful publication.",
+    )
+    resume.add_argument("--json", action="store_true", dest="as_json")
+
     storage_command = subparsers.add_parser(
         "storage",
         help="Inventory outputs, campaigns, and reclaimable temporary data.",
@@ -2125,8 +2138,45 @@ def main(argv: list[str] | None = None) -> int:
                     f"{evidence['excerpt']}"
                 )
                 print(f"repair: {primary['repair']}")
+            recovery = report["recovery"]
+            if recovery["available"]:
+                coordinate = recovery["coordinate"]
+                print(
+                    f"checkpoint: {coordinate['value']:g} {coordinate['unit']} | "
+                    f"{recovery['source']}"
+                )
+                print(
+                    "after repair: "
+                    f"{report['resume_after_repair']['command']}"
+                )
             print(f"next: {report['next_action']['command']}")
         return 0 if report["primary_finding"] is not None else 2
+    if args.command == "resume":
+        completed = projects.Project.discover(args.project).resume(
+            container_image=args.container_image,
+            keep_workspace=args.keep_workspace,
+        )
+        report = completed.to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            resumed_from = completed.result.quantities.get(
+                "restart.resumed_from_time"
+            )
+            detail = (
+                ""
+                if resumed_from is None
+                else f" | resumed from {resumed_from.value:g} {resumed_from.unit}"
+            )
+            print(
+                f"Project resume {completed.result.status} | trust "
+                f"{completed.result.trust_level} | accepted "
+                f"{str(completed.result.accepted).lower()}{detail}"
+            )
+            print(completed.directory)
+        if completed.result.accepted:
+            return 0
+        return 1 if completed.result.status != "completed" else 3
     if args.command == "status":
         report = projects.Project(args.project).status(include_storage=args.storage)
         if args.as_json:
@@ -2187,6 +2237,13 @@ def main(argv: list[str] | None = None) -> int:
                     if monitors.get("pressure_drop") is not None:
                         monitor_line += f" | pressure drop {float(monitors['pressure_drop']):.6g} Pa"
                     print(monitor_line)
+            recovery = report["recovery"]
+            if recovery["available"]:
+                coordinate = recovery["coordinate"]
+                print(
+                    f"checkpoint: resumable from {coordinate['value']:g} "
+                    f"{coordinate['unit']} | {recovery['source']}"
+                )
             print(
                 f"next: {report['next_action']['command']} | "
                 f"{report['next_action']['reason']}"

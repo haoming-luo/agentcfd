@@ -7,7 +7,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import contracts, projects
+from agentcfd import Check, contracts, projects
 from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
@@ -284,6 +284,127 @@ def test_diagnose_cli_reports_storage_failure_and_safe_preview(tmp_path, capsys)
     assert report["next_action"]["command"].startswith("agentcfd clean ")
 
 
+def test_project_resume_stages_identical_interrupted_checkpoint(tmp_path, monkeypatch):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    manifest = project.manifest_path.read_text()
+    project.manifest_path.write_text(manifest.replace("export_fields = true", "export_fields = false"))
+    project = projects.Project(project.root)
+    step = project.load_step()
+    plan = project.plan()
+    run_id = "interrupted-run"
+    source_case = project.root / ".agentcfd" / "work" / run_id / "openfoam"
+    provider = projects.OpenFOAMChannelProvider(case_directory=source_case)
+    provider.prepare(step)
+    checkpoint = source_case / "0.5"
+    checkpoint.mkdir()
+    (checkpoint / "U").write_text("velocity")
+    (checkpoint / "p").write_text("pressure")
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": run_id,
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "running",
+                "phase": "solver",
+                "pid": 99999999,
+                "analysis_sha256": plan["model"]["analysis_sha256"],
+                "execution_sha256": project._execution_fingerprint(
+                    plan["model"]["analysis_sha256"], provider="openfoam"
+                ),
+                "started_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    observed = {}
+
+    def complete(_provider, _step, **kwargs):
+        archive = Path(kwargs["restart_archive"])
+        observed["archive_exists"] = archive.is_file()
+        observed["source_run_id"] = kwargs["source_run_id"]
+        observed["analysis"] = kwargs["expected_analysis_sha256"]
+        return projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+        )
+
+    monkeypatch.setattr("agentcfd.projects.OpenFOAMChannelProvider.run", complete)
+
+    recovery = project.recovery()
+    jsonschema.Draft202012Validator(
+        contracts.load("project-recovery.schema.json")
+    ).validate(recovery)
+    assert recovery["available"] is True
+    assert recovery["source"] == "retained-workspace"
+    assert recovery["coordinate"] == {"name": "time", "value": 0.5, "unit": "s"}
+    preview = project.clean()
+    assert preview["protected_recovery_run_ids"] == [run_id]
+    assert preview["candidate_bytes"] == 0
+
+    completed = project.resume()
+    record = json.loads((project.run_root / "run.json").read_text())
+
+    assert completed.result.accepted is True
+    assert observed == {
+        "archive_exists": True,
+        "source_run_id": run_id,
+        "analysis": plan["model"]["analysis_sha256"],
+    }
+    assert record["resume"]["source_run_id"] == run_id
+    assert not (project.root / ".agentcfd" / "work" / run_id).exists()
+
+
+def test_project_resume_refuses_changed_analysis(tmp_path):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "old-run",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "failed",
+                "analysis_sha256": "0" * 64,
+                "execution_sha256": "1" * 64,
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+
+    with pytest.raises(projects.ProjectError, match="inputs changed"):
+        project.resume()
+
+
+def test_resume_identity_excludes_timeout_and_publication_only_settings(tmp_path):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    step = project.load_step()
+    analysis = step.fingerprint()
+    first = project._resume_execution_fingerprint(analysis, provider="openfoam")
+    full_first = project._execution_fingerprint(analysis, provider="openfoam")
+    manifest = project.manifest_path.read_text()
+    project.manifest_path.write_text(
+        manifest.replace("timeout_seconds = 3600", "timeout_seconds = 7200")
+        .replace("export_fields = true", "export_fields = false")
+        .replace("keep_workspace = false", "keep_workspace = true")
+    )
+    changed = projects.Project(project.root)
+
+    assert changed._resume_execution_fingerprint(analysis, provider="openfoam") == first
+    assert changed._execution_fingerprint(analysis, provider="openfoam") != full_first
+
+
 def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)
@@ -550,6 +671,48 @@ def test_project_status_detects_operational_provider_setting_changes(tmp_path):
 
     assert report["inputs_changed"] is True
     assert report["state"] in {"modified", "blocked"}
+
+
+def test_project_status_does_not_invalidate_result_for_timeout_or_workspace_policy(
+    tmp_path,
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    plan = project.plan()
+    analysis_sha = plan["model"]["analysis_sha256"]
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "modern-run",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "completed",
+                "accepted": True,
+                "analysis_sha256": analysis_sha,
+                "execution_sha256": project._execution_fingerprint(
+                    analysis_sha, provider="openfoam"
+                ),
+                "result_execution_sha256": project._result_execution_fingerprint(
+                    analysis_sha, provider="openfoam"
+                ),
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    manifest = project.manifest_path
+    manifest.write_text(
+        manifest.read_text()
+        .replace("keep_workspace = false", "keep_workspace = true")
+        .replace("timeout_seconds = 3600", "timeout_seconds = 7200")
+    )
+
+    report = projects.Project(project.root).status()
+
+    assert report["inputs_changed"] is False
+    assert report["state"] == "complete"
 
 
 def test_completed_result_remains_viewable_when_optional_runtime_is_absent(

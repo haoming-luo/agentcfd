@@ -11,6 +11,17 @@
   numerical divergence, MPI, timeout, killed process, and generic OpenFOAM
   failures. Findings retain the exact bounded-log evidence, confidence, a
   conservative repair, and an explicit no-automatic-repair decision.
+- Add identity-gated `agentcfd resume` for failed or interrupted transient
+  channel projects. Complete native checkpoints are integrity-checked, staged
+  outside replace-mode deletion, restored with `latestTime`, and linked to the
+  source run in result provenance; changed model/runtime inputs fail closed.
+- Carry compact monitor/report histories inside restart bundles, accept a
+  complete end-time checkpoint for termination recovery, and exclude only
+  non-solver operational controls (timeout, workspace retention, portable
+  export) from resume compatibility.
+- Expose recovery availability in status and diagnosis, protect the sole
+  recoverable workspace from cleanup, and remove the superseded source
+  workspace only after a successful resumed publication.
 - Stream OpenFOAM command output to bounded-memory live logs and expose a
   field-free progress snapshot through `status`: command, elapsed time,
   physical time/iteration, conservative ETA range for transient runs, latest

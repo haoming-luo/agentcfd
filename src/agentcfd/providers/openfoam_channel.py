@@ -130,6 +130,7 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
             rel_tol=0.0,
             abs_tol=1.0e-8,
         )
+        and all((item[1] / field).is_file() for field in ("U", "p"))
     ]
     retained = available[-policy.keep :]
     if not retained:
@@ -143,6 +144,19 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
                 continue
             relative = path.relative_to(time_directory).as_posix()
             archive_name = f"times/{time_directory.name}/{relative}"
+            data = path.read_bytes()
+            members[archive_name] = {
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "size_bytes": len(data),
+            }
+            payloads.append((archive_name, data))
+    postprocessing = prepared.directory / "postProcessing"
+    if postprocessing.is_dir():
+        for path in sorted(postprocessing.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            relative = path.relative_to(postprocessing).as_posix()
+            archive_name = f"postProcessing/{relative}"
             data = path.read_bytes()
             members[archive_name] = {
                 "sha256": hashlib.sha256(data).hexdigest(),
@@ -172,31 +186,16 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
     return target, retained_times
 
 
-def _restore_previous_result(step, target: Path) -> float:
-    source = Path(step.initialization.result).expanduser().resolve()
-    try:
-        record = read_result_record(source)
-    except (FileNotFoundError, ValueError) as error:
-        raise CaseIntegrityError(
-            "The previous result failed AgentCFD evidence validation: " + str(error)
-        ) from error
-    actual_trust = record.get("trust_level")
-    required_trust = step.initialization.minimum_trust
-    if not isinstance(actual_trust, str) or _TRUST_ORDER.get(actual_trust, -1) < _TRUST_ORDER[required_trust]:
-        raise CaseIntegrityError(
-            f"Previous result trust {actual_trust!r} is below required {required_trust!r}."
-        )
-    provenance = record.get("provenance")
-    if not isinstance(provenance, dict) or provenance.get("model_sha256") != step.model.fingerprint():
-        raise CaseIntegrityError("The previous result belongs to a different scientific model.")
-    artifacts = record.get("artifact_records")
-    restart = artifacts.get("restart_bundle") if isinstance(artifacts, dict) else None
-    relative = restart.get("path") if isinstance(restart, dict) else None
-    if not isinstance(relative, str):
-        raise CaseIntegrityError("The previous result has no restart_bundle artifact.")
-    archive_path = Path(relative)
-    if not archive_path.is_absolute():
-        archive_path = source.parent / archive_path
+def _restore_restart_archive(
+    step,
+    target: Path,
+    archive_path: Path,
+    *,
+    expected_analysis_sha256: str | None = None,
+    allow_end_time: bool = False,
+) -> float:
+    """Restore one identity-checked native state without trusting archive paths."""
+
     try:
         with zipfile.ZipFile(archive_path) as archive:
             metadata = json.loads(archive.read("restart.json"))
@@ -206,11 +205,34 @@ def _restore_previous_result(step, target: Path) -> float:
                 or metadata.get("model_sha256") != step.model.fingerprint()
             ):
                 raise CaseIntegrityError("The restart bundle contract does not match this case.")
-            latest = float(metadata["latest_time"])
-            if latest >= step.procedure.end_time:
+            if (
+                expected_analysis_sha256 is not None
+                and metadata.get("source_analysis_sha256")
+                != expected_analysis_sha256
+            ):
                 raise CaseIntegrityError(
-                    "The restart time must be earlier than the requested transient end time."
+                    "The restart bundle belongs to different analysis inputs."
                 )
+            retained_times = tuple(float(value) for value in metadata["retained_times"])
+            resumable_times = tuple(
+                value
+                for value in retained_times
+                if value < step.procedure.end_time
+                or (
+                    allow_end_time
+                    and math.isclose(
+                        value,
+                        step.procedure.end_time,
+                        rel_tol=0.0,
+                        abs_tol=max(1e-12, step.procedure.end_time * 1e-10),
+                    )
+                )
+            )
+            if not resumable_times:
+                raise CaseIntegrityError(
+                    "The restart bundle has no state earlier than the requested transient end time."
+                )
+            latest = max(resumable_times)
             prefix = f"times/{_foam_scalar(latest)}/"
             candidates = [name for name in archive.namelist() if name.startswith(prefix)]
             if not candidates:
@@ -247,11 +269,144 @@ def _restore_previous_result(step, target: Path) -> float:
                 destination = target / time_name / Path(*relative_name.parts)
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(data)
+            for name in sorted(
+                item
+                for item in archive.namelist()
+                if item.startswith("postProcessing/")
+            ):
+                relative_name = PurePosixPath(
+                    name.removeprefix("postProcessing/")
+                )
+                if not relative_name.parts or any(
+                    part in {"", ".", ".."} for part in relative_name.parts
+                ):
+                    raise CaseIntegrityError(
+                        "The restart bundle contains an unsafe post-processing path."
+                    )
+                data = archive.read(name)
+                identity = members.get(name)
+                if (
+                    not isinstance(identity, dict)
+                    or identity.get("size_bytes") != len(data)
+                    or identity.get("sha256")
+                    != hashlib.sha256(data).hexdigest()
+                ):
+                    raise CaseIntegrityError(
+                        f"Restart member {name!r} failed identity validation."
+                    )
+                destination = target / "postProcessing" / Path(*relative_name.parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
     except (KeyError, OSError, ValueError, zipfile.BadZipFile) as error:
         if isinstance(error, CaseIntegrityError):
             raise
         raise CaseIntegrityError("The previous result restart bundle is invalid.") from error
     return latest
+
+
+def _restore_previous_result(step, target: Path) -> float:
+    source = Path(step.initialization.result).expanduser().resolve()
+    try:
+        record = read_result_record(source)
+    except (FileNotFoundError, ValueError) as error:
+        raise CaseIntegrityError(
+            "The previous result failed AgentCFD evidence validation: " + str(error)
+        ) from error
+    actual_trust = record.get("trust_level")
+    required_trust = step.initialization.minimum_trust
+    if not isinstance(actual_trust, str) or _TRUST_ORDER.get(
+        actual_trust, -1
+    ) < _TRUST_ORDER[required_trust]:
+        raise CaseIntegrityError(
+            f"Previous result trust {actual_trust!r} is below required {required_trust!r}."
+        )
+    provenance = record.get("provenance")
+    if (
+        not isinstance(provenance, dict)
+        or provenance.get("model_sha256") != step.model.fingerprint()
+    ):
+        raise CaseIntegrityError(
+            "The previous result belongs to a different scientific model."
+        )
+    artifacts = record.get("artifact_records")
+    restart = artifacts.get("restart_bundle") if isinstance(artifacts, dict) else None
+    relative = restart.get("path") if isinstance(restart, dict) else None
+    if not isinstance(relative, str):
+        raise CaseIntegrityError("The previous result has no restart_bundle artifact.")
+    archive_path = Path(relative)
+    if not archive_path.is_absolute():
+        archive_path = source.parent / archive_path
+    return _restore_restart_archive(step, target, archive_path)
+
+
+def materialize_interrupted_restart(
+    step,
+    case_directory: str | Path,
+    *,
+    expected_analysis_sha256: str,
+) -> tuple[Path, float]:
+    """Create a checked restart archive from a retained interrupted workspace."""
+
+    case = Path(case_directory)
+    manifest_path = case / "agentcfd-case.json"
+    try:
+        record = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise CaseIntegrityError(
+            "The interrupted workspace has no readable AgentCFD case identity."
+        ) from error
+    if (
+        record.get("schema") != "agentcfd.openfoam-case/0.3"
+        or record.get("capability") != _CAPABILITY
+        or record.get("model_sha256") != step.model.fingerprint()
+        or record.get("analysis_sha256") != _analysis_sha256(step)
+    ):
+        raise CaseIntegrityError(
+            "The interrupted workspace does not match the current analysis identity."
+        )
+    files = record.get("files")
+    if not isinstance(files, dict):
+        raise CaseIntegrityError("The interrupted case file index is malformed.")
+    for relative, digest in files.items():
+        if not isinstance(relative, str) or not isinstance(digest, str):
+            raise CaseIntegrityError("The interrupted case file index is malformed.")
+        if PurePosixPath(relative).parts[0] == "0":
+            # Initialization utilities legitimately update time-zero fields.
+            continue
+        path = case / Path(*PurePosixPath(relative).parts)
+        if not path.is_file() or _sha256(path) != digest:
+            raise CaseIntegrityError(
+                f"Generated case input {relative!r} changed after preparation."
+            )
+    prepared = PreparedOpenFOAMCase(
+        directory=case,
+        model_sha256=str(record["model_sha256"]),
+        analysis_sha256=str(record["analysis_sha256"]),
+        case_sha256=str(record.get("case_sha256", "")),
+        files=dict(files),
+        capability=_CAPABILITY,
+    )
+    archive, times = _write_restart_bundle(step, prepared)
+    if archive is None or not times:
+        raise CaseIntegrityError(
+            "No complete declared checkpoint with U and p exists in the interrupted workspace."
+        )
+    resumable = tuple(
+        value
+        for value in times
+        if value < step.procedure.end_time
+        or math.isclose(
+            value,
+            step.procedure.end_time,
+            rel_tol=0.0,
+            abs_tol=max(1e-12, step.procedure.end_time * 1e-10),
+        )
+    )
+    if not resumable:
+        raise CaseIntegrityError(
+            "No complete checkpoint earlier than the requested end time exists."
+        )
+    return archive, max(resumable)
 
 
 def _tail_window_mean_drift(history: History) -> float | None:
@@ -1006,9 +1161,60 @@ class OpenFOAMChannelProvider:
         argv.extend(("-v", f"{case.resolve()}:/case", "-w", "/case", self.container_image, name, "-case", "/case"))
         return argv
 
-    def run(self, step) -> SimulationResult:
+    def run(
+        self,
+        step,
+        *,
+        restart_archive: str | Path | None = None,
+        source_run_id: str | None = None,
+        expected_analysis_sha256: str | None = None,
+    ) -> SimulationResult:
         prepared = self.prepare(step)
         commands = self._commands(step)
+        resumed_from: float | None = None
+        resume_manifest: Path | None = None
+        if restart_archive is not None:
+            if not expected_analysis_sha256 or not source_run_id:
+                raise CaseIntegrityError(
+                    "Managed resume requires source-run and analysis identities."
+                )
+            archive_path = Path(restart_archive)
+            resumed_from = _restore_restart_archive(
+                step,
+                prepared.directory,
+                archive_path,
+                expected_analysis_sha256=_analysis_sha256(step),
+                allow_end_time=True,
+            )
+            control_path = prepared.directory / "system" / "controlDict"
+            control = control_path.read_text(encoding="utf-8")
+            marker = "startFrom startTime;"
+            if marker not in control:
+                raise CaseIntegrityError(
+                    "The generated transient control dictionary cannot be resumed safely."
+                )
+            control_path.write_text(
+                control.replace(marker, "startFrom latestTime;", 1),
+                encoding="utf-8",
+            )
+            commands.pop("potentialFoam", None)
+            resume_manifest = prepared.directory / "agentcfd-resume.json"
+            resume_manifest.write_text(
+                json.dumps(
+                    {
+                        "schema": "agentcfd.openfoam-resume/0.1",
+                        "source_run_id": source_run_id,
+                        "source_project_analysis_sha256": expected_analysis_sha256,
+                        "source_provider_analysis_sha256": _analysis_sha256(step),
+                        "restart_sha256": _sha256(archive_path),
+                        "restart_time": resumed_from,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
         missing = [name for name, command in commands.items() if command is None]
         if missing:
             raise ProviderUnavailableError(
@@ -1056,10 +1262,43 @@ class OpenFOAMChannelProvider:
             logs[name] = combined
             if return_codes[name] != 0:
                 break
-        return self._recover(step, prepared, logs, return_codes, durations)
+        result = self._recover(
+            step,
+            prepared,
+            logs,
+            return_codes,
+            durations,
+            resumed_from=resumed_from,
+        )
+        if resumed_from is not None and resume_manifest is not None:
+            result.quantities["restart.resumed_from_time"] = Quantity(
+                resumed_from,
+                "s",
+                kind="runtime_metric",
+            )
+            result.artifacts["resume_manifest"] = Artifact.from_path(
+                resume_manifest,
+                role="restart-provenance",
+                media_type="application/json",
+            )
+            result.provenance["resumed_from_run_id"] = source_run_id
+            result.provenance["resumed_from_time"] = resumed_from
+        return result
 
-    def _recover(self, step, prepared, logs, return_codes, durations) -> SimulationResult:
-        process_ok = all(return_codes.get(name) == 0 for name in self._commands(step))
+    def _recover(
+        self,
+        step,
+        prepared,
+        logs,
+        return_codes,
+        durations,
+        *,
+        resumed_from: float | None = None,
+    ) -> SimulationResult:
+        required_commands = {"blockMesh", "checkMesh", "pimpleFoam"}
+        process_ok = required_commands <= set(return_codes) and all(
+            return_codes[name] == 0 for name in required_commands
+        )
         solver_log = logs.get("pimpleFoam", "")
         reached_end = process_ok and bool(re.search(r"(?m)^End\s*$", solver_log))
         inlet_flow = _read_scalar_series(prepared.directory, "agentcfd_inlet_flow")
@@ -1094,7 +1333,7 @@ class OpenFOAMChannelProvider:
                 solver_log,
             )
         ]
-        final_time = times_reached[-1] if times_reached else None
+        final_time = times_reached[-1] if times_reached else resumed_from
         maximum_courant = max(courant_values) if courant_values else None
         time_steps = tuple(
             right - left
@@ -1203,7 +1442,16 @@ class OpenFOAMChannelProvider:
         courant_limit = min(1.0, step.procedure.maximum_courant_number * 1.25)
         courant_ok = maximum_courant is not None and maximum_courant <= courant_limit
         time_step_limit = step.procedure.maximum_time_step
-        time_step_ok = bool(time_steps) and max(time_steps) <= time_step_limit * (1.0 + 1.0e-8)
+        resumed_at_end = resumed_from is not None and math.isclose(
+            resumed_from,
+            step.procedure.end_time,
+            rel_tol=0.0,
+            abs_tol=max(1e-12, step.procedure.end_time * 1e-10),
+        )
+        time_step_ok = (
+            bool(time_steps)
+            and max(time_steps) <= time_step_limit * (1.0 + 1.0e-8)
+        ) or (not time_steps and resumed_at_end)
         requested_history_map = {
             "flow.mass_balance": "flow.relative_mass_imbalance",
             "flow.pressure_drop": "flow.pressure_drop",

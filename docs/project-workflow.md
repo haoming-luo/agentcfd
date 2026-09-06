@@ -191,6 +191,22 @@ when per-run recursive size is worth the I/O. Use
 `--export-csv design-points.csv` for a flat table whose quantity headers retain
 units; no solver or HDF5 reader is invoked.
 
+Projects may expose design variables directly in the readable factory:
+
+```python
+def build(*, mean_velocity=0.5, baffle_height=0.12):
+    # These ordinary Python values construct the same typed model as before.
+    ...
+```
+
+Then `agentcfd plan . --param mean_velocity=0.8` previews that exact design
+point and `agentcfd run . --campaign --param mean_velocity=0.8` preserves it.
+Each repeatable `--param NAME=JSON_SCALAR` is passed as a named factory
+argument, included in the plan fingerprint and run marker, and flattened into
+the campaign CSV. Misspelled or unsupported names fail through the factory
+signature before meshing. This keeps one language and one model source of truth;
+AgentCFD does not patch arbitrary Python source or maintain a shadow YAML model.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

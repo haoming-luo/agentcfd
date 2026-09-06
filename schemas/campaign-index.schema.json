@@ -26,7 +26,7 @@
           "run_id", "status", "accepted", "trust_level", "provider",
           "model_name", "analysis_sha256", "reynolds_number", "started_at",
           "completed_at", "duration_seconds", "directory", "result",
-          "quantities", "bytes", "display", "file_count"
+          "quantities", "parameters", "bytes", "display", "file_count"
         ],
         "properties": {
           "run_id": {"type": "string", "minLength": 1},
@@ -52,6 +52,12 @@
                 "unit": {"type": ["string", "null"]}
               },
               "additionalProperties": false
+            }
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": ["string", "number", "integer", "boolean", "null"]
             }
           },
           "bytes": {"type": ["integer", "null"], "minimum": 0},

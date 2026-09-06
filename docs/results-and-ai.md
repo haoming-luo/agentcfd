@@ -72,6 +72,12 @@ logs or opening `result.json` histories and HDF5 fields. The optional CSV export
 flattens canonical quantity names and units for Pandas, spreadsheets, or
 surrogate-model ingestion.
 
+Design-point inputs are explicit factory keyword arguments, not text edits.
+`check`, `plan`, and project `run` accept repeatable `--param NAME=VALUE`; the
+normalized JSON scalars are recorded beside the content-addressed analysis.
+This gives an agent a narrow mutation surface while Python type/model validation
+continues to reject physically invalid values.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

@@ -6,6 +6,10 @@
   project runs. New run markers carry compact canonical quantities; optional
   recursive storage accounting and unit-preserving CSV export are explicit,
   while the default path opens neither result histories nor HDF5 fields.
+- Add explicit scalar `case.py` factory parameters across project check, plan,
+  and run. Repeatable `--param NAME=VALUE` inputs are signature-checked,
+  fingerprinted, preserved in interrupted/final run markers, propagated through
+  resume, and flattened into the campaign design table.
 - Add typed final-frame line profiles over portable fields. The generated
   ParaView recipe uses explicit endpoints and sample count, publishes a compact
   canonical two-column CSV, requires an explicit component or magnitude for

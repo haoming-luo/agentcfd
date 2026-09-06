@@ -120,6 +120,7 @@ answer. Preserve an immutable run only when that is the intent:
 ```bash
 agentcfd run . --campaign
 agentcfd campaigns .             # read-only design-point index; no H5 access
+agentcfd run . --campaign --param mean_velocity=0.03
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace

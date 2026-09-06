@@ -81,13 +81,53 @@ def _recipe_script(recipe: ViewRecipe, record: Mapping[str, object]) -> str:
         ]
     else:  # pragma: no cover - closed public union and OutputRequest validation
         raise TypeError(f"Unsupported post-processing recipe {type(recipe).__name__}.")
+    camera = recipe.camera
+    camera_lines = (
+        ["view.ResetCamera()"]
+        if camera is None
+        else [
+            f"view.CameraPosition = {_python_value(list(camera.position))}",
+            f"view.CameraFocalPoint = {_python_value(list(camera.focal_point))}",
+            f"view.CameraViewUp = {_python_value(list(camera.view_up))}",
+            *(
+                [
+                    "view.CameraParallelProjection = 1",
+                    f"view.CameraParallelScale = {camera.parallel_scale!r}",
+                ]
+                if camera.parallel_scale is not None
+                else []
+            ),
+        ]
+    )
+    export = recipe.export
+    export_lines = []
+    if export is not None:
+        export_lines.append(f"view.ViewSize = {_python_value(list(export.size))}")
+        if export.screenshot:
+            export_lines.append(
+                f"SaveScreenshot(str(recipe_dir / {recipe.name + '.png'!r}), view, "
+                f"ImageResolution={_python_value(list(export.size))}, "
+                f"TransparentBackground={int(export.transparent_background)})"
+            )
+        if export.animation is not None:
+            animation_name = (
+                f"{recipe.name}.%04d.png"
+                if export.animation == "png-sequence"
+                else f"{recipe.name}.mp4"
+            )
+            export_lines.append(
+                f"SaveAnimation(str(recipe_dir / {animation_name!r}), view, "
+                f"ImageResolution={_python_value(list(export.size))}, "
+                f"FrameRate={export.frame_rate})"
+            )
     finish = [
         "display = Show(filtered, view)",
         _color_command(record),
         "display.SetScalarBarVisibility(view, True)",
         "Hide(source, view)",
-        "view.ResetCamera()",
+        *camera_lines,
         "Render()",
+        *export_lines,
         f"SaveState(str(recipe_dir / {recipe.name + '.pvsm'!r}))",
         "",
     ]
@@ -139,6 +179,14 @@ def publish_paraview_recipes(
         script = directory / f"{recipe.name}.py"
         script.write_text(_recipe_script(recipe, field_record), encoding="utf-8")
         scripts.append(script)
+        render_outputs = [f"{recipe.name}.pvsm"]
+        if recipe.export is not None:
+            if recipe.export.screenshot:
+                render_outputs.append(f"{recipe.name}.png")
+            if recipe.export.animation == "png-sequence":
+                render_outputs.append(f"{recipe.name}.%04d.png")
+            elif recipe.export.animation == "mp4":
+                render_outputs.append(f"{recipe.name}.mp4")
         records.append(
             {
                 **recipe.to_dict(),
@@ -146,6 +194,7 @@ def publish_paraview_recipes(
                 "association": field_record["association"],
                 "script": script.name,
                 "state_after_launch": f"{recipe.name}.pvsm",
+                "render_outputs_after_launch": render_outputs,
                 "shares_field_payload": "../fields/fields.xdmf",
             }
         )

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Extend text-only ParaView recipes with typed camera and render intent:
+  deterministic position/focal/up vectors, optional parallel projection,
+  image size, transparent PNG screenshot, PNG animation sequence, or MP4. The
+  generated outputs remain opt-in and share the existing XDMF/HDF5 payload.
 - Extend `agentcfd doctor` with an optional project context that audits model,
   provider, runtime, output budget, filesystem headroom, latest-run health,
   acceptance, storage, and recovery in one contract. Report a comparable

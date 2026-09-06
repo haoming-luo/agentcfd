@@ -13,6 +13,17 @@ output=outputs.animation(
             field="fluid.vorticity",
             origin=(0.6, 0.1, 0.05),
             normal=(0.0, 0.0, 1.0),
+            camera=outputs.camera(
+                position=(0.6, 0.1, 2.0),
+                focal_point=(0.6, 0.1, 0.05),
+                parallel_scale=0.65,
+            ),
+            export=outputs.render(
+                size=(1280, 720),
+                screenshot=True,
+                animation="png-sequence",
+                frame_rate=24,
+            ),
         ),
         outputs.contour_view(
             "pressure-levels",
@@ -69,6 +80,20 @@ by the requested array, fits the camera, and saves an editable `.pvsm` state.
 The GUI stays available for ordinary exploration; reproducibility does not
 remove interactivity.
 
+Camera and rendering are explicit opt-ins. Without `camera=`, the generated
+script uses ParaView's fitted camera. Without `export=`, launching creates only
+the editable `.pvsm` state, so an ordinary run never silently produces hundreds
+of images. `outputs.render()` can request a PNG screenshot and either a
+`name.%04d.png` sequence or MP4. PNG sequences are the portable default for
+automation because they do not assume an encoder; MP4 availability depends on
+the ParaView build. The recipe manifest lists every expected
+`render_outputs_after_launch` while retaining `payload_copies: 0`.
+
+The screenshot path was executed with ParaView 6.1.1 against a real 50-frame
+AgentCFD XDMF/HDF5 result. It produced the requested 640×360 PNG and editable
+PVSM without another volume-field copy. Optional OpenVKL device warnings from
+that macOS build did not change the successful render exit status.
+
 This design follows ParaView's official filter and automation model:
 
 - the Slice filter reduces dimensionality using an implicit plane, while the
@@ -82,6 +107,6 @@ This design follows ParaView's official filter and automation model:
   to data under another directory:
   <https://docs.paraview.org/en/latest/UsersGuide/savingResults.html>.
 
-Camera recipes, image/video rendering, plot-over-line, and multi-view layouts
-belong in the same text-only layer. They should be added without creating a
-second field bundle or coupling the public API to an OpenFOAM case directory.
+Plot-over-line and multi-view layouts belong in the same text-only layer. They
+should be added without creating a second field bundle or coupling the public
+API to an OpenFOAM case directory.

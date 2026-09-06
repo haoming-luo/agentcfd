@@ -61,8 +61,9 @@ human stderr. Active solver workspaces are protected from cleanup.
 fingerprint. After field publication, `output/postprocess/manifest.json` maps
 canonical fields to their exported point/cell arrays and portable ParaView
 scripts. An agent can list `status.postprocess.recipes`, select one by name, and
-call `agentcfd view . --recipe NAME --launch`; it never needs to synthesize a
-ParaView trace or duplicate the HDF5 payload.
+call `agentcfd view . --recipe NAME --batch` for headless CSV/image/state
+generation or use `--launch` for an interactive GUI. It never needs to
+synthesize a ParaView trace or duplicate the HDF5 payload.
 
 ## AgentFEM and AI continuity
 

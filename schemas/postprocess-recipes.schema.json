@@ -15,10 +15,10 @@
         "required": [
           "type", "name", "field", "export_field", "association", "script",
           "state_after_launch", "render_outputs_after_launch",
-          "shares_field_payload", "camera", "export"
+          "data_outputs_after_launch", "shares_field_payload", "camera", "export"
         ],
         "properties": {
-          "type": {"enum": ["slice", "contour", "streamlines"]},
+          "type": {"enum": ["slice", "contour", "streamlines", "line-profile"]},
           "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
           "field": {"type": "string", "minLength": 1},
           "export_field": {"type": "string", "minLength": 1},
@@ -29,6 +29,11 @@
             "type": "array",
             "items": {"type": "string", "minLength": 1},
             "minItems": 1,
+            "uniqueItems": true
+          },
+          "data_outputs_after_launch": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
             "uniqueItems": true
           },
           "shares_field_payload": {"const": "../fields/fields.xdmf"},
@@ -85,6 +90,10 @@
           "seed_end": {"$ref": "#/$defs/vector3"},
           "seeds": {"type": "integer", "minimum": 2},
           "direction": {"enum": ["forward", "backward", "both"]}
+          ,
+          "start": {"$ref": "#/$defs/vector3"},
+          "end": {"$ref": "#/$defs/vector3"},
+          "samples": {"type": "integer", "minimum": 2}
         },
         "allOf": [
           {
@@ -100,6 +109,10 @@
             "then": {
               "required": ["seed_start", "seed_end", "seeds", "direction"]
             }
+          },
+          {
+            "if": {"properties": {"type": {"const": "line-profile"}}},
+            "then": {"required": ["start", "end", "samples"]}
           }
         ],
         "additionalProperties": false

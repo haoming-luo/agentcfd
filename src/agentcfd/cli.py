@@ -72,6 +72,20 @@ def _paraview_executable() -> str | None:
     return None
 
 
+def _paraview_batch_executable() -> str | None:
+    command = shutil.which("pvbatch")
+    if command is not None:
+        return command
+    if sys.platform == "darwin":
+        candidates = sorted(
+            Path("/Applications").glob("ParaView*.app/Contents/bin/pvbatch"),
+            reverse=True,
+        )
+        if candidates:
+            return str(candidates[0])
+    return None
+
+
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
     coolprop = properties.CoolPropPropertyProvider().descriptor()
@@ -96,6 +110,7 @@ def _doctor() -> dict[str, object]:
             "foamToVTK": shutil.which("foamToVTK"),
             "docker": shutil.which("docker"),
             "paraview": _paraview_executable(),
+            "pvbatch": _paraview_batch_executable(),
         },
         "providers": {
             "reference-pipe": True,
@@ -1341,9 +1356,15 @@ def build_parser() -> argparse.ArgumentParser:
     view.add_argument("project", nargs="?", type=Path, default=Path("."))
     view.add_argument(
         "--recipe",
-        help="Select a named reproducible slice, contour, or streamline recipe.",
+        help="Select a named reproducible visual or line-profile recipe.",
     )
-    view.add_argument("--launch", action="store_true")
+    view_action = view.add_mutually_exclusive_group()
+    view_action.add_argument("--launch", action="store_true")
+    view_action.add_argument(
+        "--batch",
+        action="store_true",
+        help="Execute a named recipe headlessly with ParaView pvbatch.",
+    )
     view.add_argument("--json", action="store_true", dest="as_json")
 
     catalog = subparsers.add_parser(
@@ -2369,6 +2390,8 @@ def main(argv: list[str] | None = None) -> int:
                 "No completed result is available. Follow `agentcfd status .` first."
             )
         launched = False
+        batch_completed = False
+        produced = []
         viewer = None
         if args.launch:
             if str(target).endswith((".xdmf", ".py")):
@@ -2389,6 +2412,41 @@ def main(argv: list[str] | None = None) -> int:
                 raise ProjectError(
                     "The latest result has no XDMF field bundle; inspect result.json instead."
                 )
+        if args.batch:
+            if selected_recipe is None or not str(target).endswith(".py"):
+                raise ProjectError(
+                    "Batch post-processing requires `--recipe NAME` for a published recipe."
+                )
+            viewer = _paraview_batch_executable()
+            if viewer is None:
+                raise ProjectError(
+                    "ParaView pvbatch is not on PATH. Install ParaView or use "
+                    "`agentcfd view . --recipe NAME --launch` on a desktop."
+                )
+            command = [viewer, str(target)]
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout).strip()[-1000:]
+                raise ProjectError(
+                    "ParaView batch recipe failed"
+                    + (f": {detail}" if detail else ".")
+                )
+            batch_completed = True
+            expected = [
+                *selected_recipe.get("render_outputs_after_launch", []),
+                *selected_recipe.get("data_outputs_after_launch", []),
+            ]
+            recipe_directory = Path(str(target)).parent
+            produced = [
+                str(recipe_directory / name)
+                for name in expected
+                if "%" not in name and (recipe_directory / name).is_file()
+            ]
         report = {
             "schema": "agentcfd.project-view/0.1",
             "project_state": status["state"],
@@ -2406,13 +2464,26 @@ def main(argv: list[str] | None = None) -> int:
                 else status["postprocess"]["field_summary"]
             ),
             "launched": launched,
+            "batch_completed": batch_completed,
+            "produced": produced,
             "viewer": viewer,
         }
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            prefix = "Opened" if launched else "Latest post-processing target"
+            prefix = (
+                "Generated"
+                if batch_completed
+                else "Opened"
+                if launched
+                else "Latest post-processing target"
+            )
             print(f"{prefix}: {target}")
+            if batch_completed:
+                print(
+                    "produced: "
+                    + (", ".join(produced) if produced else "recipe completed")
+                )
             if report["kind"] == "paraview-script":
                 summary = report["summary"]
                 print(

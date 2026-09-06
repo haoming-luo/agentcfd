@@ -3,7 +3,10 @@
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-view.schema.json",
   "title": "AgentCFD post-processing target 0.1",
   "type": "object",
-  "required": ["schema", "project_state", "target", "kind", "summary", "launched", "viewer"],
+  "required": [
+    "schema", "project_state", "target", "kind", "summary", "launched",
+    "batch_completed", "produced", "viewer"
+  ],
   "properties": {
     "schema": {"const": "agentcfd.project-view/0.1"},
     "project_state": {
@@ -13,6 +16,8 @@
     "kind": {"enum": ["xdmf", "result-json", "paraview-script"]},
     "summary": {"type": ["object", "null"]},
     "launched": {"type": "boolean"},
+    "batch_completed": {"type": "boolean"},
+    "produced": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "viewer": {"type": ["string", "null"]}
   },
   "additionalProperties": false

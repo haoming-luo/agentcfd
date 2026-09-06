@@ -1,8 +1,9 @@
 # Reproducible post-processing without duplicate field data
 
-AgentCFD treats visualization as output intent, not a sequence of unrecorded GUI
-clicks. A project may declare named plane slices, scalar contours, and seeded
-streamlines beside its field request:
+AgentCFD treats visualization and field interrogation as output intent, not a
+sequence of unrecorded GUI clicks. A project may declare named plane slices,
+scalar contours, seeded streamlines, and compact line profiles beside its field
+request:
 
 ```python
 output=outputs.animation(
@@ -36,6 +37,13 @@ output=outputs.animation(
             seed_end=(0.02, 0.19, 0.05),
             seeds=40,
         ),
+        outputs.line_profile(
+            "centerline-pressure",
+            field="fluid.pressure",
+            start=(0.05, 0.10, 0.05),
+            end=(1.15, 0.10, 0.05),
+            samples=121,
+        ),
     ),
 )
 ```
@@ -59,6 +67,7 @@ output/
 ├── fields/fields.h5
 └── postprocess/
     ├── manifest.json
+    ├── centerline-pressure.py
     ├── midplane-vorticity.py
     └── wake-streamlines.py
 ```
@@ -72,6 +81,7 @@ ParaView creates after launch.
 ```bash
 agentcfd view . --recipe midplane-vorticity
 agentcfd view . --recipe midplane-vorticity --launch
+agentcfd view . --recipe centerline-pressure --batch
 ```
 
 The second command starts ParaView with its documented `--script` option. The
@@ -79,6 +89,19 @@ script creates the declared filter, connects the portable time series, colors
 by the requested array, fits the camera, and saves an editable `.pvsm` state.
 The GUI stays available for ordinary exploration; reproducibility does not
 remove interactivity.
+
+`--batch` executes a named recipe with ParaView's `pvbatch`, waits for a real
+exit status, and returns the output files that exist. This is the
+non-interactive path for AI agents and CI. `--launch` remains the interactive
+desktop path; the two modes are deliberately mutually exclusive.
+
+A line profile samples the final published frame along its physical line and
+writes `name.csv` when the recipe is launched. The CSV writer is restricted to
+distance plus the requested scalar array; it does not dump every point/cell
+variable and does not create another volume-field file. Vector profiles are
+rejected for now because “velocity profile” may mean a component, magnitude, or
+normal projection; that choice will become an explicit API rather than a hidden
+default.
 
 Camera and rendering are explicit opt-ins. Without `camera=`, the generated
 script uses ParaView's fitted camera. Without `export=`, launching creates only
@@ -94,6 +117,11 @@ AgentCFD XDMF/HDF5 result. It produced the requested 640×360 PNG and editable
 PVSM without another volume-field copy. Optional OpenVKL device warnings from
 that macOS build did not change the successful render exit status.
 
+The line-profile batch path was also executed against that result. A 41-sample
+request produced 42 CSV rows including the header, exactly two columns
+(`fluid.pressure.point` and `arc_length`), and an editable PVSM. Disabling CSV
+metadata removed ParaView's otherwise automatic coordinate columns.
+
 This design follows ParaView's official filter and automation model:
 
 - the Slice filter reduces dimensionality using an implicit plane, while the
@@ -101,12 +129,16 @@ This design follows ParaView's official filter and automation model:
   <https://docs.paraview.org/en/latest/UsersGuide/filteringData.html>;
 - Stream Tracer accepts line or point seeds over a vector field:
   <https://docs.paraview.org/en/latest/UsersGuide/filteringData.html#stream-tracer>;
+- Plot Over Line controls the number of samples with `Resolution`, and
+  `SaveData` supports selected-array CSV publication:
+  <https://docs.paraview.org/en/latest/UsersGuide/filteringData.html#plot-over-line>
+  and <https://docs.paraview.org/en/latest/UsersGuide/savingResults.html>;
 - `paraview --script` is an official application startup path:
   <https://docs.paraview.org/en/v6.1.0/UsersGuide/commandLineArguments.html>;
 - `.pvsm` preserves the visualization pipeline and can be reopened or remapped
   to data under another directory:
   <https://docs.paraview.org/en/latest/UsersGuide/savingResults.html>.
 
-Plot-over-line and multi-view layouts belong in the same text-only layer. They
-should be added without creating a second field bundle or coupling the public
-API to an OpenFOAM case directory.
+Multi-view layouts belong in the same text-only layer and should be added
+without creating a second field bundle or coupling the public API to an
+OpenFOAM case directory.

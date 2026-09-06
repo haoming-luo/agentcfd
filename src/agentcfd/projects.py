@@ -2890,6 +2890,13 @@ def build():
                     seed_end=(0.02, 0.19, 0.05),
                     seeds=40,
                 ),
+                outputs.line_profile(
+                    "centerline-pressure",
+                    field="fluid.pressure",
+                    start=(0.05, 0.10, 0.05),
+                    end=(1.15, 0.10, 0.05),
+                    samples=121,
+                ),
             ),
         ),
     )

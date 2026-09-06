@@ -402,7 +402,48 @@ class StreamlineView:
         }
 
 
-ViewRecipe = SliceView | ContourView | StreamlineView
+@dataclass(frozen=True, slots=True)
+class LineProfile:
+    """Sample one canonical scalar field along a physical line as compact CSV."""
+
+    name: str
+    field: str
+    start: tuple[float, float, float]
+    end: tuple[float, float, float]
+    samples: int = 101
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", _view_name(self.name))
+        if not isinstance(self.field, str) or not self.field.strip():
+            raise ValueError("Line-profile field must be a non-empty canonical name.")
+        object.__setattr__(
+            self, "start", _view_vector(self.start, label="Line-profile start")
+        )
+        object.__setattr__(
+            self, "end", _view_vector(self.end, label="Line-profile end")
+        )
+        if self.start == self.end:
+            raise ValueError("Line-profile segment must have nonzero length.")
+        object.__setattr__(
+            self,
+            "samples",
+            integer_at_least(self.samples, name="Line-profile sample count", minimum=2),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "line-profile",
+            "name": self.name,
+            "field": self.field,
+            "start": list(self.start),
+            "end": list(self.end),
+            "samples": self.samples,
+            "camera": None,
+            "export": None,
+        }
+
+
+ViewRecipe = SliceView | ContourView | StreamlineView | LineProfile
 
 
 def _validate_view_presentation(
@@ -595,7 +636,7 @@ class OutputRequest:
         object.__setattr__(self, "reports", selected_reports)
         selected_views = tuple(self.views)
         if any(
-            not isinstance(item, (SliceView, ContourView, StreamlineView))
+            not isinstance(item, (SliceView, ContourView, StreamlineView, LineProfile))
             for item in selected_views
         ):
             raise TypeError("Output views must be AgentCFD view recipes.")
@@ -726,6 +767,23 @@ def streamline_view(
         direction=direction,
         camera=camera,
         export=export,
+    )
+
+
+def line_profile(
+    name: str,
+    *,
+    field: str,
+    start: tuple[float, float, float],
+    end: tuple[float, float, float],
+    samples: int = 101,
+) -> LineProfile:
+    return LineProfile(
+        name=name,
+        field=field,
+        start=start,
+        end=end,
+        samples=samples,
     )
 
 
@@ -890,6 +948,7 @@ __all__ = [
     "ContourView",
     "FieldFrames",
     "ForceReport",
+    "LineProfile",
     "OutputRequest",
     "PointProbe",
     "Report",
@@ -913,5 +972,6 @@ __all__ = [
     "storage",
     "surface_report",
     "streamline_view",
+    "line_profile",
     "turbulent_internal_flow",
 ]

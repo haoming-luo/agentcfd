@@ -82,12 +82,16 @@ files stay hidden and reproducible.
 - identity-gated transient checkpoint recovery with explicit `resume`, source
   provenance, automatic initialization skipping, and cleanup protection for the
   sole recoverable workspace;
+- persistent cleanup protection for workspaces deliberately retained by CLI or
+  project policy, with a separate previewable release scope;
 - one-command project doctor covering readiness, runtime, storage headroom,
   recovery and comparable cell-update work without fabricated energy claims;
 - declarative plane slices, scalar contours, and line-seeded streamlines that
   generate portable ParaView scripts without copying field payloads;
 - explicit camera plus screenshot/PNG-sequence/MP4 render intent, disabled by
   default and recorded as expected outputs without duplicating field payloads;
+- scalar plot-over-line recipes with selected-column CSV plus mutually
+  exclusive interactive and headless execution paths;
 - one-command post-processing target and self-documenting output directory;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
@@ -98,8 +102,8 @@ files stay hidden and reproducible.
    boundary-role audit before meshing.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
-3. Extend the shipped filter recipes with plot-over-line and multi-view layout
-   intent while preserving one shared field payload.
+3. Extend the shipped filter recipes with multi-view layout and explicit vector
+   component/projection intent while preserving one shared field payload.
 4. Persist bounded progress history and learned ETA calibration across runs,
    without converting monitoring into high-frequency field output.
 

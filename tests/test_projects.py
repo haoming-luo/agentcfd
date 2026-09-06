@@ -610,7 +610,7 @@ def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, ca
         for item in plan["decisions"]["output_plan"]["channels"]["views"][
             "definitions"
         ]
-    ] == ["midplane-vorticity", "wake-streamlines"]
+    ] == ["midplane-vorticity", "wake-streamlines", "centerline-pressure"]
 
 
 def test_baffle_channel_template_rejects_reference_provider(tmp_path):

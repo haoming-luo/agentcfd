@@ -1877,6 +1877,7 @@ class OpenFOAMProvider:
         return_codes: dict[str, int] = {}
         command_wall_seconds: dict[str, float] = {}
         for name in commands:
+            log_path = prepared.directory / f"log.{name}"
             cidfile = (
                 prepared.directory / f".agentcfd-{name}.cid"
                 if self.container_image is not None
@@ -1884,29 +1885,44 @@ class OpenFOAMProvider:
             )
             started_at = time.monotonic()
             try:
-                completed = subprocess.run(
-                    self._execution_argv(
-                        name,
-                        str(commands[name]),
-                        prepared.directory,
-                        cidfile=cidfile,
-                    ),
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=self.timeout_seconds,
-                )
-                combined = completed.stdout + completed.stderr
+                # Stream real provider output directly to a stable file.  This
+                # keeps memory bounded for long industrial runs and lets
+                # ``agentcfd status`` observe progress without asking the solver
+                # to write any additional field data.  Test doubles may still
+                # return captured strings, so append those when present.
+                with log_path.open("w", encoding="utf-8") as log_stream:
+                    completed = subprocess.run(
+                        self._execution_argv(
+                            name,
+                            str(commands[name]),
+                            prepared.directory,
+                            cidfile=cidfile,
+                        ),
+                        check=False,
+                        stdout=log_stream,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        timeout=self.timeout_seconds,
+                    )
+                    captured = (completed.stdout or "") + (completed.stderr or "")
+                    if captured:
+                        log_stream.write(captured)
                 return_codes[name] = completed.returncode
             except subprocess.TimeoutExpired as error:
                 stdout = error.stdout.decode() if isinstance(error.stdout, bytes) else (error.stdout or "")
                 stderr = error.stderr.decode() if isinstance(error.stderr, bytes) else (error.stderr or "")
-                combined = stdout + stderr + f"\nAgentCFD timeout after {self.timeout_seconds:g} seconds.\n"
+                timeout_note = (
+                    stdout
+                    + stderr
+                    + f"\nAgentCFD timeout after {self.timeout_seconds:g} seconds.\n"
+                )
                 if cidfile is not None:
-                    combined += _stop_timed_out_container(
+                    timeout_note += _stop_timed_out_container(
                         str(commands[name]),
                         cidfile,
                     ) + "\n"
+                with log_path.open("a", encoding="utf-8") as log_stream:
+                    log_stream.write(timeout_note)
                 return_codes[name] = -124
             except KeyboardInterrupt:
                 if cidfile is not None:
@@ -1916,8 +1932,11 @@ class OpenFOAMProvider:
                 command_wall_seconds[name] = time.monotonic() - started_at
                 if cidfile is not None:
                     cidfile.unlink(missing_ok=True)
+            try:
+                combined = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                combined = ""
             logs[name] = combined
-            (prepared.directory / f"log.{name}").write_text(combined, encoding="utf-8")
             if return_codes[name] != 0:
                 break
 

@@ -70,6 +70,9 @@ files stay hidden and reproducible.
 - budget estimation, actual portable bytes, compression, storage inventory, and
   preview-first temporary cleanup;
 - selected-time and selected-field `foamToVTK` conversion;
+- bounded-memory live provider logs and field-free progress snapshots with
+  coordinate, residual, Courant, mass/pressure monitor, elapsed, and optional
+  workspace-size evidence;
 - one-command post-processing target and self-documenting output directory;
 - JSON Schemas for status, storage, cleanup, and repairable errors.
 
@@ -79,12 +82,12 @@ files stay hidden and reproducible.
    boundary-role audit before meshing.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
-3. Live progress snapshots from solver logs: phase, simulated time/iteration,
-   residual trend, mass balance, ETA range, and current disk growth.
-4. Crash-safe checkpoint publication and explicit `resume`, keeping model and
+3. Crash-safe checkpoint publication and explicit `resume`, keeping model and
    mesh identity gates.
-5. Declarative sections, slices, streamlines, contours, and camera recipes that
+4. Declarative sections, slices, streamlines, contours, and camera recipes that
    generate reproducible ParaView state without storing duplicate volume data.
+5. Persist bounded progress history and learned ETA calibration across runs,
+   without converting monitoring into high-frequency field output.
 
 ### Then: scale without scaling attention
 

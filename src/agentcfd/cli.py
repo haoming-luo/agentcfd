@@ -1912,6 +1912,52 @@ def main(argv: list[str] | None = None) -> int:
                 "failed",
             }:
                 print(f"phase: {latest.get('phase', latest.get('status', 'unknown'))}")
+            progress = report["progress"]
+            if isinstance(progress, dict):
+                command = progress.get("current_command")
+                coordinate = progress["coordinate"]
+                parts = []
+                if command:
+                    parts.append(str(command))
+                current = coordinate.get("current")
+                target = coordinate.get("target")
+                if current is not None and target is not None:
+                    unit = " s" if coordinate.get("unit") == "s" else ""
+                    fraction = coordinate.get("fraction")
+                    percent = (
+                        ""
+                        if fraction is None
+                        else f" ({100.0 * float(fraction):.1f}%)"
+                    )
+                    parts.append(f"{current:g}{unit} / {target:g}{unit}{percent}")
+                if progress.get("elapsed_display"):
+                    parts.append(f"elapsed {progress['elapsed_display']}")
+                if parts:
+                    print("progress: " + " | ".join(parts))
+                residuals = progress.get("latest_residuals", {})
+                if isinstance(residuals, dict) and residuals:
+                    worst_name, worst = max(
+                        residuals.items(),
+                        key=lambda item: float(item[1]["initial"]),
+                    )
+                    print(
+                        f"residual: {worst_name} initial {worst['initial']:.3g} | "
+                        f"final {worst['final']:.3g}"
+                    )
+                monitors = progress.get("monitors", {})
+                if (
+                    isinstance(monitors, dict)
+                    and monitors.get("relative_mass_imbalance") is not None
+                ):
+                    monitor_line = (
+                        "monitor: mass imbalance "
+                        f"{float(monitors['relative_mass_imbalance']):.3g}"
+                    )
+                    if monitors.get("pressure_drop") is not None:
+                        monitor_line += (
+                            f" | pressure drop {float(monitors['pressure_drop']):.6g} Pa"
+                        )
+                    print(monitor_line)
             print(
                 f"next: {report['next_action']['command']} | "
                 f"{report['next_action']['reason']}"

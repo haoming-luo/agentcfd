@@ -5,7 +5,8 @@
   "type": "object",
   "required": [
     "schema", "root", "state", "active", "inputs_changed", "model",
-    "readiness", "issues", "run_count", "latest_run", "postprocess", "next_action"
+    "readiness", "issues", "run_count", "latest_run", "progress",
+    "postprocess", "next_action"
   ],
   "properties": {
     "schema": {"const": "agentcfd.project-status/0.1"},
@@ -20,6 +21,140 @@
     "issues": {"type": "array", "items": {"type": "object"}},
     "run_count": {"type": "integer", "minimum": 0},
     "latest_run": {"type": ["object", "null"]},
+    "progress": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "schema", "run_id", "status", "phase", "current_command",
+            "observed_at", "updated_at", "elapsed_seconds", "elapsed_display",
+            "coordinate", "latest_residuals", "courant_number",
+            "monitors", "estimated_remaining", "workspace", "observation_cost"
+          ],
+          "properties": {
+            "schema": {"const": "agentcfd.run-progress/0.1"},
+            "run_id": {"type": ["string", "null"]},
+            "status": {"type": ["string", "null"]},
+            "phase": {"type": ["string", "null"]},
+            "current_command": {"type": ["string", "null"]},
+            "observed_at": {"type": "string", "format": "date-time"},
+            "updated_at": {"type": ["string", "null"], "format": "date-time"},
+            "elapsed_seconds": {"type": ["number", "null"], "minimum": 0},
+            "elapsed_display": {"type": ["string", "null"]},
+            "coordinate": {
+              "type": "object",
+              "required": ["name", "unit", "current", "target", "fraction"],
+              "properties": {
+                "name": {"type": ["string", "null"]},
+                "unit": {"type": ["string", "null"]},
+                "current": {"type": ["number", "null"]},
+                "target": {"type": ["number", "null"]},
+                "fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1}
+              },
+              "additionalProperties": false
+            },
+            "latest_residuals": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["initial", "final", "linear_iterations"],
+                "properties": {
+                  "initial": {"type": "number"},
+                  "final": {"type": "number"},
+                  "linear_iterations": {"type": "integer", "minimum": 0}
+                },
+                "additionalProperties": false
+              }
+            },
+            "courant_number": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "required": ["mean", "maximum"],
+                  "properties": {
+                    "mean": {"type": "number"},
+                    "maximum": {"type": "number"}
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "monitors": {
+              "type": "object",
+              "required": [
+                "inlet_volume_flow", "outlet_volume_flow",
+                "relative_mass_imbalance", "pressure_drop", "units"
+              ],
+              "properties": {
+                "inlet_volume_flow": {"type": ["number", "null"]},
+                "outlet_volume_flow": {"type": ["number", "null"]},
+                "relative_mass_imbalance": {"type": ["number", "null"], "minimum": 0},
+                "pressure_drop": {"type": ["number", "null"]},
+                "units": {
+                  "type": "object",
+                  "required": ["volume_flow", "relative_mass_imbalance", "pressure_drop"],
+                  "properties": {
+                    "volume_flow": {"const": "m^3/s"},
+                    "relative_mass_imbalance": {"const": "1"},
+                    "pressure_drop": {"const": "Pa"}
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "estimated_remaining": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "required": ["minimum_seconds", "maximum_seconds", "basis"],
+                  "properties": {
+                    "minimum_seconds": {"type": "number", "minimum": 0},
+                    "maximum_seconds": {"type": "number", "minimum": 0},
+                    "basis": {"type": "string"}
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "workspace": {
+              "type": "object",
+              "required": [
+                "path", "exists", "native_time_directory_count", "bytes",
+                "display", "file_count"
+              ],
+              "properties": {
+                "path": {"type": ["string", "null"]},
+                "exists": {"type": "boolean"},
+                "native_time_directory_count": {"type": "integer", "minimum": 0},
+                "bytes": {"type": ["integer", "null"], "minimum": 0},
+                "display": {"type": ["string", "null"]},
+                "file_count": {"type": ["integer", "null"], "minimum": 0}
+              },
+              "additionalProperties": false
+            },
+            "observation_cost": {
+              "type": "object",
+              "required": [
+                "field_payloads_opened", "log_tail_bytes_read", "monitor_bytes_read",
+                "recursive_storage_scan"
+              ],
+              "properties": {
+                "field_payloads_opened": {"const": 0},
+                "log_tail_bytes_read": {"type": "integer", "minimum": 0},
+                "monitor_bytes_read": {"type": "integer", "minimum": 0},
+                "recursive_storage_scan": {"type": "boolean"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "postprocess": {
       "type": "object",
       "required": ["primary", "fields", "result", "command", "field_summary"],

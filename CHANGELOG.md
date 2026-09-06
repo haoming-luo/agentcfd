@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Stream OpenFOAM command output to bounded-memory live logs and expose a
+  field-free progress snapshot through `status`: command, elapsed time,
+  physical time/iteration, conservative ETA range for transient runs, latest
+  residuals and Courant number, compact mass/pressure monitors, and opt-in
+  workspace size.
 - Add a unified project `status` state machine with one shell-safe next action,
   input-change detection, run phase, acceptance summary, and post-processing
   target for both human and JSON clients.

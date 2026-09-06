@@ -40,6 +40,15 @@ Use `--json` for the versioned machine contract and `--storage` when a recursive
 space scan is worth the extra latency. `check`, `plan`, and `inspect` remain
 available as drill-down tools rather than required ceremony.
 
+While OpenFOAM runs, provider output is streamed to its workspace log instead
+of accumulated in process memory. `status` reads at most 256 KiB from the active
+log plus the latest rows of compact function-object tables. It reports the
+current command, physical time or steady iteration, latest residuals, Courant
+number, live mass imbalance and pressure drop, elapsed time, and a deliberately
+wide ETA range for transient time advancement. It never opens a volume field.
+Workspace byte accounting remains opt-in through `status --storage` because a
+recursive scan itself can become expensive on very large cases.
+
 `view` reads only the small field manifest before opening anything. It reports
 frame count, physical/iteration axis range, portable size, canonical variables,
 and whether each variable is a visualization point field or native cell field.

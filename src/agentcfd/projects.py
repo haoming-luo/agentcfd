@@ -6,6 +6,7 @@ import importlib.util
 import json
 import math
 import os
+import re
 import shlex
 import shutil
 import sys
@@ -247,6 +248,316 @@ def _process_is_alive(pid: object) -> bool:
     except (OSError, ValueError):
         return False
     return True
+
+
+_OPENFOAM_NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+
+
+def _human_duration(seconds: float) -> str:
+    """Format an approximate elapsed time without pretending to millisecond precision."""
+
+    value = max(0, round(seconds))
+    hours, remainder = divmod(value, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _read_text_tail(path: Path, *, maximum_bytes: int = 256 * 1024) -> tuple[str, int]:
+    """Read a bounded, race-tolerant log tail while an external solver writes it."""
+
+    try:
+        with path.open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            size = stream.tell()
+            start = max(0, size - maximum_bytes)
+            stream.seek(start)
+            payload = stream.read(maximum_bytes)
+    except OSError:
+        return "", 0
+    if start:
+        newline = payload.find(b"\n")
+        if newline >= 0:
+            payload = payload[newline + 1 :]
+    return payload.decode("utf-8", errors="replace"), len(payload)
+
+
+def _latest_numeric_row(path: Path) -> tuple[list[float] | None, int]:
+    """Read the newest complete row from a compact OpenFOAM monitor table."""
+
+    tail, bytes_read = _read_text_tail(path, maximum_bytes=64 * 1024)
+    for line in reversed(tail.splitlines()):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        try:
+            values = [float(value) for value in stripped.replace("(", " ").replace(")", " ").split()]
+        except ValueError:
+            continue
+        if len(values) >= 2 and all(math.isfinite(value) for value in values):
+            return values, bytes_read
+    return None, bytes_read
+
+
+def _run_progress_snapshot(
+    root: Path,
+    record: Mapping[str, object] | None,
+    plan: Mapping[str, object],
+    *,
+    include_storage: bool,
+) -> dict[str, object] | None:
+    """Observe an active or recoverable run without opening solver field files."""
+
+    if record is None or record.get("status") not in {
+        "preparing",
+        "running",
+        "exporting",
+        "failed",
+    }:
+        return None
+    run_id = record.get("run_id")
+    workspace = (
+        root / ".agentcfd" / "work" / str(run_id)
+        if isinstance(run_id, str) and run_id
+        else None
+    )
+    case_directory = None if workspace is None else workspace / "openfoam"
+    log_paths = (
+        sorted(
+            case_directory.glob("log.*"),
+            key=lambda path: path.stat().st_mtime,
+        )
+        if case_directory is not None and case_directory.is_dir()
+        else []
+    )
+    current_log = log_paths[-1] if log_paths else None
+    current_command = None if current_log is None else current_log.name.removeprefix("log.")
+    if record.get("status") == "exporting":
+        current_command = "portable-field-export"
+    tail, tail_bytes = (
+        _read_text_tail(current_log) if current_log is not None else ("", 0)
+    )
+
+    native_coordinates: list[float] = []
+    updated_timestamps: list[float] = []
+    if case_directory is not None and case_directory.is_dir():
+        try:
+            entries = tuple(case_directory.iterdir())
+        except OSError:
+            entries = ()
+        for path in entries:
+            if not path.is_dir():
+                continue
+            try:
+                coordinate = float(path.name)
+            except ValueError:
+                continue
+            if coordinate >= 0.0 and math.isfinite(coordinate):
+                native_coordinates.append(coordinate)
+                try:
+                    updated_timestamps.append(path.stat().st_mtime)
+                except OSError:
+                    pass
+    for path in log_paths:
+        try:
+            updated_timestamps.append(path.stat().st_mtime)
+        except OSError:
+            pass
+
+    log_coordinates = [
+        float(match.group(1))
+        for match in re.finditer(
+            rf"(?m)^Time\s*=\s*({_OPENFOAM_NUMBER})\s*$",
+            tail,
+        )
+    ]
+    current_coordinate = (
+        log_coordinates[-1]
+        if log_coordinates
+        else max(native_coordinates)
+        if native_coordinates
+        else None
+    )
+    decisions = plan.get("decisions", {})
+    procedure = decisions.get("procedure", {}) if isinstance(decisions, dict) else {}
+    procedure_type = procedure.get("type") if isinstance(procedure, dict) else None
+    if procedure_type == "transient":
+        coordinate_name = "physical_time"
+        coordinate_unit = "s"
+        target_coordinate = procedure.get("end_time")
+    elif procedure_type == "steady":
+        coordinate_name = "solver_iteration"
+        coordinate_unit = "1"
+        target_coordinate = procedure.get("maximum_iterations")
+    else:
+        coordinate_name = None
+        coordinate_unit = None
+        target_coordinate = None
+    fraction = None
+    if (
+        isinstance(current_coordinate, (int, float))
+        and isinstance(target_coordinate, (int, float))
+        and target_coordinate > 0
+    ):
+        fraction = min(1.0, max(0.0, current_coordinate / target_coordinate))
+
+    residuals: dict[str, dict[str, float | int]] = {}
+    residual_pattern = re.compile(
+        rf"Solving for\s+([^,]+),\s+Initial residual\s*=\s*({_OPENFOAM_NUMBER}),\s+"
+        rf"Final residual\s*=\s*({_OPENFOAM_NUMBER}),\s+No Iterations\s+(\d+)"
+    )
+    for match in residual_pattern.finditer(tail):
+        residuals[match.group(1).strip()] = {
+            "initial": float(match.group(2)),
+            "final": float(match.group(3)),
+            "linear_iterations": int(match.group(4)),
+        }
+
+    courant_matches = list(
+        re.finditer(
+            rf"Courant Number mean:\s*({_OPENFOAM_NUMBER})\s+max:\s*({_OPENFOAM_NUMBER})",
+            tail,
+        )
+    )
+    courant = (
+        {
+            "mean": float(courant_matches[-1].group(1)),
+            "maximum": float(courant_matches[-1].group(2)),
+        }
+        if courant_matches
+        else None
+    )
+
+    monitor_bytes = 0
+    monitor_values: dict[str, float] = {}
+    if case_directory is not None:
+        for name in (
+            "agentcfd_inlet_flow",
+            "agentcfd_outlet_flow",
+            "agentcfd_inlet_pressure",
+            "agentcfd_outlet_pressure",
+        ):
+            candidates = sorted(
+                (case_directory / "postProcessing" / name).glob("*/*.dat"),
+                key=lambda path: path.stat().st_mtime,
+            )
+            if not candidates:
+                continue
+            row, bytes_read = _latest_numeric_row(candidates[-1])
+            monitor_bytes += bytes_read
+            if row is not None:
+                monitor_values[name] = row[-1]
+                try:
+                    updated_timestamps.append(candidates[-1].stat().st_mtime)
+                except OSError:
+                    pass
+    inlet_flow = monitor_values.get("agentcfd_inlet_flow")
+    outlet_flow = monitor_values.get("agentcfd_outlet_flow")
+    relative_mass_imbalance = None
+    if inlet_flow is not None and outlet_flow is not None:
+        scale = max(abs(inlet_flow), abs(outlet_flow))
+        relative_mass_imbalance = (
+            0.0 if scale == 0.0 else abs(inlet_flow + outlet_flow) / scale
+        )
+    inlet_pressure = monitor_values.get("agentcfd_inlet_pressure")
+    outlet_pressure = monitor_values.get("agentcfd_outlet_pressure")
+    pressure_drop = None
+    model = plan.get("model", {})
+    summary = model.get("summary", {}) if isinstance(model, dict) else {}
+    fluid = summary.get("fluid", {}) if isinstance(summary, dict) else {}
+    density = fluid.get("density") if isinstance(fluid, dict) else None
+    if (
+        inlet_pressure is not None
+        and outlet_pressure is not None
+        and isinstance(density, (int, float))
+    ):
+        pressure_drop = (inlet_pressure - outlet_pressure) * density
+
+    now = datetime.now(UTC)
+    started_at = record.get("started_at")
+    completed_at = record.get("completed_at")
+    try:
+        start = datetime.fromisoformat(str(started_at))
+        end = datetime.fromisoformat(str(completed_at)) if completed_at else now
+        elapsed_seconds = max(0.0, (end - start).total_seconds())
+    except (TypeError, ValueError):
+        elapsed_seconds = None
+
+    remaining_range = None
+    if (
+        procedure_type == "transient"
+        and isinstance(fraction, float)
+        and 0.01 <= fraction < 1.0
+        and isinstance(elapsed_seconds, float)
+    ):
+        linear_remaining = elapsed_seconds * (1.0 - fraction) / fraction
+        remaining_range = {
+            "minimum_seconds": round(linear_remaining * 0.5, 1),
+            "maximum_seconds": round(linear_remaining * 2.0, 1),
+            "basis": "wide linear extrapolation; meshing and export excluded",
+        }
+
+    workspace_bytes = None
+    workspace_files = None
+    if include_storage and workspace is not None:
+        workspace_bytes, workspace_files = _tree_usage(workspace)
+    observed_at = now.isoformat()
+    updated_at = (
+        datetime.fromtimestamp(max(updated_timestamps), tz=UTC).isoformat()
+        if updated_timestamps
+        else None
+    )
+    return {
+        "schema": "agentcfd.run-progress/0.1",
+        "run_id": run_id,
+        "status": record.get("status"),
+        "phase": record.get("phase", record.get("status")),
+        "current_command": current_command,
+        "observed_at": observed_at,
+        "updated_at": updated_at,
+        "elapsed_seconds": None if elapsed_seconds is None else round(elapsed_seconds, 3),
+        "elapsed_display": (
+            None if elapsed_seconds is None else _human_duration(elapsed_seconds)
+        ),
+        "coordinate": {
+            "name": coordinate_name,
+            "unit": coordinate_unit,
+            "current": current_coordinate,
+            "target": target_coordinate,
+            "fraction": fraction,
+        },
+        "latest_residuals": residuals,
+        "courant_number": courant,
+        "monitors": {
+            "inlet_volume_flow": inlet_flow,
+            "outlet_volume_flow": outlet_flow,
+            "relative_mass_imbalance": relative_mass_imbalance,
+            "pressure_drop": pressure_drop,
+            "units": {
+                "volume_flow": "m^3/s",
+                "relative_mass_imbalance": "1",
+                "pressure_drop": "Pa",
+            },
+        },
+        "estimated_remaining": remaining_range,
+        "workspace": {
+            "path": None if workspace is None else str(workspace),
+            "exists": workspace is not None and workspace.exists(),
+            "native_time_directory_count": len(native_coordinates),
+            "bytes": workspace_bytes,
+            "display": None if workspace_bytes is None else _human_bytes(workspace_bytes),
+            "file_count": workspace_files,
+        },
+        "observation_cost": {
+            "field_payloads_opened": 0,
+            "log_tail_bytes_read": tail_bytes,
+            "monitor_bytes_read": monitor_bytes,
+            "recursive_storage_scan": include_storage,
+        },
+    }
 
 
 def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
@@ -1011,6 +1322,24 @@ class Project:
             native_status = str(latest.get("status", "unknown"))
             if native_status in {"preparing", "running", "exporting"}:
                 active = _process_is_alive(latest.get("pid"))
+                # The process can publish its final atomic marker between our
+                # first file read and liveness probe. Re-read once before
+                # reporting a false interruption during that narrow handoff.
+                if not active and run_directory is not None:
+                    try:
+                        refreshed = json.loads(
+                            (run_directory / "run.json").read_text(encoding="utf-8")
+                        )
+                    except (OSError, TypeError, json.JSONDecodeError):
+                        refreshed = None
+                    if isinstance(refreshed, dict) and refreshed.get("status") not in {
+                        "preparing",
+                        "running",
+                        "exporting",
+                    }:
+                        latest = refreshed
+                        native_status = str(latest.get("status", "unknown"))
+            if native_status in {"preparing", "running", "exporting"}:
                 state = "running" if active else "interrupted"
             else:
                 latest_execution = latest.get("execution_sha256")
@@ -1060,6 +1389,12 @@ class Project:
                 None if fields_path is None else _field_bundle_summary(fields_path)
             ),
         }
+        progress = _run_progress_snapshot(
+            self.root,
+            latest,
+            plan,
+            include_storage=include_storage,
+        )
         if state == "blocked":
             next_action = {
                 "command": f"agentcfd check {project_argument}",
@@ -1113,6 +1448,7 @@ class Project:
             "issues": plan["issues"],
             "run_count": len(runs),
             "latest_run": latest,
+            "progress": progress,
             "postprocess": postprocess,
             "next_action": next_action,
         }
@@ -1133,6 +1469,7 @@ class Project:
             "issues": status["issues"],
             "run_count": status["run_count"],
             "latest_run": status["latest_run"],
+            "progress": status["progress"],
             "postprocess": status["postprocess"],
             "next_action": status["next_action"],
         }

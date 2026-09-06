@@ -132,8 +132,12 @@ evidence; it does not replace the engineering workflow.
 Every published `output/` is self-explaining: its `README.md` points humans to
 the visualization and evidence, while `status --json` and versioned JSON
 schemas give agents the same state, next action, and repair path. During a long
-run, status distinguishes solver and field-export phases. A dead process becomes
-`interrupted`, and the next replace run can recover without manual folder surgery.
+run, status distinguishes solver and field-export phases and reads only a
+bounded log tail plus compact monitor rows to report physical time/iteration,
+residuals, Courant number, mass imbalance, pressure drop, elapsed time, and a
+wide transient ETA range. Add `--storage` when recursive workspace size is
+worth the extra I/O. A dead process becomes `interrupted`, and the next replace
+run can recover without manual folder surgery.
 
 Output is declared by purpose instead of by OpenFOAM directory frequency. For
 example, a transient run can keep frequent scalar histories, one visualization

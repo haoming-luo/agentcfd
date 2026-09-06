@@ -406,6 +406,121 @@ def test_project_status_marks_dead_in_progress_record_as_interrupted(tmp_path):
     assert report["next_action"]["command"].startswith("agentcfd run ")
 
 
+def test_project_status_observes_live_openfoam_progress_without_field_reads(tmp_path):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    run_id = "live-progress"
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": run_id,
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "running",
+                "phase": "solver",
+                "pid": os.getpid(),
+                "started_at": "2026-09-06T00:00:00+00:00",
+                "completed_at": None,
+            }
+        )
+    )
+    case = project.root / ".agentcfd" / "work" / run_id / "openfoam"
+    case.mkdir(parents=True)
+    (case / "0.5").mkdir()
+    (case / "log.pimpleFoam").write_text(
+        """Time = 0.75
+Courant Number mean: 0.12 max: 0.48
+smoothSolver: Solving for Ux, Initial residual = 2e-4, Final residual = 3e-7, No Iterations 2
+GAMG: Solving for p, Initial residual = 8e-4, Final residual = 9e-7, No Iterations 3
+"""
+    )
+    for name, value in {
+        "agentcfd_inlet_flow": -0.01,
+        "agentcfd_outlet_flow": 0.00999,
+        "agentcfd_inlet_pressure": 0.25,
+        "agentcfd_outlet_pressure": 0.05,
+    }.items():
+        monitor = case / "postProcessing" / name / "0"
+        monitor.mkdir(parents=True)
+        (monitor / "surfaceFieldValue.dat").write_text(
+            f"# Time value\n0.5 {value}\n0.75 {value}\n"
+        )
+
+    report = project.status(include_storage=True)
+
+    jsonschema.Draft202012Validator(contracts.load("project-status.schema.json")).validate(
+        report
+    )
+    progress = report["progress"]
+    assert report["state"] == "running"
+    assert progress["current_command"] == "pimpleFoam"
+    assert progress["coordinate"] == {
+        "name": "physical_time",
+        "unit": "s",
+        "current": 0.75,
+        "target": 2.0,
+        "fraction": 0.375,
+    }
+    assert progress["latest_residuals"]["p"]["initial"] == pytest.approx(8e-4)
+    assert progress["courant_number"]["maximum"] == pytest.approx(0.48)
+    assert progress["monitors"]["relative_mass_imbalance"] == pytest.approx(0.001)
+    assert progress["monitors"]["pressure_drop"] == pytest.approx(200.0)
+    assert progress["workspace"]["native_time_directory_count"] == 1
+    assert progress["workspace"]["bytes"] > 0
+    assert progress["observation_cost"]["field_payloads_opened"] == 0
+    assert progress["observation_cost"]["monitor_bytes_read"] > 0
+    assert progress["estimated_remaining"]["minimum_seconds"] >= 0
+
+
+def test_project_status_rereads_atomic_completion_before_reporting_interrupted(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(tmp_path / "pipe")
+    plan = project.plan()
+    project.run_root.mkdir()
+    marker = project.run_root / "run.json"
+    initial = {
+        "schema": "agentcfd.project-run/0.1",
+        "run_id": "finishing",
+        "mode": "replace",
+        "directory": str(project.run_root),
+        "status": "exporting",
+        "phase": "portable-fields",
+        "pid": 12345,
+        "analysis_sha256": plan["model"]["analysis_sha256"],
+        "started_at": "2026-09-06T00:00:00+00:00",
+        "completed_at": None,
+    }
+    marker.write_text(json.dumps(initial))
+    (project.run_root / "result.json").write_text("{}")
+
+    def finish_during_probe(_pid):
+        marker.write_text(
+            json.dumps(
+                {
+                    **initial,
+                    "status": "completed",
+                    "phase": "complete",
+                    "pid": None,
+                    "accepted": True,
+                    "completed_at": "2026-09-06T00:00:01+00:00",
+                }
+            )
+        )
+        return False
+
+    monkeypatch.setattr(projects, "_process_is_alive", finish_during_probe)
+
+    report = project.status()
+
+    assert report["state"] == "complete"
+    assert report["latest_run"]["phase"] == "complete"
+    assert report["progress"] is None
+
+
 def test_project_status_surfaces_failed_acceptance_checks(tmp_path):
     project = projects.init_project(tmp_path / "pipe")
     project.run_root.mkdir()

@@ -4159,6 +4159,141 @@ def build(
 '''
 
 
+def init_project_from_request(
+    directory: str | Path,
+    request: Mapping[str, object],
+    *,
+    base_directory: str | Path | None = None,
+) -> Project:
+    """Create a readable project from a versioned, ephemeral creation request.
+
+    The request is an automation and GUI boundary only. The generated
+    ``case.py`` remains the project's scientific source of truth.
+    """
+
+    if not isinstance(request, Mapping):
+        raise ProjectError("Project creation request must be a JSON object.")
+    payload = dict(request)
+    allowed = {
+        "schema",
+        "template",
+        "provider",
+        "geometry",
+        "interior_point_m",
+        "inlet_velocity_m_s",
+        "mesh",
+    }
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ProjectError(
+            "Unknown project creation request keys: " + ", ".join(unknown) + "."
+        )
+    if payload.get("schema") != "agentcfd.project-creation-request/0.1":
+        raise ProjectError("Unsupported AgentCFD project creation request schema.")
+    template = payload.get("template")
+    provider = payload.get("provider")
+    if not isinstance(template, str) or not isinstance(provider, str):
+        raise ProjectError("Project creation request requires template and provider strings.")
+    if template != "imported-internal-flow":
+        unexpected = sorted(
+            key
+            for key in (
+                "geometry",
+                "interior_point_m",
+                "inlet_velocity_m_s",
+                "mesh",
+            )
+            if key in payload
+        )
+        if unexpected:
+            raise ProjectError(
+                f"Template {template!r} does not accept request sections: "
+                + ", ".join(unexpected)
+                + "."
+            )
+        return init_project(directory, provider=provider, template=template)
+
+    missing = sorted(
+        key
+        for key in ("geometry", "interior_point_m", "inlet_velocity_m_s", "mesh")
+        if key not in payload
+    )
+    if missing:
+        raise ProjectError(
+            "Imported project creation request is missing: "
+            + ", ".join(missing)
+            + "."
+        )
+    geometry_record = payload["geometry"]
+    mesh_record = payload["mesh"]
+    if not isinstance(geometry_record, Mapping):
+        raise ProjectError("Project creation geometry must be an object.")
+    if not isinstance(mesh_record, Mapping):
+        raise ProjectError("Project creation mesh must be an object.")
+    geometry_unknown = sorted(
+        set(geometry_record) - {"path", "unit", "boundary_roles"}
+    )
+    mesh_unknown = sorted(set(mesh_record) - {"base_size_m", "maximum_cells"})
+    if geometry_unknown:
+        raise ProjectError(
+            "Unknown project creation geometry keys: "
+            + ", ".join(geometry_unknown)
+            + "."
+        )
+    if mesh_unknown:
+        raise ProjectError(
+            "Unknown project creation mesh keys: "
+            + ", ".join(mesh_unknown)
+            + "."
+        )
+    geometry_missing = sorted(
+        key for key in ("path", "unit", "boundary_roles") if key not in geometry_record
+    )
+    mesh_missing = sorted(
+        key for key in ("base_size_m", "maximum_cells") if key not in mesh_record
+    )
+    if geometry_missing or mesh_missing:
+        raise ProjectError(
+            "Project creation request is incomplete: "
+            + ", ".join(
+                [
+                    *(f"geometry.{key}" for key in geometry_missing),
+                    *(f"mesh.{key}" for key in mesh_missing),
+                ]
+            )
+            + "."
+        )
+    geometry_path = geometry_record["path"]
+    geometry_unit = geometry_record["unit"]
+    boundary_roles = geometry_record["boundary_roles"]
+    if not isinstance(geometry_path, str) or not geometry_path.strip():
+        raise ProjectError("Project creation geometry.path must be a non-empty string.")
+    if not isinstance(geometry_unit, str):
+        raise ProjectError("Project creation geometry.unit must be a string.")
+    if not isinstance(boundary_roles, Mapping):
+        raise ProjectError("Project creation geometry.boundary_roles must be an object.")
+    source = Path(geometry_path).expanduser()
+    if not source.is_absolute():
+        base = (
+            Path.cwd()
+            if base_directory is None
+            else Path(base_directory).expanduser()
+        )
+        source = base.resolve() / source
+    return init_project(
+        directory,
+        provider=provider,
+        template=template,
+        geometry_path=source,
+        geometry_unit=geometry_unit,
+        boundary_roles=boundary_roles,
+        interior_point_m=payload["interior_point_m"],
+        inlet_velocity_m_s=payload["inlet_velocity_m_s"],
+        base_size_m=mesh_record["base_size_m"],
+        maximum_cells=mesh_record["maximum_cells"],
+    )
+
+
 def init_project(
     directory: str | Path,
     *,
@@ -4408,4 +4543,5 @@ __all__ = [
     "ProjectManifest",
     "ProjectRun",
     "init_project",
+    "init_project_from_request",
 ]

@@ -31,6 +31,10 @@ model.
     `init --template imported-internal-flow` with explicit unit, role map,
     interior point, inlet vector, mesh size, and maximum cells; never invent
     any of those inputs from appearance or filenames.
+13. When an agent already has all confirmed setup inputs, prefer the installed
+    `project-creation-request.schema.json` plus `init --request`; treat that JSON
+    as an ephemeral creation envelope and `case.py` as the continuing source of
+    truth.
 
 ## Current capability boundary
 

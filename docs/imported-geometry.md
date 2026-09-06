@@ -103,6 +103,13 @@ unsupported roles or ambiguous inlet/outlet count, and copies the source into
 external file cannot silently change the project. Direction, SI mesh size,
 interior point, and the hard cell limit are required rather than guessed.
 
+For automation, `agentcfd init DESTINATION --request REQUEST.json` accepts the
+installed `project-creation-request.schema.json` contract. Its geometry path is
+resolved relative to the request file, roles are explicit inline data, and the
+response includes the request fingerprint. The JSON is only a creation
+envelope; it generates the same readable `case.py` and does not become a shadow
+source of model truth.
+
 `agentcfd plan .` verifies the asset still exists and still matches the
 inspected SHA-256 before any provider action. Missing or changed geometry has
 its own `input_assets_ready: false` state. This is separate from provider

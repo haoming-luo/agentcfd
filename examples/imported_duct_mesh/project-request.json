@@ -1,0 +1,20 @@
+{
+  "schema": "agentcfd.project-creation-request/0.1",
+  "template": "imported-internal-flow",
+  "provider": "openfoam",
+  "geometry": {
+    "path": "geometry/fluid.stl",
+    "unit": "m",
+    "boundary_roles": {
+      "inlet": "inlet",
+      "outlet": "outlet",
+      "walls": "wall"
+    }
+  },
+  "interior_point_m": [0.5, 0.25, 0.1],
+  "inlet_velocity_m_s": [0.5, 0.0, 0.0],
+  "mesh": {
+    "base_size_m": 0.05,
+    "maximum_cells": 200000
+  }
+}

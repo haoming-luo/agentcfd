@@ -11,3 +11,4 @@ examples/*/output/
 *.json
 !docs/*.json
 !schemas/*.json
+!examples/imported_duct_mesh/project-request.json

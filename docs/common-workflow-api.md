@@ -48,8 +48,10 @@ The first demonstrator is
 [`examples/channel_baffle_project`](../examples/channel_baffle_project). It
 is now the first executable non-pipe slice: a deterministic structured
 five-block mesh, low-Re transient flow, compact reports, and standard field
-output. Higher-Re turbulence and general imported geometry remain separate
-capabilities rather than silent extensions of this example.
+output. A separate bounded imported-volume slice now owns checked STL/OBJ,
+explicit region roles, an interior seed, a hard mesh budget, and steady laminar
+OpenFOAM execution. `init --request` exposes creation as strict JSON for agents
+and GUIs without replacing the generated Python source of truth.
 
 ## Output and result ergonomics
 
@@ -89,9 +91,9 @@ The API object is not a capability claim. At this checkpoint:
   the existing OpenFOAM provider;
 - one bottom-attached rectangular-channel baffle is executable for transient,
   incompressible, constant-property flow with hydraulic Re below 2300;
-- arbitrary channels, imported geometry, vector surface reductions, crash-safe
-  in-run checkpoint publication, and turbulent baffle flow remain pending and
-  fail closed. Completed baffled-channel runs publish a verified rolling ZIP
+- arbitrary channels, turbulent or thermal imported geometry, vector surface
+  reductions, crash-safe in-run checkpoint publication, and turbulent baffle
+  flow remain pending and fail closed. Completed baffled-channel runs publish a verified rolling ZIP
   and can resume from `initialization.previous_result(...)`.
 
 This separation lets the product language grow coherently while every numerical

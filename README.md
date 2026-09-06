@@ -130,6 +130,18 @@ role map, and portable inspection record. The generated Python remains the
 editable source for velocity, fluid properties, mesh size, cell budget, and
 outputs; OpenFOAM files remain disposable implementation detail.
 
+Agents and future GUIs can send the same inputs as a strict versioned creation
+request instead of constructing a long shell command:
+
+```bash
+agentcfd init my-duct --request project-request.json
+```
+
+Relative geometry paths resolve beside that JSON file. The request is an
+auditable creation boundary, not a second project language: after creation,
+only the generated `case.py` controls the scientific model. A complete example
+lives at `examples/imported_duct_mesh/project-request.json`.
+
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
 operational settings such as the default provider, output directory, container,
 and mesh controls. An ordinary execution replaces the managed `output/`

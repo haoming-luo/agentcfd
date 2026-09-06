@@ -1297,7 +1297,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument(
         "--template",
         choices=("industrial-pipe", "baffle-channel", "imported-internal-flow"),
-        default="industrial-pipe",
+        default=None,
     )
     init.add_argument(
         "--provider",
@@ -1321,6 +1321,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument("--base-size-m", type=float)
     init.add_argument("--maximum-cells", type=int)
+    init.add_argument(
+        "--request",
+        type=Path,
+        help="Versioned JSON project-creation request; paths resolve beside the file.",
+    )
     init.add_argument("--json", action="store_true", dest="as_json")
 
     check = subparsers.add_parser(
@@ -2319,37 +2324,74 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"next: {action}")
         return 0 if report["healthy"] else 3
     if args.command == "init":
-        project = projects.init_project(
-            args.directory,
-            provider=args.provider
-            or (
-                "openfoam"
-                if args.template in {"baffle-channel", "imported-internal-flow"}
-                else "reference"
-            ),
-            template=args.template,
-            geometry_path=args.geometry,
-            geometry_unit=args.unit,
-            boundary_roles=_boundary_role_map(args.roles),
-            interior_point_m=(
-                tuple(args.interior_point_m)
-                if args.interior_point_m is not None
-                else None
-            ),
-            inlet_velocity_m_s=(
-                tuple(args.inlet_velocity_m_s)
-                if args.inlet_velocity_m_s is not None
-                else None
-            ),
-            base_size_m=args.base_size_m,
-            maximum_cells=args.maximum_cells,
+        inline_options = (
+            args.template,
+            args.provider,
+            args.geometry,
+            args.unit,
+            args.roles,
+            args.interior_point_m,
+            args.inlet_velocity_m_s,
+            args.base_size_m,
+            args.maximum_cells,
         )
+        request_sha256 = None
+        if args.request is not None:
+            if any(value is not None for value in inline_options):
+                raise ProjectError(
+                    "--request cannot be combined with inline project creation options."
+                )
+            try:
+                request = strict_json_object(
+                    args.request.read_text(encoding="utf-8"),
+                    label="project creation request",
+                )
+            except OSError as error:
+                raise ProjectError(
+                    f"Cannot read project creation request {args.request}: {error}"
+                ) from error
+            project = projects.init_project_from_request(
+                args.directory,
+                request,
+                base_directory=args.request.parent,
+            )
+            selected_template = str(request["template"])
+            request_sha256 = content_fingerprint(request)
+        else:
+            selected_template = args.template or "industrial-pipe"
+            project = projects.init_project(
+                args.directory,
+                provider=args.provider
+                or (
+                    "openfoam"
+                    if selected_template
+                    in {"baffle-channel", "imported-internal-flow"}
+                    else "reference"
+                ),
+                template=selected_template,
+                geometry_path=args.geometry,
+                geometry_unit=args.unit,
+                boundary_roles=_boundary_role_map(args.roles),
+                interior_point_m=(
+                    tuple(args.interior_point_m)
+                    if args.interior_point_m is not None
+                    else None
+                ),
+                inlet_velocity_m_s=(
+                    tuple(args.inlet_velocity_m_s)
+                    if args.inlet_velocity_m_s is not None
+                    else None
+                ),
+                base_size_m=args.base_size_m,
+                maximum_cells=args.maximum_cells,
+            )
         report = {
             "schema": "agentcfd.project-initialization/0.1",
-            "template": args.template,
+            "template": selected_template,
             "root": str(project.root),
             "entrypoint": str(project.entrypoint),
             "provider": project.manifest.default_provider,
+            "request_sha256": request_sha256,
             "next_action": {
                 "command": f"agentcfd status {shlex.quote(str(project.root))}",
                 "reason": "Inspect readiness and follow the single recommended action.",
@@ -2358,7 +2400,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print(f"Created AgentCFD {args.template} project")
+            print(f"Created AgentCFD {selected_template} project")
             print(project.root)
             print(f"next: {report['next_action']['command']}")
         return 0

@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-creation-request.schema.json",
+  "title": "AgentCFD project creation request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "template", "provider"],
+  "properties": {
+    "schema": {"const": "agentcfd.project-creation-request/0.1"},
+    "template": {
+      "enum": ["industrial-pipe", "baffle-channel", "imported-internal-flow"]
+    },
+    "provider": {"enum": ["reference", "openfoam"]},
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "unit", "boundary_roles"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "unit": {"enum": ["m", "mm", "cm", "um", "in", "ft"]},
+        "boundary_roles": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "enum": ["inlet", "outlet", "wall", "symmetry", "empty"]
+          }
+        }
+      }
+    },
+    "interior_point_m": {"$ref": "#/$defs/vector3"},
+    "inlet_velocity_m_s": {"$ref": "#/$defs/vector3"},
+    "mesh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_size_m", "maximum_cells"],
+      "properties": {
+        "base_size_m": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_cells": {"type": "integer", "minimum": 1}
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"template": {"const": "imported-internal-flow"}}},
+      "then": {
+        "required": ["geometry", "interior_point_m", "inlet_velocity_m_s", "mesh"],
+        "properties": {"provider": {"const": "openfoam"}}
+      },
+      "else": {
+        "properties": {
+          "geometry": false,
+          "interior_point_m": false,
+          "inlet_velocity_m_s": false,
+          "mesh": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"template": {"const": "baffle-channel"}}},
+      "then": {"properties": {"provider": {"const": "openfoam"}}}
+    }
+  ],
+  "$defs": {
+    "vector3": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "number"},
+        {"type": "number"},
+        {"type": "number"}
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}

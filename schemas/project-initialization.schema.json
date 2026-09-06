@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentcfd.dev/schemas/project-initialization/0.1",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-initialization.schema.json",
   "title": "AgentCFD project initialization",
   "type": "object",
   "additionalProperties": false,
@@ -10,6 +10,7 @@
     "root",
     "entrypoint",
     "provider",
+    "request_sha256",
     "next_action"
   ],
   "properties": {
@@ -20,6 +21,10 @@
     "root": {"type": "string", "minLength": 1},
     "entrypoint": {"type": "string", "minLength": 1},
     "provider": {"enum": ["reference", "openfoam"]},
+    "request_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
     "next_action": {
       "type": "object",
       "additionalProperties": false,

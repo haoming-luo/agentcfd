@@ -196,6 +196,71 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
     assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
 
 
+def test_versioned_creation_request_resolves_owned_geometry_beside_request(
+    tmp_path, capsys
+):
+    source = (
+        Path(__file__).parents[1]
+        / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
+    request_directory = tmp_path / "request"
+    request_directory.mkdir()
+    shutil.copyfile(source, request_directory / "fluid.stl")
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "imported-internal-flow",
+        "provider": "openfoam",
+        "geometry": {
+            "path": "fluid.stl",
+            "unit": "m",
+            "boundary_roles": {
+                "inlet": "inlet",
+                "outlet": "outlet",
+                "walls": "wall",
+            },
+        },
+        "interior_point_m": [0.5, 0.25, 0.1],
+        "inlet_velocity_m_s": [0.5, 0.0, 0.0],
+        "mesh": {"base_size_m": 0.05, "maximum_cells": 200_000},
+    }
+    jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    ).validate(request)
+    request_path = request_directory / "create.json"
+    request_path.write_text(json.dumps(request))
+    root = tmp_path / "owned"
+
+    assert (
+        entrypoint(
+            ["init", str(root), "--request", str(request_path), "--json"]
+        )
+        == 0
+    )
+
+    report = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("project-initialization.schema.json")
+    ).validate(report)
+    assert report["request_sha256"] == projects.content_fingerprint(request)
+    assert (root / "geometry/fluid.stl").read_bytes() == source.read_bytes()
+    assert projects.Project(root).plan()["readiness"]["ready_to_run"] is True
+
+
+def test_creation_request_rejects_unknown_automation_intent_before_writing(tmp_path):
+    root = tmp_path / "unknown"
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "industrial-pipe",
+        "provider": "reference",
+        "solver_magic": True,
+    }
+
+    with pytest.raises(ProjectError, match="Unknown project creation request keys"):
+        projects.init_project_from_request(root, request)
+
+    assert not root.exists()
+
+
 def test_project_plan_verifies_imported_geometry_asset_identity(tmp_path):
     root = tmp_path / "imported"
     project = projects.init_project(root)

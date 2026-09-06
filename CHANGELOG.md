@@ -6,6 +6,9 @@
   bridge. It inspects and owns STL/OBJ plus normalized role records, requires
   explicit units, interior seed, inlet vector, mesh size, and cell budget, and
   emits a ready-to-plan readable project without manual Python authoring.
+- Add a strict, versioned project-creation request API and `init --request` for
+  agents and future GUIs; relative geometry paths resolve beside the request,
+  while generated `case.py` remains the sole long-lived scientific source.
 - Make the public analysis-request fingerprint the sole project/provider result
   identity and refuse to publish a provider result carrying a different one.
 - Bind project-published XDMF/H5 fields to the exact OpenFOAM source-mesh

@@ -13,8 +13,13 @@ Study -> Domain/Mesh -> Regions -> Fluid/Thermodynamics
 At project level, the recommended lifecycle is:
 
 ```text
-init -> edit case.py -> check -> plan -> run -> inspect/compare/export
+init -> edit case.py -> status -> run -> view
 ```
+
+`status` collapses check, plan freshness, runtime readiness, run phase,
+acceptance, post-processing target, and recovery into one decision surface.
+The detailed `check`, `plan`, `inspect`, `storage`, verification, and export
+commands remain available through progressive disclosure.
 
 1. Declare the physical Study and modeling assumptions.
 2. Select a numerical Procedure only after the physics is fixed.

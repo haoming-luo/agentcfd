@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-view.schema.json",
+  "title": "AgentCFD post-processing target 0.1",
+  "type": "object",
+  "required": ["schema", "project_state", "target", "kind", "summary", "launched", "viewer"],
+  "properties": {
+    "schema": {"const": "agentcfd.project-view/0.1"},
+    "project_state": {
+      "enum": ["blocked", "ready", "running", "interrupted", "modified", "complete", "review", "failed"]
+    },
+    "target": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["xdmf", "result-json"]},
+    "summary": {"type": ["object", "null"]},
+    "launched": {"type": "boolean"},
+    "viewer": {"type": ["string", "null"]}
+  },
+  "additionalProperties": false
+}

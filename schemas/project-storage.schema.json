@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-storage.schema.json",
+  "title": "AgentCFD managed project storage inventory 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "managed_bytes", "managed_display", "reclaimable_bytes",
+    "reclaimable_display", "filesystem", "categories", "policy", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-storage/0.1"},
+    "root": {"type": "string"},
+    "managed_bytes": {"type": "integer", "minimum": 0},
+    "managed_display": {"type": "string"},
+    "reclaimable_bytes": {"type": "integer", "minimum": 0},
+    "reclaimable_display": {"type": "string"},
+    "filesystem": {"type": "object"},
+    "categories": {"type": "object"},
+    "policy": {"type": "object"},
+    "next_action": {"type": ["object", "null"]}
+  },
+  "additionalProperties": false
+}

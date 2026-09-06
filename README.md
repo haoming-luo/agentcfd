@@ -39,6 +39,9 @@ The current product and engineering sequence is maintained in the
 [CTO roadmap](docs/cto-roadmap.md): executable separated internal flow first,
 then practical imported geometry, dependable turbulent equipment flow, heat
 and steam, and only later combustion and multiphase breadth.
+The [product experience roadmap](docs/product-experience-roadmap.md) tracks the
+parallel goal of reducing user attention, failure recovery work, and storage
+amplification per trusted result.
 
 ## First executable workflow
 
@@ -91,10 +94,9 @@ agents, CI, and future GUIs:
 ```bash
 agentcfd init --template industrial-pipe my-flow
 cd my-flow
-agentcfd check --json
-agentcfd plan --json
-agentcfd run . --json
-agentcfd inspect --json
+agentcfd status .       # one state, one recommended next action
+agentcfd run .
+agentcfd view .         # prints the latest XDMF or result target
 ```
 
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
@@ -106,6 +108,8 @@ answer. Preserve an immutable run only when that is the intent:
 ```bash
 agentcfd run . --campaign
 agentcfd run . --keep-workspace  # expert backend debugging
+agentcfd storage .               # output/campaign/workspace inventory
+agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 ```
 
 The ordinary project surface stays small:
@@ -124,6 +128,12 @@ files live below `.agentcfd/` and are removed after successful publication by
 default. They can be regenerated from `case.py`; selected logs and content
 manifests are copied to `output/evidence/` first. Validation is attached
 evidence; it does not replace the engineering workflow.
+
+Every published `output/` is self-explaining: its `README.md` points humans to
+the visualization and evidence, while `status --json` and versioned JSON
+schemas give agents the same state, next action, and repair path. During a long
+run, status distinguishes solver and field-export phases. A dead process becomes
+`interrupted`, and the next replace run can recover without manual folder surgery.
 
 Output is declared by purpose instead of by OpenFOAM directory frequency. For
 example, a transient run can keep frequent scalar histories, one visualization

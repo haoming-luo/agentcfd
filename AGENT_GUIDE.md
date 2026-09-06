@@ -11,10 +11,10 @@ python -m pip install -e .
 agentcfd doctor --json
 agentcfd capabilities --json
 agentcfd init --template industrial-pipe first-flow
-agentcfd check first-flow --json
-agentcfd plan first-flow --json
+agentcfd status first-flow --json
 agentcfd run first-flow --json
-agentcfd inspect first-flow --json
+agentcfd status first-flow --storage --json
+agentcfd view first-flow --json
 python -m pytest -q
 ```
 
@@ -31,6 +31,10 @@ python -m pytest -q
 8. Prefer the project lifecycle over case-specific CLI commands for new work.
 9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
    never infer physical time or point/cell association from shape alone.
+10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,
+    and `inspect` only when the next action or an issue requires deeper detail.
+11. Preview `clean` before applying it. Never delete `output/`, `campaigns/`, or
+    the protected workspace of a live run to save space.
 
 ## Current boundary
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import math
+import os
+import shlex
 import shutil
 import sys
 import tomllib
@@ -110,6 +112,7 @@ class ProjectRun:
     solver_workspace: Path | None = None
 
     def to_dict(self) -> dict[str, object]:
+        failed_checks = [check.name for check in self.result.checks if not check.passed]
         return {
             "schema": "agentcfd.project-run/0.1",
             "run_id": self.run_id,
@@ -122,6 +125,8 @@ class ProjectRun:
             "accepted": self.result.accepted,
             "trust_level": self.result.trust_level,
             "provider": self.result.provider,
+            "failed_check_count": len(failed_checks),
+            "failed_checks": failed_checks,
             "field_bundle": (
                 self.field_bundle.to_dict() if self.field_bundle is not None else None
             ),
@@ -199,6 +204,144 @@ def _human_bytes(value: int) -> str:
         if value >= divisor:
             return f"{value / divisor:.2f} {unit}"
     return f"{value} B"
+
+
+def _tree_usage(path: Path) -> tuple[int, int]:
+    """Return logical file bytes and count without following symlinks."""
+
+    if not path.exists():
+        return 0, 0
+    if path.is_symlink():
+        return path.lstat().st_size, 1
+    if path.is_file():
+        return path.stat().st_size, 1
+    total = 0
+    count = 0
+    stack = [path]
+    while stack:
+        directory = stack.pop()
+        try:
+            entries = tuple(os.scandir(directory))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.is_symlink():
+                    total += entry.stat(follow_symlinks=False).st_size
+                    count += 1
+                elif entry.is_dir(follow_symlinks=False):
+                    stack.append(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat(follow_symlinks=False).st_size
+                    count += 1
+            except OSError:
+                continue
+    return total, count
+
+
+def _process_is_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
+    """Make the result directory understandable without OpenFOAM knowledge."""
+
+    result = run.result
+    lines = [
+        f"# {model_name} result",
+        "",
+        f"- Status: `{result.status}`",
+        f"- Accepted: `{str(result.accepted).lower()}`",
+        f"- Trust level: `{result.trust_level}`",
+        f"- Provider: `{result.provider}`",
+        "",
+        "## Start here",
+        "",
+    ]
+    if run.field_bundle is not None:
+        lines.extend(
+            (
+                "Open `fields/fields.xdmf` in ParaView for mesh and field animation.",
+                "The adjacent compressed HDF5 file is its payload; keep both together.",
+                "",
+            )
+        )
+    lines.extend(
+        (
+            "Read `result.json` for quantities, checks, histories, provenance, and artifacts.",
+            "Read `plan.json` for the resolved modeling and output decisions.",
+            "Read `run.json` for lifecycle state and machine automation.",
+            "",
+            "Generated OpenFOAM dictionaries are intentionally not retained here. "
+            "Edit the project's `case.py` and rerun instead.",
+            "",
+        )
+    )
+    if not result.accepted:
+        failed = [check.name for check in result.checks if not check.passed]
+        lines.extend(
+            (
+                "## Review required",
+                "",
+                "This result is not accepted. Failed checks: "
+                + (", ".join(failed) if failed else "see result.json"),
+                "",
+            )
+        )
+    target = run.directory / "README.md"
+    target.write_text("\n".join(lines), encoding="utf-8")
+    return target
+
+
+def _field_bundle_summary(xdmf_path: Path) -> dict[str, object] | None:
+    """Read only the compact manifest, never the HDF5 field payload."""
+
+    manifest_path = xdmf_path.parent / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        axis = manifest["axis"]
+        values = axis["values"]
+        fields = manifest["fields"]
+        selection = manifest["output_selection"]
+        storage = manifest["storage"]
+    except (OSError, KeyError, TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(values, list) or not isinstance(fields, list):
+        return None
+    return {
+        "frame_count": len(values),
+        "axis": {
+            "name": axis.get("name"),
+            "unit": axis.get("unit"),
+            "physical_time": axis.get("physical_time"),
+            "first": values[0] if values else None,
+            "last": values[-1] if values else None,
+        },
+        "profile": selection.get("profile"),
+        "fields": [
+            {
+                "name": field.get("name"),
+                "export_name": field.get("export_name"),
+                "association": field.get("association"),
+                "unit": field.get("unit"),
+                "components": field.get("components", []),
+            }
+            for field in fields
+            if isinstance(field, dict)
+        ],
+        "portable_bytes": storage.get("actual_portable_bytes"),
+        "portable_display": (
+            _human_bytes(storage["actual_portable_bytes"])
+            if isinstance(storage.get("actual_portable_bytes"), int)
+            else None
+        ),
+    }
 
 
 def _resolved_output_plan(
@@ -432,6 +575,26 @@ class Project:
             mesh=mesh,
         )
 
+    def _execution_fingerprint(
+        self,
+        analysis_sha256: object,
+        *,
+        provider: str,
+        container_image: str | None = None,
+    ) -> str:
+        settings: dict[str, object] = {}
+        if provider == "openfoam":
+            settings = self._openfoam_settings()
+            if container_image is not None:
+                settings["container_image"] = container_image
+        return content_fingerprint(
+            {
+                "analysis_sha256": analysis_sha256,
+                "provider": provider,
+                "provider_settings": settings,
+            }
+        )
+
     def plan(
         self,
         *,
@@ -644,9 +807,8 @@ class Project:
         plan["plan_sha256"] = content_fingerprint(plan)
         return plan
 
-    def inspect(self) -> dict[str, object]:
-        plan = self.plan()
-        runs = []
+    def _run_records(self) -> list[dict[str, object]]:
+        runs: list[dict[str, object]] = []
         candidates = [self.run_root / "run.json"]
         campaign_root = self.root / "campaigns"
         if campaign_root.is_dir():
@@ -666,15 +828,301 @@ class Project:
                 continue
             if isinstance(record, dict):
                 runs.append(record)
-        runs.sort(key=lambda record: str(record.get("completed_at", "")), reverse=True)
+        runs.sort(
+            key=lambda record: str(
+                record.get("completed_at")
+                or record.get("started_at")
+                or record.get("run_id")
+                or ""
+            ),
+            reverse=True,
+        )
+        return runs
+
+    def _active_run_ids(self) -> set[str]:
         return {
-            "schema": "agentcfd.project-inspection/0.1",
+            str(record["run_id"])
+            for record in self._run_records()
+            if record.get("status") in {"preparing", "running", "exporting"}
+            and _process_is_alive(record.get("pid"))
+            and record.get("run_id")
+        }
+
+    def storage(self) -> dict[str, object]:
+        """Inventory managed project data without reading field arrays."""
+
+        project_argument = (
+            "." if Path.cwd().resolve() == self.root else shlex.quote(str(self.root))
+        )
+        workspace_root = self.root / ".agentcfd" / "work"
+        groups = {
+            "current_output": self.run_root,
+            "campaigns": self.root / "campaigns",
+            "temporary_workspaces": workspace_root,
+        }
+        categories: dict[str, dict[str, object]] = {}
+        for name, path in groups.items():
+            size, files = _tree_usage(path)
+            categories[name] = {
+                "path": str(path),
+                "exists": path.exists(),
+                "bytes": size,
+                "display": _human_bytes(size),
+                "file_count": files,
+            }
+        managed = sum(int(item["bytes"]) for item in categories.values())
+        active_run_ids = self._active_run_ids()
+        active_workspace_bytes = sum(
+            _tree_usage(workspace_root / run_id)[0] for run_id in active_run_ids
+        )
+        workspace_bytes = int(categories["temporary_workspaces"]["bytes"])
+        reclaimable = max(0, workspace_bytes - active_workspace_bytes)
+        categories["temporary_workspaces"]["active_bytes"] = active_workspace_bytes
+        categories["temporary_workspaces"]["active_display"] = _human_bytes(
+            active_workspace_bytes
+        )
+        categories["temporary_workspaces"]["active_run_ids"] = sorted(active_run_ids)
+        disk = shutil.disk_usage(self.root)
+        return {
+            "schema": "agentcfd.project-storage/0.1",
             "root": str(self.root),
+            "managed_bytes": managed,
+            "managed_display": _human_bytes(managed),
+            "reclaimable_bytes": reclaimable,
+            "reclaimable_display": _human_bytes(reclaimable),
+            "filesystem": {
+                "free_bytes": disk.free,
+                "free_display": _human_bytes(disk.free),
+                "total_bytes": disk.total,
+                "total_display": _human_bytes(disk.total),
+            },
+            "categories": categories,
+            "policy": {
+                "ordinary_run": "replace managed current_output",
+                "campaign_run": "retain immutable campaigns",
+                "temporary_workspaces": "removed after successful export unless explicitly kept or interrupted",
+                "portable_fields": "XDMF index plus compressed HDF5 payload",
+            },
+            "next_action": (
+                {
+                    "command": f"agentcfd clean {project_argument} --apply",
+                    "reason": "Remove only hidden temporary solver workspaces.",
+                }
+                if reclaimable
+                else None
+            ),
+        }
+
+    def clean(self, *, apply: bool = False) -> dict[str, object]:
+        """Preview or remove hidden temporary workspaces; preserve all results."""
+
+        workspace_root = self.root / ".agentcfd" / "work"
+        active_run_ids = self._active_run_ids()
+        before = 0
+        file_count = 0
+        targets = []
+        if workspace_root.is_dir():
+            for path in sorted(workspace_root.iterdir()):
+                size, files = _tree_usage(path)
+                protected = path.name in active_run_ids
+                targets.append(
+                    {
+                        "path": str(path),
+                        "bytes": size,
+                        "display": _human_bytes(size),
+                        "file_count": files,
+                        "protected_active_run": protected,
+                    }
+                )
+                if not protected:
+                    before += size
+                    file_count += files
+        if apply and workspace_root.exists():
+            for target in targets:
+                if target["protected_active_run"]:
+                    continue
+                path = Path(str(target["path"]))
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink(missing_ok=True)
+            for empty_parent in (workspace_root, workspace_root.parent):
+                try:
+                    empty_parent.rmdir()
+                except OSError:
+                    pass
+        after = sum(
+            _tree_usage(Path(str(target["path"])))[0]
+            for target in targets
+            if not target["protected_active_run"]
+        )
+        return {
+            "schema": "agentcfd.project-clean/0.1",
+            "root": str(self.root),
+            "applied": apply,
+            "scope": "temporary-workspaces-only",
+            "targets": targets,
+            "preserved": [str(self.run_root), str(self.root / "campaigns")],
+            "protected_active_run_ids": sorted(active_run_ids),
+            "candidate_bytes": before,
+            "candidate_display": _human_bytes(before),
+            "candidate_file_count": file_count,
+            "reclaimed_bytes": before - after if apply else 0,
+            "reclaimed_display": _human_bytes(before - after if apply else 0),
+        }
+
+    def status(self, *, include_storage: bool = False) -> dict[str, object]:
+        """Return one human/agent decision surface for the whole project."""
+
+        plan = self.plan()
+        current_execution_sha256 = self._execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider=self.manifest.default_provider,
+        )
+        project_argument = (
+            "." if Path.cwd().resolve() == self.root else shlex.quote(str(self.root))
+        )
+        runs = self._run_records()
+        latest = runs[0] if runs else None
+        error_issues = [
+            issue for issue in plan["issues"] if issue.get("severity") == "error"
+        ]
+        active = False
+        changed = False
+        if latest is None:
+            state = "ready" if plan["readiness"]["ready_to_run"] else "blocked"
+        else:
+            native_status = str(latest.get("status", "unknown"))
+            if native_status in {"preparing", "running", "exporting"}:
+                active = _process_is_alive(latest.get("pid"))
+                state = "running" if active else "interrupted"
+            else:
+                latest_execution = latest.get("execution_sha256")
+                latest_analysis = latest.get("analysis_sha256")
+                if isinstance(latest_execution, str):
+                    changed = latest_execution != current_execution_sha256
+                elif isinstance(latest_analysis, str):
+                    changed = latest_analysis != plan["model"]["analysis_sha256"]
+                else:
+                    changed = latest.get("plan_sha256") != plan["plan_sha256"]
+                if changed:
+                    state = "modified"
+                elif native_status == "completed" and latest.get("accepted") is True:
+                    state = "complete"
+                elif native_status == "completed":
+                    state = "review"
+                else:
+                    state = "failed"
+        needs_execution = state in {"ready", "modified", "interrupted", "failed"}
+        if needs_execution and (
+            error_issues or plan["readiness"]["ready_to_run"] is not True
+        ):
+            state = "blocked"
+
+        run_directory = None
+        if latest is not None:
+            run_id = str(latest.get("run_id", ""))
+            local_candidates = (
+                (self.run_root,)
+                if latest.get("mode") == "replace"
+                else (self.root / "campaigns" / run_id, self.run_root / run_id)
+            )
+            run_directory = next((path for path in local_candidates if path.is_dir()), None)
+            if run_directory is None:
+                recorded = Path(str(latest.get("directory", "")))
+                run_directory = recorded if recorded.is_absolute() else self.root / recorded
+        result_path = None if run_directory is None else run_directory / "result.json"
+        fields_path = None if run_directory is None else run_directory / "fields" / "fields.xdmf"
+        if fields_path is not None and not fields_path.is_file():
+            fields_path = None
+        if result_path is not None and not result_path.is_file():
+            result_path = None
+        postprocess = {
+            "primary": str(fields_path or result_path) if fields_path or result_path else None,
+            "fields": None if fields_path is None else str(fields_path),
+            "result": None if result_path is None else str(result_path),
+            "command": (
+                f"agentcfd view {project_argument}" if fields_path or result_path else None
+            ),
+            "field_summary": (
+                None if fields_path is None else _field_bundle_summary(fields_path)
+            ),
+        }
+        if state == "blocked":
+            next_action = {
+                "command": f"agentcfd check {project_argument}",
+                "reason": (
+                    error_issues[0]["repair"]
+                    if error_issues
+                    else plan["issues"][0]["repair"]
+                    if plan["issues"]
+                    else "Resolve readiness issues."
+                ),
+            }
+        elif state in {"ready", "modified", "interrupted", "failed"}:
+            next_action = {
+                "command": f"agentcfd run {project_argument}",
+                "reason": {
+                    "ready": "Create the first result.",
+                    "modified": "Inputs changed since the latest result.",
+                    "interrupted": "Safely replace the interrupted managed run.",
+                    "failed": "Retry after reviewing the recorded failure.",
+                }[state],
+            }
+        elif state == "running":
+            next_action = {
+                "command": f"agentcfd status {project_argument}",
+                "reason": "Wait for the active solver/export phase to finish.",
+            }
+        elif state == "review":
+            failed = latest.get("failed_checks", []) if latest is not None else []
+            next_action = {
+                "command": f"agentcfd view {project_argument}",
+                "reason": (
+                    "Review failed acceptance checks: "
+                    + ", ".join(str(item) for item in failed)
+                    if failed
+                    else "Review result.json acceptance checks before using this result."
+                ),
+            }
+        else:
+            next_action = {
+                "command": f"agentcfd view {project_argument}",
+                "reason": "Open the compact result for review.",
+            }
+        report: dict[str, object] = {
+            "schema": "agentcfd.project-status/0.1",
+            "root": str(self.root),
+            "state": state,
+            "active": active,
+            "inputs_changed": changed,
             "model": plan["model"],
             "readiness": plan["readiness"],
             "issues": plan["issues"],
             "run_count": len(runs),
-            "latest_run": runs[0] if runs else None,
+            "latest_run": latest,
+            "postprocess": postprocess,
+            "next_action": next_action,
+        }
+        if include_storage:
+            report["storage"] = self.storage()
+        return report
+
+    def inspect(self) -> dict[str, object]:
+        """Backward-compatible detailed inspection built from project status."""
+
+        status = self.status()
+        return {
+            "schema": "agentcfd.project-inspection/0.1",
+            "root": str(self.root),
+            "state": status["state"],
+            "model": status["model"],
+            "readiness": status["readiness"],
+            "issues": status["issues"],
+            "run_count": status["run_count"],
+            "latest_run": status["latest_run"],
+            "postprocess": status["postprocess"],
+            "next_action": status["next_action"],
         }
 
     def run(
@@ -697,10 +1145,21 @@ class Project:
         if readiness["ready_to_run"] is not True:
             codes = ", ".join(issue["code"] for issue in plan["issues"])
             raise ProjectError(f"Project is not ready to run: {codes or 'unknown issue'}")
+        output_plan = plan["decisions"]["output_plan"]
+        estimated_peak = output_plan.get("estimated_temporary_peak_bytes")
+        campaign_mode = campaign or self.manifest.run_mode == "campaign"
+        existing_output_bytes = 0 if campaign_mode else _tree_usage(self.run_root)[0]
+        available_bytes = shutil.disk_usage(self.root).free + existing_output_bytes
+        if isinstance(estimated_peak, int) and estimated_peak > available_bytes:
+            raise ProjectError(
+                "Insufficient free disk for the conservative temporary-output estimate: "
+                f"need {_human_bytes(estimated_peak)}, available "
+                f"{_human_bytes(available_bytes)}. Reduce frames/fields or free space, "
+                "then retry."
+            )
         now = datetime.now(UTC)
         model_sha = step.model.fingerprint()
         run_id = f"{now.strftime('%Y%m%dT%H%M%S%fZ')}-{model_sha[:8]}"
-        campaign_mode = campaign or self.manifest.run_mode == "campaign"
         run_directory = (
             self.root / "campaigns" / run_id if campaign_mode else self.run_root
         )
@@ -714,6 +1173,13 @@ class Project:
                 raise ProjectError(
                     f"Refusing to replace unmanaged output directory: {run_directory}"
                 )
+            if owned.get("status") in {"preparing", "running", "exporting"} and _process_is_alive(
+                owned.get("pid")
+            ):
+                raise ProjectError(
+                    "Refusing to replace an active AgentCFD run. Use `agentcfd status .` "
+                    "to inspect its current phase."
+                )
             shutil.rmtree(run_directory)
         run_directory.mkdir(parents=True, exist_ok=not campaign_mode)
         plan_path = run_directory / "plan.json"
@@ -721,24 +1187,39 @@ class Project:
         # Establish ownership before external execution. If a solver or exporter
         # raises, the next replace run can safely recover this AgentCFD-owned
         # directory instead of forcing the user to delete it manually.
-        (run_directory / "run.json").write_text(
-            json.dumps(
-                {
-                    "schema": "agentcfd.project-run/0.1",
-                    "run_id": run_id,
-                    "mode": "campaign" if campaign_mode else "replace",
-                    "directory": str(run_directory),
-                    "status": "preparing",
-                    "plan": str(plan_path),
-                    "plan_sha256": plan["plan_sha256"],
-                    "completed_at": None,
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
+        marker_path = run_directory / "run.json"
+        started_at = datetime.now(UTC).isoformat()
+        execution_sha256 = self._execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider=selected_name,
+            container_image=container_image,
         )
+        marker_record: dict[str, object] = {
+            "schema": "agentcfd.project-run/0.1",
+            "run_id": run_id,
+            "mode": "campaign" if campaign_mode else "replace",
+            "directory": str(run_directory),
+            "status": "preparing",
+            "phase": "preparing-provider-case",
+            "pid": os.getpid(),
+            "plan": str(plan_path),
+            "plan_sha256": plan["plan_sha256"],
+            "analysis_sha256": plan["model"]["analysis_sha256"],
+            "execution_sha256": execution_sha256,
+            "started_at": started_at,
+            "completed_at": None,
+        }
+
+        def write_marker(**updates: object) -> None:
+            marker_record.update(updates)
+            temporary = marker_path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(marker_record, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(marker_path)
+
+        write_marker()
         workspace_root = self.root / ".agentcfd" / "work" / run_id
         case_directory = workspace_root / "openfoam"
         selected = self._provider(
@@ -747,7 +1228,22 @@ class Project:
             case_directory=case_directory if selected_name == "openfoam" else None,
             container_image=container_image,
         )
-        result = selected.run(step)
+        write_marker(status="running", phase="solver")
+        try:
+            result = selected.run(step)
+        except Exception as error:
+            write_marker(
+                status="failed",
+                phase="solver",
+                completed_at=datetime.now(UTC).isoformat(),
+                failure={
+                    "type": type(error).__name__,
+                    "message": str(error),
+                    "safe_to_retry": True,
+                    "repair": "Review the solver logs or readiness issue, then run `agentcfd run .` again.",
+                },
+            )
+            raise
         retained_workspace = keep_workspace or bool(
             self._openfoam_settings().get("keep_workspace", False)
         )
@@ -755,40 +1251,55 @@ class Project:
         if selected_name == "openfoam" and result.status == "completed" and bool(
             self._openfoam_settings().get("export_fields", True)
         ):
-            bundle = data_exchange.export_openfoam_case(
-                case_directory,
-                run_directory / "fields",
-                container_image=selected.container_image,
-                density=step.model.fluid.density,
-                axis={
-                    "name": "solver_iteration" if step.model.study.steady else "time",
-                    "unit": "1" if step.model.study.steady else "s",
-                    "physical_time": not step.model.study.steady,
-                    "description": (
-                        "Steady-solver iteration; not physical transient time."
-                        if step.model.study.steady
-                        else "Physical simulation time in SI seconds."
+            write_marker(status="exporting", phase="portable-fields")
+            try:
+                bundle = data_exchange.export_openfoam_case(
+                    case_directory,
+                    run_directory / "fields",
+                    container_image=selected.container_image,
+                    density=step.model.fluid.density,
+                    axis={
+                        "name": "solver_iteration" if step.model.study.steady else "time",
+                        "unit": "1" if step.model.study.steady else "s",
+                        "physical_time": not step.model.study.steady,
+                        "description": (
+                            "Steady-solver iteration; not physical transient time."
+                            if step.model.study.steady
+                            else "Physical simulation time in SI seconds."
+                        ),
+                    },
+                    source={
+                        "model_sha256": step.model.fingerprint(),
+                        "result_status": result.status,
+                        "trust_level": result.trust_level,
+                        "accepted": result.accepted,
+                    },
+                    profile=step.output.portable_profile,
+                    fields=step.output.fields,
+                    formats=step.output.portable_formats,
+                    compression=step.output.storage.compression,
+                    maximum_bytes=step.output.storage.maximum_bytes,
+                    include_initial=step.output.frames.include_initial,
+                    time_interval=(
+                        step.output.frames.every
+                        if step.output.frames.mode == "interval"
+                        else None
                     ),
-                },
-                source={
-                    "model_sha256": step.model.fingerprint(),
-                    "result_status": result.status,
-                    "trust_level": result.trust_level,
-                    "accepted": result.accepted,
-                },
-                profile=step.output.portable_profile,
-                fields=step.output.fields,
-                formats=step.output.portable_formats,
-                compression=step.output.storage.compression,
-                maximum_bytes=step.output.storage.maximum_bytes,
-                include_initial=step.output.frames.include_initial,
-                time_interval=(
-                    step.output.frames.every
-                    if step.output.frames.mode == "interval"
-                    else None
-                ),
-                latest_only=step.output.frames.mode == "final",
-            )
+                    latest_only=step.output.frames.mode == "final",
+                )
+            except Exception as error:
+                write_marker(
+                    status="failed",
+                    phase="portable-fields",
+                    completed_at=datetime.now(UTC).isoformat(),
+                    failure={
+                        "type": type(error).__name__,
+                        "message": str(error),
+                        "safe_to_retry": True,
+                        "repair": "Fix portable I/O or storage settings, then run `agentcfd run .` again.",
+                    },
+                )
+                raise
             portable_artifacts = [
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),
                 ("fields.hdf5", bundle.hdf5, "application/x-hdf5"),
@@ -877,7 +1388,13 @@ class Project:
         )
         run_record = completed.to_dict()
         run_record["plan_sha256"] = plan["plan_sha256"]
+        run_record["analysis_sha256"] = plan["model"]["analysis_sha256"]
+        run_record["execution_sha256"] = execution_sha256
+        run_record["phase"] = "complete"
+        run_record["pid"] = None
+        run_record["started_at"] = started_at
         run_record["completed_at"] = datetime.now(UTC).isoformat()
+        _write_output_guide(completed, model_name=step.model.name)
         (run_directory / "run.json").write_text(
             json.dumps(run_record, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -999,17 +1516,22 @@ keep_workspace = false
     )
     (root / "README.md").write_text(
         f"# AgentCFD {template}\n\n"
-        "Edit `case.py`, then use `agentcfd check`, `agentcfd plan`, "
-        "`agentcfd run`, and `agentcfd inspect`. Ordinary runs replace the managed "
-        "`output/` directory. Use `agentcfd run . --campaign` to preserve an "
-        "immutable run, or `--keep-workspace` to retain generated OpenFOAM files.\n",
+        "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
+        "next action. The normal loop is `agentcfd run .` followed by "
+        "`agentcfd view .`; `check`, `plan`, and `inspect` remain available for deeper "
+        "diagnosis. Ordinary runs replace the managed `output/` directory. Use "
+        "`agentcfd run . --campaign` to preserve an immutable run, "
+        "`agentcfd storage .` to audit space, or `--keep-workspace` only for expert "
+        "solver debugging.\n",
         encoding="utf-8",
     )
     (root / "AGENTS.md").write_text(
         "# Agent instructions\n\n"
-        "Treat `case.py` as the modeling source of truth. Run `agentcfd check . --json` "
-        "before execution. Do not edit generated OpenFOAM dictionaries to change scientific intent. "
-        "Preserve plan, result, XDMF/H5, selected NPZ, and failed checks together.\n",
+        "Treat `case.py` as the modeling source of truth. Begin with "
+        "`agentcfd status . --json`, execute only its `next_action.command`, and re-read "
+        "status after each action. Do not edit generated OpenFOAM dictionaries to "
+        "change scientific intent. Preserve plan, result, XDMF/H5, selected NPZ, and "
+        "failed checks together. Never promote a result whose `accepted` value is false.\n",
         encoding="utf-8",
     )
     (root / ".gitignore").write_text(

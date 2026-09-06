@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Add a unified project `status` state machine with one shell-safe next action,
+  input-change detection, run phase, acceptance summary, and post-processing
+  target for both human and JSON clients.
+- Record atomic `preparing`, `running`, `exporting`, `failed`, and completed run
+  phases; refuse concurrent replace runs and retain repairable failure details.
+- Add managed `storage` inventory and preview-first `clean`; applying cleanup
+  preserves current results, campaigns, and every live solver workspace.
+- Add `view` result discovery and ParaView launching, including macOS App
+  discovery when the executable is not on `PATH`; make each output directory
+  self-documenting with a compact `README.md`, and summarize frame axis, size,
+  canonical variables, and point/cell association without loading HDF5.
+- Select OpenFOAM time directories and native fields before `foamToVTK`, record
+  that selection in field provenance, and avoid staging unused VTK data.
+- Add versioned project status, storage, cleanup, view, and structured error
+  JSON Schemas; JSON failures now include code, repair, and retry guidance.
+
 - Add backend-neutral named regions, rectangular channels with wall-attached
   baffles, pressure-inlet, mass-flow-outlet, slip, and symmetry boundaries.
 - Add explicit uniform, potential-flow, and previous-result initialization plus

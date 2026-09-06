@@ -179,14 +179,77 @@ def openfoam_vtu_series(case_directory: str | Path) -> tuple[Path, ...]:
     return tuple(path for _, path in records)
 
 
+def _openfoam_time_names(
+    case_directory: Path,
+    *,
+    include_initial: bool,
+    time_interval: float | None,
+    latest_only: bool,
+) -> tuple[str, ...]:
+    """Select native time directory names before creating temporary VTK data."""
+
+    records: list[tuple[float, str]] = []
+    for path in case_directory.iterdir():
+        if not path.is_dir():
+            continue
+        try:
+            value = float(path.name)
+        except ValueError:
+            continue
+        if not math.isfinite(value):
+            continue
+        if not include_initial and math.isclose(value, 0.0, abs_tol=1.0e-12):
+            continue
+        if time_interval is not None and not (
+            math.isclose(value, 0.0, rel_tol=0.0, abs_tol=1.0e-12)
+            or math.isclose(
+                value / time_interval,
+                round(value / time_interval),
+                rel_tol=0.0,
+                abs_tol=1.0e-8,
+            )
+        ):
+            continue
+        records.append((value, path.name))
+    records.sort(key=lambda item: item[0])
+    if latest_only and records:
+        records = [records[-1]]
+    return tuple(name for _, name in records)
+
+
+def _openfoam_native_fields(fields: Iterable[str] | None) -> tuple[str, ...] | None:
+    if fields is None:
+        return None
+    selected: list[str] = []
+    for selector in fields:
+        name = str(selector).strip()
+        native = None
+        if name == "fluid.pressure" or name.startswith("fluid.pressure."):
+            native = "p"
+        elif name in _OPENFOAM_FIELDS:
+            native = name
+        else:
+            for source_name, semantic in _OPENFOAM_FIELDS.items():
+                if name == semantic.canonical_name or name.startswith(
+                    f"{semantic.canonical_name}."
+                ):
+                    native = source_name
+                    break
+        if native is not None and native not in selected:
+            selected.append(native)
+    return tuple(selected) or None
+
+
 def convert_openfoam_fields(
     case_directory: str | Path,
     *,
     container_image: str | None = None,
     timeout_seconds: float = 3600.0,
     include_initial: bool = True,
+    times: Iterable[str] | None = None,
+    fields: Iterable[str] | None = None,
 ) -> tuple[Path, ...]:
-    """Run foamToVTK without a shell and return the resulting internal series."""
+    """Run foamToVTK for only the requested times/fields and return its series."""
 
     root = Path(case_directory).resolve()
     if not root.is_dir():
@@ -227,6 +290,12 @@ def convert_openfoam_fields(
                 "Field export requires foamToVTK on PATH or --container-image."
             )
         argv = [converter, "-case", str(root), "-no-boundary"]
+    selected_times = None if times is None else tuple(str(value) for value in times)
+    if selected_times:
+        argv.extend(("-time", ",".join(selected_times)))
+    selected_fields = None if fields is None else tuple(str(value) for value in fields)
+    if selected_fields:
+        argv.extend(("-fields", f"({' '.join(selected_fields)})"))
     if not include_initial:
         argv.append("-noZero")
     log = root / "log.foamToVTK"
@@ -850,12 +919,24 @@ def export_openfoam_case(
             raise ValueError("OpenFOAM export time_interval must be positive and finite.")
 
     case = Path(case_directory)
+    selected_time_names = (
+        _openfoam_time_names(
+            case,
+            include_initial=include_initial,
+            time_interval=time_interval,
+            latest_only=latest_only,
+        )
+        if convert and (time_interval is not None or latest_only or not include_initial)
+        else None
+    )
     files = (
         convert_openfoam_fields(
             case,
             container_image=container_image,
             timeout_seconds=timeout_seconds,
             include_initial=include_initial,
+            times=selected_time_names,
+            fields=_openfoam_native_fields(fields),
         )
         if convert
         else openfoam_vtu_series(case)
@@ -881,13 +962,25 @@ def export_openfoam_case(
     if latest_only:
         files = (max(files, key=_time_from_vtu),)
     selected_density = density if density is not None else _density_from_result(case)
+    conversion_record = {
+        "staging": "selected-before-foamToVTK" if convert else "preconverted-vtu",
+        "native_times": (
+            "all" if selected_time_names is None else list(selected_time_names)
+        ),
+        "native_fields": (
+            "all"
+            if _openfoam_native_fields(fields) is None
+            else list(_openfoam_native_fields(fields) or ())
+        ),
+        "boundary_fields_included": False,
+    }
     return export_vtu_series(
         files,
         output_directory,
         case_directory=case,
         density=selected_density,
         axis=axis,
-        source=source,
+        source={**dict(source or {}), "field_conversion": conversion_record},
         profile=profile,
         fields=fields,
         formats=formats,

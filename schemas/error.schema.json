@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/error.schema.json",
+  "title": "AgentCFD repairable command error 0.1",
+  "type": "object",
+  "required": ["schema", "ok", "error"],
+  "properties": {
+    "schema": {"const": "agentcfd.error/0.1"},
+    "ok": {"const": false},
+    "error": {
+      "type": "object",
+      "required": ["code", "type", "message", "repair", "safe_to_retry"],
+      "properties": {
+        "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "type": {"type": "string"},
+        "message": {"type": "string"},
+        "repair": {"type": "string"},
+        "safe_to_retry": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

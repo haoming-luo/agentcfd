@@ -111,13 +111,15 @@ files stay hidden and reproducible.
   provenance-linked full-field results, with exact accepted reuse;
 - preview-first reversible-by-recomputation campaign compaction that removes
   spatial bulk without H5 reads while preserving engineering/derived evidence;
+- dependency-free imported STL/OBJ inspection with explicit units, SI bounds,
+  named regions, topology defects, enclosed volume, and a memory guard;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 
 ### Next: eliminate repeated setup work
 
-1. Imported CAD/mesh onboarding with automatic unit, watertightness, region, and
-   boundary-role audit before meshing.
+1. Controlled STEP/IGES tessellation and imported snappyHexMesh lowering, with
+   explicit boundary-role mapping and `surfaceCheck`/dry-run gates.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
 3. Extend the shipped filter recipes with multi-view layout and explicit normal

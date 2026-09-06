@@ -127,6 +127,7 @@ agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
 agentcfd sweep . sweep.json --summary-only # metrics/evidence, no permanent H5
 agentcfd promote . <run-id>      # publish full fields for one screened point
 agentcfd compact . <run-id>      # preview full-field bulk removal; add --apply
+agentcfd geometry-check fluid.stl --unit mm # imported-surface preflight
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
@@ -604,6 +605,7 @@ authoritative.
 - [Output architecture and storage budgets](docs/output-architecture.md)
 - [Numerical strategy and performance tiers](docs/numerical-strategy.md)
 - [Publishing and PyPI name status](docs/publishing.md)
+- [Imported geometry preflight](docs/imported-geometry.md)
 - [Validation policy](docs/validation.md)
 - [Engineering correlations](docs/engineering-correlations.md)
 - [Benchmark catalog](docs/benchmark-catalog.md)

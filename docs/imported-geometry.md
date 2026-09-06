@@ -1,0 +1,45 @@
+# Imported geometry: inspect before meshing
+
+Imported geometry is a high-risk automation boundary: STL and OBJ do not carry
+a dependable physical unit, CAD tessellation can erase or merge named faces,
+and one open or non-manifold edge can change what “inside” means. AgentCFD
+therefore begins with a read-only contract instead of silently repairing or
+meshing an ambiguous file.
+
+```bash
+agentcfd geometry-check valve-fluid.stl --unit mm
+agentcfd geometry-check intentional-open-plate.obj --unit m --allow-open
+agentcfd geometry-check large.stl --unit mm --max-topology-triangles 2000000 --json
+```
+
+The released inspector supports binary/ASCII STL and OBJ. It hashes the source,
+converts bounds to SI, discovers surface region names, counts triangles and
+unique vertices, detects zero-area triangles, boundary and non-manifold edges,
+checks shared-edge orientation, estimates enclosed volume, and reports the
+available `surfaceCheck`, `snappyHexMesh`, and `gmsh` tools. Edge topology has
+an explicit triangle limit; when it is exceeded, bounds still complete but the
+report refuses to invent watertightness.
+Exact vertex matching is the default. If a tessellator emitted numerically
+near-coincident vertices, `--merge-tolerance` applies an explicit tolerance in
+source units to topology keys only. The report records it and warns that it
+must remain smaller than any physical gap that should stay open.
+
+STEP/IGES are recognized but not silently tessellated. A future CAD adapter
+must make tessellation tolerance, units, face-name retention, and source hash
+explicit. Similarly, `geometry_ready: true` means that the released preflight
+found no blocking defect; `ready_to_mesh` remains false until AgentCFD ships and
+validates imported `snappyHexMesh` lowering.
+
+This boundary mirrors OpenFOAM's documented workflow: `snappyHexMesh` consumes
+triangulated surfaces such as STL/OBJ/VTK, supports multiple surfaces and
+regions, uses surface/region identities as final patches, and is designed for
+batch operation. Its `-checkGeometry`/dry-run paths and the separate
+`surfaceCheck` utility remain later provider gates, not claims made by this
+standard-library scan. OpenFOAM also documents `maxGlobalCells` as a hard stop
+during castellation, which will become an explicit AgentCFD meshing budget.
+
+Primary references:
+
+- [OpenFOAM v2606 snappyHexMesh overview](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/snappyhexmesh/)
+- [OpenFOAM triangulated geometry and surface regions](https://doc.openfoam.com/2212/tools/pre-processing/mesh/generation/snappyhexmesh/geometry/)
+- [OpenFOAM castellation, refinement and maxGlobalCells](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/snappyhexmesh/castellation/)

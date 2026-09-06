@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/geometry-inspection.schema.json",
+  "title": "AgentCFD imported geometry inspection 0.1",
+  "type": "object",
+  "required": ["schema", "source", "surface", "policy", "tools", "readiness", "issues", "next_action", "observation_cost"],
+  "properties": {
+    "schema": {"const": "agentcfd.geometry-inspection/0.1"},
+    "source": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes", "format", "encoding", "unit", "scale_to_m"],
+      "properties": {
+        "path": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 0},
+        "format": {"enum": ["stl", "obj", "step", "iges", "unknown"]},
+        "encoding": {"enum": ["ascii", "binary", "text", null]},
+        "unit": {"enum": ["m", "mm", "cm", "um", "in", "ft", null]},
+        "scale_to_m": {"type": ["number", "null"], "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "surface": {
+      "type": "object",
+      "required": [
+        "triangle_count", "unique_vertex_count", "degenerate_triangle_count",
+        "bounds", "dimensions", "topology_complete", "boundary_edge_count",
+        "non_manifold_edge_count", "orientation_conflict_count", "watertight",
+        "signed_volume_native", "region_names", "bounds_m", "dimensions_m",
+        "enclosed_volume_m3"
+      ],
+      "properties": {
+        "triangle_count": {"type": ["integer", "null"], "minimum": 0},
+        "unique_vertex_count": {"type": ["integer", "null"], "minimum": 0},
+        "degenerate_triangle_count": {"type": ["integer", "null"], "minimum": 0},
+        "bounds": {"type": ["object", "null"]},
+        "dimensions": {"type": ["array", "null"], "items": {"type": "number"}},
+        "topology_complete": {"type": "boolean"},
+        "boundary_edge_count": {"type": ["integer", "null"], "minimum": 0},
+        "non_manifold_edge_count": {"type": ["integer", "null"], "minimum": 0},
+        "orientation_conflict_count": {"type": ["integer", "null"], "minimum": 0},
+        "watertight": {"type": ["boolean", "null"]},
+        "signed_volume_native": {"type": ["number", "null"]},
+        "region_names": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "bounds_m": {"type": ["object", "null"]},
+        "dimensions_m": {"type": ["array", "null"], "items": {"type": "number"}},
+        "enclosed_volume_m3": {"type": ["number", "null"], "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": ["require_watertight", "topology_triangle_limit", "merge_tolerance_native"],
+      "properties": {
+        "require_watertight": {"type": "boolean"},
+        "topology_triangle_limit": {"type": "integer", "minimum": 1},
+        "merge_tolerance_native": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "tools": {
+      "type": "object",
+      "required": ["surfaceCheck", "snappyHexMesh", "gmsh"],
+      "properties": {
+        "surfaceCheck": {"type": ["string", "null"]},
+        "snappyHexMesh": {"type": ["string", "null"]},
+        "gmsh": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "readiness": {
+      "type": "object",
+      "required": ["geometry_ready", "agentcfd_imported_mesh_lowering_available", "ready_to_mesh"],
+      "properties": {
+        "geometry_ready": {"type": "boolean"},
+        "agentcfd_imported_mesh_lowering_available": {"const": false},
+        "ready_to_mesh": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "message", "repair"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "message": {"type": "string"},
+          "repair": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["kind", "message"],
+      "properties": {
+        "kind": {"enum": ["repair", "provider-roadmap"]},
+        "message": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": ["source_bytes_hashed", "field_payloads_opened", "external_processes_started"],
+      "properties": {
+        "source_bytes_hashed": {"type": "integer", "minimum": 0},
+        "field_payloads_opened": {"const": 0},
+        "external_processes_started": {"const": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

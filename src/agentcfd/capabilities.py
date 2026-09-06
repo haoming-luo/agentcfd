@@ -64,6 +64,24 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="geometry.imported-surface-inspection",
+        maturity="experimental",
+        scope=(
+            "Read-only STL/OBJ format, SI-unit, bounds, region, degeneracy, "
+            "watertightness, manifoldness, orientation, and memory-guard preflight."
+        ),
+        evidence=(
+            "closed and open ASCII STL topology tests",
+            "binary STL and OBJ polygon tests",
+            "installed geometry-inspection JSON contract",
+        ),
+        limitations=(
+            "STEP/IGES are recognized but require controlled tessellation.",
+            "Imported snappyHexMesh lowering is not released yet.",
+            "The standard-library check does not replace OpenFOAM surfaceCheck before meshing.",
+        ),
+    ),
+    Capability(
         name="reference.hagen-poiseuille",
         maturity="release",
         scope="Steady fully developed incompressible Newtonian laminar flow in a circular pipe.",

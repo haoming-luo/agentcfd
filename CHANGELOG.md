@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add dependency-free `geometry-check` for binary/ASCII STL and OBJ. The
+  versioned report makes units, SI bounds, regions, degeneracy, open and
+  non-manifold edges, orientation, topology memory limits, and unreleased
+  imported-mesh lowering explicit; STEP/IGES fail closed pending tessellation.
 - Add run-scoped `logs --run-id` and `diagnose --run-id` so a later successful
   campaign point cannot hide an earlier failure. Sweep failures now preserve
   their immutable run id, directory, exact diagnosis command, and distinct

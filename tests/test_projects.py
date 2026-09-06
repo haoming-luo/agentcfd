@@ -1,4 +1,6 @@
 import json
+import os
+import shlex
 from pathlib import Path
 
 import jsonschema
@@ -44,6 +46,7 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     assert completed.plan_path.is_file()
     assert completed.result_path.is_file()
     assert (completed.directory / "run.json").is_file()
+    assert "Start here" in (completed.directory / "README.md").read_text()
     assert completed.directory == root / "output"
     assert completed.mode == "replace"
     assert not (root / "__pycache__").exists()
@@ -82,6 +85,41 @@ def test_project_replace_mode_recovers_interrupted_owned_output(tmp_path):
 
     assert completed.result.accepted is True
     assert not (project.run_root / "partial.dat").exists()
+
+
+def test_project_refuses_to_replace_a_live_owned_run(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "status": "running",
+                "pid": os.getpid(),
+            }
+        )
+    )
+
+    with pytest.raises(ProjectError, match="active AgentCFD run"):
+        project.run()
+
+
+def test_project_records_repairable_solver_failure(tmp_path, monkeypatch):
+    project = projects.init_project(tmp_path / "pipe")
+
+    def fail(_provider, _step):
+        raise RuntimeError("synthetic solver failure")
+
+    monkeypatch.setattr("agentcfd.projects.ReferencePipeProvider.run", fail)
+
+    with pytest.raises(RuntimeError, match="synthetic"):
+        project.run()
+
+    record = json.loads((project.run_root / "run.json").read_text())
+    assert record["status"] == "failed"
+    assert record["phase"] == "solver"
+    assert record["failure"]["safe_to_retry"] is True
+    assert "agentcfd run" in record["failure"]["repair"]
 
 
 def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
@@ -220,3 +258,282 @@ def test_agentfem_style_run_alias_targets_current_project(tmp_path, capsys):
     assert entrypoint(["run", str(root), "--json"]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["provider"] == "reference-pipe"
+
+
+def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+
+    ready = project.status()
+    jsonschema.Draft202012Validator(contracts.load("project-status.schema.json")).validate(
+        ready
+    )
+    assert ready["state"] == "ready"
+    assert ready["next_action"]["command"].startswith("agentcfd run ")
+    assert ready["postprocess"]["primary"] is None
+
+    project.run()
+    complete = project.status()
+    assert complete["state"] == "complete"
+    assert complete["next_action"]["command"].startswith("agentcfd view ")
+    assert complete["postprocess"]["result"].endswith("output/result.json")
+
+    case = project.entrypoint
+    case.write_text(case.read_text().replace('name="water-pipe"', 'name="water-pipe-v2"'))
+    modified = project.status()
+    assert modified["state"] == "modified"
+    assert modified["inputs_changed"] is True
+    assert "Inputs changed" in modified["next_action"]["reason"]
+
+
+def test_project_status_next_command_preserves_paths_with_spaces(tmp_path):
+    project = projects.init_project(tmp_path / "pipe with spaces")
+
+    command = project.status()["next_action"]["command"]
+
+    assert shlex.split(command) == ["agentcfd", "run", str(project.root)]
+
+
+def test_project_status_detects_operational_provider_setting_changes(tmp_path):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    plan = project.plan()
+    analysis_sha = plan["model"]["analysis_sha256"]
+    execution_sha = project._execution_fingerprint(analysis_sha, provider="openfoam")
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "prior-run",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "completed",
+                "accepted": True,
+                "analysis_sha256": analysis_sha,
+                "execution_sha256": execution_sha,
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    manifest = project.manifest_path
+    manifest.write_text(
+        manifest.read_text().replace("keep_workspace = false", "keep_workspace = true")
+    )
+
+    report = projects.Project(project.root).status()
+
+    assert report["inputs_changed"] is True
+    assert report["state"] in {"modified", "blocked"}
+
+
+def test_completed_result_remains_viewable_when_optional_runtime_is_absent(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    plan = project.plan()
+    analysis_sha = plan["model"]["analysis_sha256"]
+    project.run_root.mkdir()
+    (project.run_root / "result.json").write_text("{}")
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "portable-run",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "completed",
+                "accepted": True,
+                "analysis_sha256": analysis_sha,
+                "execution_sha256": project._execution_fingerprint(
+                    analysis_sha, provider="openfoam"
+                ),
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: False)
+
+    report = project.status()
+
+    assert report["readiness"]["portable_io_available"] is False
+    assert report["state"] == "complete"
+    assert report["next_action"]["command"].startswith("agentcfd view ")
+
+
+def test_project_status_marks_dead_in_progress_record_as_interrupted(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "interrupted",
+                "directory": str(project.run_root),
+                "status": "running",
+                "pid": 999_999_999,
+                "plan_sha256": project.plan()["plan_sha256"],
+                "completed_at": None,
+            }
+        )
+    )
+
+    report = project.status()
+
+    assert report["state"] == "interrupted"
+    assert report["active"] is False
+    assert report["next_action"]["command"].startswith("agentcfd run ")
+
+
+def test_project_status_surfaces_failed_acceptance_checks(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run_root.mkdir()
+    (project.run_root / "result.json").write_text("{}")
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "review-me",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "completed",
+                "accepted": False,
+                "failed_checks": ["mass-balance"],
+                "plan_sha256": project.plan()["plan_sha256"],
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+
+    report = project.status()
+
+    assert report["state"] == "review"
+    assert "mass-balance" in report["next_action"]["reason"]
+    assert report["postprocess"]["primary"].endswith("result.json")
+
+
+def test_storage_inventory_and_clean_preserve_results(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run()
+    workspace = project.root / ".agentcfd" / "work" / "debug-run"
+    workspace.mkdir(parents=True)
+    (workspace / "native-field").write_bytes(b"temporary")
+
+    inventory = project.storage()
+    jsonschema.Draft202012Validator(
+        contracts.load("project-storage.schema.json")
+    ).validate(inventory)
+    assert inventory["reclaimable_bytes"] == len(b"temporary")
+    assert inventory["next_action"]["command"].endswith(" --apply")
+
+    preview = project.clean()
+    jsonschema.Draft202012Validator(contracts.load("project-clean.schema.json")).validate(
+        preview
+    )
+    assert preview["applied"] is False
+    assert (workspace / "native-field").is_file()
+    applied = project.clean(apply=True)
+    assert applied["reclaimed_bytes"] == len(b"temporary")
+    assert not workspace.exists()
+    assert (project.run_root / "result.json").is_file()
+
+
+def test_clean_protects_live_run_workspace(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run_root.mkdir()
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "live-run",
+                "status": "running",
+                "pid": os.getpid(),
+            }
+        )
+    )
+    live = project.root / ".agentcfd" / "work" / "live-run"
+    stale = project.root / ".agentcfd" / "work" / "stale-run"
+    live.mkdir(parents=True)
+    stale.mkdir()
+    (live / "state").write_bytes(b"live")
+    (stale / "state").write_bytes(b"stale")
+
+    inventory = project.storage()
+    assert inventory["reclaimable_bytes"] == len(b"stale")
+    report = project.clean(apply=True)
+
+    assert report["protected_active_run_ids"] == ["live-run"]
+    assert live.is_dir()
+    assert not stale.exists()
+    assert report["reclaimed_bytes"] == len(b"stale")
+
+
+def test_status_storage_clean_and_view_cli_are_human_and_agent_friendly(
+    tmp_path, capsys
+):
+    root = tmp_path / "pipe"
+    projects.init_project(root).run()
+
+    assert entrypoint(["status", str(root), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["state"] == "complete"
+    assert entrypoint(["storage", str(root), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["managed_bytes"] > 0
+    assert entrypoint(["clean", str(root), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["applied"] is False
+    assert entrypoint(["view", str(root), "--json"]) == 0
+    view = json.loads(capsys.readouterr().out)
+    assert view["kind"] == "result-json"
+    jsonschema.Draft202012Validator(contracts.load("project-view.schema.json")).validate(
+        view
+    )
+
+
+def test_status_summarizes_xdmf_without_loading_field_payload(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run()
+    fields = project.run_root / "fields"
+    fields.mkdir()
+    (fields / "fields.xdmf").write_text("<Xdmf/>")
+    (fields / "manifest.json").write_text(
+        json.dumps(
+            {
+                "axis": {
+                    "name": "time",
+                    "unit": "s",
+                    "physical_time": True,
+                    "values": [0.1, 0.2],
+                },
+                "fields": [
+                    {
+                        "name": "fluid.velocity",
+                        "export_name": "fluid.velocity.point",
+                        "association": "point",
+                        "unit": "m/s",
+                        "components": ["x", "y", "z"],
+                    }
+                ],
+                "output_selection": {"profile": "visualization"},
+                "storage": {"actual_portable_bytes": 1024},
+            }
+        )
+    )
+
+    summary = project.status()["postprocess"]["field_summary"]
+
+    assert summary["frame_count"] == 2
+    assert summary["axis"]["last"] == 0.2
+    assert summary["fields"][0]["association"] == "point"
+    assert summary["portable_display"] == "1.00 KiB"
+
+
+def test_json_mode_returns_structured_repairable_error(tmp_path, capsys):
+    missing = tmp_path / "missing"
+
+    assert entrypoint(["status", str(missing), "--json"]) == 2
+    payload = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(contracts.load("error.schema.json")).validate(payload)
+    assert payload["schema"] == "agentcfd.error/0.1"
+    assert payload["error"]["code"] == "FILE_NOT_FOUND_ERROR"
+    assert payload["error"]["repair"]

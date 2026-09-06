@@ -13,6 +13,7 @@ my-flow/
 │   ├── plan.json
 │   ├── result.json
 │   ├── run.json
+│   ├── README.md                  human start-here guide
 │   ├── fields/
 │   │   ├── fields.xdmf
 │   │   ├── fields.h5
@@ -21,6 +22,29 @@ my-flow/
 ├── campaigns/<run-id>/            only with --campaign
 └── .agentcfd/work/<run-id>/        generated and disposable
 ```
+
+## One decision surface
+
+The primary interaction is deliberately shorter than the underlying CFD
+pipeline:
+
+```bash
+agentcfd status .
+agentcfd run .
+agentcfd view .
+```
+
+`status` reports `blocked`, `ready`, `running`, `interrupted`, `modified`,
+`complete`, `review`, or `failed`, then gives exactly one recommended command.
+Use `--json` for the versioned machine contract and `--storage` when a recursive
+space scan is worth the extra latency. `check`, `plan`, and `inspect` remain
+available as drill-down tools rather than required ceremony.
+
+`view` reads only the small field manifest before opening anything. It reports
+frame count, physical/iteration axis range, portable size, canonical variables,
+and whether each variable is a visualization point field or native cell field.
+`view --launch` opens the XDMF in ParaView and can discover a macOS ParaView App
+even when `paraview` is absent from `PATH`.
 
 ## Ordinary replace mode
 
@@ -40,6 +64,15 @@ execution, `agentcfd plan` resolves full-field frame count and estimates both
 the final portable bundle and the temporary provider peak. Oversized requests
 fail before solver work starts. See [output architecture](output-architecture.md)
 for animation, checkpoint, compression, and budget examples.
+
+`agentcfd storage .` accounts separately for the replaceable current result,
+intentional campaigns, and hidden temporary workspaces. `agentcfd clean .` is a
+non-destructive preview. `agentcfd clean . --apply` can remove only hidden
+temporary solver workspaces; it always preserves `output/` and `campaigns/`.
+
+The OpenFOAM-to-XDMF adapter passes selected native times and field names to
+`foamToVTK`, so a sparse public animation no longer requires staging every
+restart time or unused solver field as temporary VTK data.
 
 ## Campaign mode
 

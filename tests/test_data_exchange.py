@@ -350,6 +350,69 @@ def test_container_conversion_uses_argument_list_and_writes_log(tmp_path, monkey
     assert (case / "log.foamToVTK").read_text() == "converted\n"
 
 
+def test_conversion_limits_temporary_vtk_to_requested_times_and_fields(
+    tmp_path, monkeypatch
+):
+    case = tmp_path / "case"
+    case.mkdir()
+    _write_frame(case, 0, 1.0)
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="converted\n", stderr="")
+
+    monkeypatch.setattr("agentcfd.data_exchange.shutil.which", lambda name: "/docker")
+    monkeypatch.setattr("agentcfd.data_exchange.subprocess.run", fake_run)
+
+    data_exchange.convert_openfoam_fields(
+        case,
+        container_image="opencfd/openfoam-run:2606",
+        times=("0.1", "0.2"),
+        fields=("U", "p"),
+    )
+
+    argv = calls[0]
+    assert argv[argv.index("-time") + 1] == "0.1,0.2"
+    assert argv[argv.index("-fields") + 1] == "(U p)"
+    assert "shell" not in argv
+
+
+def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monkeypatch):
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("0", "0.1", "0.2", "0.3"):
+        (case / name).mkdir()
+    _write_frame(case, 0, 1.0)
+    _write_frame(case, 0.2, 2.0)
+    calls = []
+
+    def fake_convert(*args, **kwargs):
+        calls.append(kwargs)
+        return data_exchange.openfoam_vtu_series(case)
+
+    monkeypatch.setattr("agentcfd.data_exchange.convert_openfoam_fields", fake_convert)
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        density=1000.0,
+        include_initial=False,
+        time_interval=0.2,
+        fields=("fluid.velocity", "fluid.pressure"),
+    )
+
+    assert calls[0]["times"] == ("0.2",)
+    assert calls[0]["fields"] == ("U", "p")
+    manifest = json.loads(bundle.manifest.read_text())
+    assert manifest["source"]["field_conversion"] == {
+        "staging": "selected-before-foamToVTK",
+        "native_times": ["0.2"],
+        "native_fields": ["U", "p"],
+        "boundary_fields_included": False,
+    }
+
+
 def test_field_export_honors_excluded_initial_frame(tmp_path):
     case = tmp_path / "case"
     _write_frame(case, 0, 1.0)

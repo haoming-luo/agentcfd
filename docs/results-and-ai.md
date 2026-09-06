@@ -50,6 +50,13 @@ giving an AI agent or GUI a small, actionable surface instead of requiring it
 to infer failure from a long solver log. Human output prints the same failed
 gate names after the trust state.
 
+At project level, `agentcfd status PROJECT --json` is the control surface an
+agent should poll. It exposes a finite lifecycle state, whether inputs changed,
+the latest run, post-processing target, and one shell-safe next command. Expected
+CLI failures requested with `--json` use `agentcfd.error/0.1` with a stable code,
+plain message, repair guidance, and `safe_to_retry`; agents do not need to parse
+human stderr. Active solver workspaces are protected from cleanup.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric
@@ -197,6 +204,9 @@ frame, selected compression, budget, and actual portable bytes. See
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,
 `schemas/result-exchange.schema.json`, `schemas/scientific-sample.schema.json`,
 `schemas/field-bundle.schema.json`, and
-`schemas/time-step-sensitivity.schema.json`.
+`schemas/time-step-sensitivity.schema.json`. Project automation additionally
+uses `schemas/project-status.schema.json`, `schemas/project-storage.schema.json`,
+`schemas/project-clean.schema.json`, `schemas/project-view.schema.json`, and
+`schemas/error.schema.json`.
 Release wheels also install them under `share/agentcfd/schemas` in the active
 Python environment so non-Python consumers can discover the same contracts.

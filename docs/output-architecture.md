@@ -71,10 +71,12 @@ the budget; AgentCFD never silently drops requested scientific data.
 - compression and budget decisions;
 - an addressable `OUTPUT_POLICY_INVALID` or `OUTPUT_BUDGET_EXCEEDED` issue.
 
-The temporary estimate is deliberately conservative. The current external
-OpenFOAM adapter may stage native and VTK fields while publishing HDF5. Future
-streaming and in-situ adapters can lower that amplification without changing
-the public output contract.
+The temporary estimate is deliberately conservative. The external OpenFOAM
+adapter now passes requested time directories and native field names directly
+to `foamToVTK`, avoiding VTK copies for unused checkpoints and variables. It
+still stages the selected native, VTK, and HDF5 representations; future
+streaming and in-situ adapters can lower that remaining amplification without
+changing the public output contract.
 
 ## Portable storage
 
@@ -106,6 +108,8 @@ Implemented now:
 - export-time selected-array budget enforcement;
 - chunked HDF5 compression and storage provenance;
 - binary OpenFOAM native output for generated cases;
+- selected-time and selected-field conversion before temporary VTK creation;
+- project storage inventory plus preview-first cleanup that protects active runs;
 - separated baffled-channel XDMF frame selection and content-addressed rolling
   restart ZIPs, with trust/model/member verification before continuation.
 

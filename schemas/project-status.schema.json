@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-status.schema.json",
+  "title": "AgentCFD project decision surface 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "state", "active", "inputs_changed", "model",
+    "readiness", "issues", "run_count", "latest_run", "postprocess", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-status/0.1"},
+    "root": {"type": "string"},
+    "state": {
+      "enum": ["blocked", "ready", "running", "interrupted", "modified", "complete", "review", "failed"]
+    },
+    "active": {"type": "boolean"},
+    "inputs_changed": {"type": "boolean"},
+    "model": {"type": "object"},
+    "readiness": {"type": "object"},
+    "issues": {"type": "array", "items": {"type": "object"}},
+    "run_count": {"type": "integer", "minimum": 0},
+    "latest_run": {"type": ["object", "null"]},
+    "postprocess": {
+      "type": "object",
+      "required": ["primary", "fields", "result", "command", "field_summary"],
+      "properties": {
+        "primary": {"type": ["string", "null"]},
+        "fields": {"type": ["string", "null"]},
+        "result": {"type": ["string", "null"]},
+        "command": {"type": ["string", "null"]},
+        "field_summary": {"type": ["object", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string"},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "storage": {"type": "object"}
+  },
+  "additionalProperties": false
+}

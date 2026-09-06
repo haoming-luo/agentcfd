@@ -7,13 +7,14 @@ import json
 import math
 import platform
 import shutil
+import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from . import benchmarks, boundaries, capabilities, contracts, data_exchange, engineering, fluids, geometry, licensing, outputs, procedures, projects, properties, studies
 from ._version import __version__
-from .errors import AgentCFDError
+from .errors import AgentCFDError, ProjectError
 from .jsonio import strict_json_object
 from .model import Model
 from .provenance import content_fingerprint, file_sha256
@@ -41,9 +42,24 @@ from .verification import (
 )
 
 
+def _paraview_executable() -> str | None:
+    command = shutil.which("paraview")
+    if command is not None:
+        return command
+    if sys.platform == "darwin":
+        candidates = sorted(
+            Path("/Applications").glob("ParaView*.app/Contents/MacOS/paraview"),
+            reverse=True,
+        )
+        if candidates:
+            return str(candidates[0])
+    return None
+
+
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
     coolprop = properties.CoolPropPropertyProvider().descriptor()
+    portable_io = data_exchange.io_available()
     try:
         numpy_version: str | None = version("numpy")
     except PackageNotFoundError:
@@ -62,12 +78,27 @@ def _doctor() -> dict[str, object]:
             "potentialFoam": shutil.which("potentialFoam"),
             "pimpleFoam": shutil.which("pimpleFoam"),
             "foamToVTK": shutil.which("foamToVTK"),
+            "docker": shutil.which("docker"),
+            "paraview": _paraview_executable(),
         },
         "providers": {
             "reference-pipe": True,
             "openfoam-runtime": openfoam.available,
             "coolprop-properties": coolprop.available,
+            "portable-xdmf-hdf5": portable_io,
         },
+        "next_actions": [
+            *(
+                ["Install `agentcfd[io]` for standard XDMF/HDF5 field publication."]
+                if not portable_io
+                else []
+            ),
+            *(
+                ["Install OpenFOAM locally or use a configured container image for numerical CFD."]
+                if not openfoam.available
+                else []
+            ),
+        ],
     }
 
 
@@ -87,6 +118,35 @@ def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
         ),
     }
     return payload
+
+
+def _error_cli_payload(error: Exception) -> dict[str, object]:
+    repairs = {
+        FileNotFoundError: "Check the project path or run `agentcfd init` to create one.",
+        FileExistsError: "Choose an empty destination or preserve the existing user-owned files.",
+        ProjectError: "Run `agentcfd status . --json` and follow its next_action.",
+        ValueError: "Correct the reported input value, then retry the same command.",
+    }
+    repair = next(
+        (message for kind, message in repairs.items() if isinstance(error, kind)),
+        "Inspect the error and project status before retrying.",
+    )
+    name = type(error).__name__
+    code = "".join(
+        ("_" if index and character.isupper() else "") + character.upper()
+        for index, character in enumerate(name)
+    )
+    return {
+        "schema": "agentcfd.error/0.1",
+        "ok": False,
+        "error": {
+            "code": code,
+            "type": name,
+            "message": str(error),
+            "repair": repair,
+            "safe_to_retry": not isinstance(error, FileExistsError),
+        },
+    }
 
 
 def _pipe_model(*, fully_developed: bool = False) -> Model:
@@ -1024,7 +1084,14 @@ def _run_openfoam_turbulent_model_study(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="agentcfd", description="AI-native CFD for humans and agents.")
+    parser = argparse.ArgumentParser(
+        prog="agentcfd",
+        description="AI-native CFD for humans and agents.",
+        epilog=(
+            "Start with `agentcfd init my-flow`, then run `agentcfd status my-flow` "
+            "and follow its recommended next action."
+        ),
+    )
     parser.add_argument("--version", action="version", version=f"AgentCFD {__version__}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1073,6 +1140,45 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect.add_argument("project", nargs="?", type=Path, default=Path("."))
     inspect.add_argument("--json", action="store_true", dest="as_json")
+
+    status = subparsers.add_parser(
+        "status",
+        help="Show project state and the single recommended next action.",
+    )
+    status.add_argument("project", nargs="?", type=Path, default=Path("."))
+    status.add_argument(
+        "--storage",
+        action="store_true",
+        help="Include a managed-data scan (slower for very large projects).",
+    )
+    status.add_argument("--json", action="store_true", dest="as_json")
+
+    storage_command = subparsers.add_parser(
+        "storage",
+        help="Inventory outputs, campaigns, and reclaimable temporary data.",
+    )
+    storage_command.add_argument("project", nargs="?", type=Path, default=Path("."))
+    storage_command.add_argument("--json", action="store_true", dest="as_json")
+
+    clean = subparsers.add_parser(
+        "clean",
+        help="Preview removal of temporary solver workspaces while preserving results.",
+    )
+    clean.add_argument("project", nargs="?", type=Path, default=Path("."))
+    clean.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply the previewed cleanup; output/ and campaigns/ are always preserved.",
+    )
+    clean.add_argument("--json", action="store_true", dest="as_json")
+
+    view = subparsers.add_parser(
+        "view",
+        help="Locate the latest result and optionally launch ParaView for XDMF fields.",
+    )
+    view.add_argument("project", nargs="?", type=Path, default=Path("."))
+    view.add_argument("--launch", action="store_true")
+    view.add_argument("--json", action="store_true", dest="as_json")
 
     catalog = subparsers.add_parser("capabilities", help="Show truthful capability boundaries.")
     catalog.add_argument("--json", action="store_true", dest="as_json")
@@ -1700,6 +1806,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"AgentCFD {report['agentcfd']} | Python {report['python']} | healthy")
             print(f"Reference provider: ready | OpenFOAM runtime: {'found' if report['providers']['openfoam-runtime'] else 'not found (optional)'}")
+            print(
+                "Portable XDMF/HDF5: "
+                + ("ready" if report["providers"]["portable-xdmf-hdf5"] else "not installed")
+            )
+            for action in report["next_actions"]:
+                print(f"next: {action}")
         return 0
     if args.command == "init":
         project = projects.init_project(
@@ -1780,6 +1892,130 @@ def main(argv: list[str] | None = None) -> int:
                     f"latest {report['latest_run']['run_id']} | "
                     f"trust {report['latest_run']['trust_level']}"
                 )
+        return 0
+    if args.command == "status":
+        report = projects.Project(args.project).status(include_storage=args.storage)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            latest = report["latest_run"]
+            decision = ""
+            if isinstance(latest, dict) and latest.get("accepted") is not None:
+                decision = f" | accepted {str(latest['accepted']).lower()}"
+            print(
+                f"{report['model']['name']} | {str(report['state']).upper()}"
+                f"{decision}"
+            )
+            if isinstance(latest, dict) and report["state"] in {
+                "running",
+                "interrupted",
+                "failed",
+            }:
+                print(f"phase: {latest.get('phase', latest.get('status', 'unknown'))}")
+            print(
+                f"next: {report['next_action']['command']} | "
+                f"{report['next_action']['reason']}"
+            )
+            postprocess = report["postprocess"]
+            if postprocess["primary"] is not None:
+                print(f"result: {postprocess['primary']}")
+            if args.storage:
+                storage = report["storage"]
+                print(
+                    f"managed: {storage['managed_display']} | reclaimable: "
+                    f"{storage['reclaimable_display']}"
+                )
+        return 0 if report["state"] not in {"blocked", "failed"} else 3
+    if args.command == "storage":
+        report = projects.Project(args.project).storage()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Managed data {report['managed_display']} | reclaimable "
+                f"{report['reclaimable_display']}"
+            )
+            print(f"filesystem free: {report['filesystem']['free_display']}")
+            for name, item in report["categories"].items():
+                print(f"{name}: {item['display']} | {item['file_count']} files")
+            if report["next_action"] is not None:
+                print(f"next: {report['next_action']['command']}")
+        return 0
+    if args.command == "clean":
+        report = projects.Project(args.project).clean(apply=args.apply)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            action = "Reclaimed" if report["applied"] else "Would reclaim"
+            amount = (
+                report["reclaimed_display"]
+                if report["applied"]
+                else report["candidate_display"]
+            )
+            print(f"{action} {amount} from temporary solver workspaces")
+            print("Preserved output/ and campaigns/")
+            if report["protected_active_run_ids"]:
+                print(
+                    "Protected active runs: "
+                    + ", ".join(report["protected_active_run_ids"])
+                )
+            if not report["applied"] and report["candidate_bytes"]:
+                print("preview only; apply with: agentcfd clean . --apply")
+        return 0
+    if args.command == "view":
+        status = projects.Project(args.project).status()
+        target = status["postprocess"]["primary"]
+        if target is None:
+            raise ProjectError(
+                "No completed result is available. Follow `agentcfd status .` first."
+            )
+        launched = False
+        viewer = None
+        if args.launch:
+            if str(target).endswith(".xdmf"):
+                viewer = _paraview_executable()
+                if viewer is None:
+                    raise ProjectError(
+                        "ParaView is not on PATH. Open the reported fields.xdmf file "
+                        "manually or install the ParaView command-line launcher."
+                    )
+                subprocess.Popen([viewer, str(target)])
+                launched = True
+            else:
+                raise ProjectError(
+                    "The latest result has no XDMF field bundle; inspect result.json instead."
+                )
+        report = {
+            "schema": "agentcfd.project-view/0.1",
+            "project_state": status["state"],
+            "target": str(target),
+            "kind": "xdmf" if str(target).endswith(".xdmf") else "result-json",
+            "summary": status["postprocess"]["field_summary"],
+            "launched": launched,
+            "viewer": viewer,
+        }
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            prefix = "Opened" if launched else "Latest post-processing target"
+            print(f"{prefix}: {target}")
+            if report["summary"] is not None:
+                summary = report["summary"]
+                axis = summary["axis"]
+                print(
+                    f"{summary['frame_count']} frames | {axis['name']} "
+                    f"{axis['first']}..{axis['last']} {axis['unit']} | "
+                    f"{summary['portable_display']}"
+                )
+                print(
+                    "fields: "
+                    + ", ".join(
+                        f"{field['name']} [{field['association']}]"
+                        for field in summary["fields"]
+                    )
+                )
+            if not launched and report["kind"] == "xdmf":
+                print("launch with: agentcfd view . --launch")
         return 0
     if args.command == "capabilities":
         report = capabilities.as_dict()
@@ -2556,7 +2792,11 @@ def entrypoint(argv: list[str] | None = None) -> int:
     try:
         return main(argv)
     except (AgentCFDError, FileExistsError, FileNotFoundError, ValueError) as error:
-        print(f"agentcfd: error: {error}", file=sys.stderr)
+        selected = sys.argv[1:] if argv is None else argv
+        if "--json" in selected:
+            print(json.dumps(_error_cli_payload(error), indent=2, sort_keys=True))
+        else:
+            print(f"agentcfd: error: {error}", file=sys.stderr)
         return 2
 
 

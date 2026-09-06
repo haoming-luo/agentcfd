@@ -1332,6 +1332,23 @@ def build_parser() -> argparse.ArgumentParser:
     storage_command.add_argument("project", nargs="?", type=Path, default=Path("."))
     storage_command.add_argument("--json", action="store_true", dest="as_json")
 
+    campaigns = subparsers.add_parser(
+        "campaigns",
+        help="List immutable campaign design points without opening field payloads.",
+    )
+    campaigns.add_argument("project", nargs="?", type=Path, default=Path("."))
+    campaigns.add_argument(
+        "--storage",
+        action="store_true",
+        help="Recursively measure each campaign directory (higher I/O).",
+    )
+    campaigns.add_argument(
+        "--export-csv",
+        type=Path,
+        help="Write a compact design-point table with canonical quantity columns.",
+    )
+    campaigns.add_argument("--json", action="store_true", dest="as_json")
+
     clean = subparsers.add_parser(
         "clean",
         help="Preview removal of temporary solver workspaces while preserving results.",
@@ -2324,6 +2341,37 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name}: {item['display']} | {item['file_count']} files")
             if report["next_action"] is not None:
                 print(f"next: {report['next_action']['command']}")
+        return 0
+    if args.command == "campaigns":
+        project = projects.Project.discover(args.project)
+        if args.export_csv is None:
+            report = project.campaign_index(include_storage=args.storage)
+        else:
+            _, report = project.export_campaign_csv(
+                args.export_csv,
+                include_storage=args.storage,
+            )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Campaigns {report['run_count']} | accepted "
+                f"{report['accepted_count']} | failed {report['failed_count']}"
+            )
+            for row in report["runs"]:
+                duration = (
+                    "unknown time"
+                    if row["duration_seconds"] is None
+                    else f"{float(row['duration_seconds']):.3g}s"
+                )
+                print(
+                    f"{row['run_id']} | {row['status']} | "
+                    f"accepted {str(row['accepted']).lower()} | {duration}"
+                )
+            if report["exported_csv"] is not None:
+                print(f"CSV: {report['exported_csv']}")
+            if not report["include_storage"]:
+                print("storage not scanned; add --storage when needed")
         return 0
     if args.command == "clean":
         report = projects.Project(args.project).clean(

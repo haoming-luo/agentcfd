@@ -108,6 +108,7 @@ agentcfd logs .         # raw bounded tail when deeper evidence is needed
 agentcfd resume .       # continue an identical interrupted transient checkpoint
 agentcfd view .         # prints the latest XDMF or result target
 agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
+agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 ```
 
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
@@ -118,6 +119,7 @@ answer. Preserve an immutable run only when that is the intent:
 
 ```bash
 agentcfd run . --campaign
+agentcfd campaigns .             # read-only design-point index; no H5 access
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace

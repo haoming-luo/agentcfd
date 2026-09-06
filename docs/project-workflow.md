@@ -183,6 +183,14 @@ replaces the current `output/`. This mode is for parameter studies, validation
 matrices, training-data generation, and design histories—not for every edit-run
 cycle.
 
+`agentcfd campaigns .` turns those immutable runs into a compact design-point
+index. It reads run markers and small plan summaries only, exposes acceptance,
+trust, input identity, duration, and canonical scalar quantities, and records
+that it opened zero result manifests and field payloads. Add `--storage` only
+when per-run recursive size is worth the I/O. Use
+`--export-csv design-points.csv` for a flat table whose quantity headers retain
+units; no solver or HDF5 reader is invoked.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

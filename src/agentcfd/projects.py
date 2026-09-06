@@ -1262,6 +1262,119 @@ class Project:
         recorded = Path(str(record.get("directory", "")))
         return recorded if recorded.is_absolute() else self.root / recorded
 
+    def _log_candidates(
+        self,
+        record: Mapping[str, object] | None,
+        run_directory: Path | None,
+    ) -> tuple[tuple[str, Path, str], ...]:
+        if record is None:
+            return ()
+        run_id = record.get("run_id")
+        workspace_case = (
+            self.root / ".agentcfd" / "work" / str(run_id) / "openfoam"
+            if isinstance(run_id, str) and run_id
+            else None
+        )
+        candidates: list[tuple[str, Path, str]] = []
+        if workspace_case is not None and workspace_case.is_dir():
+            candidates.extend(
+                (
+                    path.name.removeprefix("log."),
+                    path,
+                    "workspace",
+                )
+                for path in workspace_case.glob("log.*")
+                if path.is_file()
+            )
+        if run_directory is not None:
+            evidence = run_directory / "evidence"
+            if evidence.is_dir():
+                candidates.extend(
+                    (
+                        path.name.removesuffix(".log"),
+                        path,
+                        "published-evidence",
+                    )
+                    for path in evidence.glob("*.log")
+                    if path.is_file()
+                )
+        unique: dict[tuple[str, str], tuple[str, Path, str]] = {}
+        for candidate in candidates:
+            unique[(candidate[0], str(candidate[1]))] = candidate
+
+        def modified(candidate: tuple[str, Path, str]) -> float:
+            try:
+                return candidate[1].stat().st_mtime
+            except OSError:
+                return 0.0
+
+        return tuple(
+            sorted(
+                unique.values(),
+                key=lambda item: (modified(item), item[0]),
+            )
+        )
+
+    def logs(
+        self,
+        *,
+        command: str | None = None,
+        lines: int = 80,
+    ) -> dict[str, object]:
+        """Return a bounded tail from the latest workspace or published log."""
+
+        if isinstance(lines, bool) or not isinstance(lines, int) or not 1 <= lines <= 1000:
+            raise ValueError("Log line count must be an integer from 1 through 1000.")
+        runs = self._run_records()
+        latest = runs[0] if runs else None
+        run_directory = self._record_directory(latest)
+        candidates = self._log_candidates(latest, run_directory)
+        available = sorted({name for name, _path, _source in candidates})
+        if command is not None:
+            selected = [item for item in candidates if item[0] == command]
+            if not selected:
+                raise ProjectError(
+                    f"No log exists for command {command!r}. Available: "
+                    + (", ".join(available) or "none")
+                    + "."
+                )
+            chosen = selected[-1]
+        elif candidates:
+            chosen = candidates[-1]
+        else:
+            raise ProjectError(
+                "No solver log is available. Run the project or inspect its readiness first."
+            )
+        name, path, source = chosen
+        tail, bytes_read = _read_text_tail(path, maximum_bytes=1024 * 1024)
+        all_tail_lines = tail.splitlines()
+        selected_lines = all_tail_lines[-lines:]
+        try:
+            total_bytes = path.stat().st_size
+        except OSError:
+            total_bytes = bytes_read
+        project_argument = self._cli_project_argument()
+        return {
+            "schema": "agentcfd.project-logs/0.1",
+            "root": str(self.root),
+            "run_id": None if latest is None else latest.get("run_id"),
+            "run_status": None if latest is None else latest.get("status"),
+            "command": name,
+            "available_commands": available,
+            "source": source,
+            "path": str(path),
+            "requested_lines": lines,
+            "returned_lines": len(selected_lines),
+            "total_bytes": total_bytes,
+            "bytes_read": bytes_read,
+            "truncated": total_bytes > bytes_read or len(all_tail_lines) > lines,
+            "tail": "\n".join(selected_lines) + ("\n" if selected_lines else ""),
+            "next_action": {
+                "command": f"agentcfd run {project_argument}",
+                "reason": "Retry after addressing the diagnostic evidence.",
+            },
+        }
+
     def storage(self) -> dict[str, object]:
         """Inventory managed project data without reading field arrays."""
 
@@ -1511,15 +1624,27 @@ class Project:
                     else "Resolve readiness issues."
                 ),
             }
-        elif state in {"ready", "modified", "interrupted", "failed"}:
+        elif state in {"ready", "modified"}:
             next_action = {
                 "command": f"agentcfd run {project_argument}",
                 "reason": {
                     "ready": "Create the first result.",
                     "modified": "Inputs changed since the latest result.",
-                    "interrupted": "Safely replace the interrupted managed run.",
-                    "failed": "Retry after reviewing the recorded failure.",
                 }[state],
+            }
+        elif state in {"interrupted", "failed"}:
+            has_logs = bool(self._log_candidates(latest, run_directory))
+            next_action = {
+                "command": (
+                    f"agentcfd logs {project_argument}"
+                    if has_logs
+                    else f"agentcfd run {project_argument}"
+                ),
+                "reason": (
+                    "Read the bounded final solver log before retrying."
+                    if has_logs
+                    else "Retry the managed run; no solver log was produced."
+                ),
             }
         elif state == "running":
             next_action = {
@@ -1713,7 +1838,7 @@ class Project:
             raise
         retained_workspace = keep_workspace or bool(
             self._openfoam_settings().get("keep_workspace", False)
-        )
+        ) or result.status != "completed"
         bundle = None
         if (
             selected_name == "openfoam"
@@ -1954,7 +2079,7 @@ def build():
         output=outputs.animation(
             every=0.01,
             maximum_frames=201,
-            storage_budget="1 GiB",
+            storage_budget="2 GiB",
             reports=(
                 outputs.probe("near-wake", at=(0.50, 0.05, 0.05)),
                 outputs.surface_report(

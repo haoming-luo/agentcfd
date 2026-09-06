@@ -133,6 +133,119 @@ def test_project_records_repairable_solver_failure(tmp_path, monkeypatch):
     assert "agentcfd run" in record["failure"]["repair"]
 
 
+def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+
+    def fail(provider, _step):
+        provider.case_directory.mkdir(parents=True)
+        (provider.case_directory / "log.pimpleFoam").write_text(
+            "Time = 0.1\nFOAM FATAL ERROR: synthetic failure\n"
+        )
+        return projects.SimulationResult(
+            status="failed",
+            converged=False,
+            provider="openfoam",
+            quantities={},
+            checks=(),
+        )
+
+    monkeypatch.setattr("agentcfd.projects.OpenFOAMChannelProvider.run", fail)
+
+    completed = project.run()
+    status = project.status()
+
+    assert completed.solver_workspace is not None
+    assert completed.solver_workspace.is_dir()
+    assert status["state"] == "failed"
+    assert status["next_action"]["command"].startswith("agentcfd logs ")
+
+
+def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    plan = project.plan()
+    run_id = "failed-run"
+    project.run_root.mkdir()
+    evidence = project.run_root / "evidence"
+    evidence.mkdir()
+    (evidence / "pimpleFoam.log").write_text("older published log\n")
+    workspace = project.root / ".agentcfd" / "work" / run_id / "openfoam"
+    workspace.mkdir(parents=True)
+    live_log = workspace / "log.pimpleFoam"
+    live_log.write_text("".join(f"line {index}\n" for index in range(200)))
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": run_id,
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "failed",
+                "accepted": False,
+                "analysis_sha256": plan["model"]["analysis_sha256"],
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+
+    report = project.logs(lines=3)
+
+    jsonschema.Draft202012Validator(contracts.load("project-logs.schema.json")).validate(
+        report
+    )
+    assert report["source"] == "workspace"
+    assert report["returned_lines"] == 3
+    assert report["truncated"] is True
+    assert report["tail"] == "line 197\nline 198\nline 199\n"
+    assert report["available_commands"] == ["pimpleFoam"]
+
+
+def test_logs_cli_can_select_published_provider_evidence(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    plan = project.plan()
+    project.run_root.mkdir()
+    evidence = project.run_root / "evidence"
+    evidence.mkdir()
+    (evidence / "checkMesh.log").write_text("Mesh OK.\nEnd\n")
+    (project.run_root / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": "published-log",
+                "mode": "replace",
+                "directory": str(project.run_root),
+                "status": "failed",
+                "accepted": False,
+                "analysis_sha256": plan["model"]["analysis_sha256"],
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+
+    assert (
+        entrypoint(
+            [
+                "logs",
+                str(project.root),
+                "--command",
+                "checkMesh",
+                "--lines",
+                "1",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["source"] == "published-evidence"
+    assert report["tail"] == "End\n"
+
+
 def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)

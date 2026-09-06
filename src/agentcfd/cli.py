@@ -1268,6 +1268,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Emit one project-status JSON object per line.",
     )
 
+    logs = subparsers.add_parser(
+        "logs",
+        help="Show a bounded tail from the latest live or published solver log.",
+    )
+    logs.add_argument("project", nargs="?", type=Path, default=Path("."))
+    logs.add_argument(
+        "--command",
+        dest="solver_command",
+        help="Select one provider command, for example pimpleFoam or checkMesh.",
+    )
+    logs.add_argument("--lines", type=int, default=80)
+    logs.add_argument("--json", action="store_true", dest="as_json")
+
     storage_command = subparsers.add_parser(
         "storage",
         help="Inventory outputs, campaigns, and reclaimable temporary data.",
@@ -2062,6 +2075,23 @@ def main(argv: list[str] | None = None) -> int:
         except KeyboardInterrupt:
             return 130
         return 0 if report["state"] not in {"blocked", "failed"} else 3
+    if args.command == "logs":
+        report = projects.Project.discover(args.project).logs(
+            command=args.solver_command,
+            lines=args.lines,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"{report['command']} | {report['source']} | "
+                f"last {report['returned_lines']} lines"
+            )
+            print(report["path"])
+            if report["tail"]:
+                print(report["tail"], end="")
+            print(f"next: {report['next_action']['command']}")
+        return 0
     if args.command == "status":
         report = projects.Project(args.project).status(include_storage=args.storage)
         if args.as_json:

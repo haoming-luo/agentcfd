@@ -25,7 +25,7 @@ from typing import Mapping
 
 from . import boundaries, data_exchange, diagnostics, engineering, postprocessing
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
-from .geometry import CircularPipe, RectangularChannel
+from .geometry import CircularPipe, ImportedSurface, RectangularChannel
 from .model import Step
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
@@ -216,6 +216,10 @@ def _inlet_reynolds(step: Step) -> float | None:
         None,
     )
     if inlet is None:
+        return None
+    if not hasattr(step.model.domain, "area") or not hasattr(
+        step.model.domain, "hydraulic_diameter"
+    ):
         return None
     if isinstance(inlet, boundaries.MassFlowInlet):
         velocity = inlet.mass_flow_rate / (
@@ -1165,7 +1169,9 @@ class Project:
         )
         descriptor = selected.descriptor()
         study = step.model.study
-        if selected_name == "reference":
+        if isinstance(step.model.domain, ImportedSurface):
+            required_capability = "openfoam.imported-surface"
+        elif selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
         elif isinstance(step.model.domain, RectangularChannel):
             required_capability = "openfoam.transient-laminar-baffled-channel"
@@ -1199,6 +1205,36 @@ class Project:
                     "Choose a compatible provider or simplify the explicit step intent.",
                 )
             )
+
+        input_assets_ready = True
+        if isinstance(step.model.domain, ImportedSurface):
+            asset = _safe_project_path(
+                self.root,
+                step.model.domain.asset,
+                label="imported surface asset",
+            )
+            if not asset.is_file():
+                input_assets_ready = False
+                issues.append(
+                    ProjectIssue(
+                        "IMPORTED_GEOMETRY_MISSING",
+                        "error",
+                        f"Imported geometry asset is missing: {step.model.domain.asset}.",
+                        f"case.py:domain.asset",
+                        "Restore the content-addressed project-relative geometry asset.",
+                    )
+                )
+            elif "sha256:" + file_sha256(asset) != step.model.domain.source_sha256:
+                input_assets_ready = False
+                issues.append(
+                    ProjectIssue(
+                        "IMPORTED_GEOMETRY_CHANGED",
+                        "error",
+                        "Imported geometry bytes differ from the inspected source hash.",
+                        f"case.py:domain.source_sha256",
+                        "Reinspect the asset and explicitly update model intent.",
+                    )
+                )
 
         reynolds = _inlet_reynolds(step) if model_valid else None
         if selected_name == "reference" and reynolds is not None and reynolds >= 2300:
@@ -1277,6 +1313,7 @@ class Project:
             and runtime_available
             and io_ready
             and output_ready
+            and input_assets_ready
         )
         decisions = {
             "study": study.to_dict(),
@@ -1343,6 +1380,7 @@ class Project:
                 "provider_compatible": provider_compatible,
                 "runtime_available": runtime_available,
                 "portable_io_available": io_ready,
+                "input_assets_ready": input_assets_ready,
                 "ready_to_run": ready_to_run,
             },
             "issues": [issue.to_dict() for issue in issues],

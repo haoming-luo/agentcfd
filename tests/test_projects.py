@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import shlex
 import shutil
@@ -38,6 +39,7 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
         "provider_compatible": True,
         "runtime_available": True,
         "portable_io_available": True,
+        "input_assets_ready": True,
         "ready_to_run": True,
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
@@ -66,6 +68,60 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     assert inspection["run_count"] == 1
     assert inspection["latest_run"]["run_id"] == completed.run_id
     assert inspection["latest_run"]["trust_level"] == "verified"
+
+
+def test_project_plan_verifies_imported_geometry_asset_identity(tmp_path):
+    root = tmp_path / "imported"
+    project = projects.init_project(root)
+    asset = root / "geometry" / "fluid.stl"
+    asset.parent.mkdir()
+    asset.write_bytes(b"content-addressed-test-surface")
+    digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+    (root / "case.py").write_text(
+        f"""from agentcfd import Model, boundaries, fluids, geometry, studies
+
+def build():
+    domain = geometry.ImportedSurface(
+        asset="geometry/fluid.stl",
+        source_sha256="sha256:{digest}",
+        source_format="stl",
+        unit="m",
+        scale_to_m=1.0,
+        boundary_roles=(("inlet", "inlet"), ("outlet", "outlet"), ("walls", "wall")),
+        bounds_m=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+        enclosed_volume_m3=1.0,
+    )
+    return Model(
+        study=studies.internal_flow(),
+        domain=domain,
+        fluid=fluids.newtonian("water", density=1000.0, dynamic_viscosity=0.001),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(1.0),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    ).step()
+"""
+    )
+
+    plan = project.plan()
+    assert plan["readiness"]["model_valid"] is True
+    assert plan["readiness"]["input_assets_ready"] is True
+    assert plan["readiness"]["provider_compatible"] is False
+    assert plan["decisions"]["required_capability"] == "openfoam.imported-surface"
+    assert {issue["code"] for issue in plan["issues"]} == {"PROVIDER_INCOMPATIBLE"}
+    jsonschema.Draft202012Validator(
+        contracts.load("solution-plan.schema.json")
+    ).validate(plan)
+
+    asset.write_bytes(b"changed")
+    changed = project.plan()
+    assert changed["readiness"]["input_assets_ready"] is False
+    assert "IMPORTED_GEOMETRY_CHANGED" in {issue["code"] for issue in changed["issues"]}
+
+    asset.unlink()
+    missing = project.plan()
+    assert missing["readiness"]["input_assets_ready"] is False
+    assert "IMPORTED_GEOMETRY_MISSING" in {issue["code"] for issue in missing["issues"]}
 
 
 def test_project_replace_mode_overwrites_only_managed_output(tmp_path):
@@ -257,7 +313,9 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
     def reject_export(*_args, **_kwargs):
         raise AssertionError("summary-only campaign must not invoke field export")
 
-    monkeypatch.setattr("agentcfd.projects.data_exchange.export_openfoam_case", reject_export)
+    monkeypatch.setattr(
+        "agentcfd.projects.data_exchange.export_openfoam_case", reject_export
+    )
     points = {"base": {"mean_velocity": 0.5, "baffle_height": 0.12}}
     preview = project.plan_campaign(points, summary_only=True)
     full_preview = project.plan_campaign(points)
@@ -274,9 +332,10 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
         summary_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
         < full_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
     )
-    assert preview["points"][0]["result_execution_sha256"] != full_preview["points"][0][
-        "result_execution_sha256"
-    ]
+    assert (
+        preview["points"][0]["result_execution_sha256"]
+        != full_preview["points"][0]["result_execution_sha256"]
+    )
     report = project.run_campaign(points, summary_only=True)
     assert report["points"][0]["error"] is None, report["points"][0]
     run_directory = Path(report["points"][0]["directory"])
@@ -373,13 +432,10 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
     assert promotion["observation_cost"]["solver_processes_started"] == 1
     assert promotion_calls[0]["portable_fields"] is True
     assert promotion_calls[0]["_promotion_source_run_id"] == source_run_id
+    assert entrypoint(["promote", str(project.root), source_run_id, "--json"]) == 0
     assert (
-        entrypoint(
-            ["promote", str(project.root), source_run_id, "--json"]
-        )
-        == 0
+        json.loads(capsys.readouterr().out)["target"]["result_profile"] == "full-fields"
     )
-    assert json.loads(capsys.readouterr().out)["target"]["result_profile"] == "full-fields"
 
 
 def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
@@ -413,9 +469,9 @@ def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
 
     report = project.logs(lines=3)
 
-    jsonschema.Draft202012Validator(contracts.load("project-logs.schema.json")).validate(
-        report
-    )
+    jsonschema.Draft202012Validator(
+        contracts.load("project-logs.schema.json")
+    ).validate(report)
     assert report["source"] == "workspace"
     assert report["returned_lines"] == 3
     assert report["truncated"] is True
@@ -499,7 +555,9 @@ def test_project_resume_stages_identical_interrupted_checkpoint(tmp_path, monkey
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
     manifest = project.manifest_path.read_text()
-    project.manifest_path.write_text(manifest.replace("export_fields = true", "export_fields = false"))
+    project.manifest_path.write_text(
+        manifest.replace("export_fields = true", "export_fields = false")
+    )
     project = projects.Project(project.root)
     step = project.load_step()
     plan = project.plan()
@@ -875,9 +933,7 @@ def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypa
     assert report["points"][2]["outcome"] == "accepted"
 
 
-def test_historical_campaign_failure_remains_diagnosable_by_run_id(
-    tmp_path, capsys
-):
+def test_historical_campaign_failure_remains_diagnosable_by_run_id(tmp_path, capsys):
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -1045,12 +1101,7 @@ def test_campaign_compaction_is_preview_first_and_preserves_derived_outputs(
     (run_directory / "plan.json").write_text(json.dumps(plan))
     (run_directory / "README.md").write_text("# Full result\n")
 
-    assert (
-        entrypoint(
-            ["compact", str(project.root), run_id, "--json"]
-        )
-        == 0
-    )
+    assert entrypoint(["compact", str(project.root), run_id, "--json"]) == 0
     preview = json.loads(capsys.readouterr().out)
     jsonschema.Draft202012Validator(
         contracts.load("campaign-compaction.schema.json")
@@ -1219,9 +1270,7 @@ def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, ca
     )
     assert [
         item["name"]
-        for item in plan["decisions"]["output_plan"]["channels"]["views"][
-            "definitions"
-        ]
+        for item in plan["decisions"]["output_plan"]["channels"]["views"]["definitions"]
     ] == ["midplane-vorticity", "wake-streamlines", "centerline-pressure"]
 
 
@@ -1290,9 +1339,10 @@ def test_project_doctor_combines_health_resource_and_energy_truthfulness(
     assert entrypoint(["doctor", str(project.root), "--json"]) == expected_exit
     cli_report = json.loads(capsys.readouterr().out)
     assert cli_report["resource_estimate"]["cell_updates_proxy"] == 19_104_000
-    assert cli_report["resource_estimate"]["energy"] == report["resource_estimate"][
-        "energy"
-    ]
+    assert (
+        cli_report["resource_estimate"]["energy"]
+        == report["resource_estimate"]["energy"]
+    )
 
 
 def test_project_status_next_command_preserves_paths_with_spaces(tmp_path):

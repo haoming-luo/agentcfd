@@ -70,13 +70,14 @@
       "type": "object",
       "required": [
         "model_valid", "provider_compatible", "runtime_available",
-        "portable_io_available", "ready_to_run"
+        "portable_io_available", "input_assets_ready", "ready_to_run"
       ],
       "properties": {
         "model_valid": {"type": "boolean"},
         "provider_compatible": {"type": "boolean"},
         "runtime_available": {"type": "boolean"},
         "portable_io_available": {"type": "boolean"},
+        "input_assets_ready": {"type": "boolean"},
         "ready_to_run": {"type": "boolean"}
       },
       "additionalProperties": false

@@ -1377,6 +1377,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Require at least one explicitly confirmed inlet and outlet.",
     )
+    geometry_check.add_argument(
+        "--output",
+        type=Path,
+        help="Atomically write the versioned inspection JSON for case.py reuse.",
+    )
     geometry_check.add_argument("--json", action="store_true", dest="as_json")
 
     status = subparsers.add_parser(
@@ -2355,6 +2360,8 @@ def main(argv: list[str] | None = None) -> int:
             boundary_roles=_boundary_role_map(args.roles),
             internal_flow=args.internal_flow,
         )
+        if args.output is not None:
+            _write_json_atomic(args.output, report)
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:

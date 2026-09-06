@@ -3,8 +3,17 @@ import math
 import struct
 
 import jsonschema
+import pytest
 
-from agentcfd import contracts, geometry_io
+from agentcfd import (
+    Model,
+    boundaries,
+    contracts,
+    fluids,
+    geometry,
+    geometry_io,
+    studies,
+)
 from agentcfd.cli import entrypoint
 
 
@@ -13,12 +22,25 @@ def _ascii_stl(name, triangles):
     for triangle in triangles:
         lines.extend(("  facet normal 0 0 0", "    outer loop"))
         lines.extend(
-            f"      vertex {vertex[0]} {vertex[1]} {vertex[2]}"
-            for vertex in triangle
+            f"      vertex {vertex[0]} {vertex[1]} {vertex[2]}" for vertex in triangle
         )
         lines.extend(("    endloop", "  endfacet"))
     lines.append(f"endsolid {name}")
     return "\n".join(lines) + "\n"
+
+
+def _named_tetra_stl():
+    a = (0.0, 0.0, 0.0)
+    b = (1.0, 0.0, 0.0)
+    c = (0.0, 1.0, 0.0)
+    d = (0.0, 0.0, 1.0)
+    return "".join(
+        (
+            _ascii_stl("inlet", ((a, c, b),)),
+            _ascii_stl("outlet", ((a, b, d),)),
+            _ascii_stl("walls", ((a, d, c), (b, c, d))),
+        )
+    )
 
 
 def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys):
@@ -27,7 +49,9 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     c = (0.0, 1.0, 0.0)
     d = (0.0, 0.0, 1.0)
     surface = tmp_path / "fluid.stl"
-    surface.write_text(_ascii_stl("fluid", ((a, c, b), (a, b, d), (a, d, c), (b, c, d))))
+    surface.write_text(
+        _ascii_stl("fluid", ((a, c, b), (a, b, d), (a, d, c), (b, c, d)))
+    )
 
     report = geometry_io.inspect_geometry(surface, unit="mm")
 
@@ -89,6 +113,85 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     assert cli["boundary_roles"]["confirmed"] == {"fluid": "wall"}
 
 
+def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys):
+    surface = tmp_path / "fluid.stl"
+    surface.write_text(_named_tetra_stl())
+    roles = {
+        "inlet": "inlet",
+        "outlet": "outlet",
+        "walls": "wall",
+    }
+    report = geometry_io.inspect_geometry(
+        surface,
+        unit="mm",
+        internal_flow=True,
+        boundary_roles=roles,
+    )
+    domain = geometry.imported_surface_from_inspection(
+        report,
+        asset="geometry/fluid.stl",
+    )
+    model = Model(
+        name="imported-duct",
+        study=studies.internal_flow(),
+        domain=domain,
+        fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(1.0),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    )
+
+    model.validate()
+    assert domain.asset == "geometry/fluid.stl"
+    assert domain.to_dict()["boundary_roles"] == roles
+    assert str(surface) not in str(domain.to_dict())
+    assert len(model.fingerprint()) == 64
+
+    role_path = tmp_path / "roles.json"
+    role_path.write_text(
+        json.dumps({"schema": "agentcfd.boundary-role-map/0.1", "regions": roles})
+    )
+    output = tmp_path / "inspection.json"
+    assert (
+        entrypoint(
+            [
+                "geometry-check",
+                str(surface),
+                "--unit",
+                "mm",
+                "--roles",
+                str(role_path),
+                "--internal-flow",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    assert "watertight true" in capsys.readouterr().out
+    assert json.loads(output.read_text())["source"]["sha256"] == domain.source_sha256
+
+
+def test_imported_volume_intent_rejects_open_surface_report(tmp_path):
+    surface = tmp_path / "open.stl"
+    surface.write_text(
+        _ascii_stl(
+            "walls",
+            (((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)),),
+        )
+    )
+    report = geometry_io.inspect_geometry(
+        surface,
+        unit="m",
+        require_watertight=False,
+        boundary_roles={"walls": "wall"},
+    )
+
+    with pytest.raises(ValueError, match="watertight surface"):
+        geometry.imported_surface_from_inspection(report, asset="geometry/open.stl")
+
+
 def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_path):
     obj = tmp_path / "duct.obj"
     obj.write_text(
@@ -114,8 +217,7 @@ def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_pat
     assert incomplete["readiness"]["geometry_ready"] is True
     assert incomplete["readiness"]["boundary_roles_ready"] is False
     assert any(
-        issue["code"] == "BOUNDARY_REGIONS_UNMAPPED"
-        for issue in incomplete["issues"]
+        issue["code"] == "BOUNDARY_REGIONS_UNMAPPED" for issue in incomplete["issues"]
     )
     complete = geometry_io.inspect_geometry(
         obj,
@@ -144,9 +246,7 @@ def test_open_surface_requires_units_and_can_be_intentionally_allowed(tmp_path):
 
     assert blocked["readiness"]["geometry_ready"] is False
     assert {"GEOMETRY_UNIT_UNDECLARED", "SURFACE_NOT_WATERTIGHT"} <= codes
-    allowed = geometry_io.inspect_geometry(
-        surface, unit="m", require_watertight=False
-    )
+    allowed = geometry_io.inspect_geometry(surface, unit="m", require_watertight=False)
     assert allowed["readiness"]["geometry_ready"] is True
     assert allowed["surface"]["boundary_edge_count"] == 3
     assert allowed["surface"]["enclosed_volume_m3"] is None
@@ -170,16 +270,13 @@ def test_explicit_vertex_tolerance_can_close_tessellation_roundoff(tmp_path):
     )
 
     exact = geometry_io.inspect_geometry(surface, unit="m")
-    merged = geometry_io.inspect_geometry(
-        surface, unit="m", merge_tolerance=1.0e-6
-    )
+    merged = geometry_io.inspect_geometry(surface, unit="m", merge_tolerance=1.0e-6)
 
     assert exact["surface"]["watertight"] is False
     assert merged["surface"]["watertight"] is True
     assert merged["policy"]["merge_tolerance_native"] == 1.0e-6
     assert any(
-        issue["code"] == "VERTEX_MERGE_TOLERANCE_APPLIED"
-        for issue in merged["issues"]
+        issue["code"] == "VERTEX_MERGE_TOLERANCE_APPLIED" for issue in merged["issues"]
     )
 
 
@@ -227,21 +324,13 @@ def test_binary_stl_and_topology_memory_guard_are_deterministic(tmp_path):
     assert guarded["surface"]["unique_vertex_count"] is None
     assert guarded["surface"]["watertight"] is None
     assert any(
-        issue["code"] == "TOPOLOGY_SCAN_LIMIT_REACHED"
-        for issue in guarded["issues"]
+        issue["code"] == "TOPOLOGY_SCAN_LIMIT_REACHED" for issue in guarded["issues"]
     )
 
 
 def test_obj_regions_polygon_triangulation_and_cad_fail_closed(tmp_path):
     obj = tmp_path / "plate.obj"
-    obj.write_text(
-        "o inlet\n"
-        "v 0 0 0\n"
-        "v 1 0 0\n"
-        "v 1 1 0\n"
-        "v 0 1 0\n"
-        "f 1 2 3 4\n"
-    )
+    obj.write_text("o inlet\nv 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n")
     report = geometry_io.inspect_geometry(obj, unit="cm", require_watertight=False)
     assert report["surface"]["triangle_count"] == 2
     assert report["surface"]["region_names"] == ["inlet"]

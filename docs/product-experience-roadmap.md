@@ -113,6 +113,9 @@ files stay hidden and reproducible.
   spatial bulk without H5 reads while preserving engineering/derived evidence;
 - dependency-free imported STL/OBJ inspection with explicit units, SI bounds,
   named regions, topology defects, enclosed volume, and a memory guard;
+- content-addressed imported-surface `Model` intent with confirmed boundary
+  roles, portable fingerprints, atomic inspection reports, and project asset
+  presence/hash gates;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

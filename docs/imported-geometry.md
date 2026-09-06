@@ -28,7 +28,8 @@ mandatory:
 ```
 
 ```bash
-agentcfd geometry-check duct.obj --unit mm --roles boundary-roles.json --internal-flow
+agentcfd geometry-check duct.obj --unit mm --roles boundary-roles.json \
+  --internal-flow --output geometry/inspection.json
 ```
 
 The map must cover the exact discovered names with no stale extras. Supported
@@ -49,10 +50,52 @@ near-coincident vertices, `--merge-tolerance` applies an explicit tolerance in
 source units to topology keys only. The report records it and warns that it
 must remain smaller than any physical gap that should stay open.
 
+The inspection can now become content-addressed public model intent. Keep the
+surface and report inside the project; the bridge deliberately discards the
+machine-specific absolute source path and retains the project-relative asset,
+source hash, SI bounds, unit conversion, enclosed volume, merge policy, and
+confirmed roles:
+
+```python
+import json
+from pathlib import Path
+
+from agentcfd import Model, boundaries, fluids, geometry, studies
+
+
+def build():
+    root = Path(__file__).parent
+    inspection = json.loads((root / "geometry/inspection.json").read_text())
+    domain = geometry.imported_surface_from_inspection(
+        inspection,
+        asset="geometry/duct.obj",
+    )
+    return Model(
+        name="imported-duct",
+        study=studies.internal_flow(),
+        domain=domain,
+        fluid=fluids.newtonian(
+            "water", density=998.2, dynamic_viscosity=1.002e-3
+        ),
+    ).boundaries(
+        inlet_main=boundaries.mean_velocity_inlet(1.0),
+        outlet_main=boundaries.pressure_outlet(),
+        housing=boundaries.no_slip_wall(),
+    ).step()
+```
+
+`agentcfd plan .` verifies the asset still exists and still matches the
+inspected SHA-256 before any provider action. Missing or changed geometry has
+its own `input_assets_ready: false` state. This is separate from provider
+compatibility so an agent can distinguish “repair the input” from “the released
+OpenFOAM adapter does not lower this geometry yet.” Volume CFD intent rejects
+an intentionally open surface even when inspection was run with `--allow-open`.
+
 STEP/IGES are recognized but not silently tessellated. A future CAD adapter
 must make tessellation tolerance, units, face-name retention, and source hash
 explicit. Similarly, `geometry_ready: true` means that the released preflight
-found no blocking defect; `ready_to_mesh` remains false until AgentCFD ships and
+found no blocking defect; `ready_for_import_setup` means the surface can enter
+the public `Model`, while `ready_to_mesh` remains false until AgentCFD ships and
 validates imported `snappyHexMesh` lowering.
 
 This boundary mirrors OpenFOAM's documented workflow: `snappyHexMesh` consumes

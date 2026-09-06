@@ -96,6 +96,7 @@ agentcfd init --template industrial-pipe my-flow
 cd my-flow
 agentcfd status .       # one state, one recommended next action
 agentcfd run .
+agentcfd watch .        # follow a long active run, then stop automatically
 agentcfd view .         # prints the latest XDMF or result target
 ```
 
@@ -111,6 +112,10 @@ agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 ```
+
+All project commands discover the nearest `agentcfd.toml` while walking upward,
+so the same `agentcfd status .` and `agentcfd view .` commands work from
+`input/`, `output/fields/`, or any other project subdirectory.
 
 The ordinary project surface stays small:
 
@@ -138,6 +143,11 @@ residuals, Courant number, mass imbalance, pressure drop, elapsed time, and a
 wide transient ETA range. Add `--storage` when recursive workspace size is
 worth the extra I/O. A dead process becomes `interrupted`, and the next replace
 run can recover without manual folder surgery.
+
+`agentcfd watch .` polls this same lightweight contract every two seconds and
+stops by itself at `complete`, `review`, `failed`, or `interrupted`. Use
+`watch --json` for one complete JSON object per line; add `--storage` only when
+live disk growth matters enough to justify a recursive scan on every poll.
 
 Output is declared by purpose instead of by OpenFOAM directory frequency. For
 example, a transient run can keep frequent scalar histories, one visualization

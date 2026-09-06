@@ -149,6 +149,19 @@ def _safe_project_path(root: Path, relative: str, *, label: str) -> Path:
     return target
 
 
+def _discover_project_root(selected: Path) -> Path:
+    """Find the nearest project manifest from a file or nested directory."""
+
+    resolved = selected.expanduser().resolve()
+    if not resolved.exists():
+        return resolved
+    start = resolved.parent if resolved.is_file() else resolved
+    for candidate in (start, *start.parents):
+        if (candidate / "agentcfd.toml").is_file():
+            return candidate
+    return start
+
+
 def _load_module(path: Path, root: Path) -> ModuleType:
     name = f"_agentcfd_case_{file_sha256(path)[:16]}"
     spec = importlib.util.spec_from_file_location(name, path)
@@ -805,10 +818,7 @@ class Project:
     """A case.py plus operational manifest and content-addressed run history."""
 
     def __init__(self, root: str | Path):
-        selected = Path(root)
-        if selected.is_file():
-            selected = selected.parent
-        self.root = selected.resolve()
+        self.root = _discover_project_root(Path(root))
         self.manifest_path = self.root / "agentcfd.toml"
         if not self.manifest_path.is_file():
             raise FileNotFoundError(self.manifest_path)
@@ -825,6 +835,21 @@ class Project:
         )
         if not self.entrypoint.is_file():
             raise FileNotFoundError(self.entrypoint)
+
+    @classmethod
+    def discover(cls, start: str | Path = ".") -> "Project":
+        """Open the nearest AgentCFD project at or above ``start``."""
+
+        return cls(start)
+
+    def _cli_project_argument(self) -> str:
+        """Use a short relative argument whenever the current directory is inside."""
+
+        try:
+            Path.cwd().resolve().relative_to(self.root)
+        except ValueError:
+            return shlex.quote(str(self.root))
+        return "."
 
     def load_step(self) -> Step:
         module = _load_module(self.entrypoint, self.root)
@@ -1177,9 +1202,7 @@ class Project:
     def storage(self) -> dict[str, object]:
         """Inventory managed project data without reading field arrays."""
 
-        project_argument = (
-            "." if Path.cwd().resolve() == self.root else shlex.quote(str(self.root))
-        )
+        project_argument = self._cli_project_argument()
         workspace_root = self.root / ".agentcfd" / "work"
         groups = {
             "current_output": self.run_root,
@@ -1305,9 +1328,7 @@ class Project:
             plan["model"]["analysis_sha256"],
             provider=self.manifest.default_provider,
         )
-        project_argument = (
-            "." if Path.cwd().resolve() == self.root else shlex.quote(str(self.root))
-        )
+        project_argument = self._cli_project_argument()
         runs = self._run_records()
         latest = runs[0] if runs else None
         run_directory = self._record_directory(latest)
@@ -1418,8 +1439,8 @@ class Project:
             }
         elif state == "running":
             next_action = {
-                "command": f"agentcfd status {project_argument}",
-                "reason": "Wait for the active solver/export phase to finish.",
+                "command": f"agentcfd watch {project_argument}",
+                "reason": "Follow low-overhead progress until the run finishes.",
             }
         elif state == "review":
             failed = latest.get("failed_checks", []) if latest is not None else []

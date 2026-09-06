@@ -35,9 +35,12 @@ python -m pytest -q
     and `inspect` only when the next action or an issue requires deeper detail.
 11. Preview `clean` before applying it. Never delete `output/`, `campaigns/`, or
     the protected workspace of a live run to save space.
-12. During execution, poll `status --json` at a humane cadence and consume its
-    `progress` object. Do not open native field files to estimate progress;
-    request `--storage` only when disk accounting is needed.
+12. During execution, use `watch --json` (JSON Lines) or poll `status --json`
+    at a humane cadence and consume its `progress` object. Do not open native
+    field files to estimate progress; request `--storage` only when disk
+    accounting is needed.
+13. Use `Project.discover()` or ordinary CLI `.` from nested project paths;
+    never hard-code an output directory as if it were the project root.
 
 ## Current boundary
 

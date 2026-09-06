@@ -49,11 +49,23 @@ wide ETA range for transient time advancement. It never opens a volume field.
 Workspace byte accounting remains opt-in through `status --storage` because a
 recursive scan itself can become expensive on very large cases.
 
+`agentcfd watch .` follows this contract at a two-second default cadence and
+exits automatically when the project leaves `running`. Human output is one
+compact append-only line per sample; `watch --json` emits JSON Lines for an AI
+agent, service, or log collector. The active state's recommended next action is
+therefore `watch`, so waiting does not require repeated manual commands.
+
 `view` reads only the small field manifest before opening anything. It reports
 frame count, physical/iteration axis range, portable size, canonical variables,
 and whether each variable is a visualization point field or native cell field.
 `view --launch` opens the XDMF in ParaView and can discover a macOS ParaView App
 even when `paraview` is absent from `PATH`.
+
+The CLI and `Project.discover()` resolve the nearest `agentcfd.toml` upward
+from a file or directory. A user inspecting `output/fields/` therefore does not
+need to remember the project root before checking status, rerunning, cleaning,
+or opening the result; generated next actions remain `agentcfd … .` while the
+working directory stays anywhere inside that project.
 
 ## Ordinary replace mode
 

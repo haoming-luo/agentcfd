@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add run-scoped `logs --run-id` and `diagnose --run-id` so a later successful
+  campaign point cannot hide an earlier failure. Sweep failures now preserve
+  their immutable run id, directory, exact diagnosis command, and distinct
+  failed-versus-engineering-review outcome.
+- Add `sweep --max-runs` as a hard zero-work approval boundary after accepted
+  cache reuse. Equivalent points inside a request share one solver attempt even
+  when that attempt fails, and reports expose planned versus actual starts.
 - Add `agentcfd campaigns` as a field-free design-point index over immutable
   project runs. New run markers carry compact canonical quantities; optional
   recursive storage accounting and unit-preserving CSV export are explicit,

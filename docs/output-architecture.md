@@ -119,7 +119,8 @@ Implemented now:
 - chunked HDF5 compression and storage provenance;
 - binary OpenFOAM native output for generated cases;
 - selected-time and selected-field conversion before temporary VTK creation;
-- project storage inventory plus preview-first cleanup that protects active runs;
+- project storage inventory plus preview-first cleanup that protects active
+  runs, sole recovery checkpoints, and explicitly retained expert workspaces;
 - separated baffled-channel XDMF frame selection and content-addressed rolling
   restart ZIPs, with trust/model/member verification before continuation.
 

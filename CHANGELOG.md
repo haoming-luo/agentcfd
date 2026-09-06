@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Persist explicit solver-workspace retention as protected user intent. Normal
+  cleanup cannot remove `--keep-workspace` or manifest-retained data; the new
+  `--include-retained` scope must be previewed and applied deliberately, while
+  active runs and sole recovery checkpoints remain non-removable.
 - Extend text-only ParaView recipes with typed camera and render intent:
   deterministic position/focal/up vectors, optional parallel projection,
   image size, transparent PNG screenshot, PNG animation sequence, or MP4. The

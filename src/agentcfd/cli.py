@@ -1327,6 +1327,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Apply the previewed cleanup; output/ and campaigns/ are always preserved.",
     )
+    clean.add_argument(
+        "--include-retained",
+        action="store_true",
+        help="Also target inactive workspaces explicitly retained by CLI or manifest.",
+    )
     clean.add_argument("--json", action="store_true", dest="as_json")
 
     view = subparsers.add_parser(
@@ -2300,7 +2305,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"next: {report['next_action']['command']}")
         return 0
     if args.command == "clean":
-        report = projects.Project(args.project).clean(apply=args.apply)
+        report = projects.Project(args.project).clean(
+            apply=args.apply,
+            include_retained=args.include_retained,
+        )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
@@ -2316,6 +2324,16 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     "Protected active runs: "
                     + ", ".join(report["protected_active_run_ids"])
+                )
+            if report["protected_recovery_run_ids"]:
+                print(
+                    "Protected recovery checkpoints: "
+                    + ", ".join(report["protected_recovery_run_ids"])
+                )
+            if report["protected_retained_run_ids"]:
+                print(
+                    "Protected explicitly retained workspaces: "
+                    + ", ".join(report["protected_retained_run_ids"])
                 )
             if not report["applied"] and report["candidate_bytes"]:
                 print("preview only; apply with: agentcfd clean . --apply")

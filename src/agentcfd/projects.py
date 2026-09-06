@@ -789,6 +789,7 @@ def _resolved_output_plan(
     if estimated_cells is None:
         estimated_portable_bytes = None
         estimated_temporary_peak_bytes = None
+        estimate_calibration = None
     else:
         entities = (
             math.ceil(estimated_cells * 1.25)
@@ -805,7 +806,21 @@ def _resolved_output_plan(
         if "npz" in step.output.portable_formats:
             estimated_portable_bytes += field_bytes + mesh_bytes
         # Current external adapter stages solver-native and VTK data before publishing HDF5.
-        estimated_temporary_peak_bytes = estimated_portable_bytes + field_bytes * 2
+        raw_staging_bytes = estimated_portable_bytes + field_bytes * 2
+        temporary_peak_safety_factor = 1.25
+        estimated_temporary_peak_bytes = math.ceil(
+            temporary_peak_safety_factor * raw_staging_bytes
+        )
+        estimate_calibration = {
+            "method": "native-plus-vtk-plus-portable-with-measured-headroom",
+            "uncompressed_requested_field_bytes": field_bytes,
+            "raw_staging_bytes": raw_staging_bytes,
+            "safety_factor": temporary_peak_safety_factor,
+            "evidence": (
+                "OpenCFD-v2606 baffled-channel 20-frame run: 122.05 MiB managed "
+                "during retained-workspace publication versus 101.84 MiB raw estimate"
+            ),
+        }
 
     return {
         "channels": {
@@ -840,6 +855,7 @@ def _resolved_output_plan(
             if estimated_temporary_peak_bytes is None
             else _human_bytes(estimated_temporary_peak_bytes)
         ),
+        "estimate_calibration": estimate_calibration,
         "storage": step.output.storage.to_dict(),
         "within_budget": (
             None

@@ -274,7 +274,13 @@ def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, ca
     plan = projects.Project(root).plan()
     assert plan["readiness"]["provider_compatible"] is True
     assert plan["decisions"]["solver"] == "pimpleFoam"
-    assert plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 23880
+    output_plan = plan["decisions"]["output_plan"]
+    assert output_plan["estimated_mesh_cells"] == 23880
+    assert output_plan["estimate_calibration"]["safety_factor"] == 1.25
+    assert (
+        output_plan["estimated_temporary_peak_bytes"]
+        >= 1.25 * output_plan["estimate_calibration"]["raw_staging_bytes"]
+    )
     assert [
         item["name"]
         for item in plan["decisions"]["output_plan"]["channels"]["views"][

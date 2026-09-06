@@ -32,6 +32,8 @@ def test_channel_provider_prepares_deterministic_five_block_case(tmp_path):
     assert "(upstreamLower 1) (overBaffle 2) (downstreamLower 0)" in block_mesh
     control = (first.directory / "system" / "controlDict").read_text()
     assert "application pimpleFoam;" in control
+    assert "writeFormat binary;" in control
+    assert "writeCompression off;" in control
     assert "agentcfd_inlet_flow" in control
     assert "near_wake" in control
 

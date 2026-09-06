@@ -29,7 +29,8 @@
         "type": "object",
         "required": [
           "name", "parameters", "plan_sha256", "result_execution_sha256",
-          "execution", "outcome", "run_id", "directory", "accepted", "error"
+          "execution", "outcome", "run_id", "directory", "accepted",
+          "diagnose_command", "error"
         ],
         "properties": {
           "name": {"type": "string"},
@@ -41,6 +42,7 @@
           "run_id": {"type": ["string", "null"]},
           "directory": {"type": ["string", "null"]},
           "accepted": {"type": "boolean"},
+          "diagnose_command": {"type": ["string", "null"]},
           "error": {
             "oneOf": [
               {"type": "null"},

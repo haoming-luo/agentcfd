@@ -78,6 +78,12 @@ exist; `logs --json` carries the available commands, source, truncation state,
 and one safe retry action. Successful runs still remove disposable native bulk
 after copying small logs to `output/evidence/`.
 
+Campaign diagnosis is run-scoped rather than “latest-run” scoped. Every failed
+sweep row carries its immutable `run_id`, result directory, and a ready-to-copy
+`diagnose_command`. Use `agentcfd diagnose . --run-id <id>` or
+`agentcfd logs . --run-id <id>` after later points have completed; selecting a
+missing id fails explicitly instead of silently inspecting another run.
+
 ## Checkpoint recovery
 
 Transient full-field frames are for interpretation; checkpoints are sparse
@@ -229,6 +235,9 @@ continue by default; `--fail-fast` changes only that execution policy. The
 small atomic `campaigns/last-sweep.json` makes interruption and automation
 observable. Version 0.1 executes serially so a campaign cannot oversubscribe
 memory or temporary storage before a bounded resource scheduler exists.
+Solver-level failed results count as `failed`; a completed result that did not
+meet acceptance checks counts as `review`, so automation does not confuse a
+runtime failure with an engineering decision gate.
 
 Use `agentcfd sweep . sweep.json --plan-only` as the approval boundary. It
 reports how many points are ready, already reusable, duplicated within the

@@ -1365,6 +1365,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Select one provider command, for example pimpleFoam or checkMesh.",
     )
     logs.add_argument("--lines", type=int, default=80)
+    logs.add_argument(
+        "--run-id",
+        help="Inspect one immutable campaign or historical run instead of the latest.",
+    )
     logs.add_argument("--json", action="store_true", dest="as_json")
 
     diagnose = subparsers.add_parser(
@@ -1376,6 +1380,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--command",
         dest="solver_command",
         help="Limit diagnosis to one provider command, for example pimpleFoam.",
+    )
+    diagnose.add_argument(
+        "--run-id",
+        help="Diagnose one immutable campaign or historical run instead of the latest.",
     )
     diagnose.add_argument("--json", action="store_true", dest="as_json")
 
@@ -2268,6 +2276,7 @@ def main(argv: list[str] | None = None) -> int:
         report = projects.Project.discover(args.project).logs(
             command=args.solver_command,
             lines=args.lines,
+            run_id=args.run_id,
         )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2284,6 +2293,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose":
         report = projects.Project.discover(args.project).diagnose(
             command=args.solver_command,
+            run_id=args.run_id,
         )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2507,6 +2517,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"{point['name']} | {point['execution']} | {point['outcome']}"
                 )
+                if point["diagnose_command"] is not None:
+                    print(f"  diagnose: {point['diagnose_command']}")
             print(f"progress: {report['progress']}")
         if args.plan_only:
             return 0 if report["all_ready"] else 3

@@ -67,24 +67,9 @@ def _case_capability(step) -> str:
 
 
 def _analysis_sha256(step) -> str:
-    """Fingerprint every public analysis input represented by a prepared case."""
+    """Use the public solver-neutral analysis identity everywhere."""
 
-    payload = {
-        "model": step.model.to_dict(),
-        "procedure": step.procedure.to_dict(),
-        "output_request": step.output.to_dict(),
-    }
-    if step.initialization is not None:
-        payload["initialization"] = step.initialization.to_dict()
-    if step.mesh is not None:
-        payload["mesh"] = step.mesh.to_dict()
-    encoded = json.dumps(
-        payload,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return step.fingerprint()
 
 
 def _file_sha256(path: Path) -> str:

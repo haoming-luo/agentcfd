@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentcfd.dev/schemas/project-initialization/0.1",
+  "title": "AgentCFD project initialization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "template",
+    "root",
+    "entrypoint",
+    "provider",
+    "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-initialization/0.1"},
+    "template": {
+      "enum": ["industrial-pipe", "baffle-channel", "imported-internal-flow"]
+    },
+    "root": {"type": "string", "minLength": 1},
+    "entrypoint": {"type": "string", "minLength": 1},
+    "provider": {"enum": ["reference", "openfoam"]},
+    "next_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

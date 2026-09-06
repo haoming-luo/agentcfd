@@ -85,6 +85,24 @@ def build():
     ).step(mesh=meshing.automatic(base_size=0.005, maximum_cells=2_000_000))
 ```
 
+For the released single-inlet/single-outlet laminar slice, the CLI can perform
+that bridge and create the complete owned project in one command:
+
+```bash
+agentcfd init my-duct --template imported-internal-flow \
+  --geometry duct.obj --unit mm --roles boundary-roles.json \
+  --interior-point-m 0.15 0.03 0.03 \
+  --inlet-velocity-m-s 1 0 0 --base-size-m 0.005 \
+  --maximum-cells 500000
+```
+
+Initialization runs the same bounded inspector before writing, rejects
+unsupported roles or ambiguous inlet/outlet count, and copies the source into
+`geometry/`. It writes a portable `inspection.json`, normalized
+`boundary-roles.json`, and a readable `case.py`; a later change to the original
+external file cannot silently change the project. Direction, SI mesh size,
+interior point, and the hard cell limit are required rather than guessed.
+
 `agentcfd plan .` verifies the asset still exists and still matches the
 inspected SHA-256 before any provider action. Missing or changed geometry has
 its own `input_assets_ready: false` state. This is separate from provider

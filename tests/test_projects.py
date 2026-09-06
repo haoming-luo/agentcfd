@@ -71,6 +71,131 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     assert inspection["latest_run"]["trust_level"] == "verified"
 
 
+def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):
+    original = (
+        Path(__file__).parents[1]
+        / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
+    source = tmp_path / "input.stl"
+    shutil.copyfile(original, source)
+    roles = {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
+    project = projects.init_project(
+        tmp_path / "owned-duct",
+        provider="openfoam",
+        template="imported-internal-flow",
+        geometry_path=source,
+        geometry_unit="m",
+        boundary_roles=roles,
+        interior_point_m=(0.5, 0.25, 0.1),
+        inlet_velocity_m_s=(0.5, 0.0, 0.0),
+        base_size_m=0.05,
+        maximum_cells=200_000,
+    )
+
+    copied = project.root / "geometry/input.stl"
+    inspection = json.loads(
+        (project.root / "geometry/inspection.json").read_text()
+    )
+    role_record = json.loads(
+        (project.root / "geometry/boundary-roles.json").read_text()
+    )
+    plan = project.plan()
+    step = project.load_step()
+
+    assert copied.read_bytes() == source.read_bytes()
+    assert inspection["source"]["path"] == "geometry/input.stl"
+    assert inspection["readiness"]["ready_for_import_setup"] is True
+    assert role_record == {
+        "schema": "agentcfd.boundary-role-map/0.1",
+        "regions": roles,
+    }
+    assert plan["readiness"]["input_assets_ready"] is True
+    assert plan["readiness"]["mesh_intent_ready"] is True
+    assert plan["readiness"]["provider_compatible"] is True
+    assert plan["decisions"]["imported_mesh_plan"]["maximum_cells"] == 200_000
+    assert step.model.boundary_conditions["inlet"].velocity == (0.5, 0.0, 0.0)
+    assert "cross_section_cells" not in project.manifest.openfoam
+
+    source.write_bytes(source.read_bytes() + b"\nexternal change")
+    assert copied.read_bytes() != source.read_bytes()
+    assert project.plan()["readiness"]["input_assets_ready"] is True
+
+
+def test_imported_internal_flow_init_fails_before_writing_unsupported_intent(
+    tmp_path,
+):
+    source = (
+        Path(__file__).parents[1]
+        / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
+    root = tmp_path / "unsupported"
+
+    with pytest.raises(ProjectError, match="does not support roles: farfield"):
+        projects.init_project(
+            root,
+            provider="openfoam",
+            template="imported-internal-flow",
+            geometry_path=source,
+            geometry_unit="m",
+            boundary_roles={
+                "inlet": "inlet",
+                "outlet": "outlet",
+                "walls": "farfield",
+            },
+            interior_point_m=(0.5, 0.25, 0.1),
+            inlet_velocity_m_s=(0.5, 0.0, 0.0),
+            base_size_m=0.05,
+            maximum_cells=200_000,
+        )
+
+    assert not root.exists()
+
+
+def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
+    tmp_path, capsys
+):
+    example = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry"
+    root = tmp_path / "cli-duct"
+
+    assert (
+        entrypoint(
+            [
+                "init",
+                str(root),
+                "--template",
+                "imported-internal-flow",
+                "--geometry",
+                str(example / "fluid.stl"),
+                "--unit",
+                "m",
+                "--roles",
+                str(example / "boundary-roles.json"),
+                "--interior-point-m",
+                "0.5",
+                "0.25",
+                "0.1",
+                "--inlet-velocity-m-s",
+                "0.5",
+                "0",
+                "0",
+                "--base-size-m",
+                "0.05",
+                "--maximum-cells",
+                "200000",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("project-initialization.schema.json")
+    ).validate(report)
+    assert report["template"] == "imported-internal-flow"
+    assert report["provider"] == "openfoam"
+    assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
+
+
 def test_project_plan_verifies_imported_geometry_asset_identity(tmp_path):
     root = tmp_path / "imported"
     project = projects.init_project(root)
@@ -194,6 +319,29 @@ def test_project_records_repairable_solver_failure(tmp_path, monkeypatch):
     assert record["phase"] == "solver"
     assert record["failure"]["safe_to_retry"] is True
     assert "agentcfd run" in record["failure"]["repair"]
+
+
+def test_project_refuses_to_publish_a_result_for_another_analysis(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(tmp_path / "pipe")
+    original = projects.ReferencePipeProvider.run
+
+    def wrong_identity(provider, step):
+        result = original(provider, step)
+        result.provenance["analysis_sha256"] = "0" * 64
+        return result
+
+    monkeypatch.setattr(
+        "agentcfd.projects.ReferencePipeProvider.run", wrong_identity
+    )
+
+    with pytest.raises(ProjectError, match="different analysis identity"):
+        project.run()
+
+    record = json.loads((project.run_root / "run.json").read_text())
+    assert record["status"] == "failed"
+    assert not (project.run_root / "result.json").exists()
 
 
 def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(

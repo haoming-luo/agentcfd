@@ -66,12 +66,15 @@ implementation details but remain available for expert inspection.
 
 ## OpenFOAM route
 
-For the experimental first provider, validation precedes
-`OpenFOAMProvider.prepare(...)`. Preparation writes a new case directory and a
-content-addressed manifest. It never overwrites an existing case. Execution
-requires user-managed `blockMesh` and `simpleFoam` commands. Until actual
-mesh-field mass balance and pressure loss are recovered, a successful process
-must still produce an unaccepted SimulationResult.
+For OpenFOAM providers, validation precedes deterministic lowering into a
+disposable project workspace. Parametric and imported geometry both receive a
+content-addressed case and mesh manifest; imported setup can start with
+`init --template imported-internal-flow` so units, roles, interior seed,
+velocity direction, mesh size, and cell budget are explicit before execution.
+AgentCFD invokes the declared local/container runtime, recovers conservation,
+mesh, convergence, and output evidence, and publishes XDMF/H5 only through the
+same acceptance workflow. A zero solver exit never becomes acceptance by
+itself.
 
 ## Reliability principle
 

@@ -111,6 +111,25 @@ agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
 agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 ```
 
+For owned STL/OBJ internal-flow geometry, initialization can perform the
+inspection-to-project handoff without asking the user to author `case.py` from
+scratch. Every ambiguous physical input stays explicit:
+
+```bash
+agentcfd init my-duct --template imported-internal-flow \
+  --geometry fluid.stl --unit mm --roles boundary-roles.json \
+  --interior-point-m 0.15 0.03 0.03 \
+  --inlet-velocity-m-s 1 0 0 --base-size-m 0.005 \
+  --maximum-cells 500000
+cd my-duct
+agentcfd status .
+```
+
+The new project owns a copy of the surface plus its content hash, normalized
+role map, and portable inspection record. The generated Python remains the
+editable source for velocity, fluid properties, mesh size, cell budget, and
+outputs; OpenFOAM files remain disposable implementation detail.
+
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
 operational settings such as the default provider, output directory, container,
 and mesh controls. An ordinary execution replaces the managed `output/`

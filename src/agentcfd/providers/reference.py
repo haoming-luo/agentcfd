@@ -184,6 +184,7 @@ class ReferencePipeProvider:
             provenance={
                 "agentcfd_version": __version__,
                 "model_sha256": model.fingerprint(),
+                "analysis_sha256": step.fingerprint(),
                 "provider": self.descriptor().name,
                 "formulation": "Hagen-Poiseuille circular-pipe solution",
             },

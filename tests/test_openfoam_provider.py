@@ -18,6 +18,7 @@ from agentcfd.providers import (
 )
 from agentcfd.results import Artifact, Check, FieldRecord, SimulationResult
 from agentcfd.providers.openfoam import (
+    _analysis_sha256,
     _bounded_pipe_convergence,
     _container_image_identity,
     _mesh_controls_from_case,
@@ -62,6 +63,12 @@ def pipe_model(
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
+
+
+def test_openfoam_uses_the_public_analysis_identity():
+    step = pipe_model().step(output=outputs.standard(portable_formats=("xdmf",)))
+
+    assert _analysis_sha256(step) == step.fingerprint()
 
 
 def turbulent_pipe_model(*, velocity: float = 1.0) -> Model:

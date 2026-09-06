@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `init --template imported-internal-flow` as the safe geometry-to-project
+  bridge. It inspects and owns STL/OBJ plus normalized role records, requires
+  explicit units, interior seed, inlet vector, mesh size, and cell budget, and
+  emits a ready-to-plan readable project without manual Python authoring.
+- Make the public analysis-request fingerprint the sole project/provider result
+  identity and refuse to publish a provider result carrying a different one.
 - Bind project-published XDMF/H5 fields to the exact OpenFOAM source-mesh
   identity and avoid dangling provider-workspace paths after automatic cleanup.
 

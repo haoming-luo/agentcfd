@@ -27,12 +27,19 @@ model.
     after any continue-on-error campaign.
 11. Never apply `compact <run-id> --apply` without first showing its preview and
     confirming that the exact full-field payload is no longer required.
+12. For a new supported STL/OBJ internal-flow case, prefer
+    `init --template imported-internal-flow` with explicit unit, role map,
+    interior point, inlet vector, mesh size, and maximum cells; never invent
+    any of those inputs from appearance or filenames.
 
 ## Current capability boundary
 
 The released in-process scientific path is the steady incompressible Newtonian
 laminar circular-pipe reference workflow. The external OpenCFD v2606 provider
 also has experimental, evidence-gated laminar and smooth-pipe RANS slices.
+Its released imported-volume slice is steady, incompressible, isothermal, and
+laminar with exactly one vector-velocity inlet and one pressure outlet; reject
+requests outside that boundary instead of editing generated dictionaries.
 
 For turbulent fully developed inlet evidence:
 

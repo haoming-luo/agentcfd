@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 import platform
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1295,7 +1296,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("directory", nargs="?", type=Path, default=Path("."))
     init.add_argument(
         "--template",
-        choices=("industrial-pipe", "baffle-channel"),
+        choices=("industrial-pipe", "baffle-channel", "imported-internal-flow"),
         default="industrial-pipe",
     )
     init.add_argument(
@@ -1303,6 +1304,23 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("reference", "openfoam"),
         default=None,
     )
+    init.add_argument("--geometry", type=Path)
+    init.add_argument("--unit", choices=("m", "mm", "cm", "um", "in", "ft"))
+    init.add_argument("--roles", type=Path)
+    init.add_argument(
+        "--interior-point-m",
+        nargs=3,
+        type=float,
+        metavar=("X", "Y", "Z"),
+    )
+    init.add_argument(
+        "--inlet-velocity-m-s",
+        nargs=3,
+        type=float,
+        metavar=("UX", "UY", "UZ"),
+    )
+    init.add_argument("--base-size-m", type=float)
+    init.add_argument("--maximum-cells", type=int)
     init.add_argument("--json", action="store_true", dest="as_json")
 
     check = subparsers.add_parser(
@@ -2304,8 +2322,27 @@ def main(argv: list[str] | None = None) -> int:
         project = projects.init_project(
             args.directory,
             provider=args.provider
-            or ("openfoam" if args.template == "baffle-channel" else "reference"),
+            or (
+                "openfoam"
+                if args.template in {"baffle-channel", "imported-internal-flow"}
+                else "reference"
+            ),
             template=args.template,
+            geometry_path=args.geometry,
+            geometry_unit=args.unit,
+            boundary_roles=_boundary_role_map(args.roles),
+            interior_point_m=(
+                tuple(args.interior_point_m)
+                if args.interior_point_m is not None
+                else None
+            ),
+            inlet_velocity_m_s=(
+                tuple(args.inlet_velocity_m_s)
+                if args.inlet_velocity_m_s is not None
+                else None
+            ),
+            base_size_m=args.base_size_m,
+            maximum_cells=args.maximum_cells,
         )
         report = {
             "schema": "agentcfd.project-initialization/0.1",
@@ -2313,12 +2350,17 @@ def main(argv: list[str] | None = None) -> int:
             "root": str(project.root),
             "entrypoint": str(project.entrypoint),
             "provider": project.manifest.default_provider,
+            "next_action": {
+                "command": f"agentcfd status {shlex.quote(str(project.root))}",
+                "reason": "Inspect readiness and follow the single recommended action.",
+            },
         }
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             print(f"Created AgentCFD {args.template} project")
             print(project.root)
+            print(f"next: {report['next_action']['command']}")
         return 0
     if args.command == "check":
         plan = projects.Project(args.project).plan(

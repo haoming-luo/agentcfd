@@ -23,7 +23,14 @@ from pathlib import Path
 from types import ModuleType
 from typing import Mapping
 
-from . import boundaries, data_exchange, diagnostics, engineering, postprocessing
+from . import (
+    boundaries,
+    data_exchange,
+    diagnostics,
+    engineering,
+    geometry_io,
+    postprocessing,
+)
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
 from .geometry import CircularPipe, ImportedSurface, RectangularChannel
 from .model import Step
@@ -3599,6 +3606,16 @@ class Project:
                 )
             else:
                 result = selected.run(step)
+            provider_analysis_sha256 = result.provenance.get("analysis_sha256")
+            expected_analysis_sha256 = str(plan["model"]["analysis_sha256"])
+            if provider_analysis_sha256 is None:
+                result.provenance["analysis_sha256"] = expected_analysis_sha256
+            elif provider_analysis_sha256 != expected_analysis_sha256:
+                raise ProjectError(
+                    "Provider returned a result for a different analysis identity: "
+                    f"expected {expected_analysis_sha256}, got "
+                    f"{provider_analysis_sha256!r}."
+                )
         except Exception as error:
             write_workspace_marker(retention_reason="failure", protected=False)
             write_marker(
@@ -4060,22 +4077,252 @@ def build(*, mean_velocity=0.5, baffle_height=0.12):
 '''
 
 
+def _imported_internal_flow_template(
+    *,
+    model_name: str,
+    asset: str,
+    roles: Mapping[str, str],
+    interior_point_m: tuple[float, float, float],
+    inlet_velocity_m_s: tuple[float, float, float],
+    base_size_m: float,
+    maximum_cells: int,
+) -> str:
+    conditions = []
+    for name, role in sorted(roles.items()):
+        constructor = {
+            "inlet": (
+                "boundaries.velocity_inlet("
+                "(velocity_x, velocity_y, velocity_z))"
+            ),
+            "outlet": "boundaries.pressure_outlet()",
+            "wall": "boundaries.no_slip_wall()",
+            "symmetry": "boundaries.symmetry()",
+            "empty": "boundaries.symmetry()",
+        }[role]
+        conditions.append(f"        {name!r}: {constructor},")
+    boundary_block = "\n".join(conditions)
+    return f'''"""Imported internal flow: edit engineering intent, not OpenFOAM files."""
+
+import json
+from pathlib import Path
+
+from agentcfd import (
+    Model,
+    boundaries,
+    fluids,
+    geometry,
+    meshing,
+    outputs,
+    procedures,
+    studies,
+)
+
+
+def build(
+    *,
+    velocity_x={inlet_velocity_m_s[0]!r},
+    velocity_y={inlet_velocity_m_s[1]!r},
+    velocity_z={inlet_velocity_m_s[2]!r},
+    density=998.2,
+    dynamic_viscosity=1.002e-3,
+    base_size={base_size_m!r},
+    maximum_cells={maximum_cells!r},
+):
+    root = Path(__file__).parent
+    inspection = json.loads((root / "geometry/inspection.json").read_text())
+    domain = geometry.imported_surface_from_inspection(
+        inspection,
+        asset={asset!r},
+        interior_point_m={interior_point_m!r},
+    )
+    boundary_conditions = {{
+{boundary_block}
+    }}
+    model = Model(
+        name={model_name!r},
+        study=studies.internal_flow(),
+        domain=domain,
+        fluid=fluids.newtonian(
+            "water",
+            density=density,
+            dynamic_viscosity=dynamic_viscosity,
+        ),
+    ).boundaries(**boundary_conditions)
+    return model.step(
+        procedure=procedures.steady(),
+        mesh=meshing.automatic(
+            base_size=base_size,
+            maximum_cells=maximum_cells,
+        ),
+        output=outputs.standard(),
+    )
+'''
+
+
 def init_project(
     directory: str | Path,
     *,
     provider: str = "reference",
     template: str = "industrial-pipe",
+    geometry_path: str | Path | None = None,
+    geometry_unit: str | None = None,
+    boundary_roles: Mapping[str, str] | None = None,
+    interior_point_m: tuple[float, float, float] | None = None,
+    inlet_velocity_m_s: tuple[float, float, float] | None = None,
+    base_size_m: float | None = None,
+    maximum_cells: int | None = None,
 ) -> Project:
     """Create a complete editable project without overwriting user data."""
 
     if provider not in {"reference", "openfoam"}:
         raise ValueError("Project provider must be 'reference' or 'openfoam'.")
-    if template not in {"industrial-pipe", "baffle-channel"}:
+    if template not in {
+        "industrial-pipe",
+        "baffle-channel",
+        "imported-internal-flow",
+    }:
         raise ValueError(
-            "Project template must be 'industrial-pipe' or 'baffle-channel'."
+            "Project template must be 'industrial-pipe', 'baffle-channel', or "
+            "'imported-internal-flow'."
         )
-    if template == "baffle-channel" and provider != "openfoam":
-        raise ValueError("The baffle-channel template requires provider='openfoam'.")
+    if template in {"baffle-channel", "imported-internal-flow"} and provider != "openfoam":
+        raise ValueError(f"The {template} template requires provider='openfoam'.")
+    imported_options = (
+        geometry_path,
+        geometry_unit,
+        boundary_roles,
+        interior_point_m,
+        inlet_velocity_m_s,
+        base_size_m,
+        maximum_cells,
+    )
+    if template != "imported-internal-flow" and any(
+        value is not None for value in imported_options
+    ):
+        raise ValueError(
+            "Imported geometry options require template='imported-internal-flow'."
+        )
+
+    imported_report: dict[str, object] | None = None
+    imported_source: Path | None = None
+    imported_asset: str | None = None
+    normalized_roles: dict[str, str] | None = None
+    case_template: str
+    if template == "imported-internal-flow":
+        missing = [
+            name
+            for name, value in (
+                ("geometry_path", geometry_path),
+                ("geometry_unit", geometry_unit),
+                ("boundary_roles", boundary_roles),
+                ("interior_point_m", interior_point_m),
+                ("inlet_velocity_m_s", inlet_velocity_m_s),
+                ("base_size_m", base_size_m),
+                ("maximum_cells", maximum_cells),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(
+                "Imported internal-flow initialization requires: "
+                + ", ".join(missing)
+                + "."
+            )
+        assert geometry_path is not None
+        assert geometry_unit is not None
+        assert boundary_roles is not None
+        assert interior_point_m is not None
+        assert inlet_velocity_m_s is not None
+        assert base_size_m is not None
+        assert maximum_cells is not None
+        if not isinstance(boundary_roles, Mapping):
+            raise ValueError("Imported boundary_roles must be a mapping.")
+        imported_source = Path(geometry_path).expanduser().resolve()
+        normalized_roles = {
+            str(name): str(role).strip().lower()
+            for name, role in boundary_roles.items()
+        }
+        imported_report = geometry_io.inspect_geometry(
+            imported_source,
+            unit=geometry_unit,
+            boundary_roles=normalized_roles,
+            internal_flow=True,
+        )
+        if not imported_report["readiness"]["ready_for_import_setup"]:
+            repairs = [
+                str(issue["repair"])
+                for issue in imported_report["issues"]
+                if issue["severity"] == "error"
+            ]
+            raise ProjectError(
+                "Imported geometry is not ready: " + " ".join(repairs)
+            )
+        role_values = tuple(normalized_roles.values())
+        unsupported = sorted(set(role_values) - {"inlet", "outlet", "wall", "symmetry", "empty"})
+        if unsupported:
+            raise ProjectError(
+                "The released imported internal-flow template does not support roles: "
+                + ", ".join(unsupported)
+                + "."
+            )
+        if role_values.count("inlet") != 1 or role_values.count("outlet") != 1:
+            raise ProjectError(
+                "The released imported internal-flow template requires exactly one inlet and one outlet."
+            )
+        invalid_names = sorted(
+            name
+            for name in normalized_roles
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None
+        )
+        if invalid_names:
+            raise ProjectError(
+                "Imported surface names must be OpenFOAM-compatible words: "
+                + ", ".join(invalid_names)
+                + "."
+            )
+        selected_velocity = boundaries.VelocityInlet(inlet_velocity_m_s).velocity
+        if (
+            isinstance(base_size_m, bool)
+            or not isinstance(base_size_m, (int, float))
+            or not math.isfinite(base_size_m)
+            or base_size_m <= 0.0
+        ):
+            raise ValueError("Imported base_size_m must be positive and finite.")
+        if (
+            isinstance(maximum_cells, bool)
+            or not isinstance(maximum_cells, int)
+            or maximum_cells < 1
+        ):
+            raise ValueError("Imported maximum_cells must be a positive integer.")
+        selected_interior = tuple(float(value) for value in interior_point_m)
+        if len(selected_interior) != 3 or any(
+            not math.isfinite(value) for value in selected_interior
+        ):
+            raise ValueError("Imported interior_point_m requires three finite values.")
+        imported_asset = f"geometry/{imported_source.name}"
+        # Constructing the domain validates bounds and the explicit interior seed.
+        from .geometry import imported_surface_from_inspection
+
+        imported_surface_from_inspection(
+            imported_report,
+            asset=imported_asset,
+            interior_point_m=selected_interior,
+        )
+        case_template = _imported_internal_flow_template(
+            model_name=Path(directory).name or "imported-internal-flow",
+            asset=imported_asset,
+            roles=normalized_roles,
+            interior_point_m=selected_interior,
+            inlet_velocity_m_s=selected_velocity,
+            base_size_m=float(base_size_m),
+            maximum_cells=maximum_cells,
+        )
+    else:
+        case_template = (
+            _BAFFLE_CHANNEL_TEMPLATE
+            if template == "baffle-channel"
+            else _CASE_TEMPLATE
+        )
     root = Path(directory)
     if root.exists() and any(root.iterdir()):
         raise FileExistsError(f"Project directory is not empty: {root}")
@@ -4099,13 +4346,35 @@ keep_workspace = false
 timeout_seconds = 3600
 '''
     (root / "agentcfd.toml").write_text(manifest, encoding="utf-8")
-    (root / "case.py").write_text(
-        _BAFFLE_CHANNEL_TEMPLATE if template == "baffle-channel" else _CASE_TEMPLATE,
-        encoding="utf-8",
-    )
+    (root / "case.py").write_text(case_template, encoding="utf-8")
+    if imported_report is not None:
+        assert imported_source is not None
+        assert imported_asset is not None
+        assert normalized_roles is not None
+        geometry_directory = root / "geometry"
+        geometry_directory.mkdir()
+        shutil.copy2(imported_source, root / imported_asset)
+        portable_report = json.loads(json.dumps(imported_report))
+        portable_report["source"]["path"] = imported_asset
+        _write_json_atomic(geometry_directory / "inspection.json", portable_report)
+        _write_json_atomic(
+            geometry_directory / "boundary-roles.json",
+            {
+                "schema": "agentcfd.boundary-role-map/0.1",
+                # Imported setup above guarantees a normalized mapping here.
+                "regions": dict(sorted(normalized_roles.items())),
+            },
+        )
     (root / "README.md").write_text(
         f"# AgentCFD {template}\n\n"
-        "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
+        + (
+            "The owned geometry, explicit units, confirmed boundary roles, and "
+            "inspection record live in `geometry/`. `case.py` contains the inlet "
+            "vector, fluid, mesh size, and hard cell budget.\n\n"
+            if template == "imported-internal-flow"
+            else ""
+        )
+        + "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
         "next action. The normal loop is `agentcfd run .` followed by "
         "`agentcfd view .`; `check`, `plan`, and `inspect` remain available for deeper "
         "diagnosis. Failed transient runs expose identity-gated `agentcfd resume .` "

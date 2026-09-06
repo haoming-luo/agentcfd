@@ -55,6 +55,10 @@ python -m pytest -q
     audit. Treat `cell_updates_proxy` as a relative work indicator only; never
     relabel it as runtime, cost, carbon, or energy, and preserve
     `energy.status=not-measured` without executor telemetry.
+17. Keep camera/render recipes explicit. Prefer one screenshot for routine
+    evidence and request PNG sequences or MP4 only when animation is a stated
+    deliverable; rendered images are derived products, never a replacement for
+    the shared XDMF/HDF5 field bundle.
 
 ## Current boundary
 

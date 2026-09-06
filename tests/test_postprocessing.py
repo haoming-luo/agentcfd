@@ -40,6 +40,16 @@ def _recipes():
             field="fluid.vorticity",
             origin=(0.6, 0.1, 0.05),
             normal=(0.0, 0.0, 2.0),
+            camera=outputs.camera(
+                position=(0.6, 0.1, 2.0),
+                focal_point=(0.6, 0.1, 0.05),
+                parallel_scale=0.6,
+            ),
+            export=outputs.render(
+                size=(960, 540),
+                animation="png-sequence",
+                frame_rate=20,
+            ),
         ),
         outputs.contour_view(
             "pressure-levels",
@@ -60,6 +70,8 @@ def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity():
     record = request.to_dict()
 
     assert record["views"][0]["normal"] == [0.0, 0.0, 1.0]
+    assert record["views"][0]["camera"]["parallel_scale"] == 0.6
+    assert record["views"][0]["export"]["size"] == [960, 540]
     assert record["views"][1]["values"] == [100.0, 500.0]
     assert record["views"][2]["seeds"] == 30
     with pytest.raises(ValueError, match="require their fields"):
@@ -91,8 +103,25 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
         assert "fields.xdmf" in script.read_text()
         assert str(tmp_path) not in script.read_text()
     assert "Slice(" in scripts[0].read_text()
+    assert "CameraParallelProjection = 1" in scripts[0].read_text()
+    assert "SaveScreenshot" in scripts[0].read_text()
+    assert "SaveAnimation" in scripts[0].read_text()
+    assert manifest["recipes"][0]["render_outputs_after_launch"] == [
+        "midplane-vorticity.pvsm",
+        "midplane-vorticity.png",
+        "midplane-vorticity.%04d.png",
+    ]
     assert "Contour(" in scripts[1].read_text()
     assert "StreamTracer(" in scripts[2].read_text()
+
+
+def test_view_presentation_rejects_ambiguous_or_empty_render_intent():
+    with pytest.raises(ValueError, match="position and focal point"):
+        outputs.camera(position=(1.0, 1.0, 1.0), focal_point=(1.0, 1.0, 1.0))
+    with pytest.raises(ValueError, match="screenshot or animation"):
+        outputs.render(screenshot=False)
+    with pytest.raises(ValueError, match="animation must"):
+        outputs.render(animation="gif")
 
 
 def test_missing_portable_recipe_field_fails_before_paraview(tmp_path):

@@ -44,7 +44,9 @@ parallel goal of reducing user attention, failure recovery work, and storage
 amplification per trusted result.
 [Post-processing recipes](docs/postprocessing-recipes.md) turn named slices,
 contours, and streamlines into portable ParaView scripts without copying the
-XDMF/HDF5 field payload.
+XDMF/HDF5 field payload. Optional typed camera and render intent can reproduce
+a screenshot, PNG animation sequence, or MP4; nothing is rendered unless the
+project explicitly asks for it.
 
 ## First executable workflow
 

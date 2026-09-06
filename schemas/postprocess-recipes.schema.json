@@ -14,7 +14,8 @@
         "type": "object",
         "required": [
           "type", "name", "field", "export_field", "association", "script",
-          "state_after_launch", "shares_field_payload"
+          "state_after_launch", "render_outputs_after_launch",
+          "shares_field_payload", "camera", "export"
         ],
         "properties": {
           "type": {"enum": ["slice", "contour", "streamlines"]},
@@ -24,7 +25,54 @@
           "association": {"enum": ["point", "cell"]},
           "script": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\.py$"},
           "state_after_launch": {"type": "string", "pattern": "\\.pvsm$"},
+          "render_outputs_after_launch": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1,
+            "uniqueItems": true
+          },
           "shares_field_payload": {"const": "../fields/fields.xdmf"},
+          "camera": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "required": ["position", "focal_point", "view_up", "parallel_scale"],
+                "properties": {
+                  "position": {"$ref": "#/$defs/vector3"},
+                  "focal_point": {"$ref": "#/$defs/vector3"},
+                  "view_up": {"$ref": "#/$defs/vector3"},
+                  "parallel_scale": {"type": ["number", "null"], "exclusiveMinimum": 0}
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "export": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "required": [
+                  "size", "screenshot", "animation", "frame_rate",
+                  "transparent_background"
+                ],
+                "properties": {
+                  "size": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 64},
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "screenshot": {"type": "boolean"},
+                  "animation": {"enum": [null, "png-sequence", "mp4"]},
+                  "frame_rate": {"type": "integer", "minimum": 1},
+                  "transparent_background": {"type": "boolean"}
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
           "origin": {"$ref": "#/$defs/vector3"},
           "normal": {"$ref": "#/$defs/vector3"},
           "values": {

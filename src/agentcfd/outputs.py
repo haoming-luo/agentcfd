@@ -196,6 +196,89 @@ def _view_vector(
 
 
 @dataclass(frozen=True, slots=True)
+class ViewCamera:
+    """Explicit ParaView camera intent in physical model coordinates."""
+
+    position: tuple[float, float, float]
+    focal_point: tuple[float, float, float]
+    view_up: tuple[float, float, float] = (0.0, 1.0, 0.0)
+    parallel_scale: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "position", _view_vector(self.position, label="Camera position")
+        )
+        object.__setattr__(
+            self,
+            "focal_point",
+            _view_vector(self.focal_point, label="Camera focal point"),
+        )
+        view_up = _view_vector(self.view_up, label="Camera view-up")
+        if math.sqrt(sum(value * value for value in view_up)) == 0.0:
+            raise ValueError("Camera view-up cannot be the zero vector.")
+        object.__setattr__(self, "view_up", view_up)
+        if self.position == self.focal_point:
+            raise ValueError("Camera position and focal point must differ.")
+        if self.parallel_scale is not None:
+            object.__setattr__(
+                self,
+                "parallel_scale",
+                positive_float(self.parallel_scale, name="Camera parallel scale"),
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "position": list(self.position),
+            "focal_point": list(self.focal_point),
+            "view_up": list(self.view_up),
+            "parallel_scale": self.parallel_scale,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ViewExport:
+    """Optional reproducible screenshot or animation rendering intent."""
+
+    size: tuple[int, int] = (1280, 720)
+    screenshot: bool = True
+    animation: str | None = None
+    frame_rate: int = 24
+    transparent_background: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.size, (tuple, list)) or len(self.size) != 2:
+            raise ValueError("View export size must contain width and height.")
+        size = tuple(
+            integer_at_least(value, name="View export dimension", minimum=64)
+            for value in self.size
+        )
+        object.__setattr__(self, "size", size)
+        for name in ("screenshot", "transparent_background"):
+            if not isinstance(getattr(self, name), bool):
+                raise ValueError(f"View export {name} must be a boolean.")
+        if self.animation not in {None, "png-sequence", "mp4"}:
+            raise ValueError(
+                "View export animation must be None, 'png-sequence', or 'mp4'."
+            )
+        object.__setattr__(
+            self,
+            "frame_rate",
+            integer_at_least(self.frame_rate, name="Animation frame rate", minimum=1),
+        )
+        if not self.screenshot and self.animation is None:
+            raise ValueError("View export must request a screenshot or animation.")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "size": list(self.size),
+            "screenshot": self.screenshot,
+            "animation": self.animation,
+            "frame_rate": self.frame_rate,
+            "transparent_background": self.transparent_background,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class SliceView:
     """A reproducible plane slice colored by one canonical field."""
 
@@ -203,6 +286,8 @@ class SliceView:
     field: str
     origin: tuple[float, float, float]
     normal: tuple[float, float, float]
+    camera: ViewCamera | None = None
+    export: ViewExport | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", _view_name(self.name))
@@ -216,6 +301,7 @@ class SliceView:
         if magnitude == 0.0:
             raise ValueError("Slice normal cannot be the zero vector.")
         object.__setattr__(self, "normal", tuple(value / magnitude for value in normal))
+        _validate_view_presentation(self.camera, self.export)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -224,6 +310,8 @@ class SliceView:
             "field": self.field,
             "origin": list(self.origin),
             "normal": list(self.normal),
+            "camera": None if self.camera is None else self.camera.to_dict(),
+            "export": None if self.export is None else self.export.to_dict(),
         }
 
 
@@ -234,6 +322,8 @@ class ContourView:
     name: str
     field: str
     values: tuple[float, ...]
+    camera: ViewCamera | None = None
+    export: ViewExport | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", _view_name(self.name))
@@ -247,6 +337,7 @@ class ContourView:
         if len(set(values)) != len(values):
             raise ValueError("Contour values must not contain duplicates.")
         object.__setattr__(self, "values", values)
+        _validate_view_presentation(self.camera, self.export)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -254,6 +345,8 @@ class ContourView:
             "name": self.name,
             "field": self.field,
             "values": list(self.values),
+            "camera": None if self.camera is None else self.camera.to_dict(),
+            "export": None if self.export is None else self.export.to_dict(),
         }
 
 
@@ -267,6 +360,8 @@ class StreamlineView:
     seed_end: tuple[float, float, float] = (0.0, 1.0, 0.0)
     seeds: int = 40
     direction: str = "both"
+    camera: ViewCamera | None = None
+    export: ViewExport | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", _view_name(self.name))
@@ -291,6 +386,7 @@ class StreamlineView:
         )
         if self.direction not in {"forward", "backward", "both"}:
             raise ValueError("Streamline direction must be forward, backward, or both.")
+        _validate_view_presentation(self.camera, self.export)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -301,10 +397,22 @@ class StreamlineView:
             "seed_end": list(self.seed_end),
             "seeds": self.seeds,
             "direction": self.direction,
+            "camera": None if self.camera is None else self.camera.to_dict(),
+            "export": None if self.export is None else self.export.to_dict(),
         }
 
 
 ViewRecipe = SliceView | ContourView | StreamlineView
+
+
+def _validate_view_presentation(
+    camera: ViewCamera | None,
+    export: ViewExport | None,
+) -> None:
+    if camera is not None and not isinstance(camera, ViewCamera):
+        raise TypeError("View camera must be an AgentCFD ViewCamera.")
+    if export is not None and not isinstance(export, ViewExport):
+        raise TypeError("View export must be an AgentCFD ViewExport.")
 
 
 def parse_storage_size(value: int | str) -> int:
@@ -568,8 +676,17 @@ def slice_view(
     field: str,
     origin: tuple[float, float, float],
     normal: tuple[float, float, float],
+    camera: ViewCamera | None = None,
+    export: ViewExport | None = None,
 ) -> SliceView:
-    return SliceView(name=name, field=field, origin=origin, normal=normal)
+    return SliceView(
+        name=name,
+        field=field,
+        origin=origin,
+        normal=normal,
+        camera=camera,
+        export=export,
+    )
 
 
 def contour_view(
@@ -577,8 +694,16 @@ def contour_view(
     *,
     field: str,
     values: tuple[float, ...],
+    camera: ViewCamera | None = None,
+    export: ViewExport | None = None,
 ) -> ContourView:
-    return ContourView(name=name, field=field, values=values)
+    return ContourView(
+        name=name,
+        field=field,
+        values=values,
+        camera=camera,
+        export=export,
+    )
 
 
 def streamline_view(
@@ -589,6 +714,8 @@ def streamline_view(
     seeds: int = 40,
     direction: str = "both",
     field: str = "fluid.velocity",
+    camera: ViewCamera | None = None,
+    export: ViewExport | None = None,
 ) -> StreamlineView:
     return StreamlineView(
         name=name,
@@ -597,6 +724,40 @@ def streamline_view(
         seed_end=seed_end,
         seeds=seeds,
         direction=direction,
+        camera=camera,
+        export=export,
+    )
+
+
+def camera(
+    *,
+    position: tuple[float, float, float],
+    focal_point: tuple[float, float, float],
+    view_up: tuple[float, float, float] = (0.0, 1.0, 0.0),
+    parallel_scale: float | None = None,
+) -> ViewCamera:
+    return ViewCamera(
+        position=position,
+        focal_point=focal_point,
+        view_up=view_up,
+        parallel_scale=parallel_scale,
+    )
+
+
+def render(
+    *,
+    size: tuple[int, int] = (1280, 720),
+    screenshot: bool = True,
+    animation: str | None = None,
+    frame_rate: int = 24,
+    transparent_background: bool = False,
+) -> ViewExport:
+    return ViewExport(
+        size=size,
+        screenshot=screenshot,
+        animation=animation,
+        frame_rate=frame_rate,
+        transparent_background=transparent_background,
     )
 
 
@@ -737,12 +898,16 @@ __all__ = [
     "SurfaceReport",
     "SliceView",
     "ViewRecipe",
+    "ViewCamera",
+    "ViewExport",
     "animation",
+    "camera",
     "checkpoints",
     "contour_view",
     "force_report",
     "parse_storage_size",
     "probe",
+    "render",
     "slice_view",
     "standard",
     "storage",

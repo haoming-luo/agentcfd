@@ -1,0 +1,17 @@
+{
+  "schema": "agentcfd.campaign-request/0.1",
+  "points": [
+    {
+      "name": "base",
+      "parameters": {"mean_velocity": 0.5, "baffle_height": 0.12}
+    },
+    {
+      "name": "faster",
+      "parameters": {"mean_velocity": 0.7, "baffle_height": 0.12}
+    },
+    {
+      "name": "taller-baffle",
+      "parameters": {"mean_velocity": 0.5, "baffle_height": 0.14}
+    }
+  ]
+}

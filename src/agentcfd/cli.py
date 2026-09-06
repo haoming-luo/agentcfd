@@ -114,6 +114,33 @@ def _project_parameters(
     return selected
 
 
+def _campaign_request(path: Path) -> dict[str, dict[str, object]]:
+    try:
+        payload = strict_json_object(
+            path.read_text(encoding="utf-8"),
+            label="campaign request",
+        )
+    except OSError as error:
+        raise ProjectError(f"Cannot read campaign request {path}: {error}") from error
+    if payload.get("schema") != "agentcfd.campaign-request/0.1":
+        raise ProjectError("Campaign request must declare agentcfd.campaign-request/0.1.")
+    raw_points = payload.get("points")
+    if not isinstance(raw_points, list) or not raw_points:
+        raise ProjectError("Campaign request points must be a non-empty list.")
+    points: dict[str, dict[str, object]] = {}
+    for item in raw_points:
+        if not isinstance(item, dict):
+            raise ProjectError("Each campaign point must be an object.")
+        name = item.get("name")
+        parameters = item.get("parameters")
+        if not isinstance(name, str) or not isinstance(parameters, dict):
+            raise ProjectError("Each campaign point requires name and parameters.")
+        if name in points:
+            raise ProjectError(f"Campaign point name {name!r} is duplicated.")
+        points[name] = parameters
+    return points
+
+
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
     coolprop = properties.CoolPropPropertyProvider().descriptor()
@@ -1389,6 +1416,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     campaigns.add_argument("--json", action="store_true", dest="as_json")
 
+    sweep = subparsers.add_parser(
+        "sweep",
+        help="Preflight and execute a named parameter campaign with accepted-run reuse.",
+    )
+    sweep.add_argument("project", type=Path)
+    sweep.add_argument("request", type=Path)
+    sweep.add_argument("--provider", choices=("reference", "openfoam"))
+    sweep.add_argument("--container-image")
+    sweep.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop after the first runtime failure; preflight always checks every point.",
+    )
+    sweep.add_argument("--json", action="store_true", dest="as_json")
+
     clean = subparsers.add_parser(
         "clean",
         help="Preview removal of temporary solver workspaces while preserving results.",
@@ -2421,6 +2463,28 @@ def main(argv: list[str] | None = None) -> int:
             if not report["include_storage"]:
                 print("storage not scanned; add --storage when needed")
         return 0
+    if args.command == "sweep":
+        project = projects.Project.discover(args.project)
+        report = project.run_campaign(
+            _campaign_request(args.request),
+            provider=args.provider,
+            container_image=args.container_image,
+            fail_fast=args.fail_fast,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Sweep {report['processed_count']}/{report['requested_count']} | "
+                f"executed {report['executed_count']} | reused "
+                f"{report['reused_count']} | accepted {report['accepted_count']}"
+            )
+            for point in report["points"]:
+                print(
+                    f"{point['name']} | {point['execution']} | {point['outcome']}"
+                )
+            print(f"progress: {report['progress']}")
+        return 0 if report["successful"] else 3
     if args.command == "clean":
         report = projects.Project(args.project).clean(
             apply=args.apply,

@@ -97,6 +97,8 @@ files stay hidden and reproducible.
   recursive storage scans remaining explicit opt-in;
 - explicit `case.py` factory parameters shared by check/plan/run, fingerprinted
   into every design point and rejected on unknown names before execution;
+- all-points-first sweep preflight, accepted-identity reuse, atomic progress,
+  serial execution, and continue/fail-fast runtime policy;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 
@@ -113,8 +115,8 @@ files stay hidden and reproducible.
 
 ### Then: scale without scaling attention
 
-1. Campaign matrix API with deduplication, bounded concurrency, retry policy,
-   and operating-map plots over the shipped compact design-point index.
+1. Add bounded resource-aware concurrency, explicit retry limits, and
+   operating-map plots to the shipped serial/deduplicated campaign sweep.
 2. Remote/container/HPC executor protocol with the same run state contract.
 3. Streaming XDMF/HDF5 publication, followed by Catalyst extraction for cases
    where intermediate VTK and native full-field retention dominate I/O.

@@ -6,7 +6,7 @@
   "required": [
     "schema", "runtime", "case", "source_sha256", "model_sha256",
     "analysis_sha256", "solver_iterations", "mesh", "flow", "portable_fields",
-    "accepted", "claim"
+    "distribution", "workspace_bytes_after_publish", "accepted", "claim"
   ],
   "properties": {
     "schema": {"const": "agentcfd.openfoam-imported-flow-evidence/0.1"},
@@ -23,7 +23,8 @@
         "cells": {"type": "integer", "minimum": 1},
         "maximum_non_orthogonality_deg": {"type": "number", "minimum": 0},
         "maximum_skewness": {"type": "number", "minimum": 0},
-        "maximum_aspect_ratio": {"type": "number", "minimum": 1}
+        "maximum_aspect_ratio": {"type": "number", "minimum": 1},
+        "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       },
       "additionalProperties": false
     },
@@ -43,10 +44,22 @@
         "formats": {"type": "array", "items": {"enum": ["xdmf", "hdf5"]}, "uniqueItems": true},
         "frames": {"type": "integer", "minimum": 1},
         "points": {"type": "integer", "minimum": 1},
-        "bytes": {"type": "integer", "minimum": 1}
+        "bytes": {"type": "integer", "minimum": 1},
+        "verified": {"const": true}
       },
       "additionalProperties": false
     },
+    "distribution": {
+      "type": "object",
+      "required": ["artifact", "version", "io_extra_installed"],
+      "properties": {
+        "artifact": {"const": "wheel"},
+        "version": {"type": "string", "minLength": 1},
+        "io_extra_installed": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "workspace_bytes_after_publish": {"const": 0},
     "accepted": {"const": true},
     "claim": {"const": "workflow-and-numerical-gates-not-physical-validation"}
   },

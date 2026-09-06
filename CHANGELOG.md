@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add typed final-frame line profiles over portable fields. The generated
+  ParaView recipe uses explicit endpoints and sample count, publishes a compact
+  selected-array CSV, rejects ambiguous vector intent, and still shares the
+  existing XDMF/HDF5 payload without another field copy.
+- Add mutually exclusive interactive `view --launch` and headless
+  `view --batch` execution. Batch mode discovers `pvbatch`, waits for its exit
+  status, fails visibly on script errors, and reports only outputs that exist.
 - Persist explicit solver-workspace retention as protected user intent. Normal
   cleanup cannot remove `--keep-workspace` or manifest-retained data; the new
   `--include-retained` scope must be previewed and applied deliberately, while

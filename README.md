@@ -107,6 +107,7 @@ agentcfd diagnose .     # classify bounded evidence and recommend one safe actio
 agentcfd logs .         # raw bounded tail when deeper evidence is needed
 agentcfd resume .       # continue an identical interrupted transient checkpoint
 agentcfd view .         # prints the latest XDMF or result target
+agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
 ```
 
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
@@ -212,7 +213,8 @@ default; NPZ remains explicit opt-in.
 The backend-neutral workflow API also includes named regions, short rectangular
 channels with wall-attached baffles, pressure and mass-flow boundary variants,
 uniform/potential/previous-result initialization, mesh intent, compact probes,
-surface reductions, and force reports. See the
+surface reductions, force reports, and final-frame line profiles that publish
+only distance plus one requested scalar to CSV. See the
 [common workflow API](docs/common-workflow-api.md) and the readable
 [bottom-baffle project](examples/channel_baffle_project/case.py). New intent is
 checked against provider capabilities before execution and is never silently

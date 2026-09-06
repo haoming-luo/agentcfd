@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import jsonschema
 import pytest
@@ -62,10 +63,17 @@ def _recipes():
             seed_end=(0.02, 0.19, 0.05),
             seeds=30,
         ),
+        outputs.line_profile(
+            "centerline-pressure",
+            field="fluid.pressure",
+            start=(0.05, 0.1, 0.05),
+            end=(1.15, 0.1, 0.05),
+            samples=121,
+        ),
     )
 
 
-def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity():
+def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity(tmp_path):
     request = outputs.animation(every=0.1, views=_recipes())
     record = request.to_dict()
 
@@ -74,6 +82,16 @@ def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity():
     assert record["views"][0]["export"]["size"] == [960, 540]
     assert record["views"][1]["values"] == [100.0, 500.0]
     assert record["views"][2]["seeds"] == 30
+    assert record["views"][3]["samples"] == 121
+    assert record["views"][3]["camera"] is None
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    analysis = project.load_step().to_dict()
+    analysis["output"] = record
+    jsonschema.Draft202012Validator(
+        contracts.load("analysis-request.schema.json")
+    ).validate(analysis)
     with pytest.raises(ValueError, match="require their fields"):
         outputs.OutputRequest(
             fields=("fluid.pressure",),
@@ -97,7 +115,7 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
         contracts.load("postprocess-recipes.schema.json")
     ).validate(manifest)
     assert manifest["payload_copies"] == 0
-    assert len(scripts) == 3
+    assert len(scripts) == 4
     for script in scripts:
         compile(script.read_text(), str(script), "exec")
         assert "fields.xdmf" in script.read_text()
@@ -113,6 +131,12 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
     ]
     assert "Contour(" in scripts[1].read_text()
     assert "StreamTracer(" in scripts[2].read_text()
+    assert "PlotOverLine(" in scripts[3].read_text()
+    assert "ChooseArraysToWrite=1" in scripts[3].read_text()
+    assert "animation.GoToLast()" in scripts[3].read_text()
+    assert manifest["recipes"][3]["data_outputs_after_launch"] == [
+        "centerline-pressure.csv"
+    ]
 
 
 def test_view_presentation_rejects_ambiguous_or_empty_render_intent():
@@ -161,6 +185,19 @@ def test_recipe_field_shape_and_visualization_association_fail_early(tmp_path):
                     field="fluid.pressure",
                     seed_start=(0.0, 0.0, 0.0),
                     seed_end=(0.0, 1.0, 0.0),
+                ),
+            ),
+            _field_manifest(),
+        )
+    with pytest.raises(ValueError, match="requires a scalar field"):
+        postprocessing.publish_paraview_recipes(
+            tmp_path / "vector-line-profile",
+            (
+                outputs.line_profile(
+                    "bad-profile",
+                    field="fluid.velocity",
+                    start=(0.0, 0.0, 0.0),
+                    end=(1.0, 0.0, 0.0),
                 ),
             ),
             _field_manifest(),
@@ -245,5 +282,40 @@ def test_view_cli_selects_and_launches_named_recipe(tmp_path, monkeypatch, capsy
     ).validate(report)
     assert report["kind"] == "paraview-script"
     assert report["summary"]["field"] == "fluid.velocity"
+    assert report["batch_completed"] is False
+    assert report["produced"] == []
     assert launched == [["/paraview", "--script", report["target"]]]
     assert Path(report["target"]).name == "wake-streamlines.py"
+
+    def run_batch(command, **_kwargs):
+        recipe_directory = Path(command[1]).parent
+        (recipe_directory / "centerline-pressure.csv").write_text("pressure,distance\n")
+        (recipe_directory / "centerline-pressure.pvsm").write_text("state")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("agentcfd.cli._paraview_batch_executable", lambda: "/pvbatch")
+    monkeypatch.setattr("agentcfd.cli.subprocess.run", run_batch)
+    assert (
+        entrypoint(
+            [
+                "view",
+                str(project.root),
+                "--recipe",
+                "centerline-pressure",
+                "--batch",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    batch = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("project-view.schema.json")
+    ).validate(batch)
+    assert batch["launched"] is False
+    assert batch["batch_completed"] is True
+    assert batch["viewer"] == "/pvbatch"
+    assert [Path(path).name for path in batch["produced"]] == [
+        "centerline-pressure.pvsm",
+        "centerline-pressure.csv",
+    ]

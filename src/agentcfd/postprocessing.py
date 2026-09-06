@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .outputs import ContourView, SliceView, StreamlineView, ViewRecipe
+from .outputs import ContourView, LineProfile, SliceView, StreamlineView, ViewRecipe
 
 
 def _python_value(value: object) -> str:
@@ -40,7 +40,51 @@ def _color_command(record: Mapping[str, object]) -> str:
     return f"ColorBy(display, {_python_value(selection)})"
 
 
+def _line_profile_script(
+    recipe: LineProfile, record: Mapping[str, object]
+) -> str:
+    """Create a final-frame chart and selected-column CSV without field copies."""
+
+    field_name = str(record["export_name"])
+    field_unit = str(record.get("unit") or "")
+    return "\n".join(
+        [
+            '"""Generated from AgentCFD output intent; rerun the project to regenerate."""',
+            "from pathlib import Path",
+            "from paraview.simple import *",
+            "",
+            "recipe_dir = Path(__file__).resolve().parent",
+            'fields_path = recipe_dir.parent / "fields" / "fields.xdmf"',
+            f"source = XDMFReader(registrationName={recipe.name!r}, FileNames=[str(fields_path)])",
+            "source.UpdatePipeline()",
+            "animation = GetAnimationScene()",
+            "animation.UpdateAnimationUsingDataTimeSteps()",
+            "animation.GoToLast()",
+            "source.UpdatePipeline(animation.AnimationTime)",
+            f"filtered = PlotOverLine(registrationName={recipe.name!r}, Input=source)",
+            f"filtered.Point1 = {_python_value(list(recipe.start))}",
+            f"filtered.Point2 = {_python_value(list(recipe.end))}",
+            f"filtered.Resolution = {recipe.samples - 1}",
+            "filtered.UpdatePipeline(animation.AnimationTime)",
+            'view = CreateView("XYChartView")',
+            "display = Show(filtered, view)",
+            f"display.SeriesVisibility = {_python_value(['arc_length', '0', field_name, '1'])}",
+            f"view.ChartTitle = {recipe.name!r}",
+            'view.BottomAxisTitle = "distance [m]"',
+            f"view.LeftAxisTitle = {_python_value(recipe.field + (f' [{field_unit}]' if field_unit else ''))}",
+            "Render()",
+            f"SaveData(str(recipe_dir / {recipe.name + '.csv'!r}), filtered, "
+            f"AddMetaData=0, ChooseArraysToWrite=1, "
+            f"PointDataArrays={_python_value(['arc_length', field_name])})",
+            f"SaveState(str(recipe_dir / {recipe.name + '.pvsm'!r}))",
+            "",
+        ]
+    )
+
+
 def _recipe_script(recipe: ViewRecipe, record: Mapping[str, object]) -> str:
+    if isinstance(recipe, LineProfile):
+        return _line_profile_script(recipe, record)
     association = "POINTS" if record.get("association") == "point" else "CELLS"
     field_name = str(record["export_name"])
     common = [
@@ -170,6 +214,11 @@ def publish_paraview_recipes(
                 f"Streamline recipe {recipe.name!r} requires a vector field; "
                 f"{recipe.field!r} is scalar-valued."
             )
+        if isinstance(recipe, LineProfile) and component_count > 1:
+            raise ValueError(
+                f"Line-profile recipe {recipe.name!r} requires a scalar field; "
+                f"{recipe.field!r} is vector-valued."
+            )
         resolved.append((recipe, field_record))
 
     directory.mkdir(parents=True, exist_ok=True)
@@ -180,13 +229,17 @@ def publish_paraview_recipes(
         script.write_text(_recipe_script(recipe, field_record), encoding="utf-8")
         scripts.append(script)
         render_outputs = [f"{recipe.name}.pvsm"]
-        if recipe.export is not None:
-            if recipe.export.screenshot:
+        export = getattr(recipe, "export", None)
+        if export is not None:
+            if export.screenshot:
                 render_outputs.append(f"{recipe.name}.png")
-            if recipe.export.animation == "png-sequence":
+            if export.animation == "png-sequence":
                 render_outputs.append(f"{recipe.name}.%04d.png")
-            elif recipe.export.animation == "mp4":
+            elif export.animation == "mp4":
                 render_outputs.append(f"{recipe.name}.mp4")
+        data_outputs = (
+            [f"{recipe.name}.csv"] if isinstance(recipe, LineProfile) else []
+        )
         records.append(
             {
                 **recipe.to_dict(),
@@ -195,6 +248,7 @@ def publish_paraview_recipes(
                 "script": script.name,
                 "state_after_launch": f"{recipe.name}.pvsm",
                 "render_outputs_after_launch": render_outputs,
+                "data_outputs_after_launch": data_outputs,
                 "shares_field_payload": "../fields/fields.xdmf",
             }
         )

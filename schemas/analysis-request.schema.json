@@ -99,19 +99,21 @@
             "oneOf": [
               {
                 "type": "object",
-                "required": ["type", "name", "field", "origin", "normal"],
+                "required": ["type", "name", "field", "origin", "normal", "camera", "export"],
                 "properties": {
                   "type": {"const": "slice"},
                   "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
                   "field": {"type": "string", "minLength": 1},
                   "origin": {"$ref": "#/$defs/vector3"},
-                  "normal": {"$ref": "#/$defs/vector3"}
+                  "normal": {"$ref": "#/$defs/vector3"},
+                  "camera": {"$ref": "#/$defs/viewCamera"},
+                  "export": {"$ref": "#/$defs/viewExport"}
                 },
                 "additionalProperties": false
               },
               {
                 "type": "object",
-                "required": ["type", "name", "field", "values"],
+                "required": ["type", "name", "field", "values", "camera", "export"],
                 "properties": {
                   "type": {"const": "contour"},
                   "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
@@ -121,7 +123,9 @@
                     "items": {"type": "number"},
                     "minItems": 1,
                     "uniqueItems": true
-                  }
+                  },
+                  "camera": {"$ref": "#/$defs/viewCamera"},
+                  "export": {"$ref": "#/$defs/viewExport"}
                 },
                 "additionalProperties": false
               },
@@ -129,7 +133,7 @@
                 "type": "object",
                 "required": [
                   "type", "name", "field", "seed_start", "seed_end", "seeds",
-                  "direction"
+                  "direction", "camera", "export"
                 ],
                 "properties": {
                   "type": {"const": "streamlines"},
@@ -138,7 +142,27 @@
                   "seed_start": {"$ref": "#/$defs/vector3"},
                   "seed_end": {"$ref": "#/$defs/vector3"},
                   "seeds": {"type": "integer", "minimum": 2},
-                  "direction": {"enum": ["forward", "backward", "both"]}
+                  "direction": {"enum": ["forward", "backward", "both"]},
+                  "camera": {"$ref": "#/$defs/viewCamera"},
+                  "export": {"$ref": "#/$defs/viewExport"}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type", "name", "field", "start", "end", "samples",
+                  "camera", "export"
+                ],
+                "properties": {
+                  "type": {"const": "line-profile"},
+                  "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+                  "field": {"type": "string", "minLength": 1},
+                  "start": {"$ref": "#/$defs/vector3"},
+                  "end": {"$ref": "#/$defs/vector3"},
+                  "samples": {"type": "integer", "minimum": 2},
+                  "camera": {"const": null},
+                  "export": {"const": null}
                 },
                 "additionalProperties": false
               }
@@ -156,6 +180,47 @@
       "items": {"type": "number"},
       "minItems": 3,
       "maxItems": 3
+    },
+    "viewCamera": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["position", "focal_point", "view_up", "parallel_scale"],
+          "properties": {
+            "position": {"$ref": "#/$defs/vector3"},
+            "focal_point": {"$ref": "#/$defs/vector3"},
+            "view_up": {"$ref": "#/$defs/vector3"},
+            "parallel_scale": {"type": ["number", "null"], "exclusiveMinimum": 0}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "viewExport": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "size", "screenshot", "animation", "frame_rate",
+            "transparent_background"
+          ],
+          "properties": {
+            "size": {
+              "type": "array",
+              "items": {"type": "integer", "minimum": 64},
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "screenshot": {"type": "boolean"},
+            "animation": {"enum": [null, "png-sequence", "mp4"]},
+            "frame_rate": {"type": "integer", "minimum": 1},
+            "transparent_background": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        }
+      ]
     }
   }
 }

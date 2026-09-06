@@ -173,7 +173,9 @@ attaches the exact evidence line, confidence, conservative repair, and a
 machine-readable statement that it did not modify the model automatically.
 `agentcfd logs .` returns a bounded raw tail from the newest live log or the
 small published evidence copy. Select a phase with `--command checkMesh` or
-`--command pimpleFoam`; use `--json` for either versioned contract.
+`--command pimpleFoam`; use `--json` for either versioned contract. In a
+campaign, append `--run-id <id>` to `logs` or `diagnose` so a later successful
+point cannot hide the failure you are investigating.
 
 Transient templates declare sparse rolling checkpoints independently from
 visualization frames. After a failed or interrupted run, `status` and

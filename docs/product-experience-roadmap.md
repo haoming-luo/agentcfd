@@ -101,6 +101,8 @@ files stay hidden and reproducible.
   serial execution, and continue/fail-fast runtime policy;
 - zero-solve sweep preview with request-level deduplication and stale-result
   rejection before accepted markers may suppress computation;
+- immutable run-scoped campaign logs and diagnosis, with failed-vs-review
+  semantics and copyable recovery commands in the sweep report;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

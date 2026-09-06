@@ -677,7 +677,94 @@ def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypa
     assert report["failed_count"] == 1
     assert report["accepted_count"] == 1
     assert report["points"][0]["error"]["type"] == "RuntimeError"
+    assert report["points"][0]["run_id"] is not None
+    assert Path(report["points"][0]["directory"]).is_dir()
+    assert shlex.split(report["points"][0]["diagnose_command"])[-2:] == [
+        "--run-id",
+        report["points"][0]["run_id"],
+    ]
     assert report["points"][1]["outcome"] == "accepted"
+
+
+def test_historical_campaign_failure_remains_diagnosable_by_run_id(
+    tmp_path, capsys
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    plan = project.plan()
+    campaigns = project.root / "campaigns"
+    failed = campaigns / "failed-point"
+    succeeded = campaigns / "later-success"
+    (failed / "evidence").mkdir(parents=True)
+    succeeded.mkdir(parents=True)
+    (failed / "evidence" / "pimpleFoam.log").write_text(
+        "Time = 0.1\nFOAM FATAL ERROR: historical synthetic failure\n"
+    )
+    common = {
+        "schema": "agentcfd.project-run/0.1",
+        "mode": "campaign",
+        "parameters": {"mean_velocity": 0.5, "baffle_height": 0.12},
+        "analysis_sha256": plan["model"]["analysis_sha256"],
+        "result_execution_sha256": project._result_execution_fingerprint(
+            plan["model"]["analysis_sha256"], provider="openfoam"
+        ),
+    }
+    (failed / "run.json").write_text(
+        json.dumps(
+            {
+                **common,
+                "run_id": "failed-point",
+                "directory": str(failed),
+                "status": "failed",
+                "accepted": False,
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    (succeeded / "run.json").write_text(
+        json.dumps(
+            {
+                **common,
+                "run_id": "later-success",
+                "directory": str(succeeded),
+                "status": "completed",
+                "accepted": True,
+                "completed_at": "2026-09-06T00:01:00+00:00",
+            }
+        )
+    )
+
+    report = project.diagnose(run_id="failed-point")
+
+    jsonschema.Draft202012Validator(
+        contracts.load("project-diagnosis.schema.json")
+    ).validate(report)
+    assert report["run_id"] == "failed-point"
+    assert report["primary_finding"]["code"] == "OPENFOAM_FATAL_ERROR"
+    assert shlex.split(report["next_action"]["command"])[-2:] == [
+        "--run-id",
+        "failed-point",
+    ]
+    assert (
+        entrypoint(
+            [
+                "logs",
+                str(project.root),
+                "--run-id",
+                "failed-point",
+                "--lines",
+                "1",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["run_id"] == "failed-point"
+    assert "historical synthetic failure" in cli_report["tail"]
+    with pytest.raises(ProjectError, match="No project run exists"):
+        project.logs(run_id="missing-run")
 
 
 def test_project_replace_mode_refuses_unmanaged_output(tmp_path):

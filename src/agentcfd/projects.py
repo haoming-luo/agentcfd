@@ -1334,6 +1334,27 @@ class Project:
         )
         return runs
 
+    def _select_run_record(
+        self, run_id: str | None = None
+    ) -> dict[str, object] | None:
+        """Select the latest run or one immutable run without opening result payloads."""
+
+        runs = self._run_records()
+        if run_id is None:
+            return runs[0] if runs else None
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ProjectError("Run id must be a non-empty string.")
+        selected = next(
+            (record for record in runs if record.get("run_id") == run_id),
+            None,
+        )
+        if selected is None:
+            raise ProjectError(
+                f"No project run exists with run id {run_id!r}. "
+                "Use `agentcfd campaigns .` or `agentcfd status .` to list runs."
+            )
+        return selected
+
     def campaign_index(self, *, include_storage: bool = False) -> dict[str, object]:
         """Summarize immutable design points without opening any field payload."""
 
@@ -1735,6 +1756,7 @@ class Project:
                         "run_id": cached.get("run_id"),
                         "directory": cached.get("directory"),
                         "accepted": True,
+                        "diagnose_command": None,
                         "error": None,
                     }
                 )
@@ -1748,6 +1770,24 @@ class Project:
                         design_point_name=name,
                     )
                 except Exception as error:
+                    failed_record = next(
+                        (
+                            record
+                            for record in self._run_records()
+                            if record.get("design_point_name") == name
+                            and record.get("parameters") == parameters
+                            and record.get("result_execution_sha256") == identity
+                            and record.get("status") == "failed"
+                        ),
+                        None,
+                    )
+                    failed_run_id = (
+                        failed_record.get("run_id")
+                        if failed_record is not None
+                        else None
+                    )
+                    failed_directory = self._record_directory(failed_record)
+                    project_argument = self._cli_project_argument()
                     rows.append(
                         {
                             "name": name,
@@ -1756,9 +1796,20 @@ class Project:
                             "result_execution_sha256": identity,
                             "execution": "executed",
                             "outcome": "failed",
-                            "run_id": None,
-                            "directory": None,
+                            "run_id": failed_run_id,
+                            "directory": (
+                                None
+                                if failed_directory is None
+                                else str(failed_directory)
+                            ),
                             "accepted": False,
+                            "diagnose_command": (
+                                None
+                                if not isinstance(failed_run_id, str)
+                                else "agentcfd diagnose "
+                                f"{project_argument} --run-id "
+                                f"{shlex.quote(failed_run_id)}"
+                            ),
                             "error": {
                                 "type": type(error).__name__,
                                 "message": str(error),
@@ -1770,7 +1821,14 @@ class Project:
                         break
                     continue
                 accepted = completed.result.accepted
-                outcome = "accepted" if accepted else "review"
+                outcome = (
+                    "accepted"
+                    if accepted
+                    else "failed"
+                    if completed.result.status != "completed"
+                    else "review"
+                )
+                project_argument = self._cli_project_argument()
                 row = {
                     "name": name,
                     "parameters": parameters,
@@ -1781,6 +1839,12 @@ class Project:
                     "run_id": completed.run_id,
                     "directory": str(completed.directory),
                     "accepted": accepted,
+                    "diagnose_command": (
+                        "agentcfd diagnose "
+                        f"{project_argument} --run-id {shlex.quote(completed.run_id)}"
+                        if outcome == "failed"
+                        else None
+                    ),
                     "error": None,
                 }
                 rows.append(row)
@@ -2066,28 +2130,33 @@ class Project:
             "command": f"agentcfd resume {project_argument}",
         }
 
-    def recovery(self) -> dict[str, object]:
+    def recovery(self, *, run_id: str | None = None) -> dict[str, object]:
         """Report checkpoint-resume eligibility without opening field payloads."""
 
-        step = self.load_step()
-        plan = self.plan(_step=step)
-        runs = self._run_records()
-        return self._recovery_status(step, plan, runs[0] if runs else None)
+        selected = self._select_run_record(run_id)
+        parameters = (
+            selected.get("parameters", {}) if selected is not None else {}
+        )
+        if not isinstance(parameters, Mapping):
+            parameters = {}
+        step = self.load_step(parameters)
+        plan = self.plan(parameters=parameters, _step=step)
+        return self._recovery_status(step, plan, selected)
 
     def logs(
         self,
         *,
         command: str | None = None,
         lines: int = 80,
+        run_id: str | None = None,
     ) -> dict[str, object]:
-        """Return a bounded tail from the latest workspace or published log."""
+        """Return a bounded tail from the selected workspace or published log."""
 
         if isinstance(lines, bool) or not isinstance(lines, int) or not 1 <= lines <= 1000:
             raise ValueError("Log line count must be an integer from 1 through 1000.")
-        runs = self._run_records()
-        latest = runs[0] if runs else None
-        run_directory = self._record_directory(latest)
-        candidates = self._log_candidates(latest, run_directory)
+        selected_run = self._select_run_record(run_id)
+        run_directory = self._record_directory(selected_run)
+        candidates = self._log_candidates(selected_run, run_directory)
         available = sorted({name for name, _path, _source in candidates})
         if command is not None:
             selected = [item for item in candidates if item[0] == command]
@@ -2116,8 +2185,10 @@ class Project:
         return {
             "schema": "agentcfd.project-logs/0.1",
             "root": str(self.root),
-            "run_id": None if latest is None else latest.get("run_id"),
-            "run_status": None if latest is None else latest.get("status"),
+            "run_id": None if selected_run is None else selected_run.get("run_id"),
+            "run_status": (
+                None if selected_run is None else selected_run.get("status")
+            ),
             "command": name,
             "available_commands": available,
             "source": source,
@@ -2138,13 +2209,13 @@ class Project:
         self,
         *,
         command: str | None = None,
+        run_id: str | None = None,
     ) -> dict[str, object]:
         """Classify bounded provider evidence into conservative repair guidance."""
 
-        runs = self._run_records()
-        latest = runs[0] if runs else None
-        run_directory = self._record_directory(latest)
-        candidates = self._log_candidates(latest, run_directory)
+        selected_run = self._select_run_record(run_id)
+        run_directory = self._record_directory(selected_run)
+        candidates = self._log_candidates(selected_run, run_directory)
         available = sorted({name for name, _path, _source in candidates})
         if command is not None:
             candidates = tuple(item for item in candidates if item[0] == command)
@@ -2189,12 +2260,17 @@ class Project:
         findings = [dict(item) for item in diagnostics.diagnose(observations)]
         primary = findings[0] if findings else None
         project_argument = self._cli_project_argument()
+        run_selector = (
+            ""
+            if selected_run is None or selected_run.get("run_id") is None
+            else " --run-id " + shlex.quote(str(selected_run["run_id"]))
+        )
         if primary is None:
             fallback_command = observations[-1].command
             next_action = {
                 "command": (
                     f"agentcfd logs {project_argument} --command "
-                    f"{shlex.quote(fallback_command)} --lines 200"
+                    f"{shlex.quote(fallback_command)} --lines 200{run_selector}"
                 ),
                 "reason": (
                     "No supported deterministic signature was found; inspect the "
@@ -2213,7 +2289,7 @@ class Project:
                 "check": f"agentcfd check {project_argument}",
                 "logs": (
                     f"agentcfd logs {project_argument} --command "
-                    f"{shlex.quote(evidence_command)} --lines 200"
+                    f"{shlex.quote(evidence_command)} --lines 200{run_selector}"
                 ),
             }
             next_action = {
@@ -2221,13 +2297,21 @@ class Project:
                 "reason": str(primary["repair"]),
             }
 
-        recovery = self.recovery()
+        recovery = self.recovery(
+            run_id=(
+                None
+                if selected_run is None
+                else str(selected_run.get("run_id") or "") or None
+            )
+        )
 
         return {
             "schema": "agentcfd.project-diagnosis/0.1",
             "root": str(self.root),
-            "run_id": None if latest is None else latest.get("run_id"),
-            "run_status": None if latest is None else latest.get("status"),
+            "run_id": None if selected_run is None else selected_run.get("run_id"),
+            "run_status": (
+                None if selected_run is None else selected_run.get("status")
+            ),
             "available_commands": available,
             "logs_scanned": scanned,
             "findings": findings,

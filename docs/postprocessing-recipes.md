@@ -98,10 +98,22 @@ desktop path; the two modes are deliberately mutually exclusive.
 A line profile samples the final published frame along its physical line and
 writes `name.csv` when the recipe is launched. The CSV writer is restricted to
 distance plus the requested scalar array; it does not dump every point/cell
-variable and does not create another volume-field file. Vector profiles are
-rejected for now because “velocity profile” may mean a component, magnitude, or
-normal projection; that choice will become an explicit API rather than a hidden
-default.
+variable and does not create another volume-field file. A vector profile must
+make its meaning explicit with `component="x"`, `"y"`, `"z"`, or
+`"magnitude"`; omitting that choice fails before ParaView. Scalar fields reject
+an irrelevant component. The final two-column header uses canonical AgentCFD
+names rather than ParaView's internal point-array suffixes.
+
+```python
+outputs.line_profile(
+    "wake-speed",
+    field="fluid.velocity",
+    component="magnitude",
+    start=(0.36, 0.01, 0.05),
+    end=(1.15, 0.01, 0.05),
+    samples=160,
+)
+```
 
 Camera and rendering are explicit opt-ins. Without `camera=`, the generated
 script uses ParaView's fitted camera. Without `export=`, launching creates only
@@ -119,8 +131,9 @@ that macOS build did not change the successful render exit status.
 
 The line-profile batch path was also executed against that result. A 41-sample
 request produced 42 CSV rows including the header, exactly two columns
-(`fluid.pressure.point` and `arc_length`), and an editable PVSM. Disabling CSV
-metadata removed ParaView's otherwise automatic coordinate columns.
+(`distance_m` and `fluid.pressure`), and an editable PVSM. Disabling CSV
+metadata and normalizing the small table removed ParaView's otherwise automatic
+coordinate columns and provider-facing point suffix.
 
 This design follows ParaView's official filter and automation model:
 

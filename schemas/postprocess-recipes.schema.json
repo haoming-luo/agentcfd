@@ -94,6 +94,8 @@
           "start": {"$ref": "#/$defs/vector3"},
           "end": {"$ref": "#/$defs/vector3"},
           "samples": {"type": "integer", "minimum": 2}
+          ,
+          "component": {"enum": [null, "x", "y", "z", "magnitude"]}
         },
         "allOf": [
           {
@@ -112,7 +114,7 @@
           },
           {
             "if": {"properties": {"type": {"const": "line-profile"}}},
-            "then": {"required": ["start", "end", "samples"]}
+            "then": {"required": ["start", "end", "samples", "component"]}
           }
         ],
         "additionalProperties": false

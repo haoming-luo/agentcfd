@@ -152,7 +152,7 @@
                 "type": "object",
                 "required": [
                   "type", "name", "field", "start", "end", "samples",
-                  "camera", "export"
+                  "component", "camera", "export"
                 ],
                 "properties": {
                   "type": {"const": "line-profile"},
@@ -161,6 +161,7 @@
                   "start": {"$ref": "#/$defs/vector3"},
                   "end": {"$ref": "#/$defs/vector3"},
                   "samples": {"type": "integer", "minimum": 2},
+                  "component": {"enum": [null, "x", "y", "z", "magnitude"]},
                   "camera": {"const": null},
                   "export": {"const": null}
                 },

@@ -4,8 +4,9 @@
 
 - Add typed final-frame line profiles over portable fields. The generated
   ParaView recipe uses explicit endpoints and sample count, publishes a compact
-  selected-array CSV, rejects ambiguous vector intent, and still shares the
-  existing XDMF/HDF5 payload without another field copy.
+  canonical two-column CSV, requires an explicit component or magnitude for
+  vector intent, and still shares the existing XDMF/HDF5 payload without
+  another field copy.
 - Add mutually exclusive interactive `view --launch` and headless
   `view --batch` execution. Batch mode discovers `pvbatch`, waits for its exit
   status, fails visibly on script errors, and reports only outputs that exist.

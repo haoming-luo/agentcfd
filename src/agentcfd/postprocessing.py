@@ -47,14 +47,37 @@ def _line_profile_script(
 
     field_name = str(record["export_name"])
     field_unit = str(record.get("unit") or "")
+    components = record.get("components")
+    component_names = components if isinstance(components, list) else []
+    value_name = recipe.field + (
+        "" if recipe.component is None else f".{recipe.component}"
+    )
+    if recipe.component == "magnitude":
+        source_columns = [
+            f"{field_name}:{index}" for index in range(len(component_names))
+        ]
+        value_expression = (
+            "math.sqrt(sum(float(row[column]) ** 2 for column in source_columns))"
+        )
+    elif recipe.component is not None:
+        source_column = f"{field_name}:{component_names.index(recipe.component)}"
+        source_columns = [source_column]
+        value_expression = "float(row[source_columns[0]])"
+    else:
+        source_columns = [field_name]
+        value_expression = "float(row[source_columns[0]])"
     return "\n".join(
         [
             '"""Generated from AgentCFD output intent; rerun the project to regenerate."""',
+            "import csv",
+            "import math",
             "from pathlib import Path",
             "from paraview.simple import *",
             "",
             "recipe_dir = Path(__file__).resolve().parent",
             'fields_path = recipe_dir.parent / "fields" / "fields.xdmf"',
+            f"raw_path = recipe_dir / {recipe.name + '.raw.csv'!r}",
+            f"output_path = recipe_dir / {recipe.name + '.csv'!r}",
             f"source = XDMFReader(registrationName={recipe.name!r}, FileNames=[str(fields_path)])",
             "source.UpdatePipeline()",
             "animation = GetAnimationScene()",
@@ -66,16 +89,28 @@ def _line_profile_script(
             f"filtered.Point2 = {_python_value(list(recipe.end))}",
             f"filtered.Resolution = {recipe.samples - 1}",
             "filtered.UpdatePipeline(animation.AnimationTime)",
+            f"SaveData(str(raw_path), filtered, AddMetaData=0, ChooseArraysToWrite=1, "
+            f"PointDataArrays={_python_value(['arc_length', field_name])})",
+            f"source_columns = {_python_value(source_columns)}",
+            'with raw_path.open("r", encoding="utf-8", newline="") as source_stream, output_path.open("w", encoding="utf-8", newline="") as output_stream:',
+            "    reader = csv.DictReader(source_stream)",
+            "    writer = csv.writer(output_stream)",
+            f"    writer.writerow({_python_value(['distance_m', value_name])})",
+            "    for row in reader:",
+            f"        value = {value_expression}",
+            '        writer.writerow([float(row["arc_length"]), value])',
+            "raw_path.unlink()",
+            f"table = CSVReader(registrationName={recipe.name + '-csv'!r}, FileName=[str(output_path)])",
+            "table.UpdatePipeline()",
             'view = CreateView("XYChartView")',
-            "display = Show(filtered, view)",
-            f"display.SeriesVisibility = {_python_value(['arc_length', '0', field_name, '1'])}",
+            "display = Show(table, view)",
+            "display.UseIndexForXAxis = 0",
+            'display.XArrayName = "distance_m"',
+            f"display.SeriesVisibility = {_python_value(['distance_m', '0', value_name, '1'])}",
             f"view.ChartTitle = {recipe.name!r}",
             'view.BottomAxisTitle = "distance [m]"',
-            f"view.LeftAxisTitle = {_python_value(recipe.field + (f' [{field_unit}]' if field_unit else ''))}",
+            f"view.LeftAxisTitle = {_python_value(value_name + (f' [{field_unit}]' if field_unit else ''))}",
             "Render()",
-            f"SaveData(str(recipe_dir / {recipe.name + '.csv'!r}), filtered, "
-            f"AddMetaData=0, ChooseArraysToWrite=1, "
-            f"PointDataArrays={_python_value(['arc_length', field_name])})",
             f"SaveState(str(recipe_dir / {recipe.name + '.pvsm'!r}))",
             "",
         ]
@@ -203,7 +238,8 @@ def publish_paraview_recipes(
                 "point field. Use portable_profile='visualization' or 'both'."
             )
         components = field_record.get("components")
-        component_count = len(components) if isinstance(components, list) else 0
+        component_names = components if isinstance(components, list) else []
+        component_count = len(component_names)
         if isinstance(recipe, ContourView) and component_count > 1:
             raise ValueError(
                 f"Contour recipe {recipe.name!r} requires a scalar field; "
@@ -214,10 +250,33 @@ def publish_paraview_recipes(
                 f"Streamline recipe {recipe.name!r} requires a vector field; "
                 f"{recipe.field!r} is scalar-valued."
             )
-        if isinstance(recipe, LineProfile) and component_count > 1:
+        if (
+            isinstance(recipe, LineProfile)
+            and component_count > 1
+            and recipe.component is None
+        ):
             raise ValueError(
-                f"Line-profile recipe {recipe.name!r} requires a scalar field; "
-                f"{recipe.field!r} is vector-valued."
+                f"Line-profile recipe {recipe.name!r} requires component='x', 'y', "
+                f"'z', or 'magnitude' for vector field {recipe.field!r}."
+            )
+        if (
+            isinstance(recipe, LineProfile)
+            and component_count > 1
+            and recipe.component not in {None, "magnitude"}
+            and recipe.component not in component_names
+        ):
+            raise ValueError(
+                f"Line-profile recipe {recipe.name!r} component "
+                f"{recipe.component!r} is absent from field {recipe.field!r}."
+            )
+        if (
+            isinstance(recipe, LineProfile)
+            and component_count <= 1
+            and recipe.component is not None
+        ):
+            raise ValueError(
+                f"Line-profile recipe {recipe.name!r} cannot select a component "
+                f"from scalar field {recipe.field!r}."
             )
         resolved.append((recipe, field_record))
 

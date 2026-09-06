@@ -214,7 +214,8 @@ The backend-neutral workflow API also includes named regions, short rectangular
 channels with wall-attached baffles, pressure and mass-flow boundary variants,
 uniform/potential/previous-result initialization, mesh intent, compact probes,
 surface reductions, force reports, and final-frame line profiles that publish
-only distance plus one requested scalar to CSV. See the
+only distance plus one requested scalar or explicit vector component/magnitude
+to CSV. See the
 [common workflow API](docs/common-workflow-api.md) and the readable
 [bottom-baffle project](examples/channel_baffle_project/case.py). New intent is
 checked against provider capabilities before execution and is never silently

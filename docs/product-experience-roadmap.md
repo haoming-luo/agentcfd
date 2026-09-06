@@ -74,6 +74,8 @@ files stay hidden and reproducible.
   coordinate, residual, Courant, mass/pressure monitor, elapsed, and optional
   workspace-size evidence;
 - terminal-aware `watch` streaming for people and JSON-Line agents;
+- declarative plane slices, scalar contours, and line-seeded streamlines that
+  generate portable ParaView scripts without copying field payloads;
 - one-command post-processing target and self-documenting output directory;
 - JSON Schemas for status, storage, cleanup, and repairable errors.
 
@@ -85,8 +87,8 @@ files stay hidden and reproducible.
    fan/pump, heated pipe, and buoyant enclosure workflows.
 3. Crash-safe checkpoint publication and explicit `resume`, keeping model and
    mesh identity gates.
-4. Declarative sections, slices, streamlines, contours, and camera recipes that
-   generate reproducible ParaView state without storing duplicate volume data.
+4. Extend the shipped filter recipes with camera, plot, image/video, and
+   multi-view layout intent while preserving one shared field payload.
 5. Persist bounded progress history and learned ETA calibration across runs,
    without converting monitoring into high-frequency field output.
 

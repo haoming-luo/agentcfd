@@ -66,7 +66,7 @@
       "type": "object",
       "required": [
         "fields", "histories", "portable_profile", "portable_formats",
-        "frames", "checkpoints", "storage", "reports"
+        "frames", "checkpoints", "storage", "reports", "views"
       ],
       "properties": {
         "fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
@@ -92,10 +92,70 @@
               "every": {"type": "integer", "minimum": 1}
             }
           }
+        },
+        "views": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["type", "name", "field", "origin", "normal"],
+                "properties": {
+                  "type": {"const": "slice"},
+                  "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+                  "field": {"type": "string", "minLength": 1},
+                  "origin": {"$ref": "#/$defs/vector3"},
+                  "normal": {"$ref": "#/$defs/vector3"}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": ["type", "name", "field", "values"],
+                "properties": {
+                  "type": {"const": "contour"},
+                  "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+                  "field": {"type": "string", "minLength": 1},
+                  "values": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type", "name", "field", "seed_start", "seed_end", "seeds",
+                  "direction"
+                ],
+                "properties": {
+                  "type": {"const": "streamlines"},
+                  "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+                  "field": {"type": "string", "minLength": 1},
+                  "seed_start": {"$ref": "#/$defs/vector3"},
+                  "seed_end": {"$ref": "#/$defs/vector3"},
+                  "seeds": {"type": "integer", "minimum": 2},
+                  "direction": {"enum": ["forward", "backward", "both"]}
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
         }
       },
       "additionalProperties": false
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "vector3": {
+      "type": "array",
+      "items": {"type": "number"},
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
 }

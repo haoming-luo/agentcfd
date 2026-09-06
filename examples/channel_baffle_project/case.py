@@ -72,5 +72,19 @@ def build():
                     direction=(1.0, 0.0, 0.0),
                 ),
             ),
+            views=(
+                outputs.slice_view(
+                    "midplane-vorticity",
+                    field="fluid.vorticity",
+                    origin=(0.6, 0.1, 0.05),
+                    normal=(0.0, 0.0, 1.0),
+                ),
+                outputs.streamline_view(
+                    "wake-streamlines",
+                    seed_start=(0.02, 0.01, 0.05),
+                    seed_end=(0.02, 0.19, 0.05),
+                    seeds=40,
+                ),
+            ),
         ),
     )

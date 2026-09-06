@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/postprocess-recipes.schema.json",
+  "title": "AgentCFD reproducible post-processing recipes 0.1",
+  "type": "object",
+  "required": ["schema", "source", "payload_copies", "recipes"],
+  "properties": {
+    "schema": {"const": "agentcfd.postprocess-recipes/0.1"},
+    "source": {"type": "string"},
+    "payload_copies": {"const": 0},
+    "recipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type", "name", "field", "export_field", "association", "script",
+          "state_after_launch", "shares_field_payload"
+        ],
+        "properties": {
+          "type": {"enum": ["slice", "contour", "streamlines"]},
+          "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+          "field": {"type": "string", "minLength": 1},
+          "export_field": {"type": "string", "minLength": 1},
+          "association": {"enum": ["point", "cell"]},
+          "script": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\.py$"},
+          "state_after_launch": {"type": "string", "pattern": "\\.pvsm$"},
+          "shares_field_payload": {"const": "../fields/fields.xdmf"},
+          "origin": {"$ref": "#/$defs/vector3"},
+          "normal": {"$ref": "#/$defs/vector3"},
+          "values": {
+            "type": "array",
+            "items": {"type": "number"},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "seed_start": {"$ref": "#/$defs/vector3"},
+          "seed_end": {"$ref": "#/$defs/vector3"},
+          "seeds": {"type": "integer", "minimum": 2},
+          "direction": {"enum": ["forward", "backward", "both"]}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"type": {"const": "slice"}}},
+            "then": {"required": ["origin", "normal"]}
+          },
+          {
+            "if": {"properties": {"type": {"const": "contour"}}},
+            "then": {"required": ["values"]}
+          },
+          {
+            "if": {"properties": {"type": {"const": "streamlines"}}},
+            "then": {
+              "required": ["seed_start", "seed_end", "seeds", "direction"]
+            }
+          }
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "vector3": {
+      "type": "array",
+      "items": {"type": "number"},
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}

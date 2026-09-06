@@ -25,6 +25,7 @@ _SCHEMAS = (
     "openfoam-turbulent-wall-function-study.schema.json",
     "openfoam-turbulent-model-study.schema.json",
     "openfoam-turbulent-model-sweep.schema.json",
+    "postprocess-recipes.schema.json",
     "project-clean.schema.json",
     "project-status.schema.json",
     "project-storage.schema.json",

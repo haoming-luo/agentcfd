@@ -61,6 +61,12 @@ and whether each variable is a visualization point field or native cell field.
 `view --launch` opens the XDMF in ParaView and can discover a macOS ParaView App
 even when `paraview` is absent from `PATH`.
 
+Named view recipes in `case.py` publish beneath `output/postprocess/` and share
+the same XDMF/HDF5 payload. `agentcfd view . --recipe NAME --launch` starts the
+generated ParaView script for a slice, contour, or streamline pipeline; no
+derived copy of the volume fields is stored. See
+[post-processing recipes](postprocessing-recipes.md).
+
 The CLI and `Project.discover()` resolve the nearest `agentcfd.toml` upward
 from a file or directory. A user inspecting `output/fields/` therefore does not
 need to remember the project root before checking status, rerunning, cleaning,

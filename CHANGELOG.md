@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Add dependency-free `geometry-check` for binary/ASCII STL and OBJ. The
+  versioned report makes units, SI bounds, regions, degeneracy, open and
+  non-manifold edges, orientation, topology memory limits, and imported-mesh
+  readiness explicit; STEP/IGES fail closed pending controlled tessellation.
+- Add explicit boundary-role confirmation to geometry preflight. Name-based
+  suggestions never apply automatically; versioned maps must cover exact
+  regions, and internal-flow policy requires confirmed inlet and outlet roles.
+- Add content-addressed `ImportedSurface` model intent, explicit Cartesian
+  velocity inlets, source presence/hash gates, required interior points, and
+  hard mesh-cell budgets without machine-specific paths in model fingerprints.
+- Add `agentcfd mesh` planning, deterministic preparation, OpenFOAM-native
+  geometry dry-run, `snappyHexMesh -overwrite`, and checkMesh execution with
+  cell-count, non-orthogonality, skewness, and aspect-ratio acceptance gates.
+- Add the first steady incompressible isothermal laminar imported-volume flow
+  provider. It runs the same project lifecycle through SIMPLE convergence,
+  conservation and output checks, then publishes standard verified XDMF/H5.
 - Add run-scoped `logs --run-id` and `diagnose --run-id` so a later successful
   campaign point cannot hide an earlier failure. Sweep failures now preserve
   their immutable run id, directory, exact diagnosis command, and distinct
@@ -9,6 +25,16 @@
 - Add `sweep --max-runs` as a hard zero-work approval boundary after accepted
   cache reuse. Equivalent points inside a request share one solver attempt even
   when that attempt fails, and reports expose planned versus actual starts.
+- Add `sweep --summary-only` for low-storage operating-map screening. It keeps
+  quantities, checks, logs, and provenance while skipping VTK/XDMF/HDF5 and
+  removing provider-native bulk; a distinct fingerprint prevents lightweight
+  results from satisfying later full-field requests.
+- Add `agentcfd promote` to turn one accepted immutable summary point into a
+  provenance-linked full-field campaign result. Promotion fails on changed
+  analysis intent and reuses an existing accepted full-field identity.
+- Add preview-first `agentcfd compact` for accepted full-field campaign points.
+  Explicit `--apply` preserves engineering metadata, logs, and derived
+  CSV/images while removing regenerable spatial bulk and updating identity.
 - Add `agentcfd campaigns` as a field-free design-point index over immutable
   project runs. New run markers carry compact canonical quantities; optional
   recursive storage accounting and unit-preserving CSV export are explicit,

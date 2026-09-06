@@ -14,7 +14,7 @@ from . import outputs as output_types
 from . import procedures as procedure_types
 from .errors import ModelValidationError
 from .fluids import NewtonianFluid
-from .geometry import CircularPipe, Domain, RectangularChannel
+from .geometry import CircularPipe, Domain, ImportedSurface, RectangularChannel
 from .results import SimulationResult
 from .studies import Study
 
@@ -35,7 +35,9 @@ class Model:
             raise ValueError("Model name cannot be empty.")
         if not isinstance(self.study, Study):
             raise TypeError("Model study must be an AgentCFD Study.")
-        if not isinstance(self.domain, (CircularPipe, RectangularChannel)):
+        if not isinstance(
+            self.domain, (CircularPipe, RectangularChannel, ImportedSurface)
+        ):
             raise TypeError("Model domain must be an AgentCFD CFD domain.")
         if not isinstance(self.fluid, NewtonianFluid):
             raise TypeError("Model fluid must be an AgentCFD NewtonianFluid.")
@@ -54,6 +56,7 @@ class Model:
                 (
                     boundary_types.MassFlowInlet,
                     boundary_types.MeanVelocityInlet,
+                    boundary_types.VelocityInlet,
                     boundary_types.FullyDevelopedVelocityInlet,
                     boundary_types.TurbulentMeanVelocityInlet,
                     boundary_types.PressureInlet,
@@ -105,6 +108,7 @@ class Model:
         inlet_types = (
             boundary_types.MassFlowInlet,
             boundary_types.MeanVelocityInlet,
+            boundary_types.VelocityInlet,
             boundary_types.FullyDevelopedVelocityInlet,
             boundary_types.TurbulentMeanVelocityInlet,
             boundary_types.PressureInlet,

@@ -43,7 +43,8 @@
       "required": [
         "study", "procedure", "outputs", "initialization", "mesh_intent",
         "provider", "required_capability",
-        "mesh_strategy", "solver", "portable_field_bundle", "portable_formats"
+        "mesh_strategy", "solver", "result_profile", "portable_field_bundle",
+        "portable_formats", "imported_mesh_plan"
       ],
       "properties": {
         "study": {"type": "object"},
@@ -55,13 +56,15 @@
         "required_capability": {"type": "string"},
         "mesh_strategy": {"type": "string"},
         "solver": {"type": "string"},
+        "result_profile": {"enum": ["full-fields", "summary-only"]},
         "portable_field_bundle": {"type": "boolean"},
         "portable_formats": {
           "type": "array",
           "items": {"enum": ["xdmf", "hdf5", "npz"]},
           "uniqueItems": true
         },
-        "output_plan": {"type": "object"}
+        "output_plan": {"type": "object"},
+        "imported_mesh_plan": {"type": ["object", "null"]}
       },
       "additionalProperties": false
     },
@@ -69,13 +72,16 @@
       "type": "object",
       "required": [
         "model_valid", "provider_compatible", "runtime_available",
-        "portable_io_available", "ready_to_run"
+        "portable_io_available", "input_assets_ready", "mesh_intent_ready",
+        "ready_to_run"
       ],
       "properties": {
         "model_valid": {"type": "boolean"},
         "provider_compatible": {"type": "boolean"},
         "runtime_available": {"type": "boolean"},
         "portable_io_available": {"type": "boolean"},
+        "input_assets_ready": {"type": "boolean"},
+        "mesh_intent_ready": {"type": "boolean"},
         "ready_to_run": {"type": "boolean"}
       },
       "additionalProperties": false

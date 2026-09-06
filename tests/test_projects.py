@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import shlex
 import shutil
@@ -7,7 +8,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Check, contracts, projects
+from agentcfd import Artifact, Check, FieldRecord, contracts, projects
 from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
@@ -38,6 +39,8 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
         "provider_compatible": True,
         "runtime_available": True,
         "portable_io_available": True,
+        "input_assets_ready": True,
+        "mesh_intent_ready": True,
         "ready_to_run": True,
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
@@ -66,6 +69,66 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     assert inspection["run_count"] == 1
     assert inspection["latest_run"]["run_id"] == completed.run_id
     assert inspection["latest_run"]["trust_level"] == "verified"
+
+
+def test_project_plan_verifies_imported_geometry_asset_identity(tmp_path):
+    root = tmp_path / "imported"
+    project = projects.init_project(root)
+    asset = root / "geometry" / "fluid.stl"
+    asset.parent.mkdir()
+    asset.write_bytes(b"content-addressed-test-surface")
+    digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+    (root / "case.py").write_text(
+        f"""from agentcfd import Model, boundaries, fluids, geometry, meshing, studies
+
+def build():
+    domain = geometry.ImportedSurface(
+        asset="geometry/fluid.stl",
+        source_sha256="sha256:{digest}",
+        source_format="stl",
+        unit="m",
+        scale_to_m=1.0,
+        boundary_roles=(("inlet", "inlet"), ("outlet", "outlet"), ("walls", "wall")),
+        bounds_m=((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
+        enclosed_volume_m3=1.0,
+        interior_point_m=(0.5, 0.5, 0.5),
+    )
+    return Model(
+        study=studies.internal_flow(),
+        domain=domain,
+        fluid=fluids.newtonian("water", density=1000.0, dynamic_viscosity=0.001),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(1.0),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    ).step(mesh=meshing.automatic(base_size=0.1, maximum_cells=100000))
+"""
+    )
+
+    plan = project.plan()
+    assert plan["readiness"]["model_valid"] is True
+    assert plan["readiness"]["input_assets_ready"] is True
+    assert plan["readiness"]["provider_compatible"] is False
+    assert (
+        plan["decisions"]["required_capability"]
+        == "openfoam.steady-laminar-imported-surface"
+    )
+    assert plan["readiness"]["mesh_intent_ready"] is True
+    assert plan["decisions"]["imported_mesh_plan"]["maximum_cells"] == 100_000
+    assert {issue["code"] for issue in plan["issues"]} == {"PROVIDER_INCOMPATIBLE"}
+    jsonschema.Draft202012Validator(
+        contracts.load("solution-plan.schema.json")
+    ).validate(plan)
+
+    asset.write_bytes(b"changed")
+    changed = project.plan()
+    assert changed["readiness"]["input_assets_ready"] is False
+    assert "IMPORTED_GEOMETRY_CHANGED" in {issue["code"] for issue in changed["issues"]}
+
+    asset.unlink()
+    missing = project.plan()
+    assert missing["readiness"]["input_assets_ready"] is False
+    assert "IMPORTED_GEOMETRY_MISSING" in {issue["code"] for issue in missing["issues"]}
 
 
 def test_project_replace_mode_overwrites_only_managed_output(tmp_path):
@@ -215,6 +278,173 @@ def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
     assert completed.solver_workspace.is_dir()
 
 
+def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
+    tmp_path, monkeypatch, capsys
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+
+    def complete(provider, _step):
+        provider.case_directory.mkdir(parents=True)
+        native = provider.case_directory / "native-fields.bin"
+        native.write_bytes(b"large-provider-native-payload")
+        log = provider.case_directory / "log.pimpleFoam"
+        log.write_text("End\n")
+        return projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+            artifacts={
+                "field_U": Artifact.from_path(native),
+                "log_pimpleFoam": Artifact.from_path(
+                    log, role="solver-log", media_type="text/plain"
+                ),
+            },
+            fields={
+                "fluid.velocity.cell": FieldRecord(
+                    unit="m/s",
+                    location="cell",
+                    artifact=str(native),
+                    components=("x", "y", "z"),
+                    representation="provider-native",
+                )
+            },
+        )
+
+    monkeypatch.setattr("agentcfd.projects.OpenFOAMChannelProvider.run", complete)
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: False)
+
+    def reject_export(*_args, **_kwargs):
+        raise AssertionError("summary-only campaign must not invoke field export")
+
+    monkeypatch.setattr(
+        "agentcfd.projects.data_exchange.export_openfoam_case", reject_export
+    )
+    points = {"base": {"mean_velocity": 0.5, "baffle_height": 0.12}}
+    preview = project.plan_campaign(points, summary_only=True)
+    full_preview = project.plan_campaign(points)
+
+    assert preview["result_profile"] == "summary-only"
+    assert preview["all_ready"] is True
+    assert full_preview["all_ready"] is False
+    summary_plan = project.plan(portable_fields=False)
+    full_plan = project.plan()
+    assert summary_plan["readiness"]["portable_io_available"] is True
+    assert summary_plan["decisions"]["result_profile"] == "summary-only"
+    assert summary_plan["decisions"]["output_plan"]["estimated_portable_bytes"] == 0
+    assert (
+        summary_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
+        < full_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
+    )
+    assert (
+        preview["points"][0]["result_execution_sha256"]
+        != full_preview["points"][0]["result_execution_sha256"]
+    )
+    report = project.run_campaign(points, summary_only=True)
+    assert report["points"][0]["error"] is None, report["points"][0]
+    run_directory = Path(report["points"][0]["directory"])
+    result = json.loads((run_directory / "result.json").read_text())
+    marker = json.loads((run_directory / "run.json").read_text())
+
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-sweep.schema.json")
+    ).validate(report)
+    assert report["result_profile"] == "summary-only"
+    assert marker["result_profile"] == "summary-only"
+    assert result["provenance"]["result_profile"] == "summary-only"
+    assert result["fields"] == {}
+    assert "field_U" not in result["artifacts"]
+    assert "log_pimpleFoam" in result["artifacts"]
+    assert "intentionally keeps summaries" in (run_directory / "README.md").read_text()
+    assert not (project.root / ".agentcfd" / "work").exists()
+    index = project.campaign_index()
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-index.schema.json")
+    ).validate(index)
+    assert index["runs"][0]["result_profile"] == "summary-only"
+    assert project.plan_campaign(points, summary_only=True)["reusable_count"] == 1
+    assert project.plan_campaign(points)["reusable_count"] == 0
+    request = project.root / "summary-sweep.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.campaign-request/0.1",
+                "points": [
+                    {
+                        "name": "base",
+                        "parameters": {
+                            "mean_velocity": 0.5,
+                            "baffle_height": 0.12,
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    assert (
+        entrypoint(
+            [
+                "sweep",
+                str(project.root),
+                str(request),
+                "--summary-only",
+                "--plan-only",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["result_profile"] == "summary-only"
+
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: True)
+    promotion_calls = []
+
+    def publish_full_fields(_project, **kwargs):
+        promotion_calls.append(kwargs)
+        target = project.root / "campaigns" / "promoted-target"
+        target.mkdir(exist_ok=True)
+        promoted_result = projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+        )
+        result_path = promoted_result.write(target / "result.json")
+        plan_path = target / "plan.json"
+        plan_path.write_text("{}\n")
+        return projects.ProjectRun(
+            run_id="promoted-target",
+            directory=target,
+            result=promoted_result,
+            result_path=result_path,
+            plan_path=plan_path,
+            field_bundle=None,
+            mode="campaign",
+            solver_workspace=None,
+        )
+
+    monkeypatch.setattr(projects.Project, "run", publish_full_fields)
+    source_run_id = report["points"][0]["run_id"]
+    promotion = project.promote_campaign_run(source_run_id)
+
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-promotion.schema.json")
+    ).validate(promotion)
+    assert promotion["execution"] == "executed"
+    assert promotion["target"]["result_profile"] == "full-fields"
+    assert promotion["observation_cost"]["solver_processes_started"] == 1
+    assert promotion_calls[0]["portable_fields"] is True
+    assert promotion_calls[0]["_promotion_source_run_id"] == source_run_id
+    assert entrypoint(["promote", str(project.root), source_run_id, "--json"]) == 0
+    assert (
+        json.loads(capsys.readouterr().out)["target"]["result_profile"] == "full-fields"
+    )
+
+
 def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
@@ -246,9 +476,9 @@ def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):
 
     report = project.logs(lines=3)
 
-    jsonschema.Draft202012Validator(contracts.load("project-logs.schema.json")).validate(
-        report
-    )
+    jsonschema.Draft202012Validator(
+        contracts.load("project-logs.schema.json")
+    ).validate(report)
     assert report["source"] == "workspace"
     assert report["returned_lines"] == 3
     assert report["truncated"] is True
@@ -332,7 +562,9 @@ def test_project_resume_stages_identical_interrupted_checkpoint(tmp_path, monkey
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
     manifest = project.manifest_path.read_text()
-    project.manifest_path.write_text(manifest.replace("export_fields = true", "export_fields = false"))
+    project.manifest_path.write_text(
+        manifest.replace("export_fields = true", "export_fields = false")
+    )
     project = projects.Project(project.root)
     step = project.load_step()
     plan = project.plan()
@@ -708,9 +940,7 @@ def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypa
     assert report["points"][2]["outcome"] == "accepted"
 
 
-def test_historical_campaign_failure_remains_diagnosable_by_run_id(
-    tmp_path, capsys
-):
+def test_historical_campaign_failure_remains_diagnosable_by_run_id(tmp_path, capsys):
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -787,6 +1017,126 @@ def test_historical_campaign_failure_remains_diagnosable_by_run_id(
     assert "historical synthetic failure" in cli_report["tail"]
     with pytest.raises(ProjectError, match="No project run exists"):
         project.logs(run_id="missing-run")
+
+
+def test_campaign_compaction_is_preview_first_and_preserves_derived_outputs(
+    tmp_path, monkeypatch, capsys
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: True)
+    parameters = {"mean_velocity": 0.5, "baffle_height": 0.12}
+    plan = project.plan(parameters=parameters, portable_fields=True)
+    run_id = "accepted-full-fields"
+    run_directory = project.root / "campaigns" / run_id
+    fields = run_directory / "fields"
+    postprocess = run_directory / "postprocess"
+    evidence = run_directory / "evidence"
+    fields.mkdir(parents=True)
+    postprocess.mkdir()
+    evidence.mkdir()
+    xdmf = fields / "fields.xdmf"
+    h5 = fields / "fields.h5"
+    manifest = fields / "manifest.json"
+    xdmf.write_text("<Xdmf/>\n")
+    h5.write_bytes(b"portable-volume-fields" * 100)
+    manifest.write_text("{}\n")
+    recipe_manifest = postprocess / "manifest.json"
+    recipe_script = postprocess / "midplane.py"
+    derived_csv = postprocess / "centerline.csv"
+    recipe_manifest.write_text("{}\n")
+    recipe_script.write_text("# generated recipe\n")
+    derived_csv.write_text("distance_m,fluid.pressure\n0,1\n")
+    log = evidence / "pimpleFoam.log"
+    log.write_text("End\n")
+    result = projects.SimulationResult(
+        status="completed",
+        converged=True,
+        provider="openfoam",
+        quantities={},
+        checks=(Check("execution", True, kind="runtime"),),
+        fields={
+            "fluid.pressure.cell": FieldRecord(
+                unit="Pa",
+                location="cell",
+                artifact=str(xdmf),
+                components=("scalar",),
+                representation="xdmf-hdf5",
+            )
+        },
+        artifacts={
+            "fields.xdmf": Artifact.from_path(xdmf, role="portable-field-bundle"),
+            "fields.hdf5": Artifact.from_path(h5, role="portable-field-bundle"),
+            "fields.manifest": Artifact.from_path(
+                manifest, role="portable-field-bundle"
+            ),
+            "postprocess.manifest": Artifact.from_path(
+                recipe_manifest, role="post-processing-recipe-index"
+            ),
+            "postprocess.midplane": Artifact.from_path(
+                recipe_script, role="paraview-python-recipe"
+            ),
+            "log_pimpleFoam": Artifact.from_path(log, role="solver-log"),
+        },
+        provenance={"result_profile": "full-fields"},
+    )
+    result.write(run_directory / "result.json")
+    full_identity = project._result_execution_fingerprint(
+        plan["model"]["analysis_sha256"],
+        provider="openfoam",
+        portable_fields=True,
+    )
+    (run_directory / "run.json").write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.project-run/0.1",
+                "run_id": run_id,
+                "mode": "campaign",
+                "directory": str(run_directory),
+                "status": "completed",
+                "accepted": True,
+                "result_profile": "full-fields",
+                "analysis_sha256": plan["model"]["analysis_sha256"],
+                "result_execution_sha256": full_identity,
+                "parameters": parameters,
+                "design_point_name": "base",
+                "completed_at": "2026-09-06T00:00:00+00:00",
+            }
+        )
+    )
+    (run_directory / "plan.json").write_text(json.dumps(plan))
+    (run_directory / "README.md").write_text("# Full result\n")
+
+    assert entrypoint(["compact", str(project.root), run_id, "--json"]) == 0
+    preview = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-compaction.schema.json")
+    ).validate(preview)
+    assert preview["applied"] is False
+    assert preview["candidate_bytes"] > 0
+    assert h5.is_file()
+    assert derived_csv.is_file()
+
+    applied = project.compact_campaign_run(run_id, apply=True)
+    compacted_result = projects.read_result_record(
+        run_directory / "result.json", verify_artifacts=True
+    )
+    compacted_marker = json.loads((run_directory / "run.json").read_text())
+
+    assert applied["reclaimed_bytes"] == preview["candidate_bytes"]
+    assert not fields.exists()
+    assert not recipe_manifest.exists()
+    assert not recipe_script.exists()
+    assert derived_csv.is_file()
+    assert log.is_file()
+    assert compacted_result["fields"] == {}
+    assert set(compacted_result["artifacts"]) == {"log_pimpleFoam"}
+    assert compacted_result["provenance"]["result_profile"] == "summary-only"
+    assert compacted_marker["result_profile"] == "summary-only"
+    assert compacted_marker["result_execution_sha256"] != full_identity
+    with pytest.raises(ProjectError, match="already summary-only"):
+        project.compact_campaign_run(run_id)
 
 
 def test_project_replace_mode_refuses_unmanaged_output(tmp_path):
@@ -927,9 +1277,7 @@ def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, ca
     )
     assert [
         item["name"]
-        for item in plan["decisions"]["output_plan"]["channels"]["views"][
-            "definitions"
-        ]
+        for item in plan["decisions"]["output_plan"]["channels"]["views"]["definitions"]
     ] == ["midplane-vorticity", "wake-streamlines", "centerline-pressure"]
 
 
@@ -998,9 +1346,10 @@ def test_project_doctor_combines_health_resource_and_energy_truthfulness(
     assert entrypoint(["doctor", str(project.root), "--json"]) == expected_exit
     cli_report = json.loads(capsys.readouterr().out)
     assert cli_report["resource_estimate"]["cell_updates_proxy"] == 19_104_000
-    assert cli_report["resource_estimate"]["energy"] == report["resource_estimate"][
-        "energy"
-    ]
+    assert (
+        cli_report["resource_estimate"]["energy"]
+        == report["resource_estimate"]["energy"]
+    )
 
 
 def test_project_status_next_command_preserves_paths_with_spaces(tmp_path):

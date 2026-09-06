@@ -90,6 +90,25 @@ distinguishes reuse from an existing campaign versus an identical point later
 in the same request, so estimated solver starts are not inflated by duplicate
 inputs.
 
+For exploration, `sweep --summary-only` keeps the same quantities, checks,
+histories, logs, and provenance while omitting permanent field payloads. Its
+distinct result fingerprint prevents downstream agents from assuming that a
+summary-only design point can satisfy a full-field request. This supports a
+two-stage loop: screen many points cheaply, then rerun the small promoted set
+with standard XDMF/HDF5 output for visual review, AgentFEM exchange, or learned
+field workflows.
+
+`agentcfd promote . <run-id> --json` is the explicit transition between those
+stages. It is fail-closed on changed model intent, a rejected source, or missing
+portable-I/O capability, and its versioned report states whether a full-field
+identity was executed or reused and whether any solver process started.
+
+`agentcfd compact . <run-id> --json` is the inverse storage transition and is
+preview-only unless `--apply` is explicit. It removes regenerable spatial bulk
+without reading HDF5, preserves compact engineering and derived evidence, and
+updates result identity so an agent can no longer mistake the point for a
+field-bearing sample.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

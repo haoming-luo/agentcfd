@@ -22,6 +22,7 @@ from . import (
     engineering,
     fluids,
     geometry,
+    geometry_io,
     licensing,
     outputs,
     procedures,
@@ -35,10 +36,13 @@ from .jsonio import strict_json_object
 from .model import Model
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
+    execute_imported_mesh,
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     OpenFOAMTurbulentPrecursorProvider,
     prepare_pipe_grid_study,
+    plan_imported_mesh,
+    prepare_imported_mesh,
     prepare_turbulent_model_study,
     prepare_turbulent_wall_function_study,
     prepare_turbulent_wall_study,
@@ -139,6 +143,26 @@ def _campaign_request(path: Path) -> dict[str, dict[str, object]]:
             raise ProjectError(f"Campaign point name {name!r} is duplicated.")
         points[name] = parameters
     return points
+
+
+def _boundary_role_map(path: Path | None) -> dict[str, str] | None:
+    if path is None:
+        return None
+    try:
+        payload = strict_json_object(
+            path.read_text(encoding="utf-8"),
+            label="boundary role map",
+        )
+    except OSError as error:
+        raise ProjectError(f"Cannot read boundary role map {path}: {error}") from error
+    if payload.get("schema") != "agentcfd.boundary-role-map/0.1":
+        raise ProjectError(
+            "Boundary role map must declare agentcfd.boundary-role-map/0.1."
+        )
+    roles = payload.get("regions")
+    if not isinstance(roles, dict):
+        raise ProjectError("Boundary role map requires an object named regions.")
+    return roles
 
 
 def _doctor() -> dict[str, object]:
@@ -1319,6 +1343,80 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("project", nargs="?", type=Path, default=Path("."))
     inspect.add_argument("--json", action="store_true", dest="as_json")
 
+    geometry_check = subparsers.add_parser(
+        "geometry-check",
+        help="Inspect imported STL/OBJ units, bounds, regions, and topology read-only.",
+    )
+    geometry_check.add_argument("path", type=Path)
+    geometry_check.add_argument(
+        "--unit",
+        choices=("m", "mm", "cm", "um", "in", "ft"),
+        help="Explicit physical unit of source coordinates.",
+    )
+    geometry_check.add_argument(
+        "--allow-open",
+        action="store_true",
+        help="Do not treat boundary edges as an error for an intentional open surface.",
+    )
+    geometry_check.add_argument(
+        "--max-topology-triangles",
+        type=int,
+        default=1_000_000,
+        help="Memory guard for edge topology (default: 1000000 triangles).",
+    )
+    geometry_check.add_argument(
+        "--merge-tolerance",
+        type=float,
+        default=0.0,
+        help="Explicit vertex merge tolerance in source units (default: exact).",
+    )
+    geometry_check.add_argument(
+        "--roles",
+        type=Path,
+        help="Versioned JSON map from exact surface region names to CFD roles.",
+    )
+    geometry_check.add_argument(
+        "--internal-flow",
+        action="store_true",
+        help="Require at least one explicitly confirmed inlet and outlet.",
+    )
+    geometry_check.add_argument(
+        "--output",
+        type=Path,
+        help="Atomically write the versioned inspection JSON for case.py reuse.",
+    )
+    geometry_check.add_argument("--json", action="store_true", dest="as_json")
+
+    mesh = subparsers.add_parser(
+        "mesh",
+        help="Plan, prepare, and verify an imported-surface OpenFOAM mesh.",
+    )
+    mesh.add_argument("project", nargs="?", type=Path, default=Path("."))
+    mesh.add_argument(
+        "--output",
+        type=Path,
+        help="New directory for the inspectable mesh-only OpenFOAM case.",
+    )
+    mesh.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Resolve cell/refinement/quality budgets without writing or running.",
+    )
+    mesh.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Write the mesh case but do not start OpenFOAM.",
+    )
+    mesh.add_argument("--container-image")
+    mesh.add_argument("--timeout", type=float, default=3600.0)
+    mesh.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
+    mesh.add_argument("--json", action="store_true", dest="as_json")
+
     status = subparsers.add_parser(
         "status",
         help="Show project state and the single recommended next action.",
@@ -1447,7 +1545,34 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Fail before execution if more than this many new solver runs are needed.",
     )
+    sweep.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Keep quantities and evidence but skip permanent XDMF/HDF5 fields.",
+    )
     sweep.add_argument("--json", action="store_true", dest="as_json")
+
+    promote = subparsers.add_parser(
+        "promote",
+        help="Rerun one accepted summary-only campaign point with full fields.",
+    )
+    promote.add_argument("project", type=Path)
+    promote.add_argument("run_id")
+    promote.add_argument("--container-image")
+    promote.add_argument("--json", action="store_true", dest="as_json")
+
+    compact = subparsers.add_parser(
+        "compact",
+        help="Preview removal of reproducible full-field bulk from one campaign run.",
+    )
+    compact.add_argument("project", type=Path)
+    compact.add_argument("run_id")
+    compact.add_argument(
+        "--apply",
+        action="store_true",
+        help="Rewrite the run as summary-only and remove listed field artifacts.",
+    )
+    compact.add_argument("--json", action="store_true", dest="as_json")
 
     clean = subparsers.add_parser(
         "clean",
@@ -2258,6 +2383,103 @@ def main(argv: list[str] | None = None) -> int:
                     f"trust {report['latest_run']['trust_level']}"
                 )
         return 0
+    if args.command == "geometry-check":
+        report = geometry_io.inspect_geometry(
+            args.path,
+            unit=args.unit,
+            require_watertight=not args.allow_open,
+            topology_triangle_limit=args.max_topology_triangles,
+            merge_tolerance=args.merge_tolerance,
+            boundary_roles=_boundary_role_map(args.roles),
+            internal_flow=args.internal_flow,
+        )
+        if args.output is not None:
+            _write_json_atomic(args.output, report)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            surface = report["surface"]
+            print(
+                f"Geometry {report['source']['format']} | "
+                f"{surface['triangle_count']} triangles | "
+                f"watertight {str(surface['watertight']).lower()}"
+            )
+            if surface["dimensions_m"] is not None:
+                dimensions = " × ".join(
+                    f"{float(value):.6g}" for value in surface["dimensions_m"]
+                )
+                print(f"size: {dimensions} m")
+            for issue in report["issues"]:
+                print(f"{issue['severity']}: {issue['code']} | {issue['repair']}")
+            print(f"next: {report['next_action']['message']}")
+        ready = report["readiness"]["geometry_ready"] and (
+            args.roles is None or report["readiness"]["boundary_roles_ready"]
+        )
+        return 0 if ready else 3
+    if args.command == "mesh":
+        project = projects.Project.discover(args.project)
+        step = project.load_step(_project_parameters(args.param))
+        domain = step.model.domain
+        if not isinstance(domain, geometry.ImportedSurface):
+            raise ProjectError("The mesh command requires ImportedSurface geometry.")
+        source = projects._safe_project_path(
+            project.root,
+            domain.asset,
+            label="imported surface asset",
+        )
+        if not source.is_file():
+            raise ProjectError(f"Imported geometry asset is missing: {domain.asset}.")
+        if "sha256:" + file_sha256(source) != domain.source_sha256:
+            raise ProjectError(
+                "Imported geometry bytes changed; reinspect and explicitly update model intent."
+            )
+        mesh_plan = plan_imported_mesh(step)
+        if args.plan_only:
+            report = mesh_plan.to_dict()
+            if args.as_json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+            else:
+                print(
+                    "Imported mesh plan | background "
+                    f"{report['background_cell_count']} cells | hard maximum "
+                    f"{report['maximum_cells']}"
+                )
+                print("next: rerun with --output DIRECTORY")
+            return 0
+        if args.output is None:
+            raise ProjectError(
+                "Imported mesh preparation requires an explicit new --output directory."
+            )
+        prepared = prepare_imported_mesh(
+            step,
+            source=source,
+            directory=args.output,
+        )
+        if args.prepare_only:
+            report = prepared.to_dict()
+            accepted = True
+        else:
+            image = args.container_image or project.manifest.openfoam.get(
+                "container_image"
+            )
+            result = execute_imported_mesh(
+                prepared,
+                container_image=str(image) if image else None,
+                timeout_seconds=args.timeout,
+            )
+            report = result.to_dict()
+            accepted = result.accepted
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            mode = "prepared" if args.prepare_only else "accepted" if accepted else "failed"
+            print(f"Imported mesh {mode} | {prepared.directory}")
+            if not args.prepare_only:
+                print(
+                    f"checks {len(report['checks'])} | "
+                    f"accepted {str(accepted).lower()}"
+                )
+        return 0 if accepted else 3
     if args.command == "watch":
         if not math.isfinite(args.interval) or args.interval < 0.2:
             raise ValueError(
@@ -2491,6 +2713,7 @@ def main(argv: list[str] | None = None) -> int:
                 points,
                 provider=args.provider,
                 container_image=args.container_image,
+                summary_only=args.summary_only,
             )
         else:
             report = project.run_campaign(
@@ -2499,6 +2722,7 @@ def main(argv: list[str] | None = None) -> int:
                 container_image=args.container_image,
                 fail_fast=args.fail_fast,
                 maximum_solver_runs=args.max_runs,
+                summary_only=args.summary_only,
             )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2508,6 +2732,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"would execute {report['would_execute_count']} | reusable "
                 f"{report['reusable_count']}"
             )
+            print(f"result profile: {report['result_profile']}")
             for point in report["points"]:
                 print(
                     f"{point['name']} | ready {str(point['ready']).lower()} | "
@@ -2521,6 +2746,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{report['deduplicated_count']} | accepted "
                 f"{report['accepted_count']}"
             )
+            print(f"result profile: {report['result_profile']}")
             for point in report["points"]:
                 print(
                     f"{point['name']} | {point['execution']} | {point['outcome']}"
@@ -2531,6 +2757,38 @@ def main(argv: list[str] | None = None) -> int:
         if args.plan_only:
             return 0 if report["all_ready"] else 3
         return 0 if report["successful"] else 3
+    if args.command == "promote":
+        report = projects.Project.discover(args.project).promote_campaign_run(
+            args.run_id,
+            container_image=args.container_image,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Promotion {report['execution']} | source "
+                f"{report['source']['run_id']} | target "
+                f"{report['target']['run_id']} | accepted "
+                f"{str(report['target']['accepted']).lower()}"
+            )
+            print(f"fields: {report['target']['directory']}")
+        return 0 if report["successful"] else 3
+    if args.command == "compact":
+        report = projects.Project.discover(args.project).compact_campaign_run(
+            args.run_id,
+            apply=args.apply,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            action = "Reclaimed" if report["applied"] else "Would reclaim"
+            print(
+                f"{action} {report['candidate_display']} from {report['run_id']} "
+                f"({report['candidate_file_count']} files)"
+            )
+            if not report["applied"]:
+                print("preview only; add --apply to compact this accepted run")
+        return 0
     if args.command == "clean":
         report = projects.Project(args.project).clean(
             apply=args.apply,

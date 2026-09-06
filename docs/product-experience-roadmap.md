@@ -105,13 +105,24 @@ files stay hidden and reproducible.
   semantics and copyable recovery commands in the sweep report;
 - hard pre-execution solver-count budgets and request-level deduplication even
   for failed or review outcomes, preventing agents from repeating wasted work;
+- summary-only campaign screening with distinct full-field identity, compact
+  evidence retention, lower temporary-storage estimates, and no permanent H5;
+- one-command, identity-gated promotion of accepted lightweight points into
+  provenance-linked full-field results, with exact accepted reuse;
+- preview-first reversible-by-recomputation campaign compaction that removes
+  spatial bulk without H5 reads while preserving engineering/derived evidence;
+- dependency-free imported STL/OBJ inspection with explicit units, SI bounds,
+  named regions, topology defects, enclosed volume, and a memory guard;
+- content-addressed imported-surface `Model` intent with confirmed boundary
+  roles, portable fingerprints, atomic inspection reports, and project asset
+  presence/hash gates;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 
 ### Next: eliminate repeated setup work
 
-1. Imported CAD/mesh onboarding with automatic unit, watertightness, region, and
-   boundary-role audit before meshing.
+1. Extend the released steady laminar imported-volume slice with controlled
+   STEP/IGES tessellation, prism layers, turbulence, and thermal physics.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
 3. Extend the shipped filter recipes with multi-view layout and explicit normal

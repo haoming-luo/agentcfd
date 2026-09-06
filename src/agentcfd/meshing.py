@@ -110,6 +110,7 @@ class MeshIntent:
     local_sizing: tuple[LocalSizing, ...] = ()
     boundary_layers: tuple[BoundaryLayers, ...] = ()
     quality: MeshQuality = MeshQuality()
+    maximum_cells: int = 2_000_000
 
     def __post_init__(self) -> None:
         if self.method not in {"automatic", "structured"}:
@@ -129,12 +130,25 @@ class MeshIntent:
             raise TypeError("Mesh boundary_layers must contain BoundaryLayers objects.")
         if not isinstance(self.quality, MeshQuality):
             raise TypeError("Mesh quality must be an AgentCFD MeshQuality object.")
+        object.__setattr__(
+            self,
+            "maximum_cells",
+            integer_at_least(
+                self.maximum_cells,
+                name="Maximum mesh cells",
+                minimum=1_000,
+            ),
+        )
         local_regions = [name for item in local for name in item.regions]
         if len(set(local_regions)) != len(local_regions):
-            raise ValueError("A region cannot have multiple conflicting local mesh sizes.")
+            raise ValueError(
+                "A region cannot have multiple conflicting local mesh sizes."
+            )
         layer_regions = [name for item in layers for name in item.regions]
         if len(set(layer_regions)) != len(layer_regions):
-            raise ValueError("A region cannot have multiple conflicting boundary-layer controls.")
+            raise ValueError(
+                "A region cannot have multiple conflicting boundary-layer controls."
+            )
         coarsened = sorted(
             name
             for item in local
@@ -168,6 +182,7 @@ class MeshIntent:
             "local_sizing": [item.to_dict() for item in self.local_sizing],
             "boundary_layers": [item.to_dict() for item in self.boundary_layers],
             "quality": self.quality.to_dict(),
+            "maximum_cells": self.maximum_cells,
         }
 
 
@@ -196,6 +211,7 @@ def automatic(
     local_sizing: tuple[LocalSizing, ...] = (),
     boundary_layers: tuple[BoundaryLayers, ...] = (),
     quality: MeshQuality | None = None,
+    maximum_cells: int = 2_000_000,
 ) -> MeshIntent:
     return MeshIntent(
         method="automatic",
@@ -204,14 +220,21 @@ def automatic(
         local_sizing=local_sizing,
         boundary_layers=boundary_layers,
         quality=quality or MeshQuality(),
+        maximum_cells=maximum_cells,
     )
 
 
-def structured(*, base_size: float, quality: MeshQuality | None = None) -> MeshIntent:
+def structured(
+    *,
+    base_size: float,
+    quality: MeshQuality | None = None,
+    maximum_cells: int = 2_000_000,
+) -> MeshIntent:
     return MeshIntent(
         method="structured",
         base_size=base_size,
         quality=quality or MeshQuality(),
+        maximum_cells=maximum_cells,
     )
 
 

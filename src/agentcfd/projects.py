@@ -25,17 +25,19 @@ from typing import Mapping
 
 from . import boundaries, data_exchange, diagnostics, engineering, postprocessing
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
-from .geometry import CircularPipe, RectangularChannel
+from .geometry import CircularPipe, ImportedSurface, RectangularChannel
 from .model import Step
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
     OpenFOAMChannelProvider,
+    OpenFOAMImportedProvider,
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     ReferencePipeProvider,
+    plan_imported_mesh,
 )
 from .providers.openfoam_channel import materialize_interrupted_restart
-from .results import Artifact, FieldRecord, SimulationResult
+from .results import Artifact, FieldRecord, SimulationResult, read_result_record
 
 
 @dataclass(frozen=True, slots=True)
@@ -217,6 +219,10 @@ def _inlet_reynolds(step: Step) -> float | None:
     )
     if inlet is None:
         return None
+    if not hasattr(step.model.domain, "area") or not hasattr(
+        step.model.domain, "hydraulic_diameter"
+    ):
+        return None
     if isinstance(inlet, boundaries.MassFlowInlet):
         velocity = inlet.mass_flow_rate / (
             step.model.fluid.density * step.model.domain.area
@@ -236,6 +242,17 @@ def _human_bytes(value: int) -> str:
         if value >= divisor:
             return f"{value / divisor:.2f} {unit}"
     return f"{value} B"
+
+
+def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
+    """Replace one managed JSON object without exposing a partial record."""
+
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
 
 
 def _tree_usage(path: Path) -> tuple[int, int]:
@@ -631,6 +648,14 @@ def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
                 "",
             )
         )
+    elif result.provenance.get("result_profile") == "summary-only":
+        lines.extend(
+            (
+                "This campaign point intentionally keeps summaries and evidence only.",
+                "Rerun the selected point without `--summary-only` to publish XDMF/HDF5 fields.",
+                "",
+            )
+        )
     recipe_manifest = postprocessing.read_recipe_manifest(run.directory)
     if recipe_manifest is not None and recipe_manifest.get("recipes"):
         lines.extend(
@@ -718,6 +743,7 @@ def _resolved_output_plan(
     *,
     provider: str,
     openfoam: Mapping[str, object],
+    export_fields: bool = True,
 ) -> dict[str, object]:
     """Resolve user output intent into inspectable counts and a conservative budget."""
 
@@ -795,6 +821,14 @@ def _resolved_output_plan(
         estimated_cells = (
             nx[0] * (ny[0] + ny[1]) + nx[1] * ny[1] + nx[2] * (ny[0] + ny[1])
         ) * nz
+    elif (
+        provider == "openfoam"
+        and isinstance(step.model.domain, ImportedSurface)
+        and step.mesh is not None
+    ):
+        # snappy refinement is geometry-dependent; use the public hard stop as
+        # a conservative storage bound rather than inventing a precise count.
+        estimated_cells = step.mesh.maximum_cells
 
     components = {
         "fluid.velocity": 3,
@@ -815,24 +849,44 @@ def _resolved_output_plan(
         )
         field_bytes = requested_frames * entities * scalar_components * 8
         mesh_bytes = estimated_cells * 8 * 10
-        estimated_portable_bytes = math.ceil(
-            1.10 * (field_bytes + mesh_bytes) + 1024**2
+        estimated_portable_bytes = (
+            math.ceil(1.10 * (field_bytes + mesh_bytes) + 1024**2)
+            if export_fields
+            else 0
         )
-        if "npz" in step.output.portable_formats:
+        if export_fields and "npz" in step.output.portable_formats:
             estimated_portable_bytes += field_bytes + mesh_bytes
-        # Current external adapter stages solver-native and VTK data before publishing HDF5.
-        raw_staging_bytes = estimated_portable_bytes + field_bytes * 2
+        # Full export stages solver-native and VTK data before publishing HDF5.
+        # Summary-only still needs native solver frames during execution, but
+        # neither VTK conversion nor a permanent portable field copy.
+        raw_staging_bytes = (
+            estimated_portable_bytes + field_bytes * 2
+            if export_fields
+            else field_bytes + mesh_bytes
+        )
         temporary_peak_safety_factor = 1.25
         estimated_temporary_peak_bytes = math.ceil(
             temporary_peak_safety_factor * raw_staging_bytes
         )
+        imported_bound = isinstance(step.model.domain, ImportedSurface)
         estimate_calibration = {
-            "method": "native-plus-vtk-plus-portable-with-measured-headroom",
+            "method": (
+                "snappy-hard-cell-bound-plus-export-staging"
+                if imported_bound and export_fields
+                else "snappy-hard-cell-bound-native-only"
+                if imported_bound
+                else "native-plus-vtk-plus-portable-with-measured-headroom"
+                if export_fields
+                else "native-solver-only-summary-with-conservative-headroom"
+            ),
             "uncompressed_requested_field_bytes": field_bytes,
             "raw_staging_bytes": raw_staging_bytes,
             "safety_factor": temporary_peak_safety_factor,
             "evidence": (
-                "OpenCFD-v2606 baffled-channel 20-frame run: 122.05 MiB managed "
+                "Imported geometry uses maximum_cells/maxGlobalCells as a fail-safe "
+                "upper bound; the checked duct resolved 6,400 of 200,000 allowed cells."
+                if imported_bound
+                else "OpenCFD-v2606 baffled-channel 20-frame run: 122.05 MiB managed "
                 "during retained-workspace publication versus 101.84 MiB raw estimate"
             ),
         }
@@ -849,7 +903,11 @@ def _resolved_output_plan(
             },
             "views": {
                 "definitions": [item.to_dict() for item in step.output.views],
-                "retention": "scripts and state only; shared portable fields",
+                "retention": (
+                    "scripts and state only; shared portable fields"
+                    if export_fields
+                    else "not published in summary-only result profile"
+                ),
             },
             "field_frames": {
                 **frames.to_dict(),
@@ -995,6 +1053,18 @@ class Project:
         settings = self._openfoam_settings()
         selected_image = container_image or settings.get("container_image")
         timeout_seconds = float(settings.get("timeout_seconds", 3600.0))
+        if step is not None and isinstance(step.model.domain, ImportedSurface):
+            source = _safe_project_path(
+                self.root,
+                step.model.domain.asset,
+                label="imported surface asset",
+            )
+            return OpenFOAMImportedProvider(
+                source=source,
+                case_directory=case_directory,
+                container_image=str(selected_image) if selected_image else None,
+                timeout_seconds=timeout_seconds,
+            )
         if step is not None and isinstance(step.model.domain, RectangularChannel):
             return OpenFOAMChannelProvider(
                 case_directory=case_directory,
@@ -1019,10 +1089,13 @@ class Project:
         *,
         provider: str,
         container_image: str | None = None,
+        portable_fields: bool | None = None,
     ) -> str:
         settings: dict[str, object] = {}
         if provider == "openfoam":
             settings = self._openfoam_settings()
+            if portable_fields is not None:
+                settings["export_fields"] = portable_fields
             if container_image is not None:
                 settings["container_image"] = container_image
         return content_fingerprint(
@@ -1067,12 +1140,15 @@ class Project:
         *,
         provider: str,
         container_image: str | None = None,
+        portable_fields: bool | None = None,
     ) -> str:
         """Fingerprint settings that can change the published result surface."""
 
         settings: dict[str, object] = {}
         if provider == "openfoam":
             settings = self._openfoam_settings()
+            if portable_fields is not None:
+                settings["export_fields"] = portable_fields
             settings.pop("timeout_seconds", None)
             settings.pop("keep_workspace", None)
             if container_image is not None:
@@ -1091,11 +1167,14 @@ class Project:
         provider: str | None = None,
         container_image: str | None = None,
         parameters: Mapping[str, object] | None = None,
+        portable_fields: bool | None = None,
         _step: Step | None = None,
     ) -> dict[str, object]:
         selected_name = provider or self.manifest.default_provider
         if selected_name not in {"reference", "openfoam"}:
             raise ProjectError("Provider must be 'reference' or 'openfoam'.")
+        if portable_fields is not None and not isinstance(portable_fields, bool):
+            raise ProjectError("Portable fields override must be true, false, or null.")
         selected_parameters = self._parameters(parameters)
         step = _step or self.load_step(selected_parameters)
         issues: list[ProjectIssue] = []
@@ -1120,7 +1199,9 @@ class Project:
         )
         descriptor = selected.descriptor()
         study = step.model.study
-        if selected_name == "reference":
+        if isinstance(step.model.domain, ImportedSurface):
+            required_capability = "openfoam.steady-laminar-imported-surface"
+        elif selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
         elif isinstance(step.model.domain, RectangularChannel):
             required_capability = "openfoam.transient-laminar-baffled-channel"
@@ -1130,6 +1211,22 @@ class Project:
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
             )
+        mesh_intent_ready = True
+        imported_mesh_plan = None
+        if isinstance(step.model.domain, ImportedSurface) and model_valid:
+            try:
+                imported_mesh_plan = plan_imported_mesh(step).to_dict()
+            except UnsupportedCaseError as error:
+                mesh_intent_ready = False
+                issues.append(
+                    ProjectIssue(
+                        "IMPORTED_MESH_INTENT_UNSUPPORTED",
+                        "error",
+                        str(error),
+                        "case.py:mesh",
+                        "Declare supported automatic mesh intent, an interior point, and a hard cell budget.",
+                    )
+                )
         provider_compatible = model_valid
         compatibility_detail = "model validation failed"
         if model_valid:
@@ -1155,6 +1252,36 @@ class Project:
                 )
             )
 
+        input_assets_ready = True
+        if isinstance(step.model.domain, ImportedSurface):
+            asset = _safe_project_path(
+                self.root,
+                step.model.domain.asset,
+                label="imported surface asset",
+            )
+            if not asset.is_file():
+                input_assets_ready = False
+                issues.append(
+                    ProjectIssue(
+                        "IMPORTED_GEOMETRY_MISSING",
+                        "error",
+                        f"Imported geometry asset is missing: {step.model.domain.asset}.",
+                        f"case.py:domain.asset",
+                        "Restore the content-addressed project-relative geometry asset.",
+                    )
+                )
+            elif "sha256:" + file_sha256(asset) != step.model.domain.source_sha256:
+                input_assets_ready = False
+                issues.append(
+                    ProjectIssue(
+                        "IMPORTED_GEOMETRY_CHANGED",
+                        "error",
+                        "Imported geometry bytes differ from the inspected source hash.",
+                        f"case.py:domain.source_sha256",
+                        "Reinspect the asset and explicitly update model intent.",
+                    )
+                )
+
         reynolds = _inlet_reynolds(step) if model_valid else None
         if selected_name == "reference" and reynolds is not None and reynolds >= 2300:
             provider_compatible = False
@@ -1167,11 +1294,17 @@ class Project:
                     "Use OpenFOAM with an explicit turbulent Study or reduce the declared flow rate.",
                 )
             )
+        export_fields = selected_name == "openfoam" and (
+            bool(self._openfoam_settings().get("export_fields", True))
+            if portable_fields is None
+            else portable_fields
+        )
         try:
             output_plan = _resolved_output_plan(
                 step,
                 provider=selected_name,
                 openfoam=self._openfoam_settings(),
+                export_fields=export_fields,
             )
         except (ModelValidationError, ValueError) as error:
             output_plan = {"valid": False, "error": str(error)}
@@ -1209,9 +1342,6 @@ class Project:
                     "Install the runtime or configure [openfoam].container_image.",
                 )
             )
-        export_fields = selected_name == "openfoam" and bool(
-            self._openfoam_settings().get("export_fields", True)
-        )
         io_ready = not export_fields or data_exchange.io_available()
         if not io_ready:
             issues.append(
@@ -1229,6 +1359,8 @@ class Project:
             and runtime_available
             and io_ready
             and output_ready
+            and input_assets_ready
+            and mesh_intent_ready
         )
         decisions = {
             "study": study.to_dict(),
@@ -1257,6 +1389,11 @@ class Project:
                 else "Hagen-Poiseuille"
             ),
             "portable_field_bundle": export_fields,
+            "result_profile": (
+                "summary-only"
+                if selected_name == "openfoam" and not export_fields
+                else "full-fields"
+            ),
             "portable_formats": (
                 [
                     "xdmf",
@@ -1267,6 +1404,7 @@ class Project:
                 else []
             ),
             "output_plan": output_plan,
+            "imported_mesh_plan": imported_mesh_plan,
         }
         plan: dict[str, object] = {
             "schema": "agentcfd.solution-plan/0.1",
@@ -1290,6 +1428,8 @@ class Project:
                 "provider_compatible": provider_compatible,
                 "runtime_available": runtime_available,
                 "portable_io_available": io_ready,
+                "input_assets_ready": input_assets_ready,
+                "mesh_intent_ready": mesh_intent_ready,
                 "ready_to_run": ready_to_run,
             },
             "issues": [issue.to_dict() for issue in issues],
@@ -1419,6 +1559,7 @@ class Project:
                     "accepted": record.get("accepted"),
                     "trust_level": record.get("trust_level"),
                     "provider": record.get("provider"),
+                    "result_profile": record.get("result_profile", "full-fields"),
                     "model_name": model_name,
                     "analysis_sha256": record.get("analysis_sha256"),
                     "reynolds_number": reynolds_number,
@@ -1506,6 +1647,7 @@ class Project:
             "accepted",
             "trust_level",
             "provider",
+            "result_profile",
             "model_name",
             "analysis_sha256",
             "reynolds_number",
@@ -1568,6 +1710,7 @@ class Project:
         *,
         provider: str | None = None,
         container_image: str | None = None,
+        summary_only: bool = False,
     ) -> dict[str, object]:
         """Preview campaign readiness and reuse without starting a solver."""
 
@@ -1593,6 +1736,7 @@ class Project:
                     provider=selected_provider,
                     container_image=container_image,
                     parameters=parameters,
+                    portable_fields=False if summary_only else None,
                 )
             except ProjectError as error:
                 rows.append(
@@ -1615,6 +1759,7 @@ class Project:
                 plan["model"]["analysis_sha256"],
                 provider=selected_provider,
                 container_image=container_image,
+                portable_fields=False if summary_only else None,
             )
             cached = reusable.get(identity)
             request_duplicate = identity in planned_identities
@@ -1647,6 +1792,11 @@ class Project:
             "schema": "agentcfd.campaign-plan/0.1",
             "root": str(self.root),
             "provider": selected_provider,
+            "result_profile": (
+                "summary-only"
+                if summary_only and selected_provider == "openfoam"
+                else "full-fields"
+            ),
             "point_count": len(rows),
             "ready_count": sum(row["ready"] is True for row in rows),
             "reusable_count": reusable_count,
@@ -1668,6 +1818,7 @@ class Project:
         container_image: str | None = None,
         fail_fast: bool = False,
         maximum_solver_runs: int | None = None,
+        summary_only: bool = False,
     ) -> dict[str, object]:
         """Preflight and execute named design points, reusing accepted identities."""
 
@@ -1695,6 +1846,7 @@ class Project:
                 provider=selected_provider,
                 container_image=container_image,
                 parameters=parameters,
+                portable_fields=False if summary_only else None,
             )
             if plan["readiness"]["ready_to_run"] is not True:
                 codes = ", ".join(issue["code"] for issue in plan["issues"])
@@ -1706,6 +1858,7 @@ class Project:
                 plan["model"]["analysis_sha256"],
                 provider=selected_provider,
                 container_image=container_image,
+                portable_fields=False if summary_only else None,
             )
             prepared.append((name, parameters, plan, identity))
 
@@ -1739,6 +1892,11 @@ class Project:
                 "schema": "agentcfd.campaign-sweep/0.1",
                 "root": str(self.root),
                 "provider": selected_provider,
+                "result_profile": (
+                    "summary-only"
+                    if summary_only and selected_provider == "openfoam"
+                    else "full-fields"
+                ),
                 "requested_count": len(prepared),
                 "processed_count": processed,
                 "executed_count": sum(row["execution"] == "executed" for row in rows),
@@ -1819,6 +1977,7 @@ class Project:
                         campaign=True,
                         parameters=parameters,
                         design_point_name=name,
+                        portable_fields=False if summary_only else None,
                     )
                 except Exception as error:
                     failed_record = next(
@@ -1907,6 +2066,313 @@ class Project:
                     }
             write_progress()
         return report()
+
+    def promote_campaign_run(
+        self,
+        run_id: str,
+        *,
+        container_image: str | None = None,
+    ) -> dict[str, object]:
+        """Publish full fields for one accepted summary-only campaign point."""
+
+        source = self._select_run_record(run_id)
+        assert source is not None
+        if source.get("mode") != "campaign":
+            raise ProjectError("Only immutable campaign runs can be promoted.")
+        if source.get("result_profile") != "summary-only":
+            raise ProjectError(
+                f"Run {run_id!r} is not summary-only; no field promotion is needed."
+            )
+        if source.get("accepted") is not True:
+            raise ProjectError(
+                f"Run {run_id!r} is not accepted; review its checks before promotion."
+            )
+        if self.manifest.default_provider != "openfoam":
+            raise ProjectError("Full-field campaign promotion requires OpenFOAM.")
+        parameters = source.get("parameters", {})
+        if not isinstance(parameters, Mapping):
+            raise ProjectError("Source campaign parameters are missing or malformed.")
+        selected_parameters = self._parameters(parameters)
+        plan = self.plan(
+            provider="openfoam",
+            container_image=container_image,
+            parameters=selected_parameters,
+            portable_fields=True,
+        )
+        if plan["model"]["analysis_sha256"] != source.get("analysis_sha256"):
+            raise ProjectError(
+                "Current case.py no longer matches the summary-only source. Restore "
+                "the source model before promoting fields."
+            )
+        if plan["readiness"]["ready_to_run"] is not True:
+            codes = ", ".join(issue["code"] for issue in plan["issues"])
+            raise ProjectError(
+                f"Full-field promotion is not ready: {codes or 'unknown issue'}."
+            )
+        identity = self._result_execution_fingerprint(
+            plan["model"]["analysis_sha256"],
+            provider="openfoam",
+            container_image=container_image,
+            portable_fields=True,
+        )
+        cached = self._reusable_campaign_records().get(identity)
+        source_directory = self._record_directory(source)
+        if cached is not None:
+            target_run_id = cached.get("run_id")
+            target_directory = self._record_directory(cached)
+            execution = "reused"
+            accepted = True
+            solver_processes_started = 0
+        else:
+            source_name = source.get("design_point_name")
+            target_name = (
+                f"{source_name}-full"
+                if isinstance(source_name, str) and source_name
+                else "promoted-full"
+            )
+            completed = self.run(
+                provider="openfoam",
+                container_image=container_image,
+                campaign=True,
+                parameters=selected_parameters,
+                design_point_name=target_name,
+                portable_fields=True,
+                _promotion_source_run_id=run_id,
+            )
+            target_run_id = completed.run_id
+            target_directory = completed.directory
+            execution = "executed"
+            accepted = completed.result.accepted
+            solver_processes_started = 1
+        return {
+            "schema": "agentcfd.campaign-promotion/0.1",
+            "root": str(self.root),
+            "source": {
+                "run_id": run_id,
+                "directory": (
+                    None if source_directory is None else str(source_directory)
+                ),
+                "result_profile": "summary-only",
+                "parameters": selected_parameters,
+            },
+            "target": {
+                "run_id": target_run_id,
+                "directory": (
+                    None if target_directory is None else str(target_directory)
+                ),
+                "result_profile": "full-fields",
+                "result_execution_sha256": identity,
+                "plan_sha256": plan["plan_sha256"],
+                "accepted": accepted,
+            },
+            "execution": execution,
+            "successful": accepted is True,
+            "observation_cost": {
+                "field_payloads_opened": 0,
+                "solver_processes_started": solver_processes_started,
+            },
+        }
+
+    def compact_campaign_run(
+        self,
+        run_id: str,
+        *,
+        apply: bool = False,
+    ) -> dict[str, object]:
+        """Preview or remove reproducible full-field bulk from one campaign run."""
+
+        if not isinstance(apply, bool):
+            raise ProjectError("Campaign compaction apply flag must be boolean.")
+        source = self._select_run_record(run_id)
+        assert source is not None
+        if source.get("mode") != "campaign":
+            raise ProjectError("Only immutable campaign runs can be compacted.")
+        if source.get("status") != "completed" or source.get("accepted") is not True:
+            raise ProjectError("Only completed, accepted campaign runs can be compacted.")
+        if source.get("result_profile", "full-fields") != "full-fields":
+            raise ProjectError(f"Run {run_id!r} is already summary-only.")
+        if self.manifest.default_provider != "openfoam":
+            raise ProjectError("Field compaction currently requires an OpenFOAM project.")
+        run_directory = self._record_directory(source)
+        if run_directory is None or not run_directory.is_dir():
+            raise ProjectError("Campaign run directory is missing.")
+        result_path = run_directory / "result.json"
+        if not result_path.is_file():
+            raise ProjectError("Campaign result.json is missing; refusing compaction.")
+        analysis_sha256 = source.get("analysis_sha256")
+        parameters = source.get("parameters", {})
+        if not isinstance(parameters, Mapping):
+            raise ProjectError("Source campaign parameters are missing or malformed.")
+        current_plan = self.plan(parameters=parameters, portable_fields=True)
+        if current_plan["model"]["analysis_sha256"] != analysis_sha256:
+            raise ProjectError(
+                "Current case.py no longer matches the full-field source; refusing "
+                "to rewrite its result identity."
+            )
+        expected_full_identity = self._result_execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+            portable_fields=True,
+        )
+        if source.get("result_execution_sha256") != expected_full_identity:
+            raise ProjectError(
+                "Current OpenFOAM result settings do not match the source run; "
+                "refusing ambiguous compaction."
+            )
+        result = read_result_record(result_path, verify_artifacts=False)
+        artifact_records = result.get("artifact_records", {})
+        if not isinstance(artifact_records, dict):
+            raise ProjectError("Campaign artifact records are malformed.")
+        removable_names = {
+            name
+            for name, record in artifact_records.items()
+            if isinstance(name, str)
+            and isinstance(record, dict)
+            and (
+                name.startswith("fields.")
+                or name.startswith("postprocess.")
+                or record.get("role") == "portable-field-bundle"
+            )
+        }
+        candidates: set[Path] = set()
+        fields_directory = run_directory / "fields"
+        if fields_directory.exists():
+            candidates.add(fields_directory)
+        for name in removable_names:
+            artifact = artifact_records[name]
+            path_value = artifact.get("path")
+            if not isinstance(path_value, str) or not path_value:
+                continue
+            path = Path(path_value)
+            resolved = (
+                path.resolve()
+                if path.is_absolute()
+                else (run_directory / path).resolve()
+            )
+            try:
+                resolved.relative_to(run_directory.resolve())
+            except ValueError as error:
+                raise ProjectError(
+                    f"Refusing to compact artifact outside the campaign: {resolved}"
+                ) from error
+            if resolved.exists():
+                candidates.add(resolved)
+        roots = sorted(
+            (
+                candidate
+                for candidate in candidates
+                if not any(
+                    candidate != parent and candidate.is_relative_to(parent)
+                    for parent in candidates
+                )
+            ),
+            key=lambda path: str(path),
+        )
+        targets = []
+        candidate_bytes = 0
+        candidate_files = 0
+        for path in roots:
+            size, files = _tree_usage(path)
+            candidate_bytes += size
+            candidate_files += files
+            targets.append(
+                {
+                    "path": str(path),
+                    "bytes": size,
+                    "display": _human_bytes(size),
+                    "file_count": files,
+                }
+            )
+        summary_identity = self._result_execution_fingerprint(
+            analysis_sha256,
+            provider="openfoam",
+            portable_fields=False,
+        )
+        report = {
+            "schema": "agentcfd.campaign-compaction/0.1",
+            "root": str(self.root),
+            "run_id": run_id,
+            "directory": str(run_directory),
+            "applied": apply,
+            "from_profile": "full-fields",
+            "to_profile": "summary-only",
+            "targets": targets,
+            "candidate_bytes": candidate_bytes,
+            "candidate_display": _human_bytes(candidate_bytes),
+            "candidate_file_count": candidate_files,
+            "reclaimed_bytes": candidate_bytes if apply else 0,
+            "result_execution_sha256": summary_identity,
+            "preserved": [
+                "result.json",
+                "run.json",
+                "plan.json",
+                "README.md",
+                "quantities",
+                "checks",
+                "histories",
+                "logs-and-evidence",
+                "derived-csv-png-mp4-not-listed-as-field-artifacts",
+            ],
+            "observation_cost": {"field_payloads_opened": 0},
+        }
+        if not apply:
+            return report
+
+        compacted_at = datetime.now(UTC).isoformat()
+        result["fields"] = {}
+        result["field_records"] = []
+        result["artifacts"] = {
+            name: path
+            for name, path in result.get("artifacts", {}).items()
+            if name not in removable_names
+        }
+        result["artifact_records"] = {
+            name: record
+            for name, record in artifact_records.items()
+            if name not in removable_names
+        }
+        provenance = result.get("provenance", {})
+        if not isinstance(provenance, dict):
+            provenance = {}
+        provenance["result_profile"] = "summary-only"
+        provenance["compaction"] = {
+            "compacted_at": compacted_at,
+            "source_result_execution_sha256": expected_full_identity,
+            "reclaimed_bytes": candidate_bytes,
+        }
+        result["provenance"] = provenance
+        messages = result.get("messages", [])
+        if not isinstance(messages, list):
+            messages = []
+        messages.append(
+            "Full fields were explicitly compacted; use campaign promotion to regenerate them."
+        )
+        result["messages"] = messages
+        _write_json_atomic(result_path, result)
+
+        updated_source = dict(source)
+        updated_source["result_profile"] = "summary-only"
+        updated_source["result_execution_sha256"] = summary_identity
+        updated_source["compaction"] = provenance["compaction"]
+        _write_json_atomic(run_directory / "run.json", updated_source)
+        guide = run_directory / "README.md"
+        guide_text = guide.read_text(encoding="utf-8") if guide.is_file() else ""
+        note = (
+            "\n## Compacted fields\n\n"
+            "This accepted campaign point now keeps summaries and evidence only. "
+            f"Regenerate standard XDMF/HDF5 with `agentcfd promote . {run_id}`.\n"
+        )
+        if "## Compacted fields" not in guide_text:
+            temporary_guide = guide.with_suffix(".md.tmp")
+            temporary_guide.write_text(guide_text.rstrip() + note, encoding="utf-8")
+            temporary_guide.replace(guide)
+        for path in roots:
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            else:
+                path.unlink(missing_ok=True)
+        read_result_record(result_path, verify_artifacts=True)
+        return report
 
     def _active_run_ids(self) -> set[str]:
         return {
@@ -2934,8 +3400,10 @@ class Project:
         keep_workspace: bool = False,
         parameters: Mapping[str, object] | None = None,
         design_point_name: str | None = None,
+        portable_fields: bool | None = None,
         _resume_archive: Path | None = None,
         _resume_source_run_id: str | None = None,
+        _promotion_source_run_id: str | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
         if design_point_name is not None and re.fullmatch(
@@ -2948,6 +3416,7 @@ class Project:
             provider=selected_name,
             container_image=container_image,
             parameters=selected_parameters,
+            portable_fields=portable_fields,
             _step=step,
         )
         readiness = plan["readiness"]
@@ -3016,6 +3485,7 @@ class Project:
             plan["model"]["analysis_sha256"],
             provider=selected_name,
             container_image=container_image,
+            portable_fields=portable_fields,
         )
         resume_execution_sha256 = self._resume_execution_fingerprint(
             plan["model"]["analysis_sha256"],
@@ -3026,6 +3496,7 @@ class Project:
             plan["model"]["analysis_sha256"],
             provider=selected_name,
             container_image=container_image,
+            portable_fields=portable_fields,
         )
         marker_record: dict[str, object] = {
             "schema": "agentcfd.project-run/0.1",
@@ -3041,6 +3512,12 @@ class Project:
             "execution_sha256": execution_sha256,
             "resume_execution_sha256": resume_execution_sha256,
             "result_execution_sha256": result_execution_sha256,
+            "result_profile": (
+                "summary-only"
+                if selected_name == "openfoam"
+                and plan["decisions"]["portable_field_bundle"] is False
+                else "full-fields"
+            ),
             "parameters": selected_parameters,
             "model_name": step.model.name,
             "reynolds_number": _inlet_reynolds(step),
@@ -3052,6 +3529,12 @@ class Project:
             marker_record["resume"] = {
                 "source_run_id": _resume_source_run_id,
                 "archive_sha256": file_sha256(_resume_archive),
+            }
+        if _promotion_source_run_id is not None:
+            marker_record["promotion"] = {
+                "source_run_id": _promotion_source_run_id,
+                "source_result_profile": "summary-only",
+                "target_result_profile": "full-fields",
             }
 
         def write_marker(**updates: object) -> None:
@@ -3150,11 +3633,14 @@ class Project:
                 retention_reason=retention_reason,
                 protected=retention_reason in {"explicit-cli", "manifest-policy"},
             )
+        result.provenance["result_profile"] = marker_record["result_profile"]
+        if _promotion_source_run_id is not None:
+            result.provenance["promotion"] = marker_record["promotion"]
         bundle = None
         if (
             selected_name == "openfoam"
             and result.status == "completed"
-            and bool(self._openfoam_settings().get("export_fields", True))
+            and plan["decisions"]["portable_field_bundle"] is True
         ):
             write_marker(status="exporting", phase="portable-fields")
             try:
@@ -3253,6 +3739,7 @@ class Project:
                         role="paraview-python-recipe",
                         media_type="text/x-python",
                     )
+        if selected_name == "openfoam":
             if not retained_workspace:
                 result.fields = {
                     name: field
@@ -3264,7 +3751,6 @@ class Project:
                     for name, artifact in result.artifacts.items()
                     if not name.startswith("field_")
                 }
-        if selected_name == "openfoam":
             evidence_directory = run_directory / "evidence"
             copied_paths: dict[str, Path] = {}
             for name, artifact in tuple(result.artifacts.items()):
@@ -3321,6 +3807,7 @@ class Project:
         run_record["execution_sha256"] = execution_sha256
         run_record["resume_execution_sha256"] = resume_execution_sha256
         run_record["result_execution_sha256"] = result_execution_sha256
+        run_record["result_profile"] = marker_record["result_profile"]
         run_record["phase"] = "complete"
         run_record["pid"] = None
         run_record["started_at"] = started_at
@@ -3341,6 +3828,8 @@ class Project:
         }
         if _resume_archive is not None:
             run_record["resume"] = marker_record["resume"]
+        if _promotion_source_run_id is not None:
+            run_record["promotion"] = marker_record["promotion"]
         _write_output_guide(completed, model_name=step.model.name)
         (run_directory / "run.json").write_text(
             json.dumps(run_record, indent=2, sort_keys=True) + "\n",

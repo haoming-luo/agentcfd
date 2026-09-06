@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/campaign-compaction.schema.json",
+  "title": "AgentCFD preview-first campaign compaction 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "run_id", "directory", "applied", "from_profile",
+    "to_profile", "targets", "candidate_bytes", "candidate_display",
+    "candidate_file_count", "reclaimed_bytes", "result_execution_sha256",
+    "preserved", "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.campaign-compaction/0.1"},
+    "root": {"type": "string"},
+    "run_id": {"type": "string", "minLength": 1},
+    "directory": {"type": "string"},
+    "applied": {"type": "boolean"},
+    "from_profile": {"const": "full-fields"},
+    "to_profile": {"const": "summary-only"},
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "bytes", "display", "file_count"],
+        "properties": {
+          "path": {"type": "string"},
+          "bytes": {"type": "integer", "minimum": 0},
+          "display": {"type": "string"},
+          "file_count": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "candidate_bytes": {"type": "integer", "minimum": 0},
+    "candidate_display": {"type": "string"},
+    "candidate_file_count": {"type": "integer", "minimum": 0},
+    "reclaimed_bytes": {"type": "integer", "minimum": 0},
+    "result_execution_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "preserved": {"type": "array", "items": {"type": "string"}},
+    "observation_cost": {
+      "type": "object",
+      "required": ["field_payloads_opened"],
+      "properties": {"field_payloads_opened": {"const": 0}},
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

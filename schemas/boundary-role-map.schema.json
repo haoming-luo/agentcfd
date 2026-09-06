@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/boundary-role-map.schema.json",
+  "title": "AgentCFD explicit imported-surface boundary role map 0.1",
+  "type": "object",
+  "required": ["schema", "regions"],
+  "properties": {
+    "schema": {"const": "agentcfd.boundary-role-map/0.1"},
+    "regions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "enum": ["inlet", "outlet", "wall", "symmetry", "periodic", "interface", "farfield", "opening", "empty"]
+      }
+    }
+  },
+  "additionalProperties": false
+}

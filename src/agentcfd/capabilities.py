@@ -26,7 +26,9 @@ _CAPABILITIES = (
         maturity="release",
         scope="Typed study, domain, fluid, boundary, procedure, output, and result lifecycle.",
         evidence=("public API tests", "JSON round-trip tests"),
-        limitations=("Provider support remains narrower than the solver-neutral public vocabulary.",),
+        limitations=(
+            "Provider support remains narrower than the solver-neutral public vocabulary.",
+        ),
     ),
     Capability(
         name="workflow.common-cfd-intent",
@@ -64,10 +66,70 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="geometry.imported-surface-inspection",
+        maturity="experimental",
+        scope=(
+            "Read-only STL/OBJ format, SI-unit, bounds, region, degeneracy, "
+            "watertightness, manifoldness, orientation, and memory-guard preflight."
+        ),
+        evidence=(
+            "closed and open ASCII STL topology tests",
+            "binary STL and OBJ polygon tests",
+            "explicit internal-flow boundary-role mapping tests",
+            "installed geometry-inspection JSON contract",
+        ),
+        limitations=(
+            "STEP/IGES are recognized but require controlled tessellation.",
+            "Solver lowering for imported meshes is not released yet.",
+            "The standard-library check does not replace OpenFOAM surfaceCheck before meshing.",
+        ),
+    ),
+    Capability(
+        name="openfoam.imported-surface-mesh",
+        maturity="experimental",
+        scope=(
+            "Content-addressed STL/OBJ volume meshing through a padded blockMesh "
+            "background, native geometry dry-run, snappyHexMesh, and checkMesh gates."
+        ),
+        evidence=(
+            "deterministic mesh-plan and prepared-case tests",
+            "explicit locationInMesh and maxGlobalCells lowering",
+            "native command, cell-budget, non-orthogonality, skewness, and aspect-ratio gates",
+            "6,400-cell accepted OpenCFD v2606 imported-duct integration mesh",
+        ),
+        limitations=(
+            "Requires a user-confirmed interior point and OpenFOAM-compatible region names.",
+            "The first slice supports no prism layers and only inlet/outlet/wall/symmetry/empty roles.",
+            "Full imported-geometry flow solution and real-geometry validation are pending.",
+        ),
+    ),
+    Capability(
+        name="openfoam.steady-laminar-imported-surface",
+        maturity="experimental",
+        scope=(
+            "Steady incompressible isothermal laminar simpleFoam solution on a "
+            "content-addressed, role-confirmed imported fluid volume."
+        ),
+        evidence=(
+            "explicit Cartesian velocity-inlet and pressure-outlet lowering tests",
+            "solver, SIMPLE convergence, mesh, conservation, runtime, and output gates",
+            "accepted 6,400-cell OpenCFD v2606 duct run with verified XDMF/H5",
+        ),
+        limitations=(
+            "Exactly one velocity inlet and one pressure outlet are currently supported.",
+            "No turbulence, heat, compressibility, reactions, prism layers, or compact report lowering yet.",
+            "Acceptance is workflow/numerical evidence and does not claim physical validation.",
+        ),
+    ),
+    Capability(
         name="reference.hagen-poiseuille",
         maturity="release",
         scope="Steady fully developed incompressible Newtonian laminar flow in a circular pipe.",
-        evidence=("closed-form Hagen-Poiseuille relation", "Darcy-Weisbach identity", "mass balance"),
+        evidence=(
+            "closed-form Hagen-Poiseuille relation",
+            "Darcy-Weisbach identity",
+            "mass balance",
+        ),
         limitations=("Re < 2300", "constant properties", "straight circular pipe"),
     ),
     Capability(
@@ -122,7 +184,9 @@ _CAPABILITIES = (
         maturity="experimental",
         scope="Provider-neutral field exchange contract for AgentCFD, AgentFEM, learning, and coupling tools.",
         evidence=("schema and direction validation tests",),
-        limitations=("No conservative mesh mapper or coupled time integrator is released yet.",),
+        limitations=(
+            "No conservative mesh mapper or coupled time integrator is released yet.",
+        ),
     ),
     Capability(
         name="interoperability.portable-field-bundle",
@@ -205,7 +269,7 @@ _CAPABILITIES = (
             "OpenCFD v2606 k-omega SST and k-epsilon precursor execution evidence",
         ),
         limitations=(
-            "Only steady incompressible isothermal flow in a smooth circular pipe is lowered.",
+            "Steady imported-volume flow is limited to the explicit laminar slice.",
             "Downstream turbulent pipes remain limited to k-omega SST; k-epsilon is precursor-only.",
             "OpenCFD v2606 is the currently exercised runtime dialect.",
             "Each laminar or turbulent slice has its own validation and grid-evidence gate.",

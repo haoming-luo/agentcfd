@@ -19,6 +19,14 @@ model.
 6. Report convergence, conservation, applicability, and failed checks.
 7. Export learning data only from accepted results unless the user explicitly
    records another scientific disposition.
+8. Before a multi-point campaign, run `sweep --plan-only --json` and set an
+   explicit `--max-runs` compute boundary.
+9. Prefer `--summary-only` for scalar screening; use `promote <run-id>` only
+   when an accepted candidate needs XDMF/HDF5 fields or spatial postprocessing.
+10. Use `logs` and `diagnose` with the failed point's immutable `--run-id`
+    after any continue-on-error campaign.
+11. Never apply `compact <run-id> --apply` without first showing its preview and
+    confirming that the exact full-field payload is no longer required.
 
 ## Current capability boundary
 

@@ -255,6 +255,31 @@ including when the first execution fails or reaches review rather than
 acceptance; they share the same immutable evidence while retaining their own
 design-point names in the sweep table.
 
+Use `--summary-only` for broad operating maps where scalar quantities,
+acceptance checks, logs, and provenance are sufficient. OpenFOAM still writes
+the native states required during the solve, but AgentCFD skips VTK conversion,
+XDMF/HDF5 publication, view recipes, and permanent provider-native fields, then
+removes disposable bulk after publishing compact evidence. The plan reports a
+lower temporary-storage estimate and does not require optional portable-I/O
+packages. Summary-only and full-field runs have different result fingerprints,
+so an accepted lightweight point cannot masquerade as an animation-ready one;
+promote only a selected candidate with `agentcfd promote . <run-id>`. Promotion
+requires an accepted immutable summary result, verifies that current `case.py`
+still has the same analysis fingerprint, forces standard portable fields, and
+records the source run in the new result provenance. An already accepted exact
+full-field identity is reused without starting another solver.
+
+Existing accepted full-field campaign points can be slimmed with
+`agentcfd compact . <run-id>`. The default is a non-mutating inventory of exact
+managed targets, bytes, and files; `--apply` is required to rewrite the point
+as summary-only and remove reproducible volume fields plus recipes that would
+otherwise reference them. Compact quantities, checks, histories, run metadata,
+logs/evidence, and independently generated CSV/PNG/MP4 products are preserved.
+Compaction never opens the HDF5 payload and fails closed if the current model or
+OpenFOAM result settings cannot reproduce the source identity. Because the
+rewritten point has the canonical summary fingerprint, `promote` can later
+regenerate a provenance-linked full-field result.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

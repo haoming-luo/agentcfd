@@ -82,6 +82,8 @@ files stay hidden and reproducible.
 - identity-gated transient checkpoint recovery with explicit `resume`, source
   provenance, automatic initialization skipping, and cleanup protection for the
   sole recoverable workspace;
+- one-command project doctor covering readiness, runtime, storage headroom,
+  recovery and comparable cell-update work without fabricated energy claims;
 - declarative plane slices, scalar contours, and line-seeded streamlines that
   generate portable ParaView scripts without copying field payloads;
 - one-command post-processing target and self-documenting output directory;

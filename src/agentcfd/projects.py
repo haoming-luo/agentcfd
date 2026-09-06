@@ -2098,6 +2098,152 @@ class Project:
             "next_action": status["next_action"],
         }
 
+    def doctor(self) -> dict[str, object]:
+        """Audit one project, runtime, and resource envelope without solving."""
+
+        step = self.load_step()
+        plan = self.plan(_step=step)
+        status = self.status(include_storage=True)
+        output_plan = plan["decisions"]["output_plan"]
+        storage = status["storage"]
+        checks: list[dict[str, object]] = []
+
+        def add_check(
+            code: str,
+            passed: bool,
+            message: str,
+            repair: str,
+            *,
+            severity: str = "error",
+        ) -> None:
+            checks.append(
+                {
+                    "code": code,
+                    "status": "passed" if passed else "failed",
+                    "severity": "info" if passed else severity,
+                    "message": message,
+                    "repair": "" if passed else repair,
+                }
+            )
+
+        readiness = plan["readiness"]
+        add_check(
+            "MODEL_READY",
+            bool(readiness["model_valid"]),
+            "The public model is internally valid.",
+            "Repair the addressable model issues in `case.py`.",
+        )
+        add_check(
+            "PROVIDER_COMPATIBLE",
+            bool(readiness["provider_compatible"]),
+            "The selected provider advertises the requested capability.",
+            "Select a supported capability or revise the declared physics.",
+        )
+        needs_runtime = status["state"] in {
+            "ready",
+            "modified",
+            "failed",
+            "interrupted",
+            "blocked",
+        }
+        add_check(
+            "RUNTIME_AVAILABLE",
+            bool(readiness["runtime_available"]),
+            "The configured solver runtime is available.",
+            "Install the required OpenFOAM commands or configure a reachable container image.",
+            severity="error" if needs_runtime else "warning",
+        )
+        within_budget = output_plan.get("within_budget")
+        add_check(
+            "OUTPUT_WITHIN_BUDGET",
+            within_budget is not False,
+            "The requested portable and temporary output fits its declared budget.",
+            "Reduce full-field frames/fields or raise the explicit storage budget.",
+        )
+        estimated_peak = output_plan.get("estimated_temporary_peak_bytes")
+        free_bytes = storage["filesystem"]["free_bytes"]
+        disk_ok = not isinstance(estimated_peak, int) or estimated_peak <= free_bytes
+        add_check(
+            "FILESYSTEM_HEADROOM",
+            disk_ok,
+            "The filesystem has room for the conservative temporary peak.",
+            "Preview cleanup or reduce output/mesh demand before starting the solver.",
+        )
+        run_state_ok = status["state"] not in {"failed", "interrupted"}
+        add_check(
+            "LATEST_RUN_HEALTH",
+            run_state_ok,
+            "The latest run is not failed or interrupted.",
+            "Follow the project status diagnosis before retrying or resuming.",
+        )
+        accepted_or_not_run = status["state"] not in {"review"}
+        add_check(
+            "RESULT_ACCEPTANCE",
+            accepted_or_not_run,
+            "No completed result is awaiting failed-check review.",
+            "Review failed scientific checks before design or training use.",
+            severity="warning",
+        )
+
+        cells = output_plan.get("estimated_mesh_cells")
+        if step.model.study.steady:
+            nominal_steps = step.procedure.maximum_iterations
+            step_basis = "maximum steady iterations"
+            correctors = 1
+        else:
+            nominal_steps = math.ceil(
+                step.procedure.end_time / step.procedure.maximum_time_step
+            )
+            step_basis = "minimum steps at declared maximum time step"
+            correctors = step.procedure.pressure_velocity_correctors
+        cell_updates = (
+            int(cells) * nominal_steps * correctors
+            if isinstance(cells, int)
+            else None
+        )
+        peak_ratio = (
+            float(estimated_peak) / free_bytes
+            if isinstance(estimated_peak, int) and free_bytes > 0
+            else None
+        )
+        return {
+            "schema": "agentcfd.project-doctor/0.1",
+            "root": str(self.root),
+            "healthy": not any(
+                item["status"] == "failed" and item["severity"] == "error"
+                for item in checks
+            ),
+            "state": status["state"],
+            "checks": checks,
+            "resource_estimate": {
+                "estimated_mesh_cells": cells,
+                "nominal_solver_steps": nominal_steps,
+                "solver_step_basis": step_basis,
+                "pressure_velocity_correctors": correctors,
+                "cell_updates_proxy": cell_updates,
+                "estimated_portable_bytes": output_plan.get(
+                    "estimated_portable_bytes"
+                ),
+                "estimated_temporary_peak_bytes": estimated_peak,
+                "filesystem_free_bytes": free_bytes,
+                "temporary_peak_to_free_ratio": peak_ratio,
+                "energy": {
+                    "status": "not-measured",
+                    "reason": (
+                        "Energy cannot be inferred honestly from mesh size; an executor "
+                        "must report hardware power or joule telemetry."
+                    ),
+                },
+            },
+            "storage": storage,
+            "recovery": status["recovery"],
+            "observation_cost": {
+                "field_payloads_opened": 0,
+                "recursive_storage_scan": True,
+            },
+            "next_action": status["next_action"],
+        }
+
     def run(
         self,
         *,

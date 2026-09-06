@@ -1187,7 +1187,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    doctor = subparsers.add_parser("doctor", help="Inspect the installed runtime.")
+    doctor = subparsers.add_parser(
+        "doctor",
+        help="Inspect the installed runtime or audit one project in context.",
+    )
+    doctor.add_argument("project", nargs="?", type=Path)
     doctor.add_argument("--json", action="store_true", dest="as_json")
 
     init = subparsers.add_parser(
@@ -1979,9 +1983,31 @@ def main(argv: list[str] | None = None) -> int:
         selected_argv.insert(1, "project")
     args = build_parser().parse_args(selected_argv)
     if args.command == "doctor":
-        report = _doctor()
+        report = (
+            _doctor()
+            if args.project is None
+            else projects.Project.discover(args.project).doctor()
+        )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
+        elif args.project is not None:
+            print(
+                f"Project doctor | {str(report['state']).upper()} | healthy "
+                f"{str(report['healthy']).lower()}"
+            )
+            resource = report["resource_estimate"]
+            print(
+                f"resource proxy: {resource['estimated_mesh_cells']} cells | "
+                f"{resource['nominal_solver_steps']} nominal steps | "
+                f"{resource['cell_updates_proxy']} cell-updates"
+            )
+            for check in report["checks"]:
+                if check["status"] == "failed":
+                    print(
+                        f"{check['severity']}: {check['code']} | "
+                        f"{check['repair']}"
+                    )
+            print(f"next: {report['next_action']['command']}")
         else:
             print(
                 f"AgentCFD {report['agentcfd']} | Python {report['python']} | healthy"
@@ -1999,7 +2025,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             for action in report["next_actions"]:
                 print(f"next: {action}")
-        return 0
+        return 0 if report["healthy"] else 3
     if args.command == "init":
         project = projects.init_project(
             args.directory,

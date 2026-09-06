@@ -69,4 +69,7 @@ The provider mounts only the selected case directory at `/case`, passes every
 argument without a shell, and records both the image identity and the actual
 OpenFOAM version reported by the runtime.
 
-Use `agentcfd doctor --json` to inspect the exact local capability state.
+Use `agentcfd doctor --json` to inspect the exact local capability state. From
+inside a project, `agentcfd doctor . --json` additionally audits that project's
+model, configured provider, output/storage envelope, recovery state, and next
+action without executing a solver or opening field payloads.

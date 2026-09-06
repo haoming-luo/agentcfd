@@ -36,6 +36,8 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     ).validate(report)
     assert report["readiness"] == {
         "geometry_ready": True,
+        "boundary_roles_ready": False,
+        "ready_for_import_setup": False,
         "agentcfd_imported_mesh_lowering_available": False,
         "ready_to_mesh": False,
     }
@@ -51,6 +53,84 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     assert report["observation_cost"]["external_processes_started"] == 0
     assert entrypoint(["geometry-check", str(surface), "--unit", "mm", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["surface"]["watertight"] is True
+
+    confirmed = geometry_io.inspect_geometry(
+        surface,
+        unit="mm",
+        boundary_roles={"fluid": "wall"},
+    )
+    assert confirmed["readiness"]["boundary_roles_ready"] is True
+    assert confirmed["readiness"]["ready_for_import_setup"] is True
+    assert confirmed["next_action"]["kind"] == "provider-roadmap"
+    roles = tmp_path / "roles.json"
+    roles.write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.boundary-role-map/0.1",
+                "regions": {"fluid": "wall"},
+            }
+        )
+    )
+    assert (
+        entrypoint(
+            [
+                "geometry-check",
+                str(surface),
+                "--unit",
+                "mm",
+                "--roles",
+                str(roles),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli = json.loads(capsys.readouterr().out)
+    assert cli["boundary_roles"]["confirmed"] == {"fluid": "wall"}
+
+
+def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_path):
+    obj = tmp_path / "duct.obj"
+    obj.write_text(
+        "o inlet_main\n"
+        "v 0 0 0\n"
+        "v 0 1 0\n"
+        "v 0 0 1\n"
+        "f 1 2 3\n"
+        "o outlet_main\n"
+        "v 1 0 0\n"
+        "v 1 0 1\n"
+        "v 1 1 0\n"
+        "f 4 5 6\n"
+        "o walls\n"
+    )
+    incomplete = geometry_io.inspect_geometry(
+        obj,
+        unit="m",
+        require_watertight=False,
+        internal_flow=True,
+        boundary_roles={"inlet_main": "inlet", "outlet_main": "outlet"},
+    )
+    assert incomplete["readiness"]["geometry_ready"] is True
+    assert incomplete["readiness"]["boundary_roles_ready"] is False
+    assert any(
+        issue["code"] == "BOUNDARY_REGIONS_UNMAPPED"
+        for issue in incomplete["issues"]
+    )
+    complete = geometry_io.inspect_geometry(
+        obj,
+        unit="m",
+        require_watertight=False,
+        internal_flow=True,
+        boundary_roles={
+            "inlet_main": "inlet",
+            "outlet_main": "outlet",
+            "walls": "wall",
+        },
+    )
+    assert complete["readiness"]["boundary_roles_ready"] is True
+    assert complete["boundary_roles"]["suggestions"]["inlet_main"]["role"] == "inlet"
+    assert complete["boundary_roles"]["suggestions"]["outlet_main"]["role"] == "outlet"
 
 
 def test_open_surface_requires_units_and_can_be_intentionally_allowed(tmp_path):

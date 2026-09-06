@@ -6,8 +6,9 @@ import hashlib
 import math
 import shutil
 import struct
+import re
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Mapping
 
 
 _UNIT_SCALE_TO_M = {
@@ -20,10 +21,50 @@ _UNIT_SCALE_TO_M = {
 }
 _TRIANGULATED_FORMATS = {".stl": "stl", ".obj": "obj"}
 _CAD_FORMATS = {".step": "step", ".stp": "step", ".iges": "iges", ".igs": "iges"}
+_BOUNDARY_ROLES = {
+    "inlet",
+    "outlet",
+    "wall",
+    "symmetry",
+    "periodic",
+    "interface",
+    "farfield",
+    "opening",
+    "empty",
+}
+_ROLE_HINTS = {
+    "inlet": {"inlet", "inflow", "upstream", "supply", "intake"},
+    "outlet": {"outlet", "outflow", "downstream", "exhaust", "return"},
+    "wall": {"wall", "walls", "housing", "pipe", "baffle", "solid"},
+    "symmetry": {"symmetry", "sym", "mirror"},
+    "periodic": {"periodic", "cyclic"},
+    "interface": {"interface", "coupled"},
+    "farfield": {"farfield", "freestream", "ambient"},
+    "opening": {"opening", "vent"},
+    "empty": {"empty", "frontback"},
+}
 
 
 class GeometryInspectionError(ValueError):
     """Raised when an imported geometry cannot be inspected safely."""
+
+
+def _role_suggestions(regions: tuple[str, ...]) -> dict[str, dict[str, object]]:
+    suggestions = {}
+    for region in regions:
+        tokens = {
+            token for token in re.split(r"[^a-z0-9]+", region.lower()) if token
+        }
+        matches = [
+            role for role, hints in _ROLE_HINTS.items() if tokens.intersection(hints)
+        ]
+        suggestions[region] = {
+            "role": matches[0] if len(matches) == 1 else None,
+            "confidence": "name-match" if len(matches) == 1 else "ambiguous",
+            "basis": sorted(tokens),
+            "requires_confirmation": True,
+        }
+    return suggestions
 
 
 def _sha256(path: Path) -> str:
@@ -283,6 +324,8 @@ def inspect_geometry(
     require_watertight: bool = True,
     topology_triangle_limit: int = 1_000_000,
     merge_tolerance: float = 0.0,
+    boundary_roles: Mapping[str, str] | None = None,
+    internal_flow: bool = False,
 ) -> dict[str, object]:
     """Inspect STL/OBJ geometry without modifying or tessellating the source."""
 
@@ -468,12 +511,95 @@ def inspect_geometry(
         signed_volume = metrics["signed_volume_native"]
         if isinstance(signed_volume, float) and metrics["watertight"] is True:
             volume_m3 = abs(signed_volume) * scale**3
-    error_count = sum(item["severity"] == "error" for item in issues)
+    geometry_error_count = sum(item["severity"] == "error" for item in issues)
+    geometry_ready = geometry_error_count == 0
+    suggestions = _role_suggestions(regions)
+    confirmed_roles: dict[str, str] | None = None
+    boundary_roles_ready = False
+    if boundary_roles is None:
+        issue(
+            "BOUNDARY_ROLES_UNCONFIRMED",
+            "warning",
+            "Surface regions have no explicit CFD boundary-role map.",
+            "Review suggestions and pass a versioned --roles JSON map before imported meshing.",
+        )
+    elif not isinstance(boundary_roles, Mapping):
+        issue(
+            "BOUNDARY_ROLE_MAP_INVALID",
+            "error",
+            "Boundary roles must be a mapping from exact region name to CFD role.",
+            "Provide an object whose keys match discovered region_names exactly.",
+        )
+    else:
+        confirmed_roles = {
+            str(name): str(role).strip().lower()
+            for name, role in boundary_roles.items()
+        }
+        missing = sorted(set(regions) - set(confirmed_roles))
+        unknown = sorted(set(confirmed_roles) - set(regions))
+        invalid = sorted(
+            name
+            for name, role in confirmed_roles.items()
+            if role not in _BOUNDARY_ROLES
+        )
+        if not regions:
+            issue(
+                "BOUNDARY_REGIONS_UNAVAILABLE",
+                "error",
+                "The surface exposes no stable names to map to CFD boundary roles.",
+                "Re-export named surface regions before defining a role map.",
+            )
+        if missing:
+            issue(
+                "BOUNDARY_REGIONS_UNMAPPED",
+                "error",
+                "Unmapped surface regions: " + ", ".join(missing) + ".",
+                "Map every discovered region explicitly; do not rely on a default wall.",
+            )
+        if unknown:
+            issue(
+                "BOUNDARY_ROLE_REGIONS_UNKNOWN",
+                "error",
+                "Role map contains unknown regions: " + ", ".join(unknown) + ".",
+                "Use exact names from surface.region_names and remove stale entries.",
+            )
+        if invalid:
+            issue(
+                "BOUNDARY_ROLES_INVALID",
+                "error",
+                "Unsupported roles for regions: " + ", ".join(invalid) + ".",
+                "Use inlet, outlet, wall, symmetry, periodic, interface, farfield, opening, or empty.",
+            )
+        role_values = set(confirmed_roles.values())
+        if internal_flow and "inlet" not in role_values:
+            issue(
+                "INTERNAL_FLOW_INLET_MISSING",
+                "error",
+                "Internal-flow mapping has no inlet region.",
+                "Confirm at least one region with role inlet.",
+            )
+        if internal_flow and "outlet" not in role_values:
+            issue(
+                "INTERNAL_FLOW_OUTLET_MISSING",
+                "error",
+                "Internal-flow mapping has no outlet region.",
+                "Confirm at least one region with role outlet.",
+            )
+        role_error_codes = {
+            "BOUNDARY_REGIONS_UNMAPPED",
+            "BOUNDARY_ROLE_REGIONS_UNKNOWN",
+            "BOUNDARY_ROLES_INVALID",
+            "INTERNAL_FLOW_INLET_MISSING",
+            "INTERNAL_FLOW_OUTLET_MISSING",
+            "BOUNDARY_REGIONS_UNAVAILABLE",
+        }
+        boundary_roles_ready = bool(regions) and not any(
+            item["code"] in role_error_codes for item in issues
+        )
     tools = {
         name: shutil.which(name)
         for name in ("surfaceCheck", "snappyHexMesh", "gmsh")
     }
-    geometry_ready = error_count == 0
     return {
         "schema": "agentcfd.geometry-inspection/0.1",
         "source": {
@@ -496,10 +622,18 @@ def inspect_geometry(
             "require_watertight": require_watertight,
             "topology_triangle_limit": topology_triangle_limit,
             "merge_tolerance_native": merge_tolerance,
+            "internal_flow": internal_flow,
+        },
+        "boundary_roles": {
+            "allowed_roles": sorted(_BOUNDARY_ROLES),
+            "suggestions": suggestions,
+            "confirmed": confirmed_roles,
         },
         "tools": tools,
         "readiness": {
             "geometry_ready": geometry_ready,
+            "boundary_roles_ready": boundary_roles_ready,
+            "ready_for_import_setup": geometry_ready and boundary_roles_ready,
             "agentcfd_imported_mesh_lowering_available": False,
             "ready_to_mesh": False,
         },
@@ -513,10 +647,26 @@ def inspect_geometry(
             }
             if not geometry_ready
             else {
+                "kind": "boundary-confirmation",
+                "message": next(
+                    (
+                        item["repair"]
+                        for item in issues
+                        if item["severity"] == "error"
+                        and (
+                            item["code"].startswith("BOUNDARY_")
+                            or item["code"].startswith("INTERNAL_FLOW_")
+                        )
+                    ),
+                    "Confirm every surface region with a versioned --roles JSON map.",
+                ),
+            }
+            if not boundary_roles_ready
+            else {
                 "kind": "provider-roadmap",
                 "message": (
-                    "Geometry passes released preflight; imported snappyHexMesh lowering "
-                    "is the next provider capability and is not yet claimed."
+                    "Geometry and roles pass released preflight; imported snappyHexMesh "
+                    "lowering is not yet claimed."
                 ),
             }
         ),

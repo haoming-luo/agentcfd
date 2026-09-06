@@ -12,6 +12,31 @@ agentcfd geometry-check intentional-open-plate.obj --unit m --allow-open
 agentcfd geometry-check large.stl --unit mm --max-topology-triangles 2000000 --json
 ```
 
+Name-based roles are suggestions only. Confirm every discovered region through
+a small versioned file and add `--internal-flow` when inlet and outlet are
+mandatory:
+
+```json
+{
+  "schema": "agentcfd.boundary-role-map/0.1",
+  "regions": {
+    "inlet_main": "inlet",
+    "outlet_main": "outlet",
+    "housing": "wall"
+  }
+}
+```
+
+```bash
+agentcfd geometry-check duct.obj --unit mm --roles boundary-roles.json --internal-flow
+```
+
+The map must cover the exact discovered names with no stale extras. Supported
+roles are inlet, outlet, wall, symmetry, periodic, interface, farfield,
+opening, and empty. AgentCFD will suggest roles from recognizable tokens but
+sets `requires_confirmation: true`; it never converts a filename guess into a
+physical boundary condition.
+
 The released inspector supports binary/ASCII STL and OBJ. It hashes the source,
 converts bounds to SI, discovers surface region names, counts triangles and
 unique vertices, detects zero-area triangles, boundary and non-manifold edges,

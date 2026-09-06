@@ -142,6 +142,26 @@ def _campaign_request(path: Path) -> dict[str, dict[str, object]]:
     return points
 
 
+def _boundary_role_map(path: Path | None) -> dict[str, str] | None:
+    if path is None:
+        return None
+    try:
+        payload = strict_json_object(
+            path.read_text(encoding="utf-8"),
+            label="boundary role map",
+        )
+    except OSError as error:
+        raise ProjectError(f"Cannot read boundary role map {path}: {error}") from error
+    if payload.get("schema") != "agentcfd.boundary-role-map/0.1":
+        raise ProjectError(
+            "Boundary role map must declare agentcfd.boundary-role-map/0.1."
+        )
+    roles = payload.get("regions")
+    if not isinstance(roles, dict):
+        raise ProjectError("Boundary role map requires an object named regions.")
+    return roles
+
+
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
     coolprop = properties.CoolPropPropertyProvider().descriptor()
@@ -1347,6 +1367,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Explicit vertex merge tolerance in source units (default: exact).",
     )
+    geometry_check.add_argument(
+        "--roles",
+        type=Path,
+        help="Versioned JSON map from exact surface region names to CFD roles.",
+    )
+    geometry_check.add_argument(
+        "--internal-flow",
+        action="store_true",
+        help="Require at least one explicitly confirmed inlet and outlet.",
+    )
     geometry_check.add_argument("--json", action="store_true", dest="as_json")
 
     status = subparsers.add_parser(
@@ -2322,6 +2352,8 @@ def main(argv: list[str] | None = None) -> int:
             require_watertight=not args.allow_open,
             topology_triangle_limit=args.max_topology_triangles,
             merge_tolerance=args.merge_tolerance,
+            boundary_roles=_boundary_role_map(args.roles),
+            internal_flow=args.internal_flow,
         )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2340,7 +2372,10 @@ def main(argv: list[str] | None = None) -> int:
             for issue in report["issues"]:
                 print(f"{issue['severity']}: {issue['code']} | {issue['repair']}")
             print(f"next: {report['next_action']['message']}")
-        return 0 if report["readiness"]["geometry_ready"] else 3
+        ready = report["readiness"]["geometry_ready"] and (
+            args.roles is None or report["readiness"]["boundary_roles_ready"]
+        )
+        return 0 if ready else 3
     if args.command == "watch":
         if not math.isfinite(args.interval) or args.interval < 0.2:
             raise ValueError(

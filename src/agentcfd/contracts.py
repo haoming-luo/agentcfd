@@ -11,6 +11,7 @@ from typing import Any
 _SCHEMAS = (
     "analysis-request.schema.json",
     "benchmark-catalog.schema.json",
+    "boundary-role-map.schema.json",
     "campaign-index.schema.json",
     "campaign-compaction.schema.json",
     "campaign-plan.schema.json",

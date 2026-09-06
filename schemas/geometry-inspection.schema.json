@@ -3,7 +3,7 @@
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/geometry-inspection.schema.json",
   "title": "AgentCFD imported geometry inspection 0.1",
   "type": "object",
-  "required": ["schema", "source", "surface", "policy", "tools", "readiness", "issues", "next_action", "observation_cost"],
+  "required": ["schema", "source", "surface", "policy", "boundary_roles", "tools", "readiness", "issues", "next_action", "observation_cost"],
   "properties": {
     "schema": {"const": "agentcfd.geometry-inspection/0.1"},
     "source": {
@@ -50,11 +50,27 @@
     },
     "policy": {
       "type": "object",
-      "required": ["require_watertight", "topology_triangle_limit", "merge_tolerance_native"],
+      "required": ["require_watertight", "topology_triangle_limit", "merge_tolerance_native", "internal_flow"],
       "properties": {
         "require_watertight": {"type": "boolean"},
         "topology_triangle_limit": {"type": "integer", "minimum": 1},
-        "merge_tolerance_native": {"type": "number", "minimum": 0}
+        "merge_tolerance_native": {"type": "number", "minimum": 0},
+        "internal_flow": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "boundary_roles": {
+      "type": "object",
+      "required": ["allowed_roles", "suggestions", "confirmed"],
+      "properties": {
+        "allowed_roles": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "suggestions": {"type": "object", "additionalProperties": {"type": "object"}},
+        "confirmed": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": {"type": "string"}}
+          ]
+        }
       },
       "additionalProperties": false
     },
@@ -70,9 +86,11 @@
     },
     "readiness": {
       "type": "object",
-      "required": ["geometry_ready", "agentcfd_imported_mesh_lowering_available", "ready_to_mesh"],
+      "required": ["geometry_ready", "boundary_roles_ready", "ready_for_import_setup", "agentcfd_imported_mesh_lowering_available", "ready_to_mesh"],
       "properties": {
         "geometry_ready": {"type": "boolean"},
+        "boundary_roles_ready": {"type": "boolean"},
+        "ready_for_import_setup": {"type": "boolean"},
         "agentcfd_imported_mesh_lowering_available": {"const": false},
         "ready_to_mesh": {"const": false}
       },
@@ -96,7 +114,7 @@
       "type": "object",
       "required": ["kind", "message"],
       "properties": {
-        "kind": {"enum": ["repair", "provider-roadmap"]},
+        "kind": {"enum": ["repair", "boundary-confirmation", "provider-roadmap"]},
         "message": {"type": "string"}
       },
       "additionalProperties": false

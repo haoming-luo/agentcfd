@@ -7,6 +7,9 @@ include CONCEPTS.md
 include ROADMAP.md
 include WORKFLOW.md
 recursive-include docs *.md *.json
-recursive-include examples *.py *.md
+recursive-include examples *.py *.md *.toml *.stl *.obj *.json
+prune examples/*/output
+prune examples/*/.agentcfd
+prune examples/*/mesh-case
 recursive-include schemas *.json
 recursive-include skills *.md

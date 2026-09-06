@@ -1447,6 +1447,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="Fail before execution if more than this many new solver runs are needed.",
     )
+    sweep.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Keep quantities and evidence but skip permanent XDMF/HDF5 fields.",
+    )
     sweep.add_argument("--json", action="store_true", dest="as_json")
 
     clean = subparsers.add_parser(
@@ -2491,6 +2496,7 @@ def main(argv: list[str] | None = None) -> int:
                 points,
                 provider=args.provider,
                 container_image=args.container_image,
+                summary_only=args.summary_only,
             )
         else:
             report = project.run_campaign(
@@ -2499,6 +2505,7 @@ def main(argv: list[str] | None = None) -> int:
                 container_image=args.container_image,
                 fail_fast=args.fail_fast,
                 maximum_solver_runs=args.max_runs,
+                summary_only=args.summary_only,
             )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2508,6 +2515,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"would execute {report['would_execute_count']} | reusable "
                 f"{report['reusable_count']}"
             )
+            print(f"result profile: {report['result_profile']}")
             for point in report["points"]:
                 print(
                     f"{point['name']} | ready {str(point['ready']).lower()} | "
@@ -2521,6 +2529,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"{report['deduplicated_count']} | accepted "
                 f"{report['accepted_count']}"
             )
+            print(f"result profile: {report['result_profile']}")
             for point in report["points"]:
                 print(
                     f"{point['name']} | {point['execution']} | {point['outcome']}"

@@ -9,6 +9,10 @@
 - Add `sweep --max-runs` as a hard zero-work approval boundary after accepted
   cache reuse. Equivalent points inside a request share one solver attempt even
   when that attempt fails, and reports expose planned versus actual starts.
+- Add `sweep --summary-only` for low-storage operating-map screening. It keeps
+  quantities, checks, logs, and provenance while skipping VTK/XDMF/HDF5 and
+  removing provider-native bulk; a distinct fingerprint prevents lightweight
+  results from satisfying later full-field requests.
 - Add `agentcfd campaigns` as a field-free design-point index over immutable
   project runs. New run markers carry compact canonical quantities; optional
   recursive storage accounting and unit-preserving CSV export are explicit,

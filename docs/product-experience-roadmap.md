@@ -105,6 +105,8 @@ files stay hidden and reproducible.
   semantics and copyable recovery commands in the sweep report;
 - hard pre-execution solver-count budgets and request-level deduplication even
   for failed or review outcomes, preventing agents from repeating wasted work;
+- summary-only campaign screening with distinct full-field identity, compact
+  evidence retention, lower temporary-storage estimates, and no permanent H5;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

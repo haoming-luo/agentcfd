@@ -90,6 +90,14 @@ distinguishes reuse from an existing campaign versus an identical point later
 in the same request, so estimated solver starts are not inflated by duplicate
 inputs.
 
+For exploration, `sweep --summary-only` keeps the same quantities, checks,
+histories, logs, and provenance while omitting permanent field payloads. Its
+distinct result fingerprint prevents downstream agents from assuming that a
+summary-only design point can satisfy a full-field request. This supports a
+two-stage loop: screen many points cheaply, then rerun the small promoted set
+with standard XDMF/HDF5 output for visual review, AgentFEM exchange, or learned
+field workflows.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

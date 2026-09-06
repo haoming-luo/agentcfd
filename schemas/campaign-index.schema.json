@@ -24,6 +24,7 @@
         "type": "object",
         "required": [
           "run_id", "design_point_name", "status", "accepted", "trust_level", "provider",
+          "result_profile",
           "model_name", "analysis_sha256", "reynolds_number", "started_at",
           "completed_at", "duration_seconds", "directory", "result",
           "quantities", "parameters", "bytes", "display", "file_count"
@@ -35,6 +36,7 @@
           "accepted": {"type": ["boolean", "null"]},
           "trust_level": {"type": ["string", "null"]},
           "provider": {"type": ["string", "null"]},
+          "result_profile": {"enum": ["full-fields", "summary-only"]},
           "model_name": {"type": ["string", "null"]},
           "analysis_sha256": {"type": ["string", "null"]},
           "reynolds_number": {"type": ["number", "null"]},

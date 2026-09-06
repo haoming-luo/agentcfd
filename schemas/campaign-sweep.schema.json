@@ -4,7 +4,7 @@
   "title": "AgentCFD campaign execution report 0.1",
   "type": "object",
   "required": [
-    "schema", "root", "provider", "requested_count", "processed_count",
+    "schema", "root", "provider", "result_profile", "requested_count", "processed_count",
     "executed_count", "reused_count", "deduplicated_count", "accepted_count", "failed_count",
     "unaccepted_count", "complete", "successful", "progress", "points",
     "solver_budget", "observation_cost"
@@ -13,6 +13,7 @@
     "schema": {"const": "agentcfd.campaign-sweep/0.1"},
     "root": {"type": "string"},
     "provider": {"enum": ["reference", "openfoam"]},
+    "result_profile": {"enum": ["full-fields", "summary-only"]},
     "requested_count": {"type": "integer", "minimum": 1},
     "processed_count": {"type": "integer", "minimum": 0},
     "executed_count": {"type": "integer", "minimum": 0},

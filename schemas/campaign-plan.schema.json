@@ -4,7 +4,7 @@
   "title": "AgentCFD zero-solve campaign preflight 0.1",
   "type": "object",
   "required": [
-    "schema", "root", "provider", "point_count", "ready_count",
+    "schema", "root", "provider", "result_profile", "point_count", "ready_count",
     "reusable_count", "would_execute_count", "all_ready", "points",
     "observation_cost"
   ],
@@ -12,6 +12,7 @@
     "schema": {"const": "agentcfd.campaign-plan/0.1"},
     "root": {"type": "string"},
     "provider": {"enum": ["reference", "openfoam"]},
+    "result_profile": {"enum": ["full-fields", "summary-only"]},
     "point_count": {"type": "integer", "minimum": 1},
     "ready_count": {"type": "integer", "minimum": 0},
     "reusable_count": {"type": "integer", "minimum": 0},

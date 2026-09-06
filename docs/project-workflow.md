@@ -255,6 +255,16 @@ including when the first execution fails or reaches review rather than
 acceptance; they share the same immutable evidence while retaining their own
 design-point names in the sweep table.
 
+Use `--summary-only` for broad operating maps where scalar quantities,
+acceptance checks, logs, and provenance are sufficient. OpenFOAM still writes
+the native states required during the solve, but AgentCFD skips VTK conversion,
+XDMF/HDF5 publication, view recipes, and permanent provider-native fields, then
+removes disposable bulk after publishing compact evidence. The plan reports a
+lower temporary-storage estimate and does not require optional portable-I/O
+packages. Summary-only and full-field runs have different result fingerprints,
+so an accepted lightweight point cannot masquerade as an animation-ready one;
+rerun only selected candidates without the flag to publish standard fields.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

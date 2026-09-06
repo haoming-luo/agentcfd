@@ -7,7 +7,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Check, contracts, projects
+from agentcfd import Artifact, Check, FieldRecord, contracts, projects
 from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
@@ -213,6 +213,125 @@ def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
     }
     project.clean(apply=True)
     assert completed.solver_workspace.is_dir()
+
+
+def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
+    tmp_path, monkeypatch, capsys
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+
+    def complete(provider, _step):
+        provider.case_directory.mkdir(parents=True)
+        native = provider.case_directory / "native-fields.bin"
+        native.write_bytes(b"large-provider-native-payload")
+        log = provider.case_directory / "log.pimpleFoam"
+        log.write_text("End\n")
+        return projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+            artifacts={
+                "field_U": Artifact.from_path(native),
+                "log_pimpleFoam": Artifact.from_path(
+                    log, role="solver-log", media_type="text/plain"
+                ),
+            },
+            fields={
+                "fluid.velocity.cell": FieldRecord(
+                    unit="m/s",
+                    location="cell",
+                    artifact=str(native),
+                    components=("x", "y", "z"),
+                    representation="provider-native",
+                )
+            },
+        )
+
+    monkeypatch.setattr("agentcfd.projects.OpenFOAMChannelProvider.run", complete)
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: False)
+
+    def reject_export(*_args, **_kwargs):
+        raise AssertionError("summary-only campaign must not invoke field export")
+
+    monkeypatch.setattr("agentcfd.projects.data_exchange.export_openfoam_case", reject_export)
+    points = {"base": {"mean_velocity": 0.5, "baffle_height": 0.12}}
+    preview = project.plan_campaign(points, summary_only=True)
+    full_preview = project.plan_campaign(points)
+
+    assert preview["result_profile"] == "summary-only"
+    assert preview["all_ready"] is True
+    assert full_preview["all_ready"] is False
+    summary_plan = project.plan(portable_fields=False)
+    full_plan = project.plan()
+    assert summary_plan["readiness"]["portable_io_available"] is True
+    assert summary_plan["decisions"]["result_profile"] == "summary-only"
+    assert summary_plan["decisions"]["output_plan"]["estimated_portable_bytes"] == 0
+    assert (
+        summary_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
+        < full_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
+    )
+    assert preview["points"][0]["result_execution_sha256"] != full_preview["points"][0][
+        "result_execution_sha256"
+    ]
+    report = project.run_campaign(points, summary_only=True)
+    assert report["points"][0]["error"] is None, report["points"][0]
+    run_directory = Path(report["points"][0]["directory"])
+    result = json.loads((run_directory / "result.json").read_text())
+    marker = json.loads((run_directory / "run.json").read_text())
+
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-sweep.schema.json")
+    ).validate(report)
+    assert report["result_profile"] == "summary-only"
+    assert marker["result_profile"] == "summary-only"
+    assert result["provenance"]["result_profile"] == "summary-only"
+    assert result["fields"] == {}
+    assert "field_U" not in result["artifacts"]
+    assert "log_pimpleFoam" in result["artifacts"]
+    assert "intentionally keeps summaries" in (run_directory / "README.md").read_text()
+    assert not (project.root / ".agentcfd" / "work").exists()
+    index = project.campaign_index()
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-index.schema.json")
+    ).validate(index)
+    assert index["runs"][0]["result_profile"] == "summary-only"
+    assert project.plan_campaign(points, summary_only=True)["reusable_count"] == 1
+    assert project.plan_campaign(points)["reusable_count"] == 0
+    request = project.root / "summary-sweep.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.campaign-request/0.1",
+                "points": [
+                    {
+                        "name": "base",
+                        "parameters": {
+                            "mean_velocity": 0.5,
+                            "baffle_height": 0.12,
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    assert (
+        entrypoint(
+            [
+                "sweep",
+                str(project.root),
+                str(request),
+                "--summary-only",
+                "--plan-only",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["result_profile"] == "summary-only"
 
 
 def test_project_logs_are_bounded_and_prefer_retained_workspace(tmp_path):

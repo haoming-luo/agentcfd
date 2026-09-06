@@ -43,7 +43,7 @@
       "required": [
         "study", "procedure", "outputs", "initialization", "mesh_intent",
         "provider", "required_capability",
-        "mesh_strategy", "solver", "portable_field_bundle", "portable_formats"
+        "mesh_strategy", "solver", "result_profile", "portable_field_bundle", "portable_formats"
       ],
       "properties": {
         "study": {"type": "object"},
@@ -55,6 +55,7 @@
         "required_capability": {"type": "string"},
         "mesh_strategy": {"type": "string"},
         "solver": {"type": "string"},
+        "result_profile": {"enum": ["full-fields", "summary-only"]},
         "portable_field_bundle": {"type": "boolean"},
         "portable_formats": {
           "type": "array",

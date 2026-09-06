@@ -139,7 +139,7 @@ AgentFEM transfer, and field-learning pipelines. One directory contains:
 | `fields.xdmf` | lightweight topology, field, association, and time-series index |
 | `fields.h5` | binary geometry, topology, and field payloads referenced by XDMF |
 | `fields.npz` | optional compressed, pickle-free mirror for NumPy/PyTorch/JAX ingestion |
-| `manifest.json` | units, canonical names, source names, processing, axis semantics, and hashes |
+| `manifest.json` | units, canonical names, source names, processing, axis semantics, source-mesh identity, and hashes |
 
 OpenFOAM native cell values and its interpolated point values are both
 retained and named separately. For example, `fluid.velocity.cell` is the native
@@ -188,6 +188,10 @@ The manifest says whether the axis is physical time, a steady-solver iteration,
 or an unclassified provider coordinate. Consumers must not infer seconds from
 an XDMF `Time` element alone. `agentcfd verify field-bundle` reopens XDMF/H5 and
 NPZ, compares their axes and geometry, and verifies all artifact hashes.
+Accepted OpenFOAM project exports also bind every portable `FieldRecord` and the
+HDF5 metadata to the exact source `polyMesh` SHA-256. A default cleaned project
+records the provider case as intentionally unretained instead of publishing a
+dangling absolute workspace path.
 
 ### Output profiles
 

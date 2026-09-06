@@ -3663,9 +3663,14 @@ class Project:
                     },
                     source={
                         "model_sha256": step.model.fingerprint(),
+                        "mesh_sha256": result.provenance.get("mesh_sha256"),
                         "result_status": result.status,
                         "trust_level": result.trust_level,
                         "accepted": result.accepted,
+                        "case_directory": (
+                            str(case_directory.resolve()) if retained_workspace else None
+                        ),
+                        "case_directory_retained": retained_workspace,
                     },
                     profile=step.output.portable_profile,
                     fields=step.output.fields,
@@ -3709,6 +3714,7 @@ class Project:
                     media_type=media_type,
                 )
             manifest = json.loads(bundle.manifest.read_text(encoding="utf-8"))
+            portable_mesh_sha256 = manifest.get("mesh", {}).get("source_sha256")
             for record in manifest["fields"]:
                 name = record["export_name"]
                 result.fields[name] = FieldRecord(
@@ -3717,6 +3723,7 @@ class Project:
                     artifact=str(bundle.xdmf.relative_to(run_directory)),
                     components=tuple(record["components"]),
                     representation="xdmf-hdf5",
+                    mesh_sha256=portable_mesh_sha256,
                     description=record["description"],
                     processing={"operation": record["processing"]},
                 )

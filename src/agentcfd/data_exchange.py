@@ -126,6 +126,14 @@ def io_available() -> bool:
     return True
 
 
+def _sha256_hex(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value.lower())
+    )
+
+
 def _time_from_vtu(path: Path) -> float:
     series_path = path.parent.parent / "case.vtm.series"
     if series_path.is_file():
@@ -644,6 +652,13 @@ def export_vtu_series(
     write_npz = "npz" in selected_formats
     source_root = Path(case_directory) if case_directory is not None else files[0].parents[2]
     axis_record = dict(axis or _axis_from_result(source_root))
+    source_record = {**_source_context(source_root), **dict(source or {})}
+    source_mesh_sha256 = source_record.get("mesh_sha256")
+    if source_mesh_sha256 is not None and not _sha256_hex(source_mesh_sha256):
+        raise ValueError("Source mesh_sha256 must be a SHA-256 hex digest.")
+    if source_mesh_sha256 is not None:
+        source_mesh_sha256 = source_mesh_sha256.lower()
+        source_record["mesh_sha256"] = source_mesh_sha256
     required_axis = {"name", "unit", "physical_time", "description"}
     if set(axis_record) != required_axis:
         raise ValueError("Field axis must define name, unit, physical_time, and description.")
@@ -775,6 +790,8 @@ def export_vtu_series(
         h5.attrs["axis_is_physical_time"] = bool(axis_record["physical_time"])
         h5.attrs["point_count"] = int(points.shape[0])
         h5.attrs["cell_block_count"] = len(topology)
+        if source_mesh_sha256 is not None:
+            h5.attrs["source_mesh_sha256"] = source_mesh_sha256
 
     arrays: dict[str, Any] = {}
     array_records: list[dict[str, object]] = []
@@ -820,6 +837,11 @@ def export_vtu_series(
                 for cell_type, data in topology
             ],
             "fixed_across_frames": True,
+            **(
+                {"source_sha256": source_mesh_sha256}
+                if source_mesh_sha256 is not None
+                else {}
+            ),
         },
         "axis": {
             "name": str(axis_record["name"]),
@@ -830,7 +852,7 @@ def export_vtu_series(
         },
         "fields": field_records or [],
         "arrays": array_records,
-        "source": {**_source_context(source_root), **dict(source or {})},
+        "source": source_record,
         "formats": {"xdmf": "fields.xdmf", "hdf5": "fields.h5"},
         "output_selection": {
             "profile": profile,
@@ -1143,6 +1165,11 @@ def verify_field_bundle(directory: str | Path) -> dict[str, object]:
             raise ValueError("HDF5 field-bundle version disagrees with the manifest.")
         if h5.attrs.get("axis_name") != payload["axis"]["name"]:
             raise ValueError("HDF5 field-bundle axis disagrees with the manifest.")
+        source_mesh_sha256 = payload["mesh"].get("source_sha256")
+        if source_mesh_sha256 is not None and (
+            h5.attrs.get("source_mesh_sha256") != source_mesh_sha256
+        ):
+            raise ValueError("HDF5 source-mesh identity disagrees with the manifest.")
     with meshio.xdmf.TimeSeriesReader(root / payload["formats"]["xdmf"]) as reader:
         points, cells = reader.read_points_cells()
         xdmf_times = [reader.read_data(index)[0] for index in range(reader.num_steps)]

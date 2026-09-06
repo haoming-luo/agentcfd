@@ -376,3 +376,5 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
     assert result.provenance["provider_capability"] == (
         "openfoam.steady-laminar-imported-surface"
     )
+    assert result.provenance["mesh_sha256"] == result.fields["U"].mesh_sha256
+    assert result.provenance["mesh_sha256"] == result.fields["p"].mesh_sha256

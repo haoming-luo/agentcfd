@@ -29,7 +29,11 @@
             "additionalProperties": false
           }
         },
-        "fixed_across_frames": {"const": true}
+        "fixed_across_frames": {"const": true},
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
       },
       "additionalProperties": false
     },

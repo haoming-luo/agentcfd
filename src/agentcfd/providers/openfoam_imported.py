@@ -1140,6 +1140,7 @@ class OpenFOAMImportedProvider:
                 "model_sha256": step.model.fingerprint(),
                 "analysis_sha256": _analysis_sha256(step),
                 "case_sha256": prepared.case_sha256,
+                "mesh_sha256": mesh_sha256,
                 "provider_capability": _FLOW_CAPABILITY,
                 "runtime_version": runtime_version,
             },

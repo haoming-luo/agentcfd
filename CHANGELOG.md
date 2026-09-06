@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Bind project-published XDMF/H5 fields to the exact OpenFOAM source-mesh
+  identity and avoid dangling provider-workspace paths after automatic cleanup.
+
 - Add dependency-free `geometry-check` for binary/ASCII STL and OBJ. The
   versioned report makes units, SI bounds, regions, degeneracy, open and
   non-manifold edges, orientation, topology memory limits, and imported-mesh

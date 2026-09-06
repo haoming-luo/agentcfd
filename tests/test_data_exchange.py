@@ -102,6 +102,44 @@ def test_xdmf_h5_npz_bundle_round_trip_and_schema(tmp_path):
     }
 
 
+def test_field_bundle_binds_portable_fields_to_source_mesh_identity(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+    mesh_sha256 = "a" * 64
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        convert=False,
+        density=1000.0,
+        source={"mesh_sha256": mesh_sha256, "case_directory": None},
+    )
+
+    manifest = json.loads(bundle.manifest.read_text())
+    assert manifest["mesh"]["source_sha256"] == mesh_sha256
+    assert manifest["source"]["mesh_sha256"] == mesh_sha256
+    assert manifest["source"]["case_directory"] is None
+
+    import h5py
+
+    with h5py.File(bundle.hdf5, "r") as h5:
+        assert h5.attrs["source_mesh_sha256"] == mesh_sha256
+    assert data_exchange.verify_field_bundle(bundle.directory)["verified"] is True
+
+
+def test_field_bundle_rejects_malformed_source_mesh_identity(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+
+    with pytest.raises(ValueError, match="mesh_sha256"):
+        data_exchange.export_openfoam_case(
+            case,
+            tmp_path / "bundle",
+            convert=False,
+            source={"mesh_sha256": "not-a-digest"},
+        )
+
+
 def test_openfoam_export_filters_restart_times_from_public_frames(tmp_path):
     case = tmp_path / "case"
     for time in range(5):

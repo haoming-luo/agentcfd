@@ -1667,11 +1667,18 @@ class Project:
         provider: str | None = None,
         container_image: str | None = None,
         fail_fast: bool = False,
+        maximum_solver_runs: int | None = None,
     ) -> dict[str, object]:
         """Preflight and execute named design points, reusing accepted identities."""
 
         if not isinstance(points, Mapping) or not points:
             raise ProjectError("A campaign sweep requires at least one named point.")
+        if maximum_solver_runs is not None and (
+            isinstance(maximum_solver_runs, bool)
+            or not isinstance(maximum_solver_runs, int)
+            or maximum_solver_runs < 0
+        ):
+            raise ProjectError("Maximum solver runs must be a non-negative integer.")
         selected_provider = provider or self.manifest.default_provider
         prepared = []
         for name, raw_parameters in points.items():
@@ -1703,8 +1710,25 @@ class Project:
             prepared.append((name, parameters, plan, identity))
 
         reusable = self._reusable_campaign_records()
+        planned_new_runs = len(
+            {
+                identity
+                for _name, _parameters, _plan, identity in prepared
+                if identity not in reusable
+            }
+        )
+        if (
+            maximum_solver_runs is not None
+            and planned_new_runs > maximum_solver_runs
+        ):
+            raise ProjectError(
+                f"Campaign would start {planned_new_runs} solver processes, exceeding "
+                f"the explicit --max-runs {maximum_solver_runs} budget. No design "
+                "point was executed; inspect `agentcfd sweep . REQUEST --plan-only`."
+            )
         progress_path = self.root / "campaigns" / "last-sweep.json"
         rows: list[dict[str, object]] = []
+        request_results: dict[str, dict[str, object]] = {}
 
         def report() -> dict[str, object]:
             processed = len(rows)
@@ -1719,6 +1743,9 @@ class Project:
                 "processed_count": processed,
                 "executed_count": sum(row["execution"] == "executed" for row in rows),
                 "reused_count": sum(row["execution"] == "reused" for row in rows),
+                "deduplicated_count": sum(
+                    row["execution"] == "deduplicated" for row in rows
+                ),
                 "accepted_count": accepted,
                 "failed_count": failed,
                 "unaccepted_count": unaccepted,
@@ -1726,6 +1753,13 @@ class Project:
                 "successful": processed == len(prepared) and accepted == len(prepared),
                 "progress": str(progress_path),
                 "points": rows,
+                "solver_budget": {
+                    "maximum_runs": maximum_solver_runs,
+                    "planned_new_runs": planned_new_runs,
+                    "solver_processes_started": sum(
+                        row["execution"] == "executed" for row in rows
+                    ),
+                },
                 "observation_cost": {
                     "result_manifests_opened": 0,
                     "field_payloads_opened": 0,
@@ -1760,6 +1794,23 @@ class Project:
                         "error": None,
                     }
                 )
+            elif identity in request_results:
+                source = request_results[identity]
+                rows.append(
+                    {
+                        "name": name,
+                        "parameters": parameters,
+                        "plan_sha256": plan["plan_sha256"],
+                        "result_execution_sha256": identity,
+                        "execution": "deduplicated",
+                        "outcome": source["outcome"],
+                        "run_id": source["run_id"],
+                        "directory": source["directory"],
+                        "accepted": source["accepted"],
+                        "diagnose_command": source["diagnose_command"],
+                        "error": source["error"],
+                    }
+                )
             else:
                 try:
                     completed = self.run(
@@ -1788,8 +1839,7 @@ class Project:
                     )
                     failed_directory = self._record_directory(failed_record)
                     project_argument = self._cli_project_argument()
-                    rows.append(
-                        {
+                    row = {
                             "name": name,
                             "parameters": parameters,
                             "plan_sha256": plan["plan_sha256"],
@@ -1815,7 +1865,8 @@ class Project:
                                 "message": str(error),
                             },
                         }
-                    )
+                    rows.append(row)
+                    request_results[identity] = row
                     write_progress()
                     if fail_fast:
                         break
@@ -1848,6 +1899,7 @@ class Project:
                     "error": None,
                 }
                 rows.append(row)
+                request_results[identity] = row
                 if accepted:
                     reusable[identity] = {
                         "run_id": completed.run_id,

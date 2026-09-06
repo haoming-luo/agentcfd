@@ -574,6 +574,10 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     assert preview["points"][2]["reuse_source"] == "request-duplicate"
     assert preview["observation_cost"]["solver_processes_started"] == 0
 
+    with pytest.raises(ProjectError, match="exceeding the explicit --max-runs 1"):
+        project.run_campaign(points, maximum_solver_runs=1)
+    assert project.campaign_index()["run_count"] == 0
+
     report = project.run_campaign(points)
 
     jsonschema.Draft202012Validator(
@@ -582,6 +586,12 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     assert report["successful"] is True
     assert report["executed_count"] == 2
     assert report["reused_count"] == 1
+    assert report["deduplicated_count"] == 0
+    assert report["solver_budget"] == {
+        "maximum_runs": None,
+        "planned_new_runs": 2,
+        "solver_processes_started": 2,
+    }
     assert [point["outcome"] for point in report["points"]] == [
         "accepted",
         "accepted",
@@ -635,7 +645,14 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     assert cli_preview["observation_cost"]["solver_processes_started"] == 0
     assert (
         entrypoint(
-            ["sweep", str(project.root), str(request), "--json"]
+            [
+                "sweep",
+                str(project.root),
+                str(request),
+                "--max-runs",
+                "0",
+                "--json",
+            ]
         )
         == 0
     )
@@ -668,14 +685,19 @@ def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypa
     report = project.run_campaign(
         {
             "first": {"mean_velocity": 0.02},
+            "first-copy": {"mean_velocity": 0.02},
             "second": {"mean_velocity": 0.03},
         }
     )
 
     assert report["complete"] is True
     assert report["successful"] is False
-    assert report["failed_count"] == 1
+    assert report["failed_count"] == 2
     assert report["accepted_count"] == 1
+    assert report["executed_count"] == 2
+    assert report["deduplicated_count"] == 1
+    assert report["points"][1]["execution"] == "deduplicated"
+    assert report["points"][1]["run_id"] == report["points"][0]["run_id"]
     assert report["points"][0]["error"]["type"] == "RuntimeError"
     assert report["points"][0]["run_id"] is not None
     assert Path(report["points"][0]["directory"]).is_dir()
@@ -683,7 +705,7 @@ def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypa
         "--run-id",
         report["points"][0]["run_id"],
     ]
-    assert report["points"][1]["outcome"] == "accepted"
+    assert report["points"][2]["outcome"] == "accepted"
 
 
 def test_historical_campaign_failure_remains_diagnosable_by_run_id(

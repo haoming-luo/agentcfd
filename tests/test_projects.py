@@ -462,6 +462,47 @@ def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
     assert project.inspect()["run_count"] == 2
 
 
+def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
+    tmp_path, capsys
+):
+    project = projects.init_project(tmp_path / "pipe")
+    first = project.run(campaign=True)
+    second = project.run(campaign=True)
+
+    report = project.campaign_index()
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-index.schema.json")
+    ).validate(report)
+    assert report["run_count"] == 2
+    assert report["accepted_count"] == 2
+    assert report["total_bytes"] is None
+    assert report["observation_cost"] == {
+        "run_markers_opened": 2,
+        "plan_files_opened": 0,
+        "result_manifests_opened": 0,
+        "field_payloads_opened": 0,
+        "recursive_storage_scans": 0,
+    }
+    assert [row["run_id"] for row in report["runs"]] == sorted(
+        [first.run_id, second.run_id]
+    )
+    assert report["runs"][0]["quantities"]["flow.pressure_drop"]["unit"] == "Pa"
+
+    csv_path, with_storage = project.export_campaign_csv(
+        tmp_path / "design-points.csv", include_storage=True
+    )
+    assert with_storage["total_bytes"] > 0
+    assert with_storage["observation_cost"]["recursive_storage_scans"] == 2
+    table = csv_path.read_text()
+    assert "quantity:flow.pressure_drop [Pa]" in table.splitlines()[0]
+    assert first.run_id in table and second.run_id in table
+
+    assert entrypoint(["campaigns", str(project.root), "--json"]) == 0
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["run_count"] == 2
+    assert cli_report["observation_cost"]["field_payloads_opened"] == 0
+
+
 def test_project_replace_mode_refuses_unmanaged_output(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `agentcfd campaigns` as a field-free design-point index over immutable
+  project runs. New run markers carry compact canonical quantities; optional
+  recursive storage accounting and unit-preserving CSV export are explicit,
+  while the default path opens neither result histories nor HDF5 fields.
 - Add typed final-frame line profiles over portable fields. The generated
   ParaView recipe uses explicit endpoints and sample count, publishes a compact
   canonical two-column CSV, requires an explicit component or magnitude for

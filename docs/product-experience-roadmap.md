@@ -90,9 +90,11 @@ files stay hidden and reproducible.
   generate portable ParaView scripts without copying field payloads;
 - explicit camera plus screenshot/PNG-sequence/MP4 render intent, disabled by
   default and recorded as expected outputs without duplicating field payloads;
-- scalar plot-over-line recipes with selected-column CSV plus mutually
-  exclusive interactive and headless execution paths;
+- scalar and explicit vector-component/magnitude plot-over-line recipes with
+  canonical two-column CSV plus interactive and headless execution paths;
 - one-command post-processing target and self-documenting output directory;
+- field-free campaign design-point index and unit-preserving CSV export, with
+  recursive storage scans remaining explicit opt-in;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 
@@ -102,15 +104,15 @@ files stay hidden and reproducible.
    boundary-role audit before meshing.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
-3. Extend the shipped filter recipes with multi-view layout and explicit vector
-   component/projection intent while preserving one shared field payload.
+3. Extend the shipped filter recipes with multi-view layout and explicit normal
+   or tangential vector projection intent while preserving one field payload.
 4. Persist bounded progress history and learned ETA calibration across runs,
    without converting monitoring into high-frequency field output.
 
 ### Then: scale without scaling attention
 
 1. Campaign matrix API with deduplication, bounded concurrency, retry policy,
-   and compact operating-map summaries.
+   and operating-map plots over the shipped compact design-point index.
 2. Remote/container/HPC executor protocol with the same run state contract.
 3. Streaming XDMF/HDF5 publication, followed by Catalyst extraction for cases
    where intermediate VTK and native full-field retention dominate I/O.

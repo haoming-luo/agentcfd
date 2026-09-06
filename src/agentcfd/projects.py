@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import importlib.util
 import errno
 import json
@@ -1296,6 +1297,175 @@ class Project:
             reverse=True,
         )
         return runs
+
+    def campaign_index(self, *, include_storage: bool = False) -> dict[str, object]:
+        """Summarize immutable design points without opening any field payload."""
+
+        campaign_root = self.root / "campaigns"
+        rows: list[dict[str, object]] = []
+        plan_files_opened = 0
+        markers = (
+            sorted(campaign_root.glob("*/run.json"))
+            if campaign_root.is_dir()
+            else []
+        )
+        for marker in markers:
+            try:
+                record = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(record, dict):
+                continue
+            directory = marker.parent
+            model_name = record.get("model_name")
+            reynolds_number = record.get("reynolds_number")
+            if not isinstance(model_name, str):
+                try:
+                    plan = json.loads(
+                        (directory / "plan.json").read_text(encoding="utf-8")
+                    )
+                    plan_files_opened += 1
+                    model = plan.get("model", {})
+                    if isinstance(model, dict):
+                        model_name = model.get("name")
+                        reynolds_number = model.get("reynolds_number")
+                except (OSError, json.JSONDecodeError):
+                    pass
+            started_at = record.get("started_at")
+            completed_at = record.get("completed_at")
+            duration_seconds = None
+            try:
+                if started_at is not None and completed_at is not None:
+                    duration_seconds = max(
+                        0.0,
+                        (
+                            datetime.fromisoformat(str(completed_at))
+                            - datetime.fromisoformat(str(started_at))
+                        ).total_seconds(),
+                    )
+            except ValueError:
+                pass
+            quantities = record.get("quantities", {})
+            if not isinstance(quantities, dict):
+                quantities = {}
+            size = files = None
+            if include_storage:
+                size, files = _tree_usage(directory)
+            rows.append(
+                {
+                    "run_id": record.get("run_id", directory.name),
+                    "status": record.get("status", "unknown"),
+                    "accepted": record.get("accepted"),
+                    "trust_level": record.get("trust_level"),
+                    "provider": record.get("provider"),
+                    "model_name": model_name,
+                    "analysis_sha256": record.get("analysis_sha256"),
+                    "reynolds_number": reynolds_number,
+                    "started_at": started_at,
+                    "completed_at": completed_at,
+                    "duration_seconds": duration_seconds,
+                    "directory": str(directory),
+                    "result": str(directory / "result.json")
+                    if (directory / "result.json").is_file()
+                    else None,
+                    "quantities": quantities,
+                    "bytes": size,
+                    "display": None if size is None else _human_bytes(size),
+                    "file_count": files,
+                }
+            )
+        total_bytes = (
+            sum(int(row["bytes"]) for row in rows if row["bytes"] is not None)
+            if include_storage
+            else None
+        )
+        return {
+            "schema": "agentcfd.campaign-index/0.1",
+            "root": str(self.root),
+            "run_count": len(rows),
+            "accepted_count": sum(row["accepted"] is True for row in rows),
+            "failed_count": sum(row["status"] == "failed" for row in rows),
+            "include_storage": include_storage,
+            "total_bytes": total_bytes,
+            "total_display": None
+            if total_bytes is None
+            else _human_bytes(total_bytes),
+            "exported_csv": None,
+            "runs": rows,
+            "observation_cost": {
+                "run_markers_opened": len(markers),
+                "plan_files_opened": plan_files_opened,
+                "result_manifests_opened": 0,
+                "field_payloads_opened": 0,
+                "recursive_storage_scans": len(rows) if include_storage else 0,
+            },
+        }
+
+    def export_campaign_csv(
+        self,
+        path: str | Path,
+        *,
+        include_storage: bool = False,
+    ) -> tuple[Path, dict[str, object]]:
+        """Export the compact design-point table with canonical quantity columns."""
+
+        report = self.campaign_index(include_storage=include_storage)
+        quantity_names = sorted(
+            {
+                name
+                for row in report["runs"]
+                for name in row["quantities"]
+                if isinstance(name, str)
+            }
+        )
+        units = {
+            name: next(
+                (
+                    str(row["quantities"][name].get("unit") or "1")
+                    for row in report["runs"]
+                    if isinstance(row["quantities"].get(name), dict)
+                ),
+                "1",
+            )
+            for name in quantity_names
+        }
+        base_columns = [
+            "run_id",
+            "status",
+            "accepted",
+            "trust_level",
+            "provider",
+            "model_name",
+            "analysis_sha256",
+            "reynolds_number",
+            "duration_seconds",
+            "completed_at",
+        ]
+        if include_storage:
+            base_columns.extend(["bytes", "file_count"])
+        quantity_columns = {
+            name: f"quantity:{name} [{units[name]}]" for name in quantity_names
+        }
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        with temporary.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.DictWriter(
+                stream,
+                fieldnames=[*base_columns, *quantity_columns.values()],
+            )
+            writer.writeheader()
+            for row in report["runs"]:
+                flat = {name: row.get(name) for name in base_columns}
+                for name, column in quantity_columns.items():
+                    record = row["quantities"].get(name)
+                    flat[column] = (
+                        record.get("value") if isinstance(record, dict) else None
+                    )
+                writer.writerow(flat)
+        temporary.replace(target)
+        report["exported_csv"] = str(target)
+        return target, report
 
     def _active_run_ids(self) -> set[str]:
         return {
@@ -2687,6 +2857,12 @@ class Project:
             "reason": retention_reason,
             "protected_from_default_cleanup": retention_reason
             in {"explicit-cli", "manifest-policy"},
+        }
+        run_record["model_name"] = step.model.name
+        run_record["reynolds_number"] = _inlet_reynolds(step)
+        run_record["quantities"] = {
+            name: {"value": quantity.value, "unit": quantity.unit}
+            for name, quantity in sorted(result.quantities.items())
         }
         if _resume_archive is not None:
             run_record["resume"] = marker_record["resume"]

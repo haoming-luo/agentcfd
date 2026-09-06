@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/campaign-index.schema.json",
+  "title": "AgentCFD compact campaign design-point index 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "run_count", "accepted_count", "failed_count",
+    "include_storage", "total_bytes", "total_display", "exported_csv", "runs",
+    "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.campaign-index/0.1"},
+    "root": {"type": "string"},
+    "run_count": {"type": "integer", "minimum": 0},
+    "accepted_count": {"type": "integer", "minimum": 0},
+    "failed_count": {"type": "integer", "minimum": 0},
+    "include_storage": {"type": "boolean"},
+    "total_bytes": {"type": ["integer", "null"], "minimum": 0},
+    "total_display": {"type": ["string", "null"]},
+    "exported_csv": {"type": ["string", "null"]},
+    "runs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "run_id", "status", "accepted", "trust_level", "provider",
+          "model_name", "analysis_sha256", "reynolds_number", "started_at",
+          "completed_at", "duration_seconds", "directory", "result",
+          "quantities", "bytes", "display", "file_count"
+        ],
+        "properties": {
+          "run_id": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "minLength": 1},
+          "accepted": {"type": ["boolean", "null"]},
+          "trust_level": {"type": ["string", "null"]},
+          "provider": {"type": ["string", "null"]},
+          "model_name": {"type": ["string", "null"]},
+          "analysis_sha256": {"type": ["string", "null"]},
+          "reynolds_number": {"type": ["number", "null"]},
+          "started_at": {"type": ["string", "null"]},
+          "completed_at": {"type": ["string", "null"]},
+          "duration_seconds": {"type": ["number", "null"], "minimum": 0},
+          "directory": {"type": "string"},
+          "result": {"type": ["string", "null"]},
+          "quantities": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["value", "unit"],
+              "properties": {
+                "value": {"type": "number"},
+                "unit": {"type": ["string", "null"]}
+              },
+              "additionalProperties": false
+            }
+          },
+          "bytes": {"type": ["integer", "null"], "minimum": 0},
+          "display": {"type": ["string", "null"]},
+          "file_count": {"type": ["integer", "null"], "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": [
+        "run_markers_opened", "plan_files_opened", "result_manifests_opened",
+        "field_payloads_opened", "recursive_storage_scans"
+      ],
+      "properties": {
+        "run_markers_opened": {"type": "integer", "minimum": 0},
+        "plan_files_opened": {"type": "integer", "minimum": 0},
+        "result_manifests_opened": {"const": 0},
+        "field_payloads_opened": {"const": 0},
+        "recursive_storage_scans": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

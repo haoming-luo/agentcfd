@@ -65,6 +65,13 @@ call `agentcfd view . --recipe NAME --batch` for headless CSV/image/state
 generation or use `--launch` for an interactive GUI. It never needs to
 synthesize a ParaView trace or duplicate the HDF5 payload.
 
+Campaign runs copy their compact scalar quantity map into `run.json`.
+`agentcfd campaigns . --json` can therefore compare accepted design points,
+input fingerprints, providers, duration, and quantities without parsing solver
+logs or opening `result.json` histories and HDF5 fields. The optional CSV export
+flattens canonical quantity names and units for Pandas, spreadsheets, or
+surrogate-model ingestion.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

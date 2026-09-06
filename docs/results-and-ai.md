@@ -78,6 +78,13 @@ normalized JSON scalars are recorded beside the content-addressed analysis.
 This gives an agent a narrow mutation surface while Python type/model validation
 continues to reject physically invalid values.
 
+`agentcfd sweep` adds a versioned request/report boundary around this surface.
+It preflights the complete set, reuses only accepted results with the exact
+result-execution fingerprint, writes progress atomically after each point, and
+continues after isolated runtime failure unless fail-fast was explicit. It does
+not infer parameter names, weaken provider gates, or read field payloads to
+decide reuse.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

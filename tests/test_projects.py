@@ -554,6 +554,95 @@ def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     assert cli_report["observation_cost"]["field_payloads_opened"] == 0
 
 
+def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
+    tmp_path, capsys
+):
+    project = projects.init_project(tmp_path / "pipe")
+    points = {
+        "base": {"mean_velocity": 0.02},
+        "faster": {"mean_velocity": 0.03},
+        "base-repeat": {"mean_velocity": 0.02},
+    }
+
+    report = project.run_campaign(points)
+
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-sweep.schema.json")
+    ).validate(report)
+    assert report["successful"] is True
+    assert report["executed_count"] == 2
+    assert report["reused_count"] == 1
+    assert [point["outcome"] for point in report["points"]] == [
+        "accepted",
+        "accepted",
+        "accepted",
+    ]
+    assert report["points"][2]["run_id"] == report["points"][0]["run_id"]
+    progress = json.loads(Path(report["progress"]).read_text())
+    assert progress == report
+    index = project.campaign_index()
+    assert {row["design_point_name"] for row in index["runs"]} == {"base", "faster"}
+
+    before = index["run_count"]
+    with pytest.raises(ProjectError, match="No design point was executed"):
+        project.run_campaign(
+            {
+                "valid": {"mean_velocity": 0.025},
+                "outside-reference-capability": {"mean_velocity": 1.0},
+            }
+        )
+    assert project.campaign_index()["run_count"] == before
+
+    request = tmp_path / "sweep.json"
+    request.write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.campaign-request/0.1",
+                "points": [
+                    {"name": "base-again", "parameters": {"mean_velocity": 0.02}}
+                ],
+            }
+        )
+    )
+    assert (
+        entrypoint(
+            ["sweep", str(project.root), str(request), "--json"]
+        )
+        == 0
+    )
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["executed_count"] == 0
+    assert cli_report["reused_count"] == 1
+
+
+def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypatch):
+    project = projects.init_project(tmp_path / "pipe")
+    original = projects.ReferencePipeProvider.run
+    attempts = 0
+
+    def fail_first(provider, step):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("synthetic isolated design-point failure")
+        return original(provider, step)
+
+    monkeypatch.setattr("agentcfd.projects.ReferencePipeProvider.run", fail_first)
+    report = project.run_campaign(
+        {
+            "first": {"mean_velocity": 0.02},
+            "second": {"mean_velocity": 0.03},
+        }
+    )
+
+    assert report["complete"] is True
+    assert report["successful"] is False
+    assert report["failed_count"] == 1
+    assert report["accepted_count"] == 1
+    assert report["points"][0]["error"]["type"] == "RuntimeError"
+    assert report["points"][1]["outcome"] == "accepted"
+
+
 def test_project_replace_mode_refuses_unmanaged_output(tmp_path):
     root = tmp_path / "pipe"
     project = projects.init_project(root)

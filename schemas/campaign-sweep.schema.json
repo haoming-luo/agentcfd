@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/campaign-sweep.schema.json",
+  "title": "AgentCFD campaign execution report 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "provider", "requested_count", "processed_count",
+    "executed_count", "reused_count", "accepted_count", "failed_count",
+    "unaccepted_count", "complete", "successful", "progress", "points",
+    "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.campaign-sweep/0.1"},
+    "root": {"type": "string"},
+    "provider": {"enum": ["reference", "openfoam"]},
+    "requested_count": {"type": "integer", "minimum": 1},
+    "processed_count": {"type": "integer", "minimum": 0},
+    "executed_count": {"type": "integer", "minimum": 0},
+    "reused_count": {"type": "integer", "minimum": 0},
+    "accepted_count": {"type": "integer", "minimum": 0},
+    "failed_count": {"type": "integer", "minimum": 0},
+    "unaccepted_count": {"type": "integer", "minimum": 0},
+    "complete": {"type": "boolean"},
+    "successful": {"type": "boolean"},
+    "progress": {"type": "string"},
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "parameters", "plan_sha256", "result_execution_sha256",
+          "execution", "outcome", "run_id", "directory", "accepted", "error"
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "parameters": {"type": "object"},
+          "plan_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "result_execution_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "execution": {"enum": ["executed", "reused"]},
+          "outcome": {"enum": ["accepted", "review", "failed"]},
+          "run_id": {"type": ["string", "null"]},
+          "directory": {"type": ["string", "null"]},
+          "accepted": {"type": "boolean"},
+          "error": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "required": ["type", "message"],
+                "properties": {
+                  "type": {"type": "string"},
+                  "message": {"type": "string"}
+                },
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": ["result_manifests_opened", "field_payloads_opened"],
+      "properties": {
+        "result_manifests_opened": {"const": 0},
+        "field_payloads_opened": {"const": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

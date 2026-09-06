@@ -207,6 +207,29 @@ the campaign CSV. Misspelled or unsupported names fail through the factory
 signature before meshing. This keeps one language and one model source of truth;
 AgentCFD does not patch arbitrary Python source or maintain a shadow YAML model.
 
+For repeatable studies, a request contains names plus only those factory
+parameters:
+
+```json
+{
+  "schema": "agentcfd.campaign-request/0.1",
+  "points": [
+    {"name": "v05", "parameters": {"mean_velocity": 0.5}},
+    {"name": "v07", "parameters": {"mean_velocity": 0.7}}
+  ]
+}
+```
+
+`agentcfd sweep . sweep.json` plans every point before executing any. A bad
+name, invalid model, unsupported physics, missing runtime, or exceeded output
+budget aborts the whole preflight without a partial campaign. During execution,
+an already accepted identical result fingerprint is reused, including duplicate
+points inside one request. Runtime failures are recorded and later points
+continue by default; `--fail-fast` changes only that execution policy. The
+small atomic `campaigns/last-sweep.json` makes interruption and automation
+observable. Version 0.1 executes serially so a campaign cannot oversubscribe
+memory or temporary storage before a bounded resource scheduler exists.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

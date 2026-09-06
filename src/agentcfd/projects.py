@@ -1393,6 +1393,7 @@ class Project:
             rows.append(
                 {
                     "run_id": record.get("run_id", directory.name),
+                    "design_point_name": record.get("design_point_name"),
                     "status": record.get("status", "unknown"),
                     "accepted": record.get("accepted"),
                     "trust_level": record.get("trust_level"),
@@ -1479,6 +1480,7 @@ class Project:
         }
         base_columns = [
             "run_id",
+            "design_point_name",
             "status",
             "accepted",
             "trust_level",
@@ -1520,6 +1522,166 @@ class Project:
         temporary.replace(target)
         report["exported_csv"] = str(target)
         return target, report
+
+    def run_campaign(
+        self,
+        points: Mapping[str, Mapping[str, object]],
+        *,
+        provider: str | None = None,
+        container_image: str | None = None,
+        fail_fast: bool = False,
+    ) -> dict[str, object]:
+        """Preflight and execute named design points, reusing accepted identities."""
+
+        if not isinstance(points, Mapping) or not points:
+            raise ProjectError("A campaign sweep requires at least one named point.")
+        selected_provider = provider or self.manifest.default_provider
+        prepared = []
+        for name, raw_parameters in points.items():
+            if (
+                not isinstance(name, str)
+                or re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name) is None
+            ):
+                raise ProjectError(
+                    "Campaign point names must start with a letter and contain only "
+                    "letters, numbers, underscores, or hyphens."
+                )
+            parameters = self._parameters(raw_parameters)
+            plan = self.plan(
+                provider=selected_provider,
+                container_image=container_image,
+                parameters=parameters,
+            )
+            if plan["readiness"]["ready_to_run"] is not True:
+                codes = ", ".join(issue["code"] for issue in plan["issues"])
+                raise ProjectError(
+                    f"Campaign point {name!r} is not ready: {codes or 'unknown issue'}. "
+                    "No design point was executed."
+                )
+            identity = self._result_execution_fingerprint(
+                plan["model"]["analysis_sha256"],
+                provider=selected_provider,
+                container_image=container_image,
+            )
+            prepared.append((name, parameters, plan, identity))
+
+        reusable = {
+            str(record["result_execution_sha256"]): record
+            for record in self._run_records()
+            if record.get("mode") == "campaign"
+            and record.get("status") == "completed"
+            and record.get("accepted") is True
+            and isinstance(record.get("result_execution_sha256"), str)
+        }
+        progress_path = self.root / "campaigns" / "last-sweep.json"
+        rows: list[dict[str, object]] = []
+
+        def report() -> dict[str, object]:
+            processed = len(rows)
+            accepted = sum(row["accepted"] is True for row in rows)
+            failed = sum(row["outcome"] == "failed" for row in rows)
+            unaccepted = sum(row["outcome"] == "review" for row in rows)
+            return {
+                "schema": "agentcfd.campaign-sweep/0.1",
+                "root": str(self.root),
+                "provider": selected_provider,
+                "requested_count": len(prepared),
+                "processed_count": processed,
+                "executed_count": sum(row["execution"] == "executed" for row in rows),
+                "reused_count": sum(row["execution"] == "reused" for row in rows),
+                "accepted_count": accepted,
+                "failed_count": failed,
+                "unaccepted_count": unaccepted,
+                "complete": processed == len(prepared),
+                "successful": processed == len(prepared) and accepted == len(prepared),
+                "progress": str(progress_path),
+                "points": rows,
+                "observation_cost": {
+                    "result_manifests_opened": 0,
+                    "field_payloads_opened": 0,
+                },
+            }
+
+        def write_progress() -> None:
+            progress_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = progress_path.with_suffix(".json.tmp")
+            temporary.write_text(
+                json.dumps(report(), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            temporary.replace(progress_path)
+
+        write_progress()
+        for name, parameters, plan, identity in prepared:
+            cached = reusable.get(identity)
+            if cached is not None:
+                rows.append(
+                    {
+                        "name": name,
+                        "parameters": parameters,
+                        "plan_sha256": plan["plan_sha256"],
+                        "result_execution_sha256": identity,
+                        "execution": "reused",
+                        "outcome": "accepted",
+                        "run_id": cached.get("run_id"),
+                        "directory": cached.get("directory"),
+                        "accepted": True,
+                        "error": None,
+                    }
+                )
+            else:
+                try:
+                    completed = self.run(
+                        provider=selected_provider,
+                        container_image=container_image,
+                        campaign=True,
+                        parameters=parameters,
+                        design_point_name=name,
+                    )
+                except Exception as error:
+                    rows.append(
+                        {
+                            "name": name,
+                            "parameters": parameters,
+                            "plan_sha256": plan["plan_sha256"],
+                            "result_execution_sha256": identity,
+                            "execution": "executed",
+                            "outcome": "failed",
+                            "run_id": None,
+                            "directory": None,
+                            "accepted": False,
+                            "error": {
+                                "type": type(error).__name__,
+                                "message": str(error),
+                            },
+                        }
+                    )
+                    write_progress()
+                    if fail_fast:
+                        break
+                    continue
+                accepted = completed.result.accepted
+                outcome = "accepted" if accepted else "review"
+                row = {
+                    "name": name,
+                    "parameters": parameters,
+                    "plan_sha256": plan["plan_sha256"],
+                    "result_execution_sha256": identity,
+                    "execution": "executed",
+                    "outcome": outcome,
+                    "run_id": completed.run_id,
+                    "directory": str(completed.directory),
+                    "accepted": accepted,
+                    "error": None,
+                }
+                rows.append(row)
+                if accepted:
+                    reusable[identity] = {
+                        "run_id": completed.run_id,
+                        "directory": str(completed.directory),
+                    }
+            write_progress()
+        return report()
 
     def _active_run_ids(self) -> set[str]:
         return {
@@ -2526,10 +2688,15 @@ class Project:
         campaign: bool = False,
         keep_workspace: bool = False,
         parameters: Mapping[str, object] | None = None,
+        design_point_name: str | None = None,
         _resume_archive: Path | None = None,
         _resume_source_run_id: str | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
+        if design_point_name is not None and re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9_-]*", design_point_name
+        ) is None:
+            raise ProjectError("Invalid campaign design-point name.")
         selected_parameters = self._parameters(parameters)
         step = self.load_step(selected_parameters)
         plan = self.plan(
@@ -2632,6 +2799,7 @@ class Project:
             "parameters": selected_parameters,
             "model_name": step.model.name,
             "reynolds_number": _inlet_reynolds(step),
+            "design_point_name": design_point_name,
             "started_at": started_at,
             "completed_at": None,
         }
@@ -2921,6 +3089,7 @@ class Project:
         run_record["model_name"] = step.model.name
         run_record["reynolds_number"] = _inlet_reynolds(step)
         run_record["parameters"] = selected_parameters
+        run_record["design_point_name"] = design_point_name
         run_record["quantities"] = {
             name: {"value": quantity.value, "unit": quantity.unit}
             for name, quantity in sorted(result.quantities.items())

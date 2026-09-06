@@ -23,13 +23,14 @@
       "items": {
         "type": "object",
         "required": [
-          "run_id", "status", "accepted", "trust_level", "provider",
+          "run_id", "design_point_name", "status", "accepted", "trust_level", "provider",
           "model_name", "analysis_sha256", "reynolds_number", "started_at",
           "completed_at", "duration_seconds", "directory", "result",
           "quantities", "parameters", "bytes", "display", "file_count"
         ],
         "properties": {
           "run_id": {"type": "string", "minLength": 1},
+          "design_point_name": {"type": ["string", "null"]},
           "status": {"type": "string", "minLength": 1},
           "accepted": {"type": ["boolean", "null"]},
           "trust_level": {"type": ["string", "null"]},

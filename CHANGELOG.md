@@ -10,6 +10,10 @@
   and run. Repeatable `--param NAME=VALUE` inputs are signature-checked,
   fingerprinted, preserved in interrupted/final run markers, propagated through
   resume, and flattened into the campaign design table.
+- Add versioned campaign-request and campaign-sweep contracts plus
+  `agentcfd sweep`: plan every named point before work starts, reuse only exact
+  accepted result identities, persist atomic progress, continue after isolated
+  runtime failures by default, and remain serial until bounded scheduling lands.
 - Add typed final-frame line profiles over portable fields. The generated
   ParaView recipe uses explicit endpoints and sample count, publishes a compact
   canonical two-column CSV, requires an explicit component or magnitude for

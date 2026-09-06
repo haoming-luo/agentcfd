@@ -11,12 +11,18 @@
     "schema": {"const": "agentcfd.solution-plan/0.1"},
     "project": {
       "type": "object",
-      "required": ["root", "entrypoint", "entrypoint_sha256", "factory"],
+      "required": ["root", "entrypoint", "entrypoint_sha256", "factory", "parameters"],
       "properties": {
         "root": {"type": "string"},
         "entrypoint": {"type": "string"},
         "entrypoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "factory": {"type": "string"}
+        "factory": {"type": "string"},
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["string", "number", "integer", "boolean", "null"]
+          }
+        }
       },
       "additionalProperties": false
     },

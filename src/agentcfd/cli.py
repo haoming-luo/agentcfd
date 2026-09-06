@@ -86,6 +86,34 @@ def _paraview_batch_executable() -> str | None:
     return None
 
 
+def _project_parameter(value: str) -> tuple[str, object]:
+    name, separator, encoded = value.partition("=")
+    if not separator or not name:
+        raise argparse.ArgumentTypeError(
+            "Project parameters must use NAME=VALUE, for example velocity=0.8."
+        )
+    try:
+        decoded = json.loads(encoded)
+    except json.JSONDecodeError:
+        decoded = encoded
+    if isinstance(decoded, (list, dict)):
+        raise argparse.ArgumentTypeError(
+            "Project parameter values must be JSON scalars, not arrays or objects."
+        )
+    return name, decoded
+
+
+def _project_parameters(
+    assignments: list[tuple[str, object]] | None,
+) -> dict[str, object]:
+    selected: dict[str, object] = {}
+    for name, value in assignments or []:
+        if name in selected:
+            raise ValueError(f"Project parameter {name!r} was supplied more than once.")
+        selected[name] = value
+    return selected
+
+
 def _doctor() -> dict[str, object]:
     openfoam = OpenFOAMProvider().descriptor()
     coolprop = properties.CoolPropPropertyProvider().descriptor()
@@ -1233,6 +1261,12 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("project", nargs="?", type=Path, default=Path("."))
     check.add_argument("--provider", choices=("reference", "openfoam"))
     check.add_argument("--container-image")
+    check.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
     check.add_argument("--json", action="store_true", dest="as_json")
 
     plan = subparsers.add_parser(
@@ -1242,6 +1276,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("project", nargs="?", type=Path, default=Path("."))
     plan.add_argument("--provider", choices=("reference", "openfoam"))
     plan.add_argument("--container-image")
+    plan.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
     plan.add_argument("--output", type=Path)
     plan.add_argument("--json", action="store_true", dest="as_json")
 
@@ -1756,6 +1796,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     project_run.add_argument("--container-image")
     project_run.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Pass NAME=JSON_SCALAR to build(); repeat for a design point.",
+    )
+    project_run.add_argument(
         "--campaign",
         action="store_true",
         help="Preserve this run under campaigns/<run-id> instead of replacing output/.",
@@ -2093,6 +2139,7 @@ def main(argv: list[str] | None = None) -> int:
         plan = projects.Project(args.project).plan(
             provider=args.provider,
             container_image=args.container_image,
+            parameters=_project_parameters(args.param),
         )
         readiness = plan["readiness"]
         valid = readiness["model_valid"] and readiness["provider_compatible"]
@@ -2118,6 +2165,7 @@ def main(argv: list[str] | None = None) -> int:
         report = projects.Project(args.project).plan(
             provider=args.provider,
             container_image=args.container_image,
+            parameters=_project_parameters(args.param),
         )
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -2942,6 +2990,7 @@ def main(argv: list[str] | None = None) -> int:
             container_image=args.container_image,
             campaign=args.campaign,
             keep_workspace=args.keep_workspace,
+            parameters=_project_parameters(args.param),
         )
         report = completed.to_dict()
         if args.as_json:

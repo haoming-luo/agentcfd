@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import inspect
 import errno
 import json
+import keyword
 import math
 import os
 import re
@@ -916,15 +918,46 @@ class Project:
             return shlex.quote(str(self.root))
         return "."
 
-    def load_step(self) -> Step:
+    @staticmethod
+    def _parameters(
+        values: Mapping[str, object] | None,
+    ) -> dict[str, str | int | float | bool | None]:
+        selected: dict[str, str | int | float | bool | None] = {}
+        for name, value in dict(values or {}).items():
+            if (
+                not isinstance(name, str)
+                or not name.isidentifier()
+                or keyword.iskeyword(name)
+            ):
+                raise ProjectError(
+                    "Project parameter names must be valid non-keyword Python identifiers."
+                )
+            if not isinstance(value, (str, int, float, bool, type(None))):
+                raise ProjectError(
+                    f"Project parameter {name!r} must be a JSON scalar."
+                )
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ProjectError(f"Project parameter {name!r} must be finite.")
+            selected[name] = value
+        return dict(sorted(selected.items()))
+
+    def load_step(self, parameters: Mapping[str, object] | None = None) -> Step:
         module = _load_module(self.entrypoint, self.root)
         factory = getattr(module, self.manifest.factory, None)
         if not callable(factory):
             raise ProjectError(
                 f"Project entrypoint must define callable {self.manifest.factory}()."
             )
+        selected_parameters = self._parameters(parameters)
         try:
-            step = factory()
+            inspect.signature(factory).bind(**selected_parameters)
+        except TypeError as error:
+            supplied = ", ".join(selected_parameters) or "no explicit parameters"
+            raise ProjectError(
+                f"Project factory rejected parameter selection ({supplied}): {error}"
+            ) from error
+        try:
+            step = factory(**selected_parameters)
         except Exception as error:
             raise ProjectError(f"Project factory failed: {error}") from error
         if not isinstance(step, Step):
@@ -1057,12 +1090,14 @@ class Project:
         *,
         provider: str | None = None,
         container_image: str | None = None,
+        parameters: Mapping[str, object] | None = None,
         _step: Step | None = None,
     ) -> dict[str, object]:
         selected_name = provider or self.manifest.default_provider
         if selected_name not in {"reference", "openfoam"}:
             raise ProjectError("Provider must be 'reference' or 'openfoam'.")
-        step = _step or self.load_step()
+        selected_parameters = self._parameters(parameters)
+        step = _step or self.load_step(selected_parameters)
         issues: list[ProjectIssue] = []
         model_valid = True
         try:
@@ -1240,6 +1275,7 @@ class Project:
                 "entrypoint": self.manifest.entrypoint,
                 "entrypoint_sha256": file_sha256(self.entrypoint),
                 "factory": self.manifest.factory,
+                "parameters": selected_parameters,
             },
             "model": {
                 "name": step.model.name,
@@ -1348,6 +1384,9 @@ class Project:
             quantities = record.get("quantities", {})
             if not isinstance(quantities, dict):
                 quantities = {}
+            parameters = record.get("parameters", {})
+            if not isinstance(parameters, dict):
+                parameters = {}
             size = files = None
             if include_storage:
                 size, files = _tree_usage(directory)
@@ -1369,6 +1408,7 @@ class Project:
                     if (directory / "result.json").is_file()
                     else None,
                     "quantities": quantities,
+                    "parameters": parameters,
                     "bytes": size,
                     "display": None if size is None else _human_bytes(size),
                     "file_count": files,
@@ -1418,6 +1458,14 @@ class Project:
                 if isinstance(name, str)
             }
         )
+        parameter_names = sorted(
+            {
+                name
+                for row in report["runs"]
+                for name in row["parameters"]
+                if isinstance(name, str)
+            }
+        )
         units = {
             name: next(
                 (
@@ -1452,11 +1500,17 @@ class Project:
         with temporary.open("w", encoding="utf-8", newline="") as stream:
             writer = csv.DictWriter(
                 stream,
-                fieldnames=[*base_columns, *quantity_columns.values()],
+                fieldnames=[
+                    *base_columns,
+                    *(f"parameter:{name}" for name in parameter_names),
+                    *quantity_columns.values(),
+                ],
             )
             writer.writeheader()
             for row in report["runs"]:
                 flat = {name: row.get(name) for name in base_columns}
+                for name in parameter_names:
+                    flat[f"parameter:{name}"] = row["parameters"].get(name)
                 for name, column in quantity_columns.items():
                     record = row["quantities"].get(name)
                     flat[column] = (
@@ -2471,14 +2525,17 @@ class Project:
         container_image: str | None = None,
         campaign: bool = False,
         keep_workspace: bool = False,
+        parameters: Mapping[str, object] | None = None,
         _resume_archive: Path | None = None,
         _resume_source_run_id: str | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
-        step = self.load_step()
+        selected_parameters = self._parameters(parameters)
+        step = self.load_step(selected_parameters)
         plan = self.plan(
             provider=selected_name,
             container_image=container_image,
+            parameters=selected_parameters,
             _step=step,
         )
         readiness = plan["readiness"]
@@ -2572,6 +2629,9 @@ class Project:
             "execution_sha256": execution_sha256,
             "resume_execution_sha256": resume_execution_sha256,
             "result_execution_sha256": result_execution_sha256,
+            "parameters": selected_parameters,
+            "model_name": step.model.name,
+            "reynolds_number": _inlet_reynolds(step),
             "started_at": started_at,
             "completed_at": None,
         }
@@ -2860,6 +2920,7 @@ class Project:
         }
         run_record["model_name"] = step.model.name
         run_record["reynolds_number"] = _inlet_reynolds(step)
+        run_record["parameters"] = selected_parameters
         run_record["quantities"] = {
             name: {"value": quantity.value, "unit": quantity.unit}
             for name, quantity in sorted(result.quantities.items())
@@ -2896,7 +2957,16 @@ class Project:
                 "Managed resume currently requires replace mode; campaign retries keep "
                 "their own immutable orchestration state."
             )
-        step = self.load_step()
+        runs = self._run_records()
+        latest = runs[0] if runs else None
+        if latest is None:
+            raise ProjectError("No failed or interrupted run exists to resume.")
+        source_parameters = self._parameters(
+            latest.get("parameters")
+            if isinstance(latest.get("parameters"), dict)
+            else None
+        )
+        step = self.load_step(source_parameters)
         if (
             self.manifest.default_provider != "openfoam"
             or not isinstance(step.model.domain, RectangularChannel)
@@ -2910,13 +2980,13 @@ class Project:
                 "This project declares no restart checkpoints. Add "
                 "`restart=outputs.checkpoints(...)` to the output request before the run."
             )
-        plan = self.plan(container_image=container_image, _step=step)
+        plan = self.plan(
+            container_image=container_image,
+            parameters=source_parameters,
+            _step=step,
+        )
         if plan["readiness"]["ready_to_run"] is not True:
             raise ProjectError("The current project is not ready for checkpoint resume.")
-        runs = self._run_records()
-        latest = runs[0] if runs else None
-        if latest is None:
-            raise ProjectError("No failed or interrupted run exists to resume.")
         native_status = str(latest.get("status", "unknown"))
         interrupted = native_status in {"preparing", "running", "exporting"} and not _process_is_alive(
             latest.get("pid")
@@ -2980,6 +3050,7 @@ class Project:
             return self.run(
                 container_image=container_image,
                 keep_workspace=keep_workspace,
+                parameters=source_parameters,
                 _resume_archive=staged_archive,
                 _resume_source_run_id=run_id,
             )
@@ -2990,18 +3061,18 @@ _CASE_TEMPLATE = '''"""Readable AgentCFD engineering model: edit this file, not 
 from agentcfd import Model, boundaries, fluids, geometry, outputs, procedures, studies
 
 
-def build():
+def build(*, length=10.0, diameter=0.05, mean_velocity=0.02):
     model = Model(
         name="water-pipe",
         study=studies.internal_flow(),
-        domain=geometry.circular_pipe(length=10.0, diameter=0.05),
+        domain=geometry.circular_pipe(length=length, diameter=diameter),
         fluid=fluids.newtonian(
             "water",
             density=998.2,
             dynamic_viscosity=1.002e-3,
         ),
     ).boundaries(
-        inlet=boundaries.mean_velocity_inlet(0.02),
+        inlet=boundaries.mean_velocity_inlet(mean_velocity),
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
     )
@@ -3017,9 +3088,9 @@ _BAFFLE_CHANNEL_TEMPLATE = '''"""Low-Re transient wake behind a bottom-attached 
 from agentcfd import Model, boundaries, fluids, geometry, initialization, meshing, outputs, procedures, studies
 
 
-def build():
+def build(*, mean_velocity=0.5, baffle_height=0.12):
     channel = geometry.rectangular_channel(length=1.2, height=0.20, width=0.10).with_baffle(
-        name="baffle", x=0.35, height=0.12, thickness=0.01, attached_to="bottom"
+        name="baffle", x=0.35, height=baffle_height, thickness=0.01, attached_to="bottom"
     )
     model = Model(
         name="bottom-baffle-wake",
@@ -3027,7 +3098,7 @@ def build():
         domain=channel,
         fluid=fluids.newtonian("viscous-liquid", density=1000.0, dynamic_viscosity=0.05),
     ).boundaries(
-        inlet=boundaries.mean_velocity_inlet(0.5),
+        inlet=boundaries.mean_velocity_inlet(mean_velocity),
         outlet=boundaries.pressure_outlet(),
         walls=boundaries.no_slip_wall(),
         baffle=boundaries.no_slip_wall(),

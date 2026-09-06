@@ -59,6 +59,13 @@ python -m pytest -q
     evidence and request PNG sequences or MP4 only when animation is a stated
     deliverable; rendered images are derived products, never a replacement for
     the shared XDMF/HDF5 field bundle.
+18. Vary project design points only through declared `case.py` factory keyword
+    arguments and repeatable `--param NAME=JSON_SCALAR`. Run `plan` with the
+    same parameters first, retain them in provenance, and reject misspelled or
+    unused names instead of editing generated dictionaries.
+19. Use `campaigns --json` or its unit-preserving CSV for comparisons. Do not
+    open every `result.json` history or HDF5 field merely to build a design
+    table; request `--storage` only when recursive size is part of the decision.
 
 ## Current boundary
 

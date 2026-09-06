@@ -95,6 +95,8 @@ files stay hidden and reproducible.
 - one-command post-processing target and self-documenting output directory;
 - field-free campaign design-point index and unit-preserving CSV export, with
   recursive storage scans remaining explicit opt-in;
+- explicit `case.py` factory parameters shared by check/plan/run, fingerprinted
+  into every design point and rejected on unknown names before execution;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

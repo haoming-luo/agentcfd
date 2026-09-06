@@ -462,12 +462,45 @@ def test_project_campaign_mode_preserves_current_output_and_history(tmp_path):
     assert project.inspect()["run_count"] == 2
 
 
+def test_explicit_factory_parameters_change_plan_identity_and_reject_typos(
+    tmp_path, capsys
+):
+    project = projects.init_project(tmp_path / "pipe")
+    default = project.plan()
+    varied = project.plan(parameters={"mean_velocity": 0.03})
+
+    assert varied["project"]["parameters"] == {"mean_velocity": 0.03}
+    assert varied["model"]["reynolds_number"] != default["model"]["reynolds_number"]
+    assert varied["plan_sha256"] != default["plan_sha256"]
+    jsonschema.Draft202012Validator(
+        contracts.load("solution-plan.schema.json")
+    ).validate(varied)
+    assert (
+        entrypoint(
+            [
+                "plan",
+                str(project.root),
+                "--param",
+                "mean_velocity=0.03",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_plan = json.loads(capsys.readouterr().out)
+    assert cli_plan["project"]["parameters"] == {"mean_velocity": 0.03}
+    with pytest.raises(ProjectError, match="rejected parameter"):
+        project.plan(parameters={"mean_velocty": 0.03})
+    with pytest.raises(ProjectError, match="JSON scalar"):
+        project.plan(parameters={"mean_velocity": [0.02, 0.03]})
+
+
 def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     tmp_path, capsys
 ):
     project = projects.init_project(tmp_path / "pipe")
     first = project.run(campaign=True)
-    second = project.run(campaign=True)
+    second = project.run(campaign=True, parameters={"mean_velocity": 0.03})
 
     report = project.campaign_index()
     jsonschema.Draft202012Validator(
@@ -487,6 +520,8 @@ def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
         [first.run_id, second.run_id]
     )
     assert report["runs"][0]["quantities"]["flow.pressure_drop"]["unit"] == "Pa"
+    assert report["runs"][0]["parameters"] == {}
+    assert report["runs"][1]["parameters"] == {"mean_velocity": 0.03}
 
     csv_path, with_storage = project.export_campaign_csv(
         tmp_path / "design-points.csv", include_storage=True
@@ -494,12 +529,28 @@ def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     assert with_storage["total_bytes"] > 0
     assert with_storage["observation_cost"]["recursive_storage_scans"] == 2
     table = csv_path.read_text()
+    assert "parameter:mean_velocity" in table.splitlines()[0]
     assert "quantity:flow.pressure_drop [Pa]" in table.splitlines()[0]
     assert first.run_id in table and second.run_id in table
 
+    assert (
+        entrypoint(
+            [
+                "run",
+                "project",
+                str(project.root),
+                "--campaign",
+                "--param",
+                "mean_velocity=0.025",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
     assert entrypoint(["campaigns", str(project.root), "--json"]) == 0
     cli_report = json.loads(capsys.readouterr().out)
-    assert cli_report["run_count"] == 2
+    assert cli_report["run_count"] == 3
     assert cli_report["observation_cost"]["field_payloads_opened"] == 0
 
 
@@ -528,14 +579,7 @@ def test_project_init_refuses_to_overwrite_user_directory(tmp_path):
 
 def test_project_plan_returns_addressable_physics_issue(tmp_path):
     project = projects.init_project(tmp_path / "pipe")
-    path = project.root / "case.py"
-    path.write_text(
-        path.read_text().replace(
-            "mean_velocity_inlet(0.02)", "mean_velocity_inlet(1.0)"
-        )
-    )
-
-    plan = project.plan()
+    plan = project.plan(parameters={"mean_velocity": 1.0})
 
     assert plan["readiness"]["ready_to_run"] is False
     issue = next(
@@ -547,7 +591,7 @@ def test_project_plan_returns_addressable_physics_issue(tmp_path):
     assert "OpenFOAM" in issue["repair"]
 
     with pytest.raises(ProjectError, match="not ready"):
-        project.run()
+        project.run(parameters={"mean_velocity": 1.0})
 
 
 def test_project_plan_rejects_accidental_full_field_frame_explosion(tmp_path):
@@ -718,7 +762,10 @@ def test_project_doctor_combines_health_resource_and_energy_truthfulness(
     expected_exit = 0 if report["healthy"] else 3
     assert entrypoint(["doctor", str(project.root), "--json"]) == expected_exit
     cli_report = json.loads(capsys.readouterr().out)
-    assert cli_report["resource_estimate"] == report["resource_estimate"]
+    assert cli_report["resource_estimate"]["cell_updates_proxy"] == 19_104_000
+    assert cli_report["resource_estimate"]["energy"] == report["resource_estimate"][
+        "energy"
+    ]
 
 
 def test_project_status_next_command_preserves_paths_with_spaces(tmp_path):

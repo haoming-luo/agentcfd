@@ -13,7 +13,7 @@ from agentcfd import (
 )
 
 
-def build():
+def build(*, mean_velocity=0.5, baffle_height=0.12):
     channel = geometry.rectangular_channel(
         length=1.2,
         height=0.20,
@@ -21,7 +21,7 @@ def build():
     ).with_baffle(
         name="baffle",
         x=0.35,
-        height=0.12,
+        height=baffle_height,
         thickness=0.01,
         attached_to="bottom",
     )
@@ -35,7 +35,7 @@ def build():
             dynamic_viscosity=0.05,
         ),
     ).boundaries(
-        inlet=boundaries.mean_velocity_inlet(0.5),
+        inlet=boundaries.mean_velocity_inlet(mean_velocity),
         outlet=boundaries.pressure_outlet(),
         walls=boundaries.no_slip_wall(),
         baffle=boundaries.no_slip_wall(),

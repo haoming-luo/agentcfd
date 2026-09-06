@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-doctor.schema.json",
+  "title": "AgentCFD project health and resource audit 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "healthy", "state", "checks", "resource_estimate",
+    "storage", "recovery", "observation_cost", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-doctor/0.1"},
+    "root": {"type": "string"},
+    "healthy": {"type": "boolean"},
+    "state": {
+      "enum": ["blocked", "ready", "running", "interrupted", "modified", "complete", "review", "failed"]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "status", "severity", "message", "repair"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+          "status": {"enum": ["passed", "failed"]},
+          "severity": {"enum": ["info", "warning", "error"]},
+          "message": {"type": "string"},
+          "repair": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "resource_estimate": {
+      "type": "object",
+      "required": [
+        "estimated_mesh_cells", "nominal_solver_steps", "solver_step_basis",
+        "pressure_velocity_correctors", "cell_updates_proxy",
+        "estimated_portable_bytes", "estimated_temporary_peak_bytes",
+        "filesystem_free_bytes", "temporary_peak_to_free_ratio", "energy"
+      ],
+      "properties": {
+        "estimated_mesh_cells": {"type": ["integer", "null"], "minimum": 1},
+        "nominal_solver_steps": {"type": "integer", "minimum": 1},
+        "solver_step_basis": {"type": "string", "minLength": 1},
+        "pressure_velocity_correctors": {"type": "integer", "minimum": 1},
+        "cell_updates_proxy": {"type": ["integer", "null"], "minimum": 1},
+        "estimated_portable_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "estimated_temporary_peak_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "filesystem_free_bytes": {"type": "integer", "minimum": 0},
+        "temporary_peak_to_free_ratio": {"type": ["number", "null"], "minimum": 0},
+        "energy": {
+          "type": "object",
+          "required": ["status", "reason"],
+          "properties": {
+            "status": {"const": "not-measured"},
+            "reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "storage": {"type": "object"},
+    "recovery": {"type": "object"},
+    "observation_cost": {
+      "type": "object",
+      "required": ["field_payloads_opened", "recursive_storage_scan"],
+      "properties": {
+        "field_payloads_opened": {"const": 0},
+        "recursive_storage_scan": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "next_action": {"type": "object"}
+  },
+  "additionalProperties": false
+}

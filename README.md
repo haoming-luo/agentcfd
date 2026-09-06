@@ -97,6 +97,7 @@ agents, CI, and future GUIs:
 ```bash
 agentcfd init --template industrial-pipe my-flow
 cd my-flow
+agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
 agentcfd run .
 agentcfd watch .        # follow a long active run, then stop automatically
@@ -175,6 +176,13 @@ checkpoint copy is protected from `clean`; it becomes reclaimable only after a
 published checkpoint exists or a resumed run succeeds.
 Operational limits such as `timeout_seconds` may be relaxed before resume;
 solver-affecting model, mesh, and runtime identity must remain unchanged.
+
+`agentcfd doctor .` is the deliberate heavier preflight: it combines readiness,
+latest-run health, recovery, recursive managed storage, output-budget and free
+disk checks. Its resource estimate reports cells, nominal solver steps,
+pressure-velocity correctors, and a cell-update proxy for comparing alternatives.
+It reports energy as `not-measured` until an executor supplies power or joule
+telemetry; mesh size alone is not presented as an energy measurement.
 
 Output is declared by purpose instead of by OpenFOAM directory frequency. For
 example, a transient run can keep frequent scalar histories, one visualization

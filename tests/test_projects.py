@@ -613,6 +613,30 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     assert "Inputs changed" in modified["next_action"]["reason"]
 
 
+def test_project_doctor_combines_health_resource_and_energy_truthfulness(
+    tmp_path, capsys
+):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+
+    report = project.doctor()
+
+    jsonschema.Draft202012Validator(
+        contracts.load("project-doctor.schema.json")
+    ).validate(report)
+    assert report["resource_estimate"]["estimated_mesh_cells"] == 23880
+    assert report["resource_estimate"]["nominal_solver_steps"] == 400
+    assert report["resource_estimate"]["cell_updates_proxy"] == 19_104_000
+    assert report["resource_estimate"]["energy"]["status"] == "not-measured"
+    assert report["observation_cost"]["field_payloads_opened"] == 0
+
+    expected_exit = 0 if report["healthy"] else 3
+    assert entrypoint(["doctor", str(project.root), "--json"]) == expected_exit
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["resource_estimate"] == report["resource_estimate"]
+
+
 def test_project_status_next_command_preserves_paths_with_spaces(tmp_path):
     project = projects.init_project(tmp_path / "pipe with spaces")
 

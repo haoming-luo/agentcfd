@@ -51,6 +51,10 @@ python -m pytest -q
     first and then execute that exact `resume` command. Never resume after an
     analysis or execution fingerprint change, and never delete a
     `protected_recovery_run_ids` workspace.
+16. Use `doctor PROJECT --json` for a deliberate full preflight or maintenance
+    audit. Treat `cell_updates_proxy` as a relative work indicator only; never
+    relabel it as runtime, cost, carbon, or energy, and preserve
+    `energy.status=not-measured` without executor telemetry.
 
 ## Current boundary
 

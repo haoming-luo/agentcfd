@@ -28,6 +28,7 @@ _SCHEMAS = (
     "postprocess-recipes.schema.json",
     "project-clean.schema.json",
     "project-diagnosis.schema.json",
+    "project-doctor.schema.json",
     "project-logs.schema.json",
     "project-recovery.schema.json",
     "project-status.schema.json",

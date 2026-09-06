@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Extend `agentcfd doctor` with an optional project context that audits model,
+  provider, runtime, output budget, filesystem headroom, latest-run health,
+  acceptance, storage, and recovery in one contract. Report a comparable
+  cell-update work proxy while refusing to invent energy use without executor
+  power or joule telemetry.
 - Preserve the generated solver workspace automatically after a failed run and
   add `agentcfd logs` as a bounded, project-aware diagnostic surface. It reads
   either the live workspace or compact published evidence, supports explicit

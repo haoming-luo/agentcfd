@@ -34,6 +34,13 @@ agentcfd run .
 agentcfd view .
 ```
 
+Use `agentcfd doctor .` when a full project/runtime/resource audit is worth a
+recursive storage scan. It checks model/provider/runtime readiness, output
+budget, filesystem headroom, latest run health, acceptance, and recovery, then
+returns the same single next action. Its cell-update proxy supports relative
+cost comparison; it explicitly reports energy as unmeasured unless an executor
+provides hardware telemetry.
+
 `status` reports `blocked`, `ready`, `running`, `interrupted`, `modified`,
 `complete`, `review`, or `failed`, then gives exactly one recommended command.
 Use `--json` for the versioned machine contract and `--storage` when a recursive

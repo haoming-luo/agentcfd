@@ -39,29 +39,19 @@ from .openfoam import (
     _stop_timed_out_container,
     _write_mesh_manifest,
 )
+from .openfoam_reports import (
+    FIELD_NAMES as _FIELD_NAMES,
+    REPORT_OPERATIONS as _REPORT_OPERATIONS,
+    RESERVED_REPORT_NAMES as _RESERVED_REPORT_NAMES,
+    foam_name as _foam_name,
+    recover_reports as _recover_compact_reports,
+    render_report_functions,
+    report_recovered as _report_recovered,
+)
 
 
 _CAPABILITY = "openfoam.transient-laminar-baffled-channel"
-_RESERVED_REPORT_NAMES = {
-    "agentcfd_inlet_flow",
-    "agentcfd_outlet_flow",
-    "agentcfd_inlet_pressure",
-    "agentcfd_outlet_pressure",
-    "agentcfd_vorticity",
-}
 _FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_FIELD_NAMES = {
-    "fluid.velocity": "U",
-    "fluid.pressure": "p",
-    "fluid.vorticity": "vorticity",
-}
-_REPORT_OPERATIONS = {
-    "minimum": "min",
-    "maximum": "max",
-    "area-average": "areaAverage",
-    "area-integral": "areaIntegrate",
-    "uniformity": "uniformity",
-}
 _TRUST_ORDER = {
     "not_computed": 0,
     "computed": 1,
@@ -70,13 +60,6 @@ _TRUST_ORDER = {
     "validated": 4,
 }
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
-
-
-def _foam_name(value: str) -> str:
-    """Lower a public display name to a deterministic OpenFOAM word."""
-
-    selected = re.sub(r"[^A-Za-z0-9_]", "_", value.strip())
-    return selected if selected and (selected[0].isalpha() or selected[0] == "_") else f"r_{selected}"
 
 
 def _positive_cells(length: float, size: float) -> int:
@@ -682,79 +665,7 @@ PIMPLE
 
 
 def _report_functions(step) -> str:
-    definitions: list[str] = []
-    if "fluid.vorticity" in step.output.fields:
-        definitions.append("""
-    agentcfd_vorticity
-    {
-        type vorticity;
-        libs (fieldFunctionObjects);
-        executeControl timeStep;
-        executeInterval 1;
-        writeControl outputTime;
-    }
-""")
-    for report in step.output.reports:
-        if isinstance(report, outputs.PointProbe):
-            fields = " ".join(_FIELD_NAMES[name] for name in report.fields)
-            point = " ".join(_foam_scalar(value) for value in report.location)
-            definitions.append(f"""
-    {_foam_name(report.name)}
-    {{
-        type probes;
-        libs (sampling);
-        probeLocations (({point}));
-        fields ({fields});
-        fixedLocations true;
-        includeOutOfBounds false;
-        interpolationScheme cellPoint;
-        executeControl timeStep;
-        executeInterval {report.every};
-        writeControl timeStep;
-        writeInterval {report.every};
-    }}
-""")
-        elif isinstance(report, outputs.SurfaceReport):
-            field = _FIELD_NAMES[report.field]
-            operation = _REPORT_OPERATIONS[report.operation]
-            definitions.append(f"""
-    {_foam_name(report.name)}
-    {{
-        type surfaceFieldValue;
-        libs (fieldFunctionObjects);
-        regionType patch;
-        name {report.region};
-        operation {operation};
-        fields ({field});
-        writeFields false;
-        executeControl timeStep;
-        executeInterval {report.every};
-        writeControl timeStep;
-        writeInterval {report.every};
-    }}
-""")
-        elif isinstance(report, outputs.ForceReport):
-            patches = " ".join(report.regions)
-            center = report.center or (0.0, 0.0, 0.0)
-            center_value = " ".join(_foam_scalar(value) for value in center)
-            definitions.append(f"""
-    {_foam_name(report.name)}
-    {{
-        type forces;
-        libs (forces);
-        patches ({patches});
-        p p;
-        U U;
-        rho rhoInf;
-        rhoInf {_foam_scalar(step.model.fluid.density)};
-        CofR ({center_value});
-        executeControl timeStep;
-        executeInterval {report.every};
-        writeControl timeStep;
-        writeInterval {report.every};
-    }}
-""")
-    return "".join(definitions)
+    return render_report_functions(step, include_vorticity=True)
 
 
 def _control_dict(step) -> str:
@@ -1523,64 +1434,7 @@ class OpenFOAMChannelProvider:
         )
 
     def _recover_reports(self, step, case, quantities, histories, artifacts) -> None:
-        density = step.model.fluid.density
-        for report in step.output.reports:
-            function_name = _foam_name(report.name)
-            root = case / "postProcessing" / function_name
-            if isinstance(report, outputs.SurfaceReport):
-                samples = _read_scalar_series(case, function_name)
-                factor = density if report.field == "fluid.pressure" else 1.0
-                values = tuple(value * factor for _, value in sorted(samples.items()))
-                times = tuple(time_value for time_value, _ in sorted(samples.items()))
-                if values:
-                    name = f"report.{report.name}"
-                    histories[name] = History(times, values, unit="Pa")
-                    quantities[name] = Quantity(values[-1], "Pa")
-            elif isinstance(report, outputs.PointProbe):
-                for field_name in report.fields:
-                    native = _FIELD_NAMES[field_name]
-                    rows = _read_segmented_rows(root, native)
-                    if not rows:
-                        continue
-                    factor = density if field_name == "fluid.pressure" else 1.0
-                    components = ("x", "y", "z") if field_name == "fluid.velocity" else ("value",)
-                    unit = "m/s" if field_name == "fluid.velocity" else "Pa"
-                    for index, component in enumerate(components, start=1):
-                        selected = [(row[0], row[index] * factor) for row in rows if len(row) > index]
-                        if not selected:
-                            continue
-                        name = f"probe.{report.name}.{field_name}.{component}"
-                        histories[name] = History(
-                            tuple(item[0] for item in selected),
-                            tuple(item[1] for item in selected),
-                            unit=unit,
-                        )
-                        quantities[name] = Quantity(selected[-1][1], unit)
-            elif isinstance(report, outputs.ForceReport):
-                rows = _read_segmented_rows(root, "force.dat")
-                selected = [
-                    (row[0], sum(row[i + 1] * report.direction[i] for i in range(3)))
-                    for row in rows
-                    if len(row) >= 4
-                ]
-                if selected:
-                    name = f"report.{report.name}"
-                    histories[name] = History(
-                        tuple(item[0] for item in selected),
-                        tuple(item[1] for item in selected),
-                        unit="N",
-                    )
-                    quantities[name] = Quantity(selected[-1][1], "N")
-            if root.is_dir():
-                for path in sorted(root.rglob("*")):
-                    if path.is_file():
-                        relative = path.relative_to(root).as_posix()
-                        artifact_name = _foam_name(
-                            f"report_{function_name}_{relative.replace('/', '_')}"
-                        )
-                        artifacts[artifact_name] = Artifact.from_path(
-                            path, role="compact-report", media_type="text/plain"
-                        )
+        _recover_compact_reports(step, case, quantities, histories, artifacts)
 
 
 def _inlet_reynolds(step) -> float:
@@ -1591,51 +1445,6 @@ def _inlet_reynolds(step) -> float:
         hydraulic_diameter=step.model.domain.hydraulic_diameter,
         dynamic_viscosity=step.model.fluid.dynamic_viscosity,
     )
-
-
-def _read_numeric_rows(path: Path) -> list[tuple[float, ...]]:
-    if not path.is_file():
-        return []
-    rows: list[tuple[float, ...]] = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        try:
-            values = tuple(float(value) for value in stripped.replace("(", " ").replace(")", " ").split())
-        except ValueError:
-            continue
-        if values and all(math.isfinite(value) for value in values):
-            rows.append(values)
-    return rows
-
-
-def _read_segmented_rows(root: Path, filename: str) -> list[tuple[float, ...]]:
-    """Merge OpenFOAM function-object files across restart start-time folders."""
-
-    by_time: dict[float, tuple[float, ...]] = {}
-    if not root.is_dir():
-        return []
-    candidates: list[tuple[float, Path]] = []
-    for path in root.glob(f"*/{filename}"):
-        try:
-            segment_start = float(path.parent.name)
-        except ValueError:
-            continue
-        candidates.append((segment_start, path))
-    for _, path in sorted(candidates):
-        for row in _read_numeric_rows(path):
-            by_time[row[0]] = row
-    return [by_time[time_value] for time_value in sorted(by_time)]
-
-
-def _report_recovered(report, histories: dict[str, History]) -> bool:
-    if isinstance(report, outputs.PointProbe):
-        return all(
-            any(name.startswith(f"probe.{report.name}.{field}.") for name in histories)
-            for field in report.fields
-        )
-    return f"report.{report.name}" in histories
 
 
 __all__ = ["OpenFOAMChannelProvider"]

@@ -45,7 +45,7 @@ _CAPABILITIES = (
         ),
         limitations=(
             "The first channel slice is limited to one bottom-attached baffle and low-Re laminar flow.",
-            "Imported geometry, turbulent channel flow, restart lowering, and vector surface reductions are pending.",
+            "Turbulent channel flow and vector surface reductions are pending.",
         ),
     ),
     Capability(
@@ -61,8 +61,8 @@ _CAPABILITIES = (
             "OpenFOAM project execution with automatic portable fields",
         ),
         limitations=(
-            "The first template is an industrial circular pipe.",
-            "OpenFOAM project execution currently uses the provider's bounded pipe controls.",
+            "Templates currently cover pipe, one bottom-baffle channel, and the bounded imported internal-flow slice.",
+            "Project creation requests do not replace case.py as the continuing scientific source.",
         ),
     ),
     Capability(
@@ -80,7 +80,6 @@ _CAPABILITIES = (
         ),
         limitations=(
             "STEP/IGES are recognized but require controlled tessellation.",
-            "Solver lowering for imported meshes is not released yet.",
             "The standard-library check does not replace OpenFOAM surfaceCheck before meshing.",
         ),
     ),
@@ -100,7 +99,7 @@ _CAPABILITIES = (
         limitations=(
             "Requires a user-confirmed interior point and OpenFOAM-compatible region names.",
             "The first slice supports no prism layers and only inlet/outlet/wall/symmetry/empty roles.",
-            "Full imported-geometry flow solution and real-geometry validation are pending.",
+            "Real-geometry validation beyond the integration duct is pending.",
         ),
     ),
     Capability(
@@ -108,16 +107,18 @@ _CAPABILITIES = (
         maturity="experimental",
         scope=(
             "Steady incompressible isothermal laminar simpleFoam solution on a "
-            "content-addressed, role-confirmed imported fluid volume."
+            "content-addressed, role-confirmed imported fluid volume with compact "
+            "point, pressure-surface, and wall-force reports."
         ),
         evidence=(
             "explicit Cartesian velocity-inlet and pressure-outlet lowering tests",
             "solver, SIMPLE convergence, mesh, conservation, runtime, and output gates",
             "accepted 6,400-cell OpenCFD v2606 duct run with verified XDMF/H5",
+            "real compact-report recovery with no additional full-field frames",
         ),
         limitations=(
             "Exactly one velocity inlet and one pressure outlet are currently supported.",
-            "No turbulence, heat, compressibility, reactions, prism layers, or compact report lowering yet.",
+            "No turbulence, heat, compressibility, reactions, prism layers, or vector surface reductions yet.",
             "Acceptance is workflow/numerical evidence and does not claim physical validation.",
         ),
     ),

@@ -13,6 +13,7 @@ from agentcfd import (
     fluids,
     geometry,
     meshing,
+    outputs,
     projects,
     studies,
 )
@@ -24,6 +25,7 @@ from agentcfd.providers import (
     plan_imported_mesh,
     prepare_imported_mesh,
 )
+from agentcfd.providers.openfoam_reports import recover_reports, report_recovered
 
 
 def _step(payload: bytes, **domain_overrides):
@@ -144,6 +146,125 @@ def test_imported_mesh_prepare_writes_scaled_surface_and_hard_budget(tmp_path):
     assert "patchInfo { type wall; }" in snappy
     assert "addLayers false" in snappy
     assert (prepared.directory / "agentcfd-imported-mesh.json").is_file()
+
+
+def test_imported_flow_lowers_validated_compact_reports(tmp_path):
+    payload = b"solid placeholder\nendsolid placeholder\n"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    base = _step(payload)
+    reports = (
+        outputs.probe("middle velocity", at=(0.05, 0.025, 0.0125), every=5),
+        outputs.surface_report(
+            "outlet pressure",
+            region="outlet",
+            field="fluid.pressure",
+            operation="area-average",
+            every=5,
+        ),
+        outputs.force_report("wall drag", regions=("walls",), every=5),
+    )
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=reports),
+    )
+
+    provider = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    )
+    prepared = provider.prepare(step)
+    control = (prepared.directory / "system/controlDict").read_text()
+
+    assert "middle_velocity" in control
+    assert "type probes;" in control
+    assert "outlet_pressure" in control
+    assert "operation areaAverage;" in control
+    assert "wall_drag" in control
+    assert "type forces;" in control
+
+
+def test_imported_flow_recovers_reports_with_units_and_total_force(tmp_path):
+    payload = b"surface"
+    base = _step(payload)
+    reports = (
+        outputs.probe("middle", at=(0.05, 0.025, 0.0125)),
+        outputs.surface_report(
+            "outlet-average",
+            region="outlet",
+            field="fluid.pressure",
+        ),
+        outputs.surface_report(
+            "wall-load",
+            region="walls",
+            field="fluid.pressure",
+            operation="area-integral",
+        ),
+        outputs.force_report("drag", regions=("walls",)),
+    )
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=reports),
+    )
+    files = {
+        "middle/0/U": "1 (0.2 -0.1 0.05)\n",
+        "middle/0/p": "1 0.3\n",
+        "outlet_average/0/surfaceFieldValue.dat": "1 0.4\n",
+        "wall_load/0/surfaceFieldValue.dat": "1 0.5\n",
+        # pressure + viscous + porous force vectors, then moment vectors.
+        "drag/0/force.dat": "1 (10 0 0) (2 0 0) (0.5 0 0) (0 0 0)\n",
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    quantities, histories, artifacts = {}, {}, {}
+
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    assert quantities["probe.middle.fluid.pressure.value"].value == pytest.approx(
+        299.46
+    )
+    assert quantities["report.outlet-average"].unit == "Pa"
+    assert quantities["report.wall-load"].unit == "N"
+    assert quantities["report.drag"].value == pytest.approx(12.5)
+    assert histories["probe.middle.fluid.velocity.x"].abscissa_name == (
+        "solver_iteration"
+    )
+    assert histories["probe.middle.fluid.velocity.x"].abscissa_unit == "1"
+    assert all(report_recovered(report, histories) for report in reports)
+    assert len(artifacts) == len(files)
+
+
+def test_imported_flow_rejects_unsafe_or_unsupported_report_intent(tmp_path):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    base = _step(payload)
+    outside = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(
+            reports=(outputs.probe("outside", at=(1.0, 1.0, 1.0)),)
+        ),
+    )
+    vector_surface = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(
+            reports=(
+                outputs.surface_report(
+                    "velocity",
+                    region="outlet",
+                    field="fluid.velocity",
+                ),
+            )
+        ),
+    )
+    provider = OpenFOAMImportedProvider(source=source)
+
+    with pytest.raises(UnsupportedCaseError, match="strictly inside"):
+        provider.validate(outside)
+    with pytest.raises(UnsupportedCaseError, match="scalar pressure"):
+        provider.validate(vector_surface)
 
 
 def test_imported_mesh_fails_closed_on_unsupported_or_unsafe_intent(tmp_path):

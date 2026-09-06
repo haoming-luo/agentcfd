@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import boundaries, procedures
+from .. import boundaries, outputs, procedures
 from .._version import __version__
 from ..errors import ProviderUnavailableError, UnsupportedCaseError
 from ..geometry import ImportedSurface
@@ -41,6 +41,14 @@ from .openfoam import (
     _transport_properties,
     _turbulence_properties,
     _write_mesh_manifest,
+)
+from .openfoam_reports import (
+    REPORT_OPERATIONS,
+    RESERVED_REPORT_NAMES,
+    foam_name,
+    recover_reports,
+    render_report_functions,
+    report_recovered,
 )
 
 
@@ -740,6 +748,7 @@ def _write_imported_flow_files(
             outlet=outlet,
             turbulent=False,
             compress=True,
+            extra_functions=render_report_functions(step),
         ),
         "system/fvSchemes": _flow_fv_schemes(turbulent=False),
         "system/fvSolution": _flow_fv_solution(
@@ -894,10 +903,67 @@ class OpenFOAMImportedProvider:
             "flow.mass_balance",
             "flow.pressure_drop",
         }
-        if unsupported_fields or unsupported_histories or step.output.reports:
+        if unsupported_fields or unsupported_histories:
             raise UnsupportedCaseError(
                 "First imported flow slice supports velocity/pressure fields and mass-balance/pressure-drop histories only."
             )
+        lowered_report_names = [foam_name(report.name) for report in step.output.reports]
+        if (
+            len(set(lowered_report_names)) != len(lowered_report_names)
+            or set(lowered_report_names) & RESERVED_REPORT_NAMES
+        ):
+            raise UnsupportedCaseError(
+                "Report names collide with each other or a reserved provider monitor "
+                "after deterministic OpenFOAM name lowering."
+            )
+        for report in step.output.reports:
+            if isinstance(report, outputs.PointProbe):
+                if set(report.fields) - {"fluid.velocity", "fluid.pressure"}:
+                    raise UnsupportedCaseError(
+                        f"Probe {report.name!r} supports velocity and pressure only."
+                    )
+                minimum, maximum = domain.bounds_m
+                if any(
+                    value <= low or value >= high
+                    for value, low, high in zip(report.location, minimum, maximum)
+                ):
+                    raise UnsupportedCaseError(
+                        f"Probe {report.name!r} must lie strictly inside the imported "
+                        "fluid-volume bounds."
+                    )
+            elif isinstance(report, outputs.SurfaceReport):
+                if report.region not in domain.surface_names:
+                    raise UnsupportedCaseError(
+                        f"Surface report {report.name!r} references unknown region "
+                        f"{report.region!r}."
+                    )
+                if report.field != "fluid.pressure":
+                    raise UnsupportedCaseError(
+                        f"Surface report {report.name!r} must currently reduce scalar "
+                        "pressure; vector velocity needs an explicit component or "
+                        "magnitude contract."
+                    )
+                if report.operation not in REPORT_OPERATIONS:
+                    raise UnsupportedCaseError(
+                        f"Surface report {report.name!r} requests an unsupported operation."
+                    )
+            elif isinstance(report, outputs.ForceReport):
+                unknown = set(report.regions) - set(domain.surface_names)
+                nonwalls = {
+                    name for name in report.regions if roles.get(name) != "wall"
+                }
+                if unknown:
+                    raise UnsupportedCaseError(
+                        f"Force report {report.name!r} references unknown regions."
+                    )
+                if nonwalls:
+                    raise UnsupportedCaseError(
+                        f"Force report {report.name!r} must target wall-role regions."
+                    )
+            else:
+                raise UnsupportedCaseError(
+                    "The imported flow provider received an unknown report type."
+                )
 
     def prepare(self, step: Step) -> PreparedImportedMesh:
         step.model.validate()
@@ -1004,11 +1070,19 @@ class OpenFOAMImportedProvider:
         histories: dict[str, History] = {}
         if imbalance:
             histories["flow.relative_mass_imbalance"] = History(
-                tuple(shared), imbalance, unit="1"
+                tuple(shared),
+                imbalance,
+                unit="1",
+                abscissa_name="solver_iteration",
+                abscissa_unit="1",
             )
         if pressure_drop:
             histories["flow.pressure_drop"] = History(
-                tuple(pressure_times), pressure_drop, unit="Pa"
+                tuple(pressure_times),
+                pressure_drop,
+                unit="Pa",
+                abscissa_name="solver_iteration",
+                abscissa_unit="1",
             )
         mesh_sha256, mesh_manifest = _write_mesh_manifest(prepared.directory)
         fields: dict[str, FieldRecord] = {}
@@ -1027,21 +1101,6 @@ class OpenFOAMImportedProvider:
                         components=components,
                         mesh_sha256=mesh_sha256,
                     )
-        requested_history_map = {
-            "flow.mass_balance": "flow.relative_mass_imbalance",
-            "flow.pressure_drop": "flow.pressure_drop",
-        }
-        missing = [
-            name
-            for name in step.output.histories
-            if requested_history_map[name] not in histories
-        ]
-        requested_field_map = {"fluid.velocity": "U", "fluid.pressure": "p"}
-        missing.extend(
-            name
-            for name in step.output.fields
-            if requested_field_map[name] not in fields
-        )
         artifacts = {
             "case_manifest": Artifact.from_path(
                 prepared.directory / "agentcfd-imported-flow-case.json",
@@ -1059,6 +1118,27 @@ class OpenFOAMImportedProvider:
             artifacts["mesh_manifest"] = Artifact.from_path(
                 mesh_manifest, role="mesh-manifest", media_type="application/json"
             )
+        recover_reports(step, prepared.directory, quantities, histories, artifacts)
+        requested_history_map = {
+            "flow.mass_balance": "flow.relative_mass_imbalance",
+            "flow.pressure_drop": "flow.pressure_drop",
+        }
+        missing = [
+            name
+            for name in step.output.histories
+            if requested_history_map[name] not in histories
+        ]
+        requested_field_map = {"fluid.velocity": "U", "fluid.pressure": "p"}
+        missing.extend(
+            name
+            for name in step.output.fields
+            if requested_field_map[name] not in fields
+        )
+        missing.extend(
+            f"report:{report.name}"
+            for report in step.output.reports
+            if not report_recovered(report, histories)
+        )
         runtime_version = _runtime_version(
             {
                 path.name: path.read_text(encoding="utf-8", errors="replace")

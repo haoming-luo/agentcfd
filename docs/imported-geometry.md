@@ -147,7 +147,9 @@ narrow steady incompressible isothermal laminar slice. Arbitrary geometry uses
 from a scalar. The first executable slice requires exactly one vector-velocity
 inlet, one pressure outlet, default initialization, and velocity/pressure plus
 mass-balance/pressure-drop outputs. It does not silently ignore turbulence,
-heat, roughness, layers, reactions, or custom reports.
+heat, roughness, layers, or reactions. Point velocity/pressure probes, scalar
+pressure surface reductions, and wall-force reports are compact histories;
+vector surface reductions remain fail-closed.
 
 The checked OpenCFD v2606 run converged by SIMPLE residual control in 344
 iterations with `1.8e-10` relative mass imbalance and 1.179 Pa pressure drop.

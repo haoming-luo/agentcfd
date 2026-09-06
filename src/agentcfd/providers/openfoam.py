@@ -3142,6 +3142,7 @@ def _control_dict(
     outlet: str,
     turbulent: bool = False,
     compress: bool = True,
+    extra_functions: str = "",
 ) -> str:
     y_plus = """
     agentcfd_y_plus
@@ -3222,6 +3223,7 @@ functions
         fields (p);
     }}
 {y_plus}
+{extra_functions}
 }}
 """
 

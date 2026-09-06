@@ -11,6 +11,11 @@
   while generated `case.py` remains the sole long-lived scientific source.
 - Make the public analysis-request fingerprint the sole project/provider result
   identity and refuse to publish a provider result carrying a different one.
+- Lower imported-volume point probes, scalar pressure surface reports, and wall
+  force reports to compact OpenFOAM function objects; recover canonical SI
+  quantities and histories without adding field frames.
+- Share report lowering/recovery across structured and imported providers, and
+  correct pressure-area integrals to force units plus total-force aggregation.
 - Bind project-published XDMF/H5 fields to the exact OpenFOAM source-mesh
   identity and avoid dangling provider-workspace paths after automatic cleanup.
 

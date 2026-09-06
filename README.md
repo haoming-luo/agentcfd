@@ -142,6 +142,12 @@ auditable creation boundary, not a second project language: after creation,
 only the generated `case.py` controls the scientific model. A complete example
 lives at `examples/imported_duct_mesh/project-request.json`.
 
+Imported projects use the same compact decision-output API as parametric
+channels. Add `outputs.probe(...)`, a scalar-pressure
+`outputs.surface_report(...)`, or `outputs.force_report(...)` to `case.py` to
+publish small SI histories and final quantities without increasing XDMF/H5
+frame count.
+
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
 operational settings such as the default provider, output directory, container,
 and mesh controls. An ordinary execution replaces the managed `output/`

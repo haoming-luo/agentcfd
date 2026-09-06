@@ -51,7 +51,10 @@ five-block mesh, low-Re transient flow, compact reports, and standard field
 output. A separate bounded imported-volume slice now owns checked STL/OBJ,
 explicit region roles, an interior seed, a hard mesh budget, and steady laminar
 OpenFOAM execution. `init --request` exposes creation as strict JSON for agents
-and GUIs without replacing the generated Python source of truth.
+and GUIs without replacing the generated Python source of truth. The imported
+provider consumes the same point, scalar pressure-surface, and wall-force
+report objects as the channel provider, producing small solver-iteration
+histories rather than more full-field frames.
 
 ## Output and result ergonomics
 

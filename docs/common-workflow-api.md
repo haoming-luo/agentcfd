@@ -38,8 +38,9 @@ This follows mature CFD workflow boundaries without copying a backend API:
   gates;
 - probes and surface/force reports are compact histories, independent from the
   much more expensive full-field frame cadence;
-- `outputs.line_profile(...)` samples one declared scalar on the final portable
-  frame and publishes only distance plus that field to CSV when run headlessly;
+- `outputs.line_profile(...)` samples one declared field on the final portable
+  frame and publishes only distance plus that value to CSV; vector fields
+  require an explicit Cartesian component or magnitude;
 - a provider validates the entire `Step` before lowering it. Unsupported intent
   is rejected instead of ignored.
 

@@ -404,13 +404,14 @@ class StreamlineView:
 
 @dataclass(frozen=True, slots=True)
 class LineProfile:
-    """Sample one canonical scalar field along a physical line as compact CSV."""
+    """Sample one canonical field along a physical line as compact CSV."""
 
     name: str
     field: str
     start: tuple[float, float, float]
     end: tuple[float, float, float]
     samples: int = 101
+    component: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "name", _view_name(self.name))
@@ -429,6 +430,10 @@ class LineProfile:
             "samples",
             integer_at_least(self.samples, name="Line-profile sample count", minimum=2),
         )
+        if self.component not in {None, "x", "y", "z", "magnitude"}:
+            raise ValueError(
+                "Line-profile component must be None, x, y, z, or magnitude."
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -438,6 +443,7 @@ class LineProfile:
             "start": list(self.start),
             "end": list(self.end),
             "samples": self.samples,
+            "component": self.component,
             "camera": None,
             "export": None,
         }
@@ -777,6 +783,7 @@ def line_profile(
     start: tuple[float, float, float],
     end: tuple[float, float, float],
     samples: int = 101,
+    component: str | None = None,
 ) -> LineProfile:
     return LineProfile(
         name=name,
@@ -784,6 +791,7 @@ def line_profile(
         start=start,
         end=end,
         samples=samples,
+        component=component,
     )
 
 

@@ -83,6 +83,7 @@ def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity(tmp_pat
     assert record["views"][1]["values"] == [100.0, 500.0]
     assert record["views"][2]["seeds"] == 30
     assert record["views"][3]["samples"] == 121
+    assert record["views"][3]["component"] is None
     assert record["views"][3]["camera"] is None
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
@@ -133,6 +134,7 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
     assert "StreamTracer(" in scripts[2].read_text()
     assert "PlotOverLine(" in scripts[3].read_text()
     assert "ChooseArraysToWrite=1" in scripts[3].read_text()
+    assert "distance_m" in scripts[3].read_text()
     assert "animation.GoToLast()" in scripts[3].read_text()
     assert manifest["recipes"][3]["data_outputs_after_launch"] == [
         "centerline-pressure.csv"
@@ -175,6 +177,36 @@ def test_recipe_field_shape_and_visualization_association_fail_early(tmp_path):
             ),
             _field_manifest(),
         )
+    vector_manifest, vector_scripts = postprocessing.publish_paraview_recipes(
+        tmp_path / "vector-magnitude-profile",
+        (
+            outputs.line_profile(
+                "velocity-magnitude",
+                field="fluid.velocity",
+                start=(0.0, 0.0, 0.0),
+                end=(1.0, 0.0, 0.0),
+                component="magnitude",
+            ),
+        ),
+        _field_manifest(),
+    )
+    vector_record = json.loads(vector_manifest.read_text())["recipes"][0]
+    assert vector_record["component"] == "magnitude"
+    assert "math.sqrt" in vector_scripts[0].read_text()
+    with pytest.raises(ValueError, match="cannot select a component"):
+        postprocessing.publish_paraview_recipes(
+            tmp_path / "scalar-component",
+            (
+                outputs.line_profile(
+                    "pressure-x",
+                    field="fluid.pressure",
+                    start=(0.0, 0.0, 0.0),
+                    end=(1.0, 0.0, 0.0),
+                    component="x",
+                ),
+            ),
+            _field_manifest(),
+        )
     assert not (tmp_path / "vector-contour" / "postprocess").exists()
     with pytest.raises(ValueError, match="requires a vector field"):
         postprocessing.publish_paraview_recipes(
@@ -189,7 +221,7 @@ def test_recipe_field_shape_and_visualization_association_fail_early(tmp_path):
             ),
             _field_manifest(),
         )
-    with pytest.raises(ValueError, match="requires a scalar field"):
+    with pytest.raises(ValueError, match="requires component"):
         postprocessing.publish_paraview_recipes(
             tmp_path / "vector-line-profile",
             (

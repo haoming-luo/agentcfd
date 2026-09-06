@@ -14,6 +14,9 @@
   `agentcfd sweep`: plan every named point before work starts, reuse only exact
   accepted result identities, persist atomic progress, continue after isolated
   runtime failures by default, and remain serial until bounded scheduling lands.
+- Add zero-solve `sweep --plan-only` with explicit ready/reusable/solver-start
+  counts and request-level duplicate detection. Accepted reuse now also requires
+  the compact result payload to exist, not merely a stale completion marker.
 - Add typed final-frame line profiles over portable fields. The generated
   ParaView recipe uses explicit endpoints and sample count, publishes a compact
   canonical two-column CSV, requires an explicit component or magnitude for

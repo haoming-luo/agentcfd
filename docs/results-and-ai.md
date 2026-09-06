@@ -85,6 +85,11 @@ continues after isolated runtime failure unless fail-fast was explicit. It does
 not infer parameter names, weaken provider gates, or read field payloads to
 decide reuse.
 
+`sweep --plan-only --json` is the non-mutating agent decision surface. It also
+distinguishes reuse from an existing campaign versus an identical point later
+in the same request, so estimated solver starts are not inflated by duplicate
+inputs.
+
 ## AgentFEM and AI continuity
 
 There is no runtime dependency on AgentFEM. Instead, `to_sample()` emits numeric

@@ -70,6 +70,10 @@ python -m pytest -q
     Preserve all-points preflight, reuse accepted matching identities, and keep
     serial execution until a bounded resource scheduler explicitly authorizes
     concurrency; do not parallelize OpenFOAM cases merely because CPUs exist.
+21. Run `sweep --plan-only --json` before authorizing a campaign. Treat
+    `would_execute_count` as the actual proposed solver-start count after
+    request deduplication; never trust an accepted marker whose `result.json`
+    is missing.
 
 ## Current boundary
 

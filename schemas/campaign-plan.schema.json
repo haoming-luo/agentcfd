@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/campaign-plan.schema.json",
+  "title": "AgentCFD zero-solve campaign preflight 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "provider", "point_count", "ready_count",
+    "reusable_count", "would_execute_count", "all_ready", "points",
+    "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.campaign-plan/0.1"},
+    "root": {"type": "string"},
+    "provider": {"enum": ["reference", "openfoam"]},
+    "point_count": {"type": "integer", "minimum": 1},
+    "ready_count": {"type": "integer", "minimum": 0},
+    "reusable_count": {"type": "integer", "minimum": 0},
+    "would_execute_count": {"type": "integer", "minimum": 0},
+    "all_ready": {"type": "boolean"},
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "parameters", "ready", "issues", "plan_sha256",
+          "result_execution_sha256", "reusable", "reuse_source",
+          "source_run_id", "error"
+        ],
+        "properties": {
+          "name": {"type": "string"},
+          "parameters": {"type": "object"},
+          "ready": {"type": "boolean"},
+          "issues": {"type": "array", "items": {"type": "object"}},
+          "plan_sha256": {"type": ["string", "null"]},
+          "result_execution_sha256": {"type": ["string", "null"]},
+          "reusable": {"type": "boolean"},
+          "reuse_source": {
+            "enum": [null, "existing-campaign", "request-duplicate"]
+          },
+          "source_run_id": {"type": ["string", "null"]},
+          "error": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": [
+        "result_manifests_opened", "field_payloads_opened",
+        "solver_processes_started"
+      ],
+      "properties": {
+        "result_manifests_opened": {"const": 0},
+        "field_payloads_opened": {"const": 0},
+        "solver_processes_started": {"const": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

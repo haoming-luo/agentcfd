@@ -230,6 +230,13 @@ small atomic `campaigns/last-sweep.json` makes interruption and automation
 observable. Version 0.1 executes serially so a campaign cannot oversubscribe
 memory or temporary storage before a bounded resource scheduler exists.
 
+Use `agentcfd sweep . sweep.json --plan-only` as the approval boundary. It
+reports how many points are ready, already reusable, duplicated within the
+request, and would actually start a solver; the contract records
+`solver_processes_started: 0`. Reuse requires the exact accepted result identity
+and a still-present compact `result.json`; a stale success marker beside deleted
+results never suppresses recomputation.
+
 ## Expert workspace retention
 
 `agentcfd run . --keep-workspace` retains the generated backend below

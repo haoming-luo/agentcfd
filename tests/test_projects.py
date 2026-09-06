@@ -564,6 +564,16 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
         "base-repeat": {"mean_velocity": 0.02},
     }
 
+    preview = project.plan_campaign(points)
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-plan.schema.json")
+    ).validate(preview)
+    assert preview["all_ready"] is True
+    assert preview["would_execute_count"] == 2
+    assert preview["reusable_count"] == 1
+    assert preview["points"][2]["reuse_source"] == "request-duplicate"
+    assert preview["observation_cost"]["solver_processes_started"] == 0
+
     report = project.run_campaign(points)
 
     jsonschema.Draft202012Validator(
@@ -582,6 +592,10 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     assert progress == report
     index = project.campaign_index()
     assert {row["design_point_name"] for row in index["runs"]} == {"base", "faster"}
+
+    after = project.plan_campaign(points)
+    assert after["would_execute_count"] == 0
+    assert after["reusable_count"] == 3
 
     before = index["run_count"]
     with pytest.raises(ProjectError, match="No design point was executed"):
@@ -606,6 +620,21 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     )
     assert (
         entrypoint(
+            [
+                "sweep",
+                str(project.root),
+                str(request),
+                "--plan-only",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_preview = json.loads(capsys.readouterr().out)
+    assert cli_preview["would_execute_count"] == 0
+    assert cli_preview["observation_cost"]["solver_processes_started"] == 0
+    assert (
+        entrypoint(
             ["sweep", str(project.root), str(request), "--json"]
         )
         == 0
@@ -613,6 +642,14 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     cli_report = json.loads(capsys.readouterr().out)
     assert cli_report["executed_count"] == 0
     assert cli_report["reused_count"] == 1
+
+    cached_result = Path(report["points"][0]["directory"]) / "result.json"
+    cached_result.unlink()
+    missing_payload = project.plan_campaign(
+        {"base-with-missing-result": {"mean_velocity": 0.02}}
+    )
+    assert missing_payload["reusable_count"] == 0
+    assert missing_payload["would_execute_count"] == 1
 
 
 def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypatch):

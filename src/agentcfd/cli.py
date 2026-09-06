@@ -1425,6 +1425,11 @@ def build_parser() -> argparse.ArgumentParser:
     sweep.add_argument("--provider", choices=("reference", "openfoam"))
     sweep.add_argument("--container-image")
     sweep.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Report readiness, reuse, and solve count without executing any point.",
+    )
+    sweep.add_argument(
         "--fail-fast",
         action="store_true",
         help="Stop after the first runtime failure; preflight always checks every point.",
@@ -2465,14 +2470,33 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "sweep":
         project = projects.Project.discover(args.project)
-        report = project.run_campaign(
-            _campaign_request(args.request),
-            provider=args.provider,
-            container_image=args.container_image,
-            fail_fast=args.fail_fast,
-        )
+        points = _campaign_request(args.request)
+        if args.plan_only:
+            report = project.plan_campaign(
+                points,
+                provider=args.provider,
+                container_image=args.container_image,
+            )
+        else:
+            report = project.run_campaign(
+                points,
+                provider=args.provider,
+                container_image=args.container_image,
+                fail_fast=args.fail_fast,
+            )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
+        elif args.plan_only:
+            print(
+                f"Sweep plan {report['ready_count']}/{report['point_count']} ready | "
+                f"would execute {report['would_execute_count']} | reusable "
+                f"{report['reusable_count']}"
+            )
+            for point in report["points"]:
+                print(
+                    f"{point['name']} | ready {str(point['ready']).lower()} | "
+                    f"reusable {str(point['reusable']).lower()}"
+                )
         else:
             print(
                 f"Sweep {report['processed_count']}/{report['requested_count']} | "
@@ -2484,6 +2508,8 @@ def main(argv: list[str] | None = None) -> int:
                     f"{point['name']} | {point['execution']} | {point['outcome']}"
                 )
             print(f"progress: {report['progress']}")
+        if args.plan_only:
+            return 0 if report["all_ready"] else 3
         return 0 if report["successful"] else 3
     if args.command == "clean":
         report = projects.Project(args.project).clean(

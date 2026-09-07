@@ -29,6 +29,7 @@ from . import (
     diagnostics,
     engineering,
     geometry_io,
+    parameters as parameter_definitions,
     postprocessing,
 )
 from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
@@ -1035,8 +1036,18 @@ class Project:
 
         factory = self._factory()
         selected_parameters = self._parameters(selected)
+        declared = getattr(factory, "__agentcfd_parameter_specs__", {})
+        if not isinstance(declared, Mapping):
+            raise ProjectError("Project factory parameter metadata must be a mapping.")
         records: list[dict[str, object]] = []
         for parameter in inspect.signature(factory).parameters.values():
+            specification = declared.get(parameter.name)
+            if specification is not None and not isinstance(
+                specification, parameter_definitions.ParameterSpec
+            ):
+                raise ProjectError(
+                    f"Project parameter metadata for {parameter.name!r} is invalid."
+                )
             keyword_overrideable = parameter.kind in {
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 inspect.Parameter.KEYWORD_ONLY,
@@ -1071,6 +1082,9 @@ class Project:
                     "selected": selected_here,
                     "current": current,
                     "input_contract": "json-scalar" if overrideable else None,
+                    "metadata": (
+                        None if specification is None else specification.to_dict()
+                    ),
                 }
             )
         return records
@@ -4181,9 +4195,23 @@ class Project:
 
 _CASE_TEMPLATE = '''"""Readable AgentCFD engineering model: edit this file, not backend dictionaries."""
 
-from agentcfd import Model, boundaries, fluids, geometry, outputs, procedures, studies
+from agentcfd import Model, boundaries, fluids, geometry, outputs, parameters, procedures, studies
 
 
+@parameters.describe(
+    length=parameters.number(
+        "Pipe length", unit="m", minimum=0, exclusive_minimum=True,
+        description="Axial length of the circular fluid domain.",
+    ),
+    diameter=parameters.number(
+        "Pipe diameter", unit="m", minimum=0, exclusive_minimum=True,
+        description="Internal circular diameter.",
+    ),
+    mean_velocity=parameters.number(
+        "Mean inlet velocity", unit="m/s", minimum=0, exclusive_minimum=True,
+        description="Bulk inlet velocity used by the internal-flow model.",
+    ),
+)
 def build(*, length=10.0, diameter=0.05, mean_velocity=0.02):
     model = Model(
         name="water-pipe",
@@ -4208,9 +4236,19 @@ def build(*, length=10.0, diameter=0.05, mean_velocity=0.02):
 
 _BAFFLE_CHANNEL_TEMPLATE = '''"""Low-Re transient wake behind a bottom-attached baffle."""
 
-from agentcfd import Model, boundaries, fluids, geometry, initialization, meshing, outputs, procedures, studies
+from agentcfd import Model, boundaries, fluids, geometry, initialization, meshing, outputs, parameters, procedures, studies
 
 
+@parameters.describe(
+    mean_velocity=parameters.number(
+        "Mean inlet velocity", unit="m/s", minimum=0, exclusive_minimum=True,
+        description="Bulk velocity entering the baffled channel.",
+    ),
+    baffle_height=parameters.number(
+        "Baffle height", unit="m", minimum=0, exclusive_minimum=True,
+        description="Height of the bottom-attached vertical obstruction.",
+    ),
+)
 def build(*, mean_velocity=0.5, baffle_height=0.12):
     channel = geometry.rectangular_channel(length=1.2, height=0.20, width=0.10).with_baffle(
         name="baffle", x=0.35, height=baffle_height, thickness=0.01, attached_to="bottom"
@@ -4309,11 +4347,65 @@ from agentcfd import (
     geometry,
     meshing,
     outputs,
+    parameters,
     procedures,
     studies,
 )
 
 
+@parameters.describe(
+    velocity_x=parameters.number(
+        "Inlet velocity X", unit="m/s",
+        description="Cartesian X component; the vector is active when non-zero.",
+    ),
+    velocity_y=parameters.number(
+        "Inlet velocity Y", unit="m/s",
+        description="Cartesian Y component; the vector is active when non-zero.",
+    ),
+    velocity_z=parameters.number(
+        "Inlet velocity Z", unit="m/s",
+        description="Cartesian Z component; the vector is active when non-zero.",
+    ),
+    mass_flow_rate=parameters.number(
+        "Inlet mass flow", unit="kg/s", minimum=0, exclusive_minimum=True,
+        nullable=True, description="Scalar laminar inlet flow; overrides velocity.",
+    ),
+    inlet_total_gauge_pressure=parameters.number(
+        "Inlet total gauge pressure", unit="Pa", minimum=0,
+        exclusive_minimum=True, nullable=True,
+        description="Laminar total pressure against the zero-gauge static outlet.",
+    ),
+    density=parameters.number(
+        "Fluid density", unit="kg/m^3", minimum=0, exclusive_minimum=True,
+        description="Constant fluid density.",
+    ),
+    dynamic_viscosity=parameters.number(
+        "Dynamic viscosity", unit="Pa*s", minimum=0, exclusive_minimum=True,
+        description="Constant fluid dynamic viscosity.",
+    ),
+    base_size=parameters.number(
+        "Base mesh size", unit="m", minimum=0, exclusive_minimum=True,
+        description="Target background cell size before local surface refinement.",
+    ),
+    maximum_cells=parameters.number(
+        "Maximum cells", unit="1", minimum=1,
+        description="Hard global cell-count safety limit.",
+    ),
+    turbulence_model=parameters.choice(
+        "Turbulence model", ("k-omega-sst",), nullable=True,
+        description="Leave null for laminar flow or select the released RANS model.",
+    ),
+    turbulence_intensity=parameters.number(
+        "Turbulence intensity", unit="1", minimum=0, maximum=1,
+        exclusive_minimum=True, nullable=True,
+        description="Inlet RMS intensity as a fraction, not percent.",
+    ),
+    turbulence_length_scale=parameters.number(
+        "Turbulence length scale", unit="m", minimum=0,
+        exclusive_minimum=True, nullable=True,
+        description="Explicit inlet turbulence length scale.",
+    ),
+)
 def build(
     *,
     velocity_x={default_velocity[0]!r},

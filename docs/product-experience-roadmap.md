@@ -127,7 +127,8 @@ files stay hidden and reproducible.
 - first-class velocity, mass-flow, and total-pressure creation controls for
   imported laminar projects, plus compact recovered flow-rate evidence;
 - discoverable `case.py` factory parameters with defaults, current selections,
-  and JSON-scalar override contracts in both status and solution plans;
+  JSON-scalar override contracts, canonical units, bounds, choices, and human
+  descriptions in both status and solution plans;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

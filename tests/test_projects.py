@@ -1221,15 +1221,23 @@ def test_explicit_factory_parameters_change_plan_identity_and_reject_typos(
         for item in varied["project"]["factory_parameters"]
         if item["name"] == "mean_velocity"
     )
-    assert parameter == {
-        "name": "mean_velocity",
-        "required": False,
-        "default": 0.02,
-        "default_type": "float",
-        "overrideable": True,
-        "selected": True,
-        "current": 0.03,
-        "input_contract": "json-scalar",
+    assert parameter["required"] is False
+    assert parameter["default"] == 0.02
+    assert parameter["default_type"] == "float"
+    assert parameter["overrideable"] is True
+    assert parameter["selected"] is True
+    assert parameter["current"] == 0.03
+    assert parameter["input_contract"] == "json-scalar"
+    assert parameter["metadata"] == {
+        "kind": "number",
+        "label": "Mean inlet velocity",
+        "description": "Bulk inlet velocity used by the internal-flow model.",
+        "unit": "m/s",
+        "minimum": 0.0,
+        "maximum": None,
+        "exclusive_minimum": True,
+        "choices": [],
+        "nullable": False,
     }
     assert varied["model"]["reynolds_number"] != default["model"]["reynolds_number"]
     assert varied["plan_sha256"] != default["plan_sha256"]

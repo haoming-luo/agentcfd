@@ -21,6 +21,10 @@
   imported factory to avoid repeated user-code side effects.
 - Exercise pressure-controlled imported-project creation and parameter
   discovery from the exact dependency-free wheel in test and release jobs.
+- Add solver-neutral `parameters.describe`, `parameters.number`, and
+  `parameters.choice` metadata beside `case.py` factories. Generated pipe,
+  baffle, and imported templates now publish labels, canonical units, bounds,
+  choices, nullability, and descriptions for future forms and agents.
 - Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
   view over the latest or selected run. It exposes quantities, failed checks,
   histories and field names without opening HDF5 or hashing external artifacts,

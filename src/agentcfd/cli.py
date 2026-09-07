@@ -2729,10 +2729,19 @@ def main(argv: list[str] | None = None) -> int:
             ]
             if adjustable:
                 visible = adjustable[:6]
-                rendered = ", ".join(
-                    f"{item['name']}={json.dumps(item['current'], sort_keys=True)}"
-                    for item in visible
-                )
+                rendered_items = []
+                for item in visible:
+                    metadata = item.get("metadata")
+                    unit = (
+                        metadata.get("unit")
+                        if isinstance(metadata, dict) and item["current"] is not None
+                        else None
+                    )
+                    rendered_items.append(
+                        f"{item['name']}={json.dumps(item['current'], sort_keys=True)}"
+                        + (f" {unit}" if unit not in {None, "1"} else "")
+                    )
+                rendered = ", ".join(rendered_items)
                 remaining = len(adjustable) - len(visible)
                 if remaining:
                     rendered += f", +{remaining} more"

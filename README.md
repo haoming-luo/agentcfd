@@ -118,6 +118,13 @@ single `--param NAME=JSON` pattern; `status --json` and `plan --json` expose the
 complete parameter contract for agents and future forms. Unknown names still
 fail before any provider work.
 
+Projects can keep UI/agent meaning beside the Python model with the optional
+`parameters.describe(...)` decorator. Generated templates use
+`parameters.number(...)` and `parameters.choice(...)` to declare labels,
+canonical units, bounds, nullability, choices, and short descriptions. This is
+presentation metadata, not a second input file; the engineering constructors
+remain the source of scientific validation.
+
 For owned STL/OBJ internal-flow geometry, initialization can perform the
 inspection-to-project handoff without asking the user to author `case.py` from
 scratch. Every ambiguous physical input stays explicit:

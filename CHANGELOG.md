@@ -12,6 +12,10 @@
   point, inlet temperature, and signed wall heat flux. Its project plan reports
   Re, Pr, Pe, expected outlet temperature, and the exact temperature-change
   policy before an external solver starts.
+- Extend the versioned project-creation request with strictly validated
+  heated-pipe defaults. Agents and future forms can now materialize geometry,
+  velocity, inlet temperature, and signed wall heat flux into readable
+  `case.py` without writing Python or backend dictionaries.
 - Group the human `agentcfd result` view into flow, inputs, mesh quality,
   verification, runtime, and other engineering results, with dimensionless
   values rendered explicitly. The flat canonical JSON result contract is

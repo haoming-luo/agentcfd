@@ -4394,7 +4394,38 @@ def build(*, length=10.0, diameter=0.05, mean_velocity=0.02):
 '''
 
 
-_HEATED_PIPE_TEMPLATE = '''"""Constant-property laminar heated-pipe validation workflow."""
+_HEATED_PIPE_PARAMETER_DEFAULTS = {
+    "length": 2.0,
+    "diameter": 0.1,
+    "mean_velocity": 0.01,
+    "inlet_temperature": 300.0,
+    "wall_heat_flux": 100.0,
+}
+
+
+def _heated_pipe_template(
+    parameter_defaults: Mapping[str, object] | None = None,
+) -> str:
+    selected = dict(_HEATED_PIPE_PARAMETER_DEFAULTS)
+    provided = {} if parameter_defaults is None else dict(parameter_defaults)
+    unknown = sorted(set(provided) - set(selected))
+    if unknown:
+        raise ValueError(
+            "Unknown heated-pipe parameter defaults: " + ", ".join(unknown) + "."
+        )
+    for name, value in provided.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"Heated-pipe parameter {name!r} must be a number.")
+        normalized = float(value)
+        if not math.isfinite(normalized):
+            raise ValueError(f"Heated-pipe parameter {name!r} must be finite.")
+        if name != "wall_heat_flux" and normalized <= 0.0:
+            raise ValueError(f"Heated-pipe parameter {name!r} must be positive.")
+        if name == "wall_heat_flux" and normalized == 0.0:
+            raise ValueError("Heated-pipe wall_heat_flux must be non-zero.")
+        selected[name] = normalized
+
+    return f'''"""Constant-property laminar heated-pipe validation workflow."""
 
 from agentcfd import Model, boundaries, fluids, geometry, outputs, parameters, procedures, studies
 
@@ -4423,11 +4454,11 @@ from agentcfd import Model, boundaries, fluids, geometry, outputs, parameters, p
 )
 def build(
     *,
-    length=2.0,
-    diameter=0.1,
-    mean_velocity=0.01,
-    inlet_temperature=300.0,
-    wall_heat_flux=100.0,
+    length={selected["length"]!r},
+    diameter={selected["diameter"]!r},
+    mean_velocity={selected["mean_velocity"]!r},
+    inlet_temperature={selected["inlet_temperature"]!r},
+    wall_heat_flux={selected["wall_heat_flux"]!r},
 ):
     model = Model(
         name="heated-water-pipe",
@@ -4768,6 +4799,7 @@ def init_project_from_request(
         "inlet_mass_flow_kg_s",
         "inlet_total_gauge_pressure_pa",
         "mesh",
+        "parameters",
     }
     unknown = sorted(set(payload) - allowed)
     if unknown:
@@ -4780,6 +4812,39 @@ def init_project_from_request(
     provider = payload.get("provider")
     if not isinstance(template, str) or not isinstance(provider, str):
         raise ProjectError("Project creation request requires template and provider strings.")
+    if template == "heated-pipe":
+        unexpected = sorted(
+            key
+            for key in (
+                "geometry",
+                "interior_point_m",
+                "inlet_velocity_m_s",
+                "inlet_mass_flow_kg_s",
+                "inlet_total_gauge_pressure_pa",
+                "mesh",
+            )
+            if key in payload
+        )
+        if unexpected:
+            raise ProjectError(
+                "Template 'heated-pipe' does not accept request sections: "
+                + ", ".join(unexpected)
+                + "."
+            )
+        parameter_defaults = payload.get("parameters")
+        if parameter_defaults is not None and not isinstance(
+            parameter_defaults, Mapping
+        ):
+            raise ProjectError("Heated-pipe request parameters must be an object.")
+        try:
+            return init_project(
+                directory,
+                provider=provider,
+                template=template,
+                parameter_defaults=parameter_defaults,
+            )
+        except ValueError as error:
+            raise ProjectError(str(error)) from error
     if template != "imported-internal-flow":
         unexpected = sorted(
             key
@@ -4790,6 +4855,7 @@ def init_project_from_request(
                 "inlet_mass_flow_kg_s",
                 "inlet_total_gauge_pressure_pa",
                 "mesh",
+                "parameters",
             )
             if key in payload
         )
@@ -4928,6 +4994,7 @@ def init_project(
     inlet_total_gauge_pressure_pa: float | None = None,
     base_size_m: float | None = None,
     maximum_cells: int | None = None,
+    parameter_defaults: Mapping[str, object] | None = None,
 ) -> Project:
     """Create a complete editable project without overwriting user data."""
 
@@ -4966,6 +5033,10 @@ def init_project(
     ):
         raise ValueError(
             "Imported geometry options require template='imported-internal-flow'."
+        )
+    if template != "heated-pipe" and parameter_defaults is not None:
+        raise ValueError(
+            "parameter_defaults currently require template='heated-pipe'."
         )
 
     imported_report: dict[str, object] | None = None
@@ -5141,7 +5212,7 @@ def init_project(
         case_template = (
             _BAFFLE_CHANNEL_TEMPLATE
             if template == "baffle-channel"
-            else _HEATED_PIPE_TEMPLATE
+            else _heated_pipe_template(parameter_defaults)
             if template == "heated-pipe"
             else _CASE_TEMPLATE
         )

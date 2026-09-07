@@ -606,6 +606,59 @@ def test_creation_request_can_confirm_unambiguous_name_roles(tmp_path):
     )["regions"] == {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
 
 
+def test_creation_request_materializes_heated_pipe_defaults(tmp_path):
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "heated-pipe",
+        "provider": "openfoam",
+        "parameters": {
+            "length": 1.25,
+            "diameter": 0.2,
+            "mean_velocity": 0.015,
+            "inlet_temperature": 310.0,
+            "wall_heat_flux": -75.0,
+        },
+    }
+    validator = jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    )
+    validator.validate(request)
+
+    project = projects.init_project_from_request(tmp_path / "heated-request", request)
+    step = project.load_step()
+
+    assert step.model.domain.length == pytest.approx(1.25)
+    assert step.model.domain.diameter == pytest.approx(0.2)
+    assert step.model.boundary_conditions["inlet"].velocity == pytest.approx(0.015)
+    assert step.model.boundary_conditions["inlet"].temperature == pytest.approx(310.0)
+    assert (
+        step.model.boundary_conditions["wall"].thermal.heat_flux_into_fluid
+        == pytest.approx(-75.0)
+    )
+    assert project.plan()["decisions"]["thermal_preflight"]["status"] == "calculated"
+    assert "length=1.25" in project.entrypoint.read_text()
+
+
+def test_creation_request_rejects_invalid_heated_pipe_defaults_before_writing(
+    tmp_path,
+):
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "heated-pipe",
+        "provider": "openfoam",
+        "parameters": {"wall_heat_flux": 0.0},
+    }
+    validator = jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    )
+    assert list(validator.iter_errors(request))
+
+    root = tmp_path / "invalid-heated-request"
+    with pytest.raises(ProjectError, match="wall_heat_flux must be non-zero"):
+        projects.init_project_from_request(root, request)
+    assert not root.exists()
+
+
 def test_creation_request_accepts_mass_flow_and_rejects_ambiguous_controls(tmp_path):
     source = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     request = {

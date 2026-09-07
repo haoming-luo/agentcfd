@@ -1,0 +1,12 @@
+{
+  "schema": "agentcfd.project-creation-request/0.1",
+  "template": "heated-pipe",
+  "provider": "openfoam",
+  "parameters": {
+    "length": 2.0,
+    "diameter": 0.1,
+    "mean_velocity": 0.01,
+    "inlet_temperature": 300.0,
+    "wall_heat_flux": 100.0
+  }
+}

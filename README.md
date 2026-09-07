@@ -132,6 +132,18 @@ This template is steady, laminar, incompressible and constant-property, with a
 prescribed non-zero wall heat flux. It does not claim buoyancy, conjugate heat
 transfer, phase change, or steam support.
 
+Agents and future forms can create the same readable thermal project without
+editing Python text. A strict request may set any subset of the five documented
+factory defaults; AgentCFD validates the values first and then writes them into
+`case.py`, which remains the sole project source of truth:
+
+```bash
+agentcfd init my-heated-pipe --request heated-pipe-request.json
+```
+
+See `examples/heated_pipe_project/project-request.json` for the versioned,
+unit-described request pattern.
+
 The default `result` view groups engineering values by purpose instead of
 printing one undifferentiated list. Add `--json` when an agent or integration
 needs the unchanged flat canonical names and versioned machine contract.

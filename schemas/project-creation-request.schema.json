@@ -44,6 +44,9 @@
         "base_size_m": {"type": "number", "exclusiveMinimum": 0},
         "maximum_cells": {"type": "integer", "minimum": 1}
       }
+    },
+    "parameters": {
+      "type": "object"
     }
   },
   "allOf": [
@@ -68,6 +71,47 @@
           "mesh": false
         }
       }
+    },
+    {
+      "if": {"properties": {"template": {"const": "heated-pipe"}}},
+      "then": {
+        "properties": {
+          "provider": {"const": "openfoam"},
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "length": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Pipe length in metres."
+              },
+              "diameter": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Internal pipe diameter in metres."
+              },
+              "mean_velocity": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Bulk inlet velocity in metres per second."
+              },
+              "inlet_temperature": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Absolute inlet temperature in kelvin."
+              },
+              "wall_heat_flux": {
+                "type": "number",
+                "not": {"const": 0},
+                "description": "Signed wall heat flux into the fluid in watts per square metre."
+              }
+            }
+          }
+        }
+      },
+      "else": {"properties": {"parameters": false}}
     },
     {
       "if": {"properties": {"template": {"const": "baffle-channel"}}},

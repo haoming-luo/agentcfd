@@ -1621,6 +1621,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also target inactive workspaces explicitly retained by CLI or manifest.",
     )
+    clean.add_argument(
+        "--include-cache",
+        action="store_true",
+        help="Also target reusable imported-geometry mesh cache after preview.",
+    )
     clean.add_argument("--json", action="store_true", dest="as_json")
 
     view = subparsers.add_parser(
@@ -2903,6 +2908,7 @@ def main(argv: list[str] | None = None) -> int:
         report = projects.Project(args.project).clean(
             apply=args.apply,
             include_retained=args.include_retained,
+            include_cache=args.include_cache,
         )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -2913,8 +2919,16 @@ def main(argv: list[str] | None = None) -> int:
                 if report["applied"]
                 else report["candidate_display"]
             )
-            print(f"{action} {amount} from temporary solver workspaces")
-            print("Preserved output/ and campaigns/")
+            source = (
+                "temporary solver workspaces and mesh cache"
+                if report["include_cache"]
+                else "temporary solver workspaces"
+            )
+            print(f"{action} {amount} from {source}")
+            print(
+                "Preserved output/ and campaigns/"
+                + ("" if report["include_cache"] else "; mesh cache preserved")
+            )
             if report["protected_active_run_ids"]:
                 print(
                     "Protected active runs: "
@@ -2931,7 +2945,8 @@ def main(argv: list[str] | None = None) -> int:
                     + ", ".join(report["protected_retained_run_ids"])
                 )
             if not report["applied"] and report["candidate_bytes"]:
-                print("preview only; apply with: agentcfd clean . --apply")
+                suffix = " --include-cache" if report["include_cache"] else ""
+                print(f"preview only; apply with: agentcfd clean . --apply{suffix}")
         return 0
     if args.command == "view":
         status = projects.Project(args.project).status()

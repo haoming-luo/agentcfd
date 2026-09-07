@@ -4,7 +4,7 @@
   "title": "AgentCFD safe cleanup report 0.1",
   "type": "object",
   "required": [
-    "schema", "root", "applied", "include_retained", "scope", "targets", "preserved",
+    "schema", "root", "applied", "include_retained", "include_cache", "scope", "targets", "preserved",
     "candidate_bytes", "candidate_display", "candidate_file_count",
     "protected_active_run_ids", "protected_recovery_run_ids",
     "protected_retained_run_ids",
@@ -15,7 +15,8 @@
     "root": {"type": "string"},
     "applied": {"type": "boolean"},
     "include_retained": {"type": "boolean"},
-    "scope": {"const": "temporary-workspaces-only"},
+    "include_cache": {"type": "boolean"},
+    "scope": {"enum": ["temporary-workspaces-only", "temporary-workspaces-and-mesh-cache"]},
     "targets": {"type": "array", "items": {"type": "object"}},
     "preserved": {"type": "array", "items": {"type": "string"}},
     "protected_active_run_ids": {"type": "array", "items": {"type": "string"}},

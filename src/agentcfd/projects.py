@@ -2962,8 +2962,9 @@ class Project:
         *,
         apply: bool = False,
         include_retained: bool = False,
+        include_cache: bool = False,
     ) -> dict[str, object]:
-        """Preview or remove hidden temporary workspaces; preserve all results."""
+        """Preview or remove managed bulk; preserve all published results."""
 
         workspace_root = self.root / ".agentcfd" / "work"
         active_run_ids = self._active_run_ids()
@@ -2997,7 +2998,24 @@ class Project:
                 if not protected:
                     before += size
                     file_count += files
-        if apply and workspace_root.exists():
+        mesh_cache_root = self.root / ".agentcfd" / "mesh-cache"
+        if include_cache and mesh_cache_root.exists():
+            size, files = _tree_usage(mesh_cache_root)
+            targets.append(
+                {
+                    "path": str(mesh_cache_root),
+                    "category": "mesh-cache",
+                    "bytes": size,
+                    "display": _human_bytes(size),
+                    "file_count": files,
+                    "protected_active_run": False,
+                    "protected_recovery_checkpoint": False,
+                    "protected_retained_workspace": False,
+                }
+            )
+            before += size
+            file_count += files
+        if apply:
             for target in targets:
                 if target["protected_active_run"] or target[
                     "protected_recovery_checkpoint"
@@ -3025,12 +3043,21 @@ class Project:
             "root": str(self.root),
             "applied": apply,
             "include_retained": include_retained,
-            "scope": "temporary-workspaces-only",
+            "include_cache": include_cache,
+            "scope": (
+                "temporary-workspaces-and-mesh-cache"
+                if include_cache
+                else "temporary-workspaces-only"
+            ),
             "targets": targets,
             "preserved": [
                 str(self.run_root),
                 str(self.root / "campaigns"),
-                str(self.root / ".agentcfd" / "mesh-cache"),
+                *(
+                    []
+                    if include_cache
+                    else [str(self.root / ".agentcfd" / "mesh-cache")]
+                ),
             ],
             "protected_active_run_ids": sorted(active_run_ids),
             "protected_recovery_run_ids": sorted(recovery_run_ids),

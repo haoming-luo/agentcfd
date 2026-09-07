@@ -224,7 +224,9 @@ re-hashes all cached `polyMesh` files before reuse; a mismatch falls back to
 native meshing and replaces the invalid entry. `agentcfd storage` accounts for
 this persistent accelerator separately, while ordinary `agentcfd clean`
 preserves it. Each result and run marker says whether its mesh was `generated`
-or a verified `cache-hit`.
+or a verified `cache-hit`. Use `agentcfd clean . --include-cache` to preview the
+reclaimable cache, then add `--apply` only when trading future meshing time for
+disk space is intentional.
 
 STEP/IGES are recognized but not silently tessellated. A future CAD adapter
 must make tessellation tolerance, units, face-name retention, and source hash

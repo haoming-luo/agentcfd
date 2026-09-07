@@ -2055,6 +2055,15 @@ def test_storage_inventory_and_clean_preserve_results(tmp_path):
     assert (mesh_cache / "points").is_file()
     assert (project.run_root / "result.json").is_file()
 
+    cache_preview = project.clean(include_cache=True)
+    assert cache_preview["include_cache"] is True
+    assert cache_preview["candidate_bytes"] == len(b"reusable-mesh")
+    assert (mesh_cache / "points").is_file()
+    cache_cleanup = project.clean(apply=True, include_cache=True)
+    assert cache_cleanup["reclaimed_bytes"] == len(b"reusable-mesh")
+    assert not mesh_cache.exists()
+    assert (project.run_root / "result.json").is_file()
+
 
 def test_clean_protects_live_run_workspace(tmp_path):
     project = projects.init_project(tmp_path / "pipe")

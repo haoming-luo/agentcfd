@@ -1417,6 +1417,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
     )
+    check.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Preflight an OpenFOAM result with compact evidence and no field bundle.",
+    )
     check.add_argument("--json", action="store_true", dest="as_json")
 
     plan = subparsers.add_parser(
@@ -1436,6 +1441,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--param-file",
         type=Path,
         help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
+    )
+    plan.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Plan an OpenFOAM result with compact evidence and no field bundle.",
     )
     plan.add_argument("--output", type=Path)
     plan.add_argument("--json", action="store_true", dest="as_json")
@@ -2146,6 +2156,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
     )
     project_run.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Keep compact evidence but skip permanent XDMF/HDF5 fields.",
+    )
+    project_run.add_argument(
         "--campaign",
         action="store_true",
         help="Preserve this run under campaigns/<run-id> instead of replacing output/.",
@@ -2551,6 +2566,7 @@ def main(argv: list[str] | None = None) -> int:
             provider=args.provider,
             container_image=args.container_image,
             parameters=_project_parameters(args.param, args.param_file),
+            portable_fields=False if args.summary_only else None,
         )
         readiness = plan["readiness"]
         valid = readiness["model_valid"] and readiness["provider_compatible"]
@@ -2577,6 +2593,7 @@ def main(argv: list[str] | None = None) -> int:
             provider=args.provider,
             container_image=args.container_image,
             parameters=_project_parameters(args.param, args.param_file),
+            portable_fields=False if args.summary_only else None,
         )
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -3730,6 +3747,7 @@ def main(argv: list[str] | None = None) -> int:
             campaign=args.campaign,
             keep_workspace=args.keep_workspace,
             parameters=_project_parameters(args.param, args.param_file),
+            portable_fields=False if args.summary_only else None,
         )
         report = completed.to_dict()
         if args.as_json:

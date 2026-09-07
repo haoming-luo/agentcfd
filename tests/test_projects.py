@@ -888,6 +888,25 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
         < full_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
     )
     assert (
+        entrypoint(
+            ["plan", str(project.root), "--summary-only", "--json"]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out)["decisions"]["result_profile"] == (
+        "summary-only"
+    )
+    assert (
+        entrypoint(
+            ["run", str(project.root), "--summary-only", "--json"]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    single_marker = json.loads((project.root / "output" / "run.json").read_text())
+    assert single_marker["result_profile"] == "summary-only"
+    assert not (project.root / "output" / "fields.h5").exists()
+    assert (
         preview["points"][0]["result_execution_sha256"]
         != full_preview["points"][0]["result_execution_sha256"]
     )

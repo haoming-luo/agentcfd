@@ -12,6 +12,9 @@
 - Add `Project.parameter_set()` and `agentcfd params` to inspect or safely export
   a complete validated operating point from current factory defaults plus
   overrides; existing destination files are never replaced.
+- Expose the existing compact OpenFOAM result profile on ordinary `check`,
+  `plan`, and `run` commands through `--summary-only`, so a single screening run
+  can avoid permanent XDMF/HDF5 fields without requiring a campaign.
 - Tighten the project-status contract so every discovered factory parameter and
   its UI/agent metadata are structurally validated instead of exposed as an
   unconstrained object.

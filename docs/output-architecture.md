@@ -60,6 +60,13 @@ millisecond interval from creating ten thousand full-domain snapshots.
 `2 GiB`. The current policy fails closed when a conservative estimate exceeds
 the budget; AgentCFD never silently drops requested scientific data.
 
+For a single OpenFOAM screening run that needs engineering decisions but no
+spatial field review, use `agentcfd check . --summary-only`, then the same flag
+on `plan` and `run`. The result retains compact quantities, histories, checks,
+logs, and provenance while omitting the permanent XDMF/H5 bundle. This is an
+explicit result profile with its own execution identity, not an automatic
+deletion policy; rerun normally when full fields are needed.
+
 ## Planning before solving
 
 `agentcfd plan` resolves the requested field count and publishes:

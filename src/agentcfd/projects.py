@@ -5020,7 +5020,8 @@ timeout_seconds = 3600
         "one validated set of editable inputs without changing `case.py`. "
         "Failed transient runs expose identity-gated `agentcfd resume .` "
         "when a complete checkpoint exists. Ordinary runs replace the managed "
-        "`output/` directory. Use "
+        "`output/` directory. Add `--summary-only` for compact OpenFOAM evidence "
+        "without permanent fields. Use "
         "`agentcfd run . --campaign` to preserve an immutable run, "
         "`agentcfd storage .` to audit space, or `--keep-workspace` only for expert "
         "solver debugging.\n",

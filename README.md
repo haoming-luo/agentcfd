@@ -103,7 +103,8 @@ agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
-agentcfd run .
+agentcfd run .          # full portable fields for spatial review
+agentcfd run . --summary-only  # compact evidence, no permanent field bundle
 agentcfd watch .        # follow a long active run, then stop automatically
 agentcfd diagnose .     # classify bounded evidence and recommend one safe action
 agentcfd logs .         # raw bounded tail when deeper evidence is needed
@@ -149,6 +150,11 @@ numbers before the project factory or provider runs.
 `agentcfd params .` lists the complete resolved operating point with engineering
 units. Add `--param` and `--output operating-point.json` to freeze a validated
 snapshot without hand-writing JSON; an existing destination is never replaced.
+
+For one disposable screening point, add `--summary-only` consistently to
+`check`, `plan`, and `run`. OpenFOAM still solves and publishes quantities,
+histories, checks, logs, and provenance, but skips permanent XDMF/H5 fields.
+Use a normal run when spatial review or AgentFEM field exchange is required.
 
 For owned STL/OBJ internal-flow geometry, initialization can perform the
 inspection-to-project handoff without asking the user to author `case.py` from

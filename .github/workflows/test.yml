@@ -44,10 +44,14 @@ jobs:
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-model-study.schema.json').is_file(); assert contracts.path('openfoam-turbulent-model-sweep.schema.json').is_file(); assert contracts.path('turbulent-model-study.schema.json').is_file(); assert contracts.path('turbulent-model-sweep.schema.json').is_file()"
       - run: wheel-test/bin/agentcfd calculate compressibility --velocity 100 --speed-of-sound 400 --json
       - run: wheel-test/bin/agentcfd calculate wall-resolution --density 998.2 --viscosity 0.001002 --velocity 0.5 --diameter 0.1 --target-y-plus 40 --json
+      - run: wheel-test/bin/agentcfd calculate thermal-flow --density 998.2 --viscosity 0.001002 --specific-heat 4180 --thermal-conductivity 0.6 --velocity 0.01 --diameter 0.1 --flow-area 0.007853981633974483 --inlet-temperature 300 --heat-rate 62.83185307179586 --json
       - run: wheel-test/bin/agentcfd demo pipe --output pipe-result.json
       - run: wheel-test/bin/agentcfd init operating-point-project --template industrial-pipe
       - run: wheel-test/bin/agentcfd params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
       - run: wheel-test/bin/agentcfd plan operating-point-project --param-file operating-point.json --json
+      - run: wheel-test/bin/agentcfd init heated-pipe-project --template heated-pipe
+      - run: wheel-test/bin/agentcfd plan heated-pipe-project --summary-only --json
+      - run: wheel-test/bin/python -c "from agentcfd import projects; from agentcfd.providers import OpenFOAMProvider; p=projects.Project('heated-pipe-project'); c=OpenFOAMProvider().prepare(p.load_step(), 'heated-pipe-case'); assert (c.directory/'0/T').is_file(); assert c.capability == 'openfoam.steady-laminar-heated-circular-pipe'"
       - run: wheel-test/bin/agentcfd init imported-pressure --template imported-internal-flow --geometry examples/imported_duct_mesh/geometry/fluid.stl --unit m --roles examples/imported_duct_mesh/geometry/boundary-roles.json --interior-point-m 0.5 0.25 0.1 --inlet-total-gauge-pressure-pa 0.001 --base-size-m 0.05 --maximum-cells 200000
       - run: wheel-test/bin/python -c "from agentcfd import projects; p=projects.Project('imported-pressure'); assert p.load_step().model.boundary_conditions['inlet'].total_gauge_pressure == 0.001; assert len(p.parameter_contract()) == 12"
       - run: wheel-test/bin/agentcfd init imported-velocity --template imported-internal-flow --geometry examples/imported_duct_mesh/geometry/fluid.stl --unit m --roles examples/imported_duct_mesh/geometry/boundary-roles.json --interior-point-m 0.5 0.25 0.1 --inlet-velocity-m-s 0.5 0 0 --base-size-m 0.05 --maximum-cells 200000

@@ -9,6 +9,9 @@
 - Add a strict, versioned `agentcfd.parameter-set/0.1` operating-point file to
   `check`, `plan`, `mesh`, and project `run`. Explicit `--param` values override
   the file, while the readable `case.py` remains the only model definition.
+- Tighten the project-status contract so every discovered factory parameter and
+  its UI/agent metadata are structurally validated instead of exposed as an
+  unconstrained object.
 - Lower `boundaries.mass_flow_inlet(kg_per_s)` for steady laminar imported
   volumes through OpenFOAM `flowRateInletVelocity`. Constant density converts
   the request to volume flow, patch normals set direction, and recovered mass

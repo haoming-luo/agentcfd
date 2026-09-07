@@ -3,6 +3,54 @@
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-status.schema.json",
   "title": "AgentCFD project decision surface 0.1",
   "type": "object",
+  "$defs": {
+    "factoryParameter": {
+      "type": "object",
+      "required": [
+        "name", "required", "default", "default_type", "overrideable",
+        "selected", "current", "input_contract", "metadata"
+      ],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "required": {"type": "boolean"},
+        "default": {"type": ["string", "number", "integer", "boolean", "null"]},
+        "default_type": {"type": ["string", "null"]},
+        "overrideable": {"type": "boolean"},
+        "selected": {"type": "boolean"},
+        "current": {"type": ["string", "number", "integer", "boolean", "null"]},
+        "input_contract": {"enum": ["json-scalar", null]},
+        "metadata": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": [
+                "kind", "label", "description", "unit", "minimum",
+                "maximum", "exclusive_minimum", "choices", "nullable"
+              ],
+              "properties": {
+                "kind": {"enum": ["number", "integer", "choice"]},
+                "label": {"type": "string", "minLength": 1},
+                "description": {"type": "string", "minLength": 1},
+                "unit": {"type": ["string", "null"]},
+                "minimum": {"type": ["number", "null"]},
+                "maximum": {"type": ["number", "null"]},
+                "exclusive_minimum": {"type": "boolean"},
+                "choices": {
+                  "type": "array",
+                  "items": {"type": "string"},
+                  "uniqueItems": true
+                },
+                "nullable": {"type": "boolean"}
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "required": [
     "schema", "root", "state", "active", "inputs_changed", "model", "parameters",
     "readiness", "issues", "run_count", "latest_run", "progress",
@@ -17,7 +65,10 @@
     "active": {"type": "boolean"},
     "inputs_changed": {"type": "boolean"},
     "model": {"type": "object"},
-    "parameters": {"type": "array", "items": {"type": "object"}},
+    "parameters": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/factoryParameter"}
+    },
     "readiness": {"type": "object"},
     "issues": {"type": "array", "items": {"type": "object"}},
     "run_count": {"type": "integer", "minimum": 0},

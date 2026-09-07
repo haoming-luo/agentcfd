@@ -129,6 +129,8 @@ files stay hidden and reproducible.
 - discoverable `case.py` factory parameters with defaults, current selections,
   JSON-scalar override contracts, canonical units, bounds, choices, and human
   descriptions in both status and solution plans;
+- reusable, strict operating-point files shared by check, plan, mesh, and run,
+  with command-line trial overrides and no shadow model definition;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

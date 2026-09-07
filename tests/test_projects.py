@@ -1951,6 +1951,12 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     jsonschema.Draft202012Validator(
         contracts.load("project-status.schema.json")
     ).validate(ready)
+    invalid_parameter_contract = json.loads(json.dumps(ready))
+    invalid_parameter_contract["parameters"][0]["metadata"]["unit"] = 42
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.Draft202012Validator(
+            contracts.load("project-status.schema.json")
+        ).validate(invalid_parameter_contract)
     assert ready["state"] == "ready"
     assert ready["next_action"]["command"].startswith("agentcfd run ")
     assert ready["postprocess"]["primary"] is None

@@ -216,14 +216,17 @@ For pressure-driven laminar equipment, AgentCFD uses OpenFOAM's documented
 The velocity boundary derives flux-normal motion and tolerates local return
 flow. Results keep the requested total-to-static pressure difference separate
 from the recovered area-averaged static pressure drop, and always expose the
-recovered inlet mass flow:
+recovered inlet and outlet mass/volume flow. Acceptance also requires signed
+flux to agree with the confirmed inlet/outlet roles, so a reversed patch or
+boundary setup cannot pass merely because absolute flow rates balance:
 
 ```bash
 agentcfd run . --param inlet_total_gauge_pressure=250
 agentcfd result . \
   --quantity reference.flow.total_to_static_pressure_difference \
   --quantity flow.pressure_drop \
-  --quantity flow.inlet_mass_flow_rate
+  --quantity flow.inlet_mass_flow_rate \
+  --quantity flow.outlet_mass_flow_rate
 ```
 
 The OpenCFD v2606 pressure-driven workflow evidence used a deliberately small

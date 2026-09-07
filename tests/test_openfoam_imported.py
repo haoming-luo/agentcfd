@@ -664,6 +664,9 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
                 "agentcfd_inlet_pressure": 0.1,
                 "agentcfd_outlet_pressure": 0.0,
             }
+            if case.name == "case-direction-fail":
+                values["agentcfd_inlet_flow"] = 0.05
+                values["agentcfd_outlet_flow"] = -0.05
             for name, value in values.items():
                 folder = case / "postProcessing" / name / "0"
                 folder.mkdir(parents=True)
@@ -684,6 +687,8 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
     assert result.accepted is True
     assert result.quantity("flow.relative_mass_imbalance").value == 0.0
     assert result.quantity("flow.pressure_drop").value == pytest.approx(99.82)
+    assert result.quantity("flow.inlet_volume_flow_rate").value == pytest.approx(0.05)
+    assert result.quantity("flow.outlet_mass_flow_rate").value == pytest.approx(49.91)
     assert set(result.fields) == {"U", "p"}
     assert result.provenance["provider_capability"] == (
         "openfoam.steady-laminar-imported-surface"
@@ -758,6 +763,19 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
         "reference.flow.total_to_static_pressure_difference"
     ).value == pytest.approx(10.0)
     assert commands.count("simpleFoam") == 5
+
+    wrong_direction = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case-direction-fail",
+        mesh_cache_directory=tmp_path / "mesh-cache",
+    ).run(_step(payload))
+
+    assert wrong_direction.accepted is False
+    assert next(
+        check
+        for check in wrong_direction.checks
+        if check.name == "inlet-outlet-flow-direction"
+    ).passed is False
 
 
 def test_imported_flow_returns_failed_result_when_meshing_stops_early(

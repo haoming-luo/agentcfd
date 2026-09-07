@@ -1424,8 +1424,16 @@ class OpenFOAMImportedProvider:
         inlet_condition = step.model.boundary_conditions[inlet_name]
         outlet_condition = step.model.boundary_conditions[outlet_name]
         mass_flow_times = sorted(inlet_flow)
+        outlet_flow_times = sorted(outlet_flow)
+        inlet_volume_flow = tuple(abs(inlet_flow[t]) for t in mass_flow_times)
+        outlet_volume_flow = tuple(
+            abs(outlet_flow[t]) for t in outlet_flow_times
+        )
         inlet_mass_flow = tuple(
-            abs(inlet_flow[t]) * step.model.fluid.density for t in mass_flow_times
+            value * step.model.fluid.density for value in inlet_volume_flow
+        )
+        outlet_mass_flow = tuple(
+            value * step.model.fluid.density for value in outlet_volume_flow
         )
         requested_mass_flow = (
             inlet_condition.mass_flow_rate
@@ -1470,6 +1478,16 @@ class OpenFOAMImportedProvider:
         if inlet_mass_flow:
             quantities["flow.inlet_mass_flow_rate"] = Quantity(
                 inlet_mass_flow[-1], "kg/s"
+            )
+            quantities["flow.inlet_volume_flow_rate"] = Quantity(
+                inlet_volume_flow[-1], "m^3/s"
+            )
+        if outlet_mass_flow:
+            quantities["flow.outlet_mass_flow_rate"] = Quantity(
+                outlet_mass_flow[-1], "kg/s"
+            )
+            quantities["flow.outlet_volume_flow_rate"] = Quantity(
+                outlet_volume_flow[-1], "m^3/s"
             )
         if requested_mass_flow is not None:
             quantities["reference.flow.inlet_mass_flow_rate"] = Quantity(
@@ -1519,6 +1537,28 @@ class OpenFOAMImportedProvider:
                 tuple(mass_flow_times),
                 inlet_mass_flow,
                 unit="kg/s",
+                abscissa_name="solver_iteration",
+                abscissa_unit="1",
+            )
+            histories["flow.inlet_volume_flow_rate"] = History(
+                tuple(mass_flow_times),
+                inlet_volume_flow,
+                unit="m^3/s",
+                abscissa_name="solver_iteration",
+                abscissa_unit="1",
+            )
+        if outlet_mass_flow:
+            histories["flow.outlet_mass_flow_rate"] = History(
+                tuple(outlet_flow_times),
+                outlet_mass_flow,
+                unit="kg/s",
+                abscissa_name="solver_iteration",
+                abscissa_unit="1",
+            )
+            histories["flow.outlet_volume_flow_rate"] = History(
+                tuple(outlet_flow_times),
+                outlet_volume_flow,
+                unit="m^3/s",
                 abscissa_name="solver_iteration",
                 abscissa_unit="1",
             )
@@ -1689,6 +1729,10 @@ class OpenFOAMImportedProvider:
             self.descriptor().version,
         )
         mass_ok = bool(imbalance) and imbalance[-1] <= 1.0e-4
+        flow_direction_ok = bool(inlet_flow and outlet_flow) and (
+            inlet_flow[mass_flow_times[-1]] < 0.0
+            and outlet_flow[outlet_flow_times[-1]] > 0.0
+        )
         requested_mass_flow_ok = (
             mass_flow_relative_error is not None
             and mass_flow_relative_error <= 1.0e-4
@@ -1728,6 +1772,23 @@ class OpenFOAMImportedProvider:
                 value=imbalance[-1] if imbalance else None,
                 limit=1.0e-4,
                 observable="flow.mass_balance",
+            ),
+            Check(
+                "inlet-outlet-flow-direction",
+                flow_direction_ok,
+                value=(
+                    {
+                        "inlet_m3_s": inlet_flow[mass_flow_times[-1]],
+                        "outlet_m3_s": outlet_flow[outlet_flow_times[-1]],
+                    }
+                    if inlet_flow and outlet_flow
+                    else None
+                ),
+                limit="inlet flux into domain and outlet flux out of domain",
+                observable="flow.direction",
+                message=(
+                    "Signed patch flux must agree with confirmed inlet/outlet roles."
+                ),
             ),
             *(
                 (

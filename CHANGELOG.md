@@ -28,6 +28,9 @@
 - Enforce declared numeric, integer, nullable, bound, and choice constraints on
   explicit project overrides before executing the factory or starting any
   provider work; coupled model validation remains in the engineering APIs.
+- Publish signed-role-checked inlet/outlet volume and mass-flow histories for
+  every imported flow control mode. A numerically balanced result now still
+  fails acceptance when flux direction contradicts confirmed boundary roles.
 - Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
   view over the latest or selected run. It exposes quantities, failed checks,
   histories and field names without opening HDF5 or hashing external artifacts,

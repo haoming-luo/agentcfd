@@ -56,7 +56,9 @@ generated Python source of truth. The imported provider consumes the same
 point, scalar pressure-surface, and wall-force report objects as the channel
 provider, producing small solver-iteration histories rather than more
 full-field frames. Cartesian RANS inlets carry velocity, turbulence intensity,
-and length scale in one typed boundary object.
+and length scale in one typed boundary object. Laminar imported volumes also
+lower a typed SI mass-flow inlet into a patch-normal constant-density volume
+flow and verify the recovered target.
 
 ## Output and result ergonomics
 
@@ -123,6 +125,8 @@ solver's file syntax:
 - [OpenFOAM RANS turbulence models](https://doc.openfoam.com/2606/tools/processing/models/turbulence/)
   and [wall functions](https://doc.openfoam.com/2606/tools/processing/models/turbulence/ras/wall-functions/)
   for explicit k-omega SST and y-plus review requirements;
+- [OpenFOAM pressure-velocity boundary combinations](https://doc.openfoam.com/2606/tools/processing/boundary-conditions/common-combinations/)
+  for the volume-flow inlet and static-pressure outlet pairing;
 - [OpenFOAM surfaceFieldValue](https://doc.openfoam.com/2312/tools/post-processing/function-objects/field/surfaceFieldValue/)
   and [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
   for area, mass-flow, integral, uniformity, and probe-style reports;

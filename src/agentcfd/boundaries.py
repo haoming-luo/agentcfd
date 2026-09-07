@@ -335,6 +335,7 @@ def symmetry() -> Symmetry:
 Inlet = (
     MassFlowInlet
     | MeanVelocityInlet
+    | VelocityInlet
     | FullyDevelopedVelocityInlet
     | TurbulentMeanVelocityInlet
     | TurbulentVelocityInlet

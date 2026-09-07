@@ -827,7 +827,16 @@ def _flow_velocity_field(step: Step) -> str:
     inlet = conditions[inlet_name]
     assert isinstance(
         inlet,
-        (boundaries.VelocityInlet, boundaries.TurbulentVelocityInlet),
+        (
+            boundaries.MassFlowInlet,
+            boundaries.VelocityInlet,
+            boundaries.TurbulentVelocityInlet,
+        ),
+    )
+    initial_velocity = (
+        (0.0, 0.0, 0.0)
+        if isinstance(inlet, boundaries.MassFlowInlet)
+        else inlet.velocity
     )
     blocks: list[str] = []
     for name, role in domain.boundary_roles:
@@ -835,9 +844,25 @@ def _flow_velocity_field(step: Step) -> str:
         if role == "inlet":
             assert isinstance(
                 condition,
-                (boundaries.VelocityInlet, boundaries.TurbulentVelocityInlet),
+                (
+                    boundaries.MassFlowInlet,
+                    boundaries.VelocityInlet,
+                    boundaries.TurbulentVelocityInlet,
+                ),
             )
-            body = f"type fixedValue;\n        value uniform {_foam_point(condition.velocity)};"
+            if isinstance(condition, boundaries.MassFlowInlet):
+                volume_flow = condition.mass_flow_rate / step.model.fluid.density
+                body = (
+                    "type flowRateInletVelocity;\n        "
+                    f"volumetricFlowRate constant {_foam_scalar(volume_flow)};\n"
+                    "        extrapolateProfile false;\n        "
+                    "value uniform (0 0 0);"
+                )
+            else:
+                body = (
+                    "type fixedValue;\n        "
+                    f"value uniform {_foam_point(condition.velocity)};"
+                )
         elif role == "outlet":
             body = "type zeroGradient;"
         elif role == "wall" and isinstance(condition, boundaries.NoSlipWall):
@@ -852,7 +877,7 @@ def _flow_velocity_field(step: Step) -> str:
     return (
         _header(object_name="U", class_name="volVectorField", location="0")
         + f"""dimensions [0 1 -1 0 0 0 0];
-internalField uniform {_foam_point(inlet.velocity)};
+internalField uniform {_foam_point(initial_velocity)};
 boundaryField
 {{
 {chr(10).join(blocks)}
@@ -1133,21 +1158,22 @@ class OpenFOAMImportedProvider:
             )
         conditions = step.model.boundary_conditions
         expected_inlet = (
-            boundaries.VelocityInlet
+            (boundaries.VelocityInlet, boundaries.MassFlowInlet)
             if study.laminar
-            else boundaries.TurbulentVelocityInlet
+            else (boundaries.TurbulentVelocityInlet,)
         )
         if not isinstance(conditions[inlet_names[0]], expected_inlet):
             raise UnsupportedCaseError(
                 "Imported geometry requires "
                 + (
-                    "boundaries.velocity_inlet((ux, uy, uz))."
+                    "boundaries.velocity_inlet((ux, uy, uz)) or "
+                    "boundaries.mass_flow_inlet(kg_per_s)."
                     if study.laminar
                     else "boundaries.turbulent_velocity_inlet((ux, uy, uz), "
                     "intensity=..., length_scale=...)."
                 )
-                + " The direction is never guessed, and turbulence assumptions "
-                "must be explicit."
+                + " Cartesian direction is never guessed; mass flow follows the "
+                "inlet patch normal, and turbulence assumptions must be explicit."
             )
         if not isinstance(conditions[outlet_names[0]], boundaries.PressureOutlet):
             raise UnsupportedCaseError(
@@ -1348,6 +1374,24 @@ class OpenFOAMImportedProvider:
         )
         inlet_flow = _read_scalar_series(prepared.directory, "agentcfd_inlet_flow")
         outlet_flow = _read_scalar_series(prepared.directory, "agentcfd_outlet_flow")
+        inlet_name = next(
+            name for name, role in step.model.domain.boundary_roles if role == "inlet"
+        )
+        inlet_condition = step.model.boundary_conditions[inlet_name]
+        mass_flow_times = sorted(inlet_flow)
+        inlet_mass_flow = tuple(
+            abs(inlet_flow[t]) * step.model.fluid.density for t in mass_flow_times
+        )
+        requested_mass_flow = (
+            inlet_condition.mass_flow_rate
+            if isinstance(inlet_condition, boundaries.MassFlowInlet)
+            else None
+        )
+        mass_flow_relative_error = (
+            abs(inlet_mass_flow[-1] - requested_mass_flow) / requested_mass_flow
+            if inlet_mass_flow and requested_mass_flow is not None
+            else None
+        )
         shared = sorted(set(inlet_flow) & set(outlet_flow))
         imbalance = tuple(
             abs(inlet_flow[t] + outlet_flow[t])
@@ -1378,6 +1422,22 @@ class OpenFOAMImportedProvider:
             quantities["flow.relative_mass_imbalance"] = Quantity(imbalance[-1], "1")
         if pressure_drop:
             quantities["flow.pressure_drop"] = Quantity(pressure_drop[-1], "Pa")
+        if inlet_mass_flow and requested_mass_flow is not None:
+            quantities["flow.inlet_mass_flow_rate"] = Quantity(
+                inlet_mass_flow[-1], "kg/s"
+            )
+        if requested_mass_flow is not None:
+            quantities["reference.flow.inlet_mass_flow_rate"] = Quantity(
+                requested_mass_flow,
+                "kg/s",
+                kind="scientific_input",
+            )
+        if mass_flow_relative_error is not None:
+            quantities["flow.inlet_mass_flow_relative_error"] = Quantity(
+                mass_flow_relative_error,
+                "1",
+                kind="verification_metric",
+            )
         histories: dict[str, History] = {}
         if imbalance:
             histories["flow.relative_mass_imbalance"] = History(
@@ -1392,6 +1452,14 @@ class OpenFOAMImportedProvider:
                 tuple(pressure_times),
                 pressure_drop,
                 unit="Pa",
+                abscissa_name="solver_iteration",
+                abscissa_unit="1",
+            )
+        if inlet_mass_flow and requested_mass_flow is not None:
+            histories["flow.inlet_mass_flow_rate"] = History(
+                tuple(mass_flow_times),
+                inlet_mass_flow,
+                unit="kg/s",
                 abscissa_name="solver_iteration",
                 abscissa_unit="1",
             )
@@ -1562,6 +1630,10 @@ class OpenFOAMImportedProvider:
             self.descriptor().version,
         )
         mass_ok = bool(imbalance) and imbalance[-1] <= 1.0e-4
+        requested_mass_flow_ok = (
+            mass_flow_relative_error is not None
+            and mass_flow_relative_error <= 1.0e-4
+        )
         checks = (
             Check(
                 "openfoam-process",
@@ -1597,6 +1669,23 @@ class OpenFOAMImportedProvider:
                 value=imbalance[-1] if imbalance else None,
                 limit=1.0e-4,
                 observable="flow.mass_balance",
+            ),
+            *(
+                (
+                    Check(
+                        "mass-flow-inlet-target",
+                        requested_mass_flow_ok,
+                        value=mass_flow_relative_error,
+                        limit=1.0e-4,
+                        observable="flow.inlet_mass_flow_rate",
+                        message=(
+                            "The recovered inlet mass flow must match the explicit "
+                            "constant-density request."
+                        ),
+                    ),
+                )
+                if requested_mass_flow is not None
+                else ()
             ),
             Check(
                 "mesh-identity",

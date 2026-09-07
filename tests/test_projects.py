@@ -194,6 +194,14 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
     assert report["template"] == "imported-internal-flow"
     assert report["provider"] == "openfoam"
     assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
+    mass_flow_plan = projects.Project(root).plan(
+        parameters={"mass_flow_rate": 49.91}
+    )
+    assert mass_flow_plan["readiness"]["provider_compatible"] is True
+    assert mass_flow_plan["model"]["summary"]["boundaries"]["inlet"] == {
+        "type": "mass-flow-inlet",
+        "mass_flow_rate": 49.91,
+    }
     turbulent_parameters = {
         "turbulence_model": "k-omega-sst",
         "turbulence_intensity": 0.05,
@@ -210,6 +218,10 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         "turbulence_intensity": 0.05,
         "turbulence_length_scale": 0.025,
     }
+    with pytest.raises(ProjectError, match="RANS mass-flow inlet is not released"):
+        projects.Project(root).plan(
+            parameters={**turbulent_parameters, "mass_flow_rate": 49.91}
+        )
 
 
 def test_cli_can_explicitly_accept_unambiguous_name_roles(tmp_path, capsys):

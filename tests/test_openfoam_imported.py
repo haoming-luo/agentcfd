@@ -91,6 +91,21 @@ def _turbulent_step(payload: bytes):
     )
 
 
+def _mass_flow_step(payload: bytes):
+    base = _step(payload)
+    model = Model(
+        name="imported-mass-flow-duct",
+        study=studies.internal_flow(),
+        domain=base.model.domain,
+        fluid=base.model.fluid,
+    ).boundaries(
+        inlet=boundaries.mass_flow_inlet(49.91),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    )
+    return model.step(mesh=base.mesh, output=base.output)
+
+
 def _imported_project(root, payload):
     project = projects.init_project(root, provider="openfoam")
     asset = root / "geometry" / "fluid.stl"
@@ -436,6 +451,17 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid():
     ).validate(rans_record)
     assert rans_record["wall_y_plus"]["maximum"] <= 300.0
     assert rans_record["wall_y_plus"]["minimum"] >= 30.0
+    mass_flow_record = json.loads(
+        (
+            repository
+            / "docs"
+            / "openfoam-v2606-imported-duct-mass-flow.json"
+        ).read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-imported-flow-evidence.schema.json")
+    ).validate(mass_flow_record)
+    assert mass_flow_record["inlet_mass_flow"]["relative_error"] <= 1.0e-4
     project_plan = example.plan()
     assert project_plan["readiness"]["ready_to_run"] is True
     assert project_plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 200_000
@@ -635,6 +661,29 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
     assert commands.count("snappyHexMesh") == 4
     assert commands.count("checkMesh") == 2
     assert commands.count("simpleFoam") == 3
+
+    mass_flow_provider = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case-4",
+        mesh_cache_directory=tmp_path / "mesh-cache",
+    )
+    mass_flow = mass_flow_provider.run(_mass_flow_step(payload))
+    velocity_field = (tmp_path / "case-4/0/U").read_text()
+
+    assert mass_flow.accepted is True
+    assert mass_flow.provenance["mesh_acquisition"] == "cache-hit"
+    assert "type flowRateInletVelocity;" in velocity_field
+    assert "volumetricFlowRate constant 0.049999999999999996;" in velocity_field
+    assert mass_flow.quantity("flow.inlet_mass_flow_rate").value == pytest.approx(
+        49.91
+    )
+    assert mass_flow.quantity(
+        "flow.inlet_mass_flow_relative_error"
+    ).value == pytest.approx(0.0)
+    assert next(
+        check for check in mass_flow.checks if check.name == "mass-flow-inlet-target"
+    ).passed is True
+    assert commands.count("simpleFoam") == 4
 
 
 def test_imported_flow_returns_failed_result_when_meshing_stops_early(

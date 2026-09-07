@@ -37,6 +37,16 @@
       },
       "additionalProperties": false
     },
+    "inlet_mass_flow": {
+      "type": "object",
+      "required": ["requested_kg_s", "recovered_kg_s", "relative_error"],
+      "properties": {
+        "requested_kg_s": {"type": "number", "exclusiveMinimum": 0},
+        "recovered_kg_s": {"type": "number", "exclusiveMinimum": 0},
+        "relative_error": {"type": "number", "minimum": 0, "maximum": 0.0001}
+      },
+      "additionalProperties": false
+    },
     "turbulence": {
       "type": "object",
       "required": [

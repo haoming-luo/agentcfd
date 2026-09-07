@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Lower `boundaries.mass_flow_inlet(kg_per_s)` for steady laminar imported
+  volumes through OpenFOAM `flowRateInletVelocity`. Constant density converts
+  the request to volume flow, patch normals set direction, and recovered mass
+  flow must meet a relative target gate; imported RANS mass flow still fails
+  closed pending a turbulence-aware inlet contract.
 - Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
   view over the latest or selected run. It exposes quantities, failed checks,
   histories and field names without opening HDF5 or hashing external artifacts,

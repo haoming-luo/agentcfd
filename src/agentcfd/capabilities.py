@@ -112,13 +112,14 @@ _CAPABILITIES = (
             "point, pressure-surface, and wall-force reports."
         ),
         evidence=(
-            "explicit Cartesian velocity-inlet and pressure-outlet lowering tests",
+            "explicit Cartesian velocity or constant-density mass-flow inlet and pressure-outlet lowering tests",
+            "recovered mass-flow target error as a mandatory acceptance gate",
             "solver, SIMPLE convergence, mesh, conservation, runtime, and output gates",
             "accepted 6,400-cell OpenCFD v2606 duct run with verified XDMF/H5",
             "real compact-report recovery with no additional full-field frames",
         ),
         limitations=(
-            "Exactly one velocity inlet and one pressure outlet are currently supported.",
+            "Exactly one velocity or mass-flow inlet and one pressure outlet are currently supported.",
             "No turbulence, heat, compressibility, reactions, prism layers, or vector surface reductions yet.",
             "Acceptance is workflow/numerical evidence and does not claim physical validation.",
         ),

@@ -162,7 +162,11 @@ record is `docs/openfoam-v2606-imported-duct-mesh.json`.
 The same project now runs end to end with `agentcfd run .` for steady,
 incompressible, isothermal laminar or k-omega SST flow. Arbitrary laminar
 geometry uses `boundaries.velocity_inlet((ux, uy, uz))`; RANS uses the explicit
-form below. AgentCFD refuses to infer direction or turbulence assumptions from
+form below. Laminar cases can instead use
+`boundaries.mass_flow_inlet(kg_per_s)`: AgentCFD divides by the declared
+constant density, and OpenFOAM distributes the resulting volume flow normal to
+the inlet patch. The recovered mass-flow target error is a mandatory gate.
+AgentCFD refuses to infer a Cartesian direction or turbulence assumptions from
 a scalar:
 
 ```python
@@ -188,6 +192,17 @@ agentcfd run . \
   --param turbulence_intensity=0.05 \
   --param turbulence_length_scale=0.01
 ```
+
+For a laminar flow-rate-controlled operating point, leave turbulence absent and
+set only the SI mass flow:
+
+```bash
+agentcfd run . --param mass_flow_rate=0.25
+```
+
+Combining `mass_flow_rate` with imported RANS currently fails before meshing;
+that path needs a released turbulence-aware flow-rate inlet rather than an
+invented reference velocity.
 
 The RANS slice writes `k`, `omega`, and `nut`, and always computes compact
 minimum, maximum, and average wall y-plus histories. OpenFOAM's blended

@@ -4250,6 +4250,7 @@ def build(
     velocity_x={inlet_velocity_m_s[0]!r},
     velocity_y={inlet_velocity_m_s[1]!r},
     velocity_z={inlet_velocity_m_s[2]!r},
+    mass_flow_rate=None,
     density=998.2,
     dynamic_viscosity=1.002e-3,
     base_size={base_size_m!r},
@@ -4272,7 +4273,11 @@ def build(
                 "Turbulence intensity and length scale require a turbulence model."
             )
         study = studies.internal_flow()
-        inlet_condition = boundaries.velocity_inlet(velocity)
+        inlet_condition = (
+            boundaries.velocity_inlet(velocity)
+            if mass_flow_rate is None
+            else boundaries.mass_flow_inlet(mass_flow_rate)
+        )
         output_request = outputs.standard()
     else:
         if turbulence_model != "k-omega-sst":
@@ -4281,6 +4286,11 @@ def build(
             raise ValueError(
                 "Imported RANS requires explicit turbulence_intensity and "
                 "turbulence_length_scale."
+            )
+        if mass_flow_rate is not None:
+            raise ValueError(
+                "Imported RANS mass-flow inlet is not released; use an explicit "
+                "velocity vector."
             )
         study = studies.internal_flow(
             turbulence=turbulence_model,

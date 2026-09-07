@@ -1,0 +1,40 @@
+{
+  "accepted": true,
+  "analysis_sha256": "e9e5259ca04ef927e9066d241ea5566a9fdbd5774b1458aa370f16d8f097ee17",
+  "case": "generated imported_duct_mesh project with mass_flow_rate=49.91 kg/s",
+  "claim": "workflow-and-numerical-gates-not-physical-validation",
+  "distribution": {
+    "artifact": "wheel",
+    "io_extra_installed": true,
+    "version": "0.1.0a3"
+  },
+  "flow": {
+    "pressure_drop_pa": 1.17882601918186,
+    "relative_mass_imbalance": 5.399999891686491e-10
+  },
+  "inlet_mass_flow": {
+    "recovered_kg_s": 49.910000000000004,
+    "relative_error": 1.4236480379885798e-16,
+    "requested_kg_s": 49.91
+  },
+  "mesh": {
+    "cells": 6400,
+    "maximum_aspect_ratio": 1.382976019,
+    "maximum_non_orthogonality_deg": 15.74214263,
+    "maximum_skewness": 0.1040891993,
+    "source_sha256": "95c46972dfb7d9c00b1fcd44bdd9b5a9b594a1fe2d6b01ce5ae94d4dcadfd0bb"
+  },
+  "model_sha256": "671bc7efa25a345abaf0f5193d4ca4f02db82af3e1ff45496e1b433f18d8f4e5",
+  "portable_fields": {
+    "bytes": 194817,
+    "formats": ["xdmf", "hdf5"],
+    "frames": 1,
+    "points": 7749,
+    "verified": true
+  },
+  "runtime": "OpenCFD v2606",
+  "schema": "agentcfd.openfoam-imported-flow-evidence/0.1",
+  "solver_iterations": 336,
+  "source_sha256": "sha256:010c8a05cc5d0c16910ea12ef87add15cc81362790a31599411e596aff31c537",
+  "workspace_bytes_after_publish": 0
+}

@@ -95,7 +95,9 @@
           "end": {"$ref": "#/$defs/vector3"},
           "samples": {"type": "integer", "minimum": 2}
           ,
-          "component": {"enum": [null, "x", "y", "z", "magnitude"]}
+          "component": {
+            "enum": [null, "x", "y", "z", "magnitude", "normal", "tangential"]
+          }
         },
         "allOf": [
           {
@@ -117,6 +119,66 @@
             "then": {"required": ["start", "end", "samples", "component"]}
           }
         ],
+        "additionalProperties": false
+      }
+    },
+    "layouts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type", "name", "views", "columns", "rows", "export", "script",
+          "state_after_launch", "render_outputs_after_launch",
+          "data_outputs_after_launch", "shares_field_payload"
+        ],
+        "properties": {
+          "type": {"const": "render-layout"},
+          "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+          "views": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+            "minItems": 2,
+            "maxItems": 9,
+            "uniqueItems": true
+          },
+          "columns": {"type": "integer", "minimum": 1, "maximum": 4},
+          "rows": {"type": "integer", "minimum": 1, "maximum": 9},
+          "export": {
+            "oneOf": [
+              {"type": "null"},
+              {
+                "type": "object",
+                "required": [
+                  "size", "screenshot", "animation", "frame_rate",
+                  "transparent_background"
+                ],
+                "properties": {
+                  "size": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 64},
+                    "minItems": 2,
+                    "maxItems": 2
+                  },
+                  "screenshot": {"type": "boolean"},
+                  "animation": {"enum": [null, "png-sequence", "mp4"]},
+                  "frame_rate": {"type": "integer", "minimum": 1},
+                  "transparent_background": {"type": "boolean"}
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "script": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\.py$"},
+          "state_after_launch": {"type": "string", "pattern": "\\.pvsm$"},
+          "render_outputs_after_launch": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "data_outputs_after_launch": {"type": "array", "maxItems": 0},
+          "shares_field_payload": {"const": "../fields/fields.xdmf"}
+        },
         "additionalProperties": false
       }
     }

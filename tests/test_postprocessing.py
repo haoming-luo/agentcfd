@@ -41,6 +41,7 @@ def _recipes():
             field="fluid.vorticity",
             origin=(0.6, 0.1, 0.05),
             normal=(0.0, 0.0, 2.0),
+            component="normal",
             camera=outputs.camera(
                 position=(0.6, 0.1, 2.0),
                 focal_point=(0.6, 0.1, 0.05),
@@ -73,11 +74,23 @@ def _recipes():
     )
 
 
+def _layouts():
+    return (
+        outputs.render_layout(
+            "wake-overview",
+            views=("midplane-vorticity", "wake-streamlines"),
+            columns=2,
+            export=outputs.render(size=(1280, 720)),
+        ),
+    )
+
+
 def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity(tmp_path):
-    request = outputs.animation(every=0.1, views=_recipes())
+    request = outputs.animation(every=0.1, views=_recipes(), layouts=_layouts())
     record = request.to_dict()
 
     assert record["views"][0]["normal"] == [0.0, 0.0, 1.0]
+    assert record["views"][0]["component"] == "normal"
     assert record["views"][0]["camera"]["parallel_scale"] == 0.6
     assert record["views"][0]["export"]["size"] == [960, 540]
     assert record["views"][1]["values"] == [100.0, 500.0]
@@ -85,6 +98,11 @@ def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity(tmp_pat
     assert record["views"][3]["samples"] == 121
     assert record["views"][3]["component"] is None
     assert record["views"][3]["camera"] is None
+    assert record["layouts"][0]["views"] == [
+        "midplane-vorticity",
+        "wake-streamlines",
+    ]
+    assert record["layouts"][0]["rows"] == 1
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -99,6 +117,27 @@ def test_view_recipes_are_typed_normalized_and_part_of_analysis_identity(tmp_pat
             histories=(),
             views=(_recipes()[0],),
         )
+    with pytest.raises(ValueError, match="references unknown views"):
+        outputs.animation(
+            every=0.1,
+            views=_recipes(),
+            layouts=(
+                outputs.render_layout(
+                    "bad-layout", views=("midplane-vorticity", "missing")
+                ),
+            ),
+        )
+    with pytest.raises(ValueError, match="line profiles remain compact"):
+        outputs.animation(
+            every=0.1,
+            views=_recipes(),
+            layouts=(
+                outputs.render_layout(
+                    "bad-layout",
+                    views=("midplane-vorticity", "centerline-pressure"),
+                ),
+            ),
+        )
 
 
 def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
@@ -108,7 +147,7 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
     (fields / "fields.xdmf").write_text("<Xdmf/>")
 
     manifest_path, scripts = postprocessing.publish_paraview_recipes(
-        run, _recipes(), _field_manifest()
+        run, _recipes(), _field_manifest(), _layouts()
     )
     manifest = json.loads(manifest_path.read_text())
 
@@ -116,12 +155,14 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
         contracts.load("postprocess-recipes.schema.json")
     ).validate(manifest)
     assert manifest["payload_copies"] == 0
-    assert len(scripts) == 4
+    assert len(scripts) == 5
     for script in scripts:
         compile(script.read_text(), str(script), "exec")
         assert "fields.xdmf" in script.read_text()
         assert str(tmp_path) not in script.read_text()
     assert "Slice(" in scripts[0].read_text()
+    assert "PythonCalculator(" in scripts[0].read_text()
+    assert "inputs[0].PointData" in scripts[0].read_text()
     assert "CameraParallelProjection = 1" in scripts[0].read_text()
     assert "SaveScreenshot" in scripts[0].read_text()
     assert "SaveAnimation" in scripts[0].read_text()
@@ -139,6 +180,20 @@ def test_paraview_recipes_share_one_portable_payload_and_validate(tmp_path):
     assert manifest["recipes"][3]["data_outputs_after_launch"] == [
         "centerline-pressure.csv"
     ]
+    layout = manifest["layouts"][0]
+    assert layout["views"] == ["midplane-vorticity", "wake-streamlines"]
+    assert layout["columns"] == 2
+    assert layout["rows"] == 1
+    assert layout["render_outputs_after_launch"] == [
+        "wake-overview.pvsm",
+        "wake-overview.png",
+    ]
+    layout_script = scripts[4].read_text()
+    assert "CreateLayout(" in layout_script
+    assert "layout.AssignView" in layout_script
+    assert "SplitViewHorizontal" in layout_script
+    assert layout_script.count("XDMFReader(") == 1
+    assert "SaveScreenshot" in layout_script
 
 
 def test_view_presentation_rejects_ambiguous_or_empty_render_intent():
@@ -242,6 +297,34 @@ def test_recipe_field_shape_and_visualization_association_fail_early(tmp_path):
             (_recipes()[2],),
             native_only,
         )
+    _manifest, tangential_scripts = postprocessing.publish_paraview_recipes(
+        tmp_path / "tangential-slice",
+        (
+            outputs.slice_view(
+                "tangential-velocity",
+                field="fluid.velocity",
+                origin=(0.5, 0.1, 0.05),
+                normal=(1.0, 0.0, 0.0),
+                component="tangential",
+            ),
+        ),
+        _field_manifest(),
+    )
+    assert "sqrt(abs(mag(" in tangential_scripts[0].read_text()
+    with pytest.raises(ValueError, match="from scalar field"):
+        postprocessing.publish_paraview_recipes(
+            tmp_path / "scalar-slice-component",
+            (
+                outputs.slice_view(
+                    "bad-pressure-component",
+                    field="fluid.pressure",
+                    origin=(0.5, 0.1, 0.05),
+                    normal=(1.0, 0.0, 0.0),
+                    component="normal",
+                ),
+            ),
+            _field_manifest(),
+        )
 
 
 def test_view_cli_selects_and_launches_named_recipe(tmp_path, monkeypatch, capsys):
@@ -269,7 +352,10 @@ def test_view_cli_selects_and_launches_named_recipe(tmp_path, monkeypatch, capsy
         )
     )
     postprocessing.publish_paraview_recipes(
-        project.run_root, project.load_step().output.views, _field_manifest()
+        project.run_root,
+        project.load_step().output.views,
+        _field_manifest(),
+        project.load_step().output.layouts,
     )
     (project.run_root / "result.json").write_text("{}")
     (project.run_root / "run.json").write_text(
@@ -321,8 +407,15 @@ def test_view_cli_selects_and_launches_named_recipe(tmp_path, monkeypatch, capsy
 
     def run_batch(command, **_kwargs):
         recipe_directory = Path(command[1]).parent
-        (recipe_directory / "centerline-pressure.csv").write_text("pressure,distance\n")
-        (recipe_directory / "centerline-pressure.pvsm").write_text("state")
+        stem = Path(command[1]).stem
+        if stem == "centerline-pressure":
+            (recipe_directory / "centerline-pressure.csv").write_text(
+                "pressure,distance\n"
+            )
+            (recipe_directory / "centerline-pressure.pvsm").write_text("state")
+        else:
+            (recipe_directory / "wake-overview.png").write_text("image")
+            (recipe_directory / "wake-overview.pvsm").write_text("state")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("agentcfd.cli._paraview_batch_executable", lambda: "/pvbatch")
@@ -350,4 +443,27 @@ def test_view_cli_selects_and_launches_named_recipe(tmp_path, monkeypatch, capsy
     assert [Path(path).name for path in batch["produced"]] == [
         "centerline-pressure.pvsm",
         "centerline-pressure.csv",
+    ]
+
+    assert (
+        entrypoint(
+            [
+                "view",
+                str(project.root),
+                "--layout",
+                "wake-overview",
+                "--batch",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    overview = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("project-view.schema.json")
+    ).validate(overview)
+    assert overview["summary"]["type"] == "render-layout"
+    assert [Path(path).name for path in overview["produced"]] == [
+        "wake-overview.pvsm",
+        "wake-overview.png",
     ]

@@ -1795,9 +1795,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Locate the latest result and optionally launch ParaView for XDMF fields.",
     )
     view.add_argument("project", nargs="?", type=Path, default=Path("."))
-    view.add_argument(
+    view_selection = view.add_mutually_exclusive_group()
+    view_selection.add_argument(
         "--recipe",
         help="Select a named reproducible visual or line-profile recipe.",
+    )
+    view_selection.add_argument(
+        "--layout",
+        help="Select a named multi-view engineering overview.",
     )
     view_action = view.add_mutually_exclusive_group()
     view_action.add_argument("--launch", action="store_true")
@@ -3353,6 +3358,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "view":
         status = projects.Project(args.project).status()
         selected_recipe = None
+        selected_layout = None
         if args.recipe is not None:
             selected_recipe = next(
                 (
@@ -3371,9 +3377,28 @@ def main(argv: list[str] | None = None) -> int:
                     + (available or "none; declare output views in case.py and rerun")
                     + "."
                 )
+        elif args.layout is not None:
+            selected_layout = next(
+                (
+                    layout
+                    for layout in status["postprocess"]["layouts"]
+                    if layout.get("name") == args.layout
+                ),
+                None,
+            )
+            if selected_layout is None:
+                available = ", ".join(
+                    layout["name"] for layout in status["postprocess"]["layouts"]
+                )
+                raise ProjectError(
+                    f"Unknown post-processing layout {args.layout!r}. Available: "
+                    + (available or "none; declare output layouts in case.py and rerun")
+                    + "."
+                )
+        selected_item = selected_recipe or selected_layout
         target = (
-            selected_recipe["script"]
-            if selected_recipe is not None
+            selected_item["script"]
+            if selected_item is not None
             else status["postprocess"]["primary"]
         )
         if target is None:
@@ -3404,9 +3429,10 @@ def main(argv: list[str] | None = None) -> int:
                     "The latest result has no XDMF field bundle; inspect result.json instead."
                 )
         if args.batch:
-            if selected_recipe is None or not str(target).endswith(".py"):
+            if selected_item is None or not str(target).endswith(".py"):
                 raise ProjectError(
-                    "Batch post-processing requires `--recipe NAME` for a published recipe."
+                    "Batch post-processing requires `--recipe NAME` or `--layout NAME` "
+                    "for a published post-processing script."
                 )
             viewer = _paraview_batch_executable()
             if viewer is None:
@@ -3429,8 +3455,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             batch_completed = True
             expected = [
-                *selected_recipe.get("render_outputs_after_launch", []),
-                *selected_recipe.get("data_outputs_after_launch", []),
+                *selected_item.get("render_outputs_after_launch", []),
+                *selected_item.get("data_outputs_after_launch", []),
             ]
             recipe_directory = Path(str(target)).parent
             produced = [
@@ -3450,8 +3476,8 @@ def main(argv: list[str] | None = None) -> int:
                 else "result-json"
             ),
             "summary": (
-                selected_recipe
-                if selected_recipe is not None
+                selected_item
+                if selected_item is not None
                 else status["postprocess"]["field_summary"]
             ),
             "launched": launched,
@@ -3477,10 +3503,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if report["kind"] == "paraview-script":
                 summary = report["summary"]
-                print(
-                    f"recipe: {summary['name']} | {summary['type']} | "
-                    f"field {summary['field']}"
-                )
+                if summary["type"] == "render-layout":
+                    print(
+                        f"layout: {summary['name']} | {summary['columns']}x"
+                        f"{summary['rows']} | views " + ", ".join(summary["views"])
+                    )
+                else:
+                    print(
+                        f"recipe: {summary['name']} | {summary['type']} | "
+                        f"field {summary['field']}"
+                    )
                 print("shares fields/fields.h5; no volume data was duplicated")
             elif report["summary"] is not None:
                 summary = report["summary"]
@@ -3503,11 +3535,19 @@ def main(argv: list[str] | None = None) -> int:
                         "recipes: "
                         + ", ".join(recipe["name"] for recipe in recipes)
                     )
+                layouts = status["postprocess"]["layouts"]
+                if layouts:
+                    print(
+                        "layouts: "
+                        + ", ".join(layout["name"] for layout in layouts)
+                    )
             if not launched and report["kind"] in {"xdmf", "paraview-script"}:
-                recipe_option = (
+                selection_option = (
                     f" --recipe {args.recipe}" if args.recipe is not None else ""
                 )
-                print(f"launch with: agentcfd view .{recipe_option} --launch")
+                if args.layout is not None:
+                    selection_option = f" --layout {args.layout}"
+                print(f"launch with: agentcfd view .{selection_option} --launch")
         return 0
     if args.command == "capabilities":
         report = capabilities.as_dict()

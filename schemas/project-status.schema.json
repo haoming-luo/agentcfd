@@ -209,14 +209,18 @@
     },
     "postprocess": {
       "type": "object",
-      "required": ["primary", "fields", "result", "command", "field_summary", "recipes"],
+      "required": [
+        "primary", "fields", "result", "command", "field_summary", "recipes",
+        "layouts"
+      ],
       "properties": {
         "primary": {"type": ["string", "null"]},
         "fields": {"type": ["string", "null"]},
         "result": {"type": ["string", "null"]},
         "command": {"type": ["string", "null"]},
         "field_summary": {"type": ["object", "null"]},
-        "recipes": {"type": "array", "items": {"type": "object"}}
+        "recipes": {"type": "array", "items": {"type": "object"}},
+        "layouts": {"type": "array", "items": {"type": "object"}}
       },
       "additionalProperties": false
     },

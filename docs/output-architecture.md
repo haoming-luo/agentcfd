@@ -126,6 +126,8 @@ Implemented now:
 - chunked HDF5 compression and storage provenance;
 - binary OpenFOAM native output for generated cases;
 - selected-time and selected-field conversion before temporary VTK creation;
+- multi-view ParaView overview scripts and derived slice-vector projections
+  that continue to reference one portable XDMF/H5 field payload;
 - project storage inventory plus preview-first cleanup that protects active
   runs, sole recovery checkpoints, and explicitly retained expert workspaces;
 - a 50-sample, field-free runtime history used to calibrate `status`/`watch`

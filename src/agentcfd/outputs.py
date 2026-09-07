@@ -286,6 +286,7 @@ class SliceView:
     field: str
     origin: tuple[float, float, float]
     normal: tuple[float, float, float]
+    component: str | None = None
     camera: ViewCamera | None = None
     export: ViewExport | None = None
 
@@ -301,6 +302,19 @@ class SliceView:
         if magnitude == 0.0:
             raise ValueError("Slice normal cannot be the zero vector.")
         object.__setattr__(self, "normal", tuple(value / magnitude for value in normal))
+        if self.component not in {
+            None,
+            "x",
+            "y",
+            "z",
+            "magnitude",
+            "normal",
+            "tangential",
+        }:
+            raise ValueError(
+                "Slice component must be None, x, y, z, magnitude, normal, or "
+                "tangential."
+            )
         _validate_view_presentation(self.camera, self.export)
 
     def to_dict(self) -> dict[str, object]:
@@ -310,6 +324,7 @@ class SliceView:
             "field": self.field,
             "origin": list(self.origin),
             "normal": list(self.normal),
+            "component": self.component,
             "camera": None if self.camera is None else self.camera.to_dict(),
             "export": None if self.export is None else self.export.to_dict(),
         }
@@ -450,6 +465,47 @@ class LineProfile:
 
 
 ViewRecipe = SliceView | ContourView | StreamlineView | LineProfile
+
+
+@dataclass(frozen=True, slots=True)
+class RenderLayout:
+    """Arrange named render recipes into one reproducible engineering overview."""
+
+    name: str
+    views: tuple[str, ...]
+    columns: int = 2
+    export: ViewExport | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "name", _view_name(self.name))
+        selected = _canonical_names(tuple(self.views), label="Layout views")
+        if not 2 <= len(selected) <= 9:
+            raise ValueError("Render layouts require between 2 and 9 named views.")
+        object.__setattr__(self, "views", selected)
+        columns = integer_at_least(
+            self.columns, name="Render layout columns", minimum=1
+        )
+        if columns > min(4, len(selected)):
+            raise ValueError(
+                "Render layout columns cannot exceed four or the number of views."
+            )
+        object.__setattr__(self, "columns", columns)
+        if self.export is not None and not isinstance(self.export, ViewExport):
+            raise TypeError("Render layout export must be an AgentCFD ViewExport.")
+
+    @property
+    def rows(self) -> int:
+        return math.ceil(len(self.views) / self.columns)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "render-layout",
+            "name": self.name,
+            "views": list(self.views),
+            "columns": self.columns,
+            "rows": self.rows,
+            "export": None if self.export is None else self.export.to_dict(),
+        }
 
 
 def _validate_view_presentation(
@@ -599,6 +655,7 @@ class OutputRequest:
     storage: StoragePolicy = field(default_factory=StoragePolicy)
     reports: tuple[Report, ...] = ()
     views: tuple[ViewRecipe, ...] = ()
+    layouts: tuple[RenderLayout, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("fields", "histories"):
@@ -658,6 +715,31 @@ class OutputRequest:
                 + "."
             )
         object.__setattr__(self, "views", selected_views)
+        selected_layouts = tuple(self.layouts)
+        if any(not isinstance(item, RenderLayout) for item in selected_layouts):
+            raise TypeError("Output layouts must be AgentCFD render layouts.")
+        if len({item.name for item in selected_layouts}) != len(selected_layouts):
+            raise ValueError("Output layout names must be unique.")
+        if {item.name for item in selected_layouts} & {
+            item.name for item in selected_views
+        }:
+            raise ValueError("Output layout and view names must not collide.")
+        view_index = {item.name: item for item in selected_views}
+        for layout in selected_layouts:
+            missing = sorted(set(layout.views) - set(view_index))
+            if missing:
+                raise ValueError(
+                    f"Render layout {layout.name!r} references unknown views: "
+                    + ", ".join(missing)
+                    + "."
+                )
+            profiles = [view_index[name] for name in layout.views]
+            if any(isinstance(item, LineProfile) for item in profiles):
+                raise ValueError(
+                    f"Render layout {layout.name!r} accepts slice, contour, and "
+                    "streamline views; line profiles remain compact chart outputs."
+                )
+        object.__setattr__(self, "layouts", selected_layouts)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -670,6 +752,7 @@ class OutputRequest:
             "storage": self.storage.to_dict(),
             "reports": [item.to_dict() for item in self.reports],
             "views": [item.to_dict() for item in self.views],
+            "layouts": [item.to_dict() for item in self.layouts],
         }
 
 
@@ -723,6 +806,7 @@ def slice_view(
     field: str,
     origin: tuple[float, float, float],
     normal: tuple[float, float, float],
+    component: str | None = None,
     camera: ViewCamera | None = None,
     export: ViewExport | None = None,
 ) -> SliceView:
@@ -731,6 +815,7 @@ def slice_view(
         field=field,
         origin=origin,
         normal=normal,
+        component=component,
         camera=camera,
         export=export,
     )
@@ -827,6 +912,23 @@ def render(
     )
 
 
+def render_layout(
+    name: str,
+    *,
+    views: tuple[str, ...],
+    columns: int = 2,
+    export: ViewExport | None = None,
+) -> RenderLayout:
+    """Compose existing render recipes without another field payload."""
+
+    return RenderLayout(
+        name=name,
+        views=views,
+        columns=columns,
+        export=export,
+    )
+
+
 def checkpoints(
     *,
     every: float,
@@ -854,6 +956,7 @@ def standard(
     storage_policy: StoragePolicy | None = None,
     reports: tuple[Report, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
+    layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
     """Keep the final full field plus compact histories."""
 
@@ -867,6 +970,7 @@ def standard(
         storage=storage_policy or storage(),
         reports=reports,
         views=views,
+        layouts=layouts,
     )
 
 
@@ -887,6 +991,7 @@ def animation(
     portable_formats: tuple[str, ...] = ("xdmf",),
     reports: tuple[Report, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
+    layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
     """Request physical-time animation without equating frames to solver steps."""
 
@@ -905,6 +1010,7 @@ def animation(
         storage=storage(storage_budget, compression=compression),
         reports=reports,
         views=views,
+        layouts=layouts,
     )
 
 
@@ -915,6 +1021,7 @@ def turbulent_internal_flow(
     portable_formats: tuple[str, ...] = ("xdmf",),
     reports: tuple[Report, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
+    layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
     """Request the minimum auditable field set for two-equation RANS flow."""
 
@@ -948,6 +1055,7 @@ def turbulent_internal_flow(
         checkpoints=Checkpoints(coordinate="solver-iteration"),
         reports=reports,
         views=views,
+        layouts=layouts,
     )
 
 
@@ -959,6 +1067,7 @@ def thermal_internal_flow(
     storage_policy: StoragePolicy | None = None,
     reports: tuple[Report, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
+    layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
     """Request flow plus absolute temperature for an energy study."""
 
@@ -969,6 +1078,7 @@ def thermal_internal_flow(
             storage_policy=storage_policy,
             reports=reports,
             views=views,
+            layouts=layouts,
         )
         if turbulence_model is None
         else turbulent_internal_flow(
@@ -977,6 +1087,7 @@ def thermal_internal_flow(
             portable_formats=portable_formats,
             reports=reports,
             views=views,
+            layouts=layouts,
         )
     )
     return OutputRequest(
@@ -989,6 +1100,7 @@ def thermal_internal_flow(
         storage=storage_policy or base.storage,
         reports=base.reports,
         views=base.views,
+        layouts=base.layouts,
     )
 
 
@@ -1000,6 +1112,7 @@ __all__ = [
     "LineProfile",
     "OutputRequest",
     "PointProbe",
+    "RenderLayout",
     "Report",
     "StoragePolicy",
     "StreamlineView",
@@ -1016,6 +1129,7 @@ __all__ = [
     "parse_storage_size",
     "probe",
     "render",
+    "render_layout",
     "slice_view",
     "standard",
     "storage",

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add `outputs.render_layout()` and `agentcfd view --layout` for reproducible
+  multi-panel ParaView overviews that read one XDMF/H5 payload. Slice recipes
+  can now select explicit Cartesian, magnitude, plane-normal, or tangential
+  vector components; the generated normal/tangential arrays remain transient
+  post-processing filters rather than duplicated volume fields.
 - Add bounded per-project runtime history and `Project.performance()` /
   `agentcfd performance`. Completed runs contribute at most 50 field-free
   samples; active `status` and `watch` prefer comparable-run ETA calibration,

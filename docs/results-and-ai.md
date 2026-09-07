@@ -94,13 +94,15 @@ mesh quality, verification, runtime, and other results. This presentation layer
 does not rename or nest canonical quantities in the machine response; unit `1`
 is shown as `[-]` so a dimensionless value is not mistaken for a missing unit.
 
-`output.views` carries named, typed post-processing intent in the same analysis
-fingerprint. After field publication, `output/postprocess/manifest.json` maps
-canonical fields to their exported point/cell arrays and portable ParaView
-scripts. An agent can list `status.postprocess.recipes`, select one by name, and
-call `agentcfd view . --recipe NAME --batch` for headless CSV/image/state
-generation or use `--launch` for an interactive GUI. It never needs to
-synthesize a ParaView trace or duplicate the HDF5 payload.
+`output.views` and `output.layouts` carry named, typed post-processing intent in
+the same analysis fingerprint. After field publication,
+`output/postprocess/manifest.json` maps canonical fields to their exported
+point/cell arrays, portable ParaView scripts, and shared-data multi-view
+layouts. An agent can list `status.postprocess.recipes` or `.layouts`, select
+one by name, and call `agentcfd view . --recipe NAME --batch` or
+`agentcfd view . --layout NAME --batch` for headless CSV/image/state generation;
+`--launch` remains the interactive GUI path. It never needs to synthesize a
+ParaView trace or duplicate the HDF5 payload.
 
 Campaign runs copy their compact scalar quantity map into `run.json`.
 `agentcfd campaigns . --json` can therefore compare accepted design points,

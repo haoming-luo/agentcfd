@@ -169,7 +169,10 @@ generated ParaView script for an interactive visual pipeline; no derived copy
 of the volume fields is stored. For agents, CI, and remote machines,
 `agentcfd view . --recipe NAME --batch` runs the same text recipe through
 `pvbatch`, waits for completion, and reports the output paths it actually found.
-It never starts the desktop GUI. See
+It never starts the desktop GUI. Several named render recipes can be composed
+with `outputs.render_layout()` and selected through
+`agentcfd view . --layout NAME --launch|--batch`; the layout opens the portable
+field source once and reports its generated PNG/PVSM without copying HDF5. See
 [post-processing recipes](postprocessing-recipes.md).
 
 The CLI, `Project.discover()`, and public `open_project()` resolve the nearest

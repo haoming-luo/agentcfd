@@ -63,8 +63,11 @@ python -m pytest -q
     `energy.status=not-measured` without executor telemetry.
 17. Keep camera/render recipes explicit. Prefer one screenshot for routine
     evidence and request PNG sequences or MP4 only when animation is a stated
-    deliverable; rendered images are derived products, never a replacement for
-    the shared XDMF/HDF5 field bundle.
+    deliverable. Prefer a declared `render_layout` over launching and arranging
+    the same named views manually; normal/tangential slice projection is
+    post-processing intent and must not create another field bundle. Rendered
+    images are derived products, never a replacement for the shared XDMF/HDF5
+    field bundle.
 18. Vary project design points only through declared `case.py` factory keyword
     arguments and repeatable `--param NAME=JSON_SCALAR`. Run `plan` with the
     same parameters first, retain them in provenance, and reject misspelled or

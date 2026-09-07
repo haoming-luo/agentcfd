@@ -14,6 +14,7 @@ output=outputs.animation(
             field="fluid.vorticity",
             origin=(0.6, 0.1, 0.05),
             normal=(0.0, 0.0, 1.0),
+            component="normal",
             camera=outputs.camera(
                 position=(0.6, 0.1, 2.0),
                 focal_point=(0.6, 0.1, 0.05),
@@ -45,6 +46,14 @@ output=outputs.animation(
             samples=121,
         ),
     ),
+    layouts=(
+        outputs.render_layout(
+            "wake-overview",
+            views=("midplane-vorticity", "wake-streamlines"),
+            columns=2,
+            export=outputs.render(size=(1280, 720)),
+        ),
+    ),
 )
 ```
 
@@ -69,6 +78,7 @@ output/
     ├── manifest.json
     ├── centerline-pressure.py
     ├── midplane-vorticity.py
+    ├── wake-overview.py
     └── wake-streamlines.py
 ```
 
@@ -82,6 +92,7 @@ ParaView creates after launch.
 agentcfd view . --recipe midplane-vorticity
 agentcfd view . --recipe midplane-vorticity --launch
 agentcfd view . --recipe centerline-pressure --batch
+agentcfd view . --layout wake-overview --batch
 ```
 
 The second command starts ParaView with its documented `--script` option. The
@@ -94,6 +105,23 @@ remove interactivity.
 exit status, and returns the output files that exist. This is the
 non-interactive path for AI agents and CI. `--launch` remains the interactive
 desktop path; the two modes are deliberately mutually exclusive.
+
+## Engineering overviews and vector meaning
+
+`outputs.render_layout()` references existing named render recipes and arranges
+two to nine of them in a bounded grid. The generated script opens
+`fields.xdmf` once, creates one filter pipeline per panel, shares the time axis,
+and saves one editable state plus an optional screenshot or animation. It does
+not copy HDF5, and it rejects unknown views or compact line-profile charts
+before publication. A layout is part of analysis identity, so changing its
+panels or shape makes an existing result visibly stale.
+
+Vector coloring on a slice can be declared as `x`, `y`, `z`, `magnitude`,
+`normal`, or `tangential`. `normal` preserves sign along the declared plane
+normal—for a 2-D wake midplane this exposes clockwise versus counter-clockwise
+vorticity. `tangential` is the magnitude after removing that normal component.
+AgentCFD generates these arrays as ParaView Calculator filters at viewing time;
+they are not added to the durable field bundle.
 
 A line profile samples the final published frame along its physical line and
 writes `name.csv` when the recipe is launched. The CSV writer is restricted to
@@ -129,6 +157,12 @@ AgentCFD XDMF/HDF5 result. It produced the requested 640×360 PNG and editable
 PVSM without another volume-field copy. Optional OpenVKL device warnings from
 that macOS build did not change the successful render exit status.
 
+The two-panel layout path was executed against the real 200-frame baffled-
+channel result. A 960×360 overview combined signed normal vorticity and
+velocity-colored streamlines from one 104 MiB HDF5 payload, producing only a
+28 KiB PNG and an editable state. ParaView emitted no layout, reader, filter,
+projection, or render errors.
+
 The line-profile batch path was also executed against that result. A 41-sample
 request produced 42 CSV rows including the header, exactly two columns
 (`distance_m` and `fluid.pressure`), and an editable PVSM. Disabling CSV
@@ -151,7 +185,7 @@ This design follows ParaView's official filter and automation model:
 - `.pvsm` preserves the visualization pipeline and can be reopened or remapped
   to data under another directory:
   <https://docs.paraview.org/en/latest/UsersGuide/savingResults.html>.
-
-Multi-view layouts belong in the same text-only layer and should be added
-without creating a second field bundle or coupling the public API to an
-OpenFOAM case directory.
+- ParaView's layout API places multiple render views in one tab, and the
+  Calculator model provides component, magnitude, and dot-product operations:
+  <https://docs.paraview.org/en/latest/UsersGuide/displayingData.html#multiple-views>
+  and <https://docs.paraview.org/en/latest/UsersGuide/filteringData.html#calculator>.

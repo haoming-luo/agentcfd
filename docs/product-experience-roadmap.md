@@ -90,6 +90,8 @@ files stay hidden and reproducible.
   recovery and comparable cell-update work without fabricated energy claims;
 - declarative plane slices, scalar contours, and line-seeded streamlines that
   generate portable ParaView scripts without copying field payloads;
+- shared-payload multi-view engineering layouts plus explicit Cartesian,
+  magnitude, plane-normal, and tangential vector coloring for slice recipes;
 - explicit camera plus screenshot/PNG-sequence/MP4 render intent, disabled by
   default and recorded as expected outputs without duplicating field payloads;
 - scalar and explicit vector-component/magnitude plot-over-line recipes with
@@ -143,8 +145,6 @@ files stay hidden and reproducible.
    RANS only after grid and physical evidence.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
-3. Extend the shipped filter recipes with multi-view layout and explicit normal
-   or tangential vector projection intent while preserving one field payload.
 
 ### Then: scale without scaling attention
 

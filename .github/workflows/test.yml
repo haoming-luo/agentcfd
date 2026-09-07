@@ -54,6 +54,8 @@ jobs:
       - run: wheel-test/bin/agentcfd verify project operating-point-project --json
       - run: wheel-test/bin/agentcfd params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
       - run: wheel-test/bin/agentcfd plan operating-point-project --param-file operating-point.json --json
+      - run: wheel-test/bin/agentcfd init overview-project --template baffle-channel --provider openfoam
+      - run: wheel-test/bin/python -c "from agentcfd import open_project; o=open_project('overview-project').load_step().output; assert o.views[0].component == 'normal'; assert o.layouts[0].name == 'wake-overview'"
       - run: wheel-test/bin/agentcfd init heated-pipe-project --template heated-pipe
       - run: wheel-test/bin/agentcfd plan heated-pipe-project --summary-only --json
       - run: wheel-test/bin/python -c "from agentcfd import projects; from agentcfd.providers import OpenFOAMProvider; p=projects.Project('heated-pipe-project'); c=OpenFOAMProvider().prepare(p.load_step(), 'heated-pipe-case'); assert (c.directory/'0/T').is_file(); assert c.capability == 'openfoam.steady-laminar-heated-circular-pipe'"

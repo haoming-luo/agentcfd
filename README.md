@@ -47,10 +47,10 @@ amplification per trusted result.
 solver-neutral heat-flow intent, the bounded passive-temperature OpenFOAM slice,
 and the evidence gates required before advancing to real-fluid steam.
 [Post-processing recipes](docs/postprocessing-recipes.md) turn named slices,
-contours, and streamlines into portable ParaView scripts without copying the
-XDMF/HDF5 field payload. Optional typed camera and render intent can reproduce
-a screenshot, PNG animation sequence, or MP4; nothing is rendered unless the
-project explicitly asks for it.
+contours, streamlines, and multi-panel engineering overviews into portable
+ParaView scripts without copying the XDMF/HDF5 field payload. Optional typed
+camera and render intent can reproduce a screenshot, PNG animation sequence,
+or MP4; nothing is rendered unless the project explicitly asks for it.
 
 ## First executable workflow
 
@@ -118,6 +118,7 @@ agentcfd logs .         # raw bounded tail when deeper evidence is needed
 agentcfd resume .       # continue an identical interrupted transient checkpoint
 agentcfd view .         # prints the latest XDMF or result target
 agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
+agentcfd view . --layout wake-overview --batch  # one shared-data dashboard
 agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 ```
 

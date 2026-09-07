@@ -1075,6 +1075,7 @@ def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
             (
                 "Reusable ParaView recipes are in `postprocess/`; launch one with "
                 "`agentcfd view . --recipe NAME --launch`.",
+                "Multi-view overviews use `agentcfd view . --layout NAME --launch`.",
                 "These scripts share `fields/fields.h5` and do not duplicate volume data.",
                 "",
             )
@@ -1319,6 +1320,14 @@ def _resolved_output_plan(
                 "definitions": [item.to_dict() for item in step.output.views],
                 "retention": (
                     "scripts and state only; shared portable fields"
+                    if export_fields
+                    else "not published in summary-only result profile"
+                ),
+            },
+            "layouts": {
+                "definitions": [item.to_dict() for item in step.output.layouts],
+                "retention": (
+                    "scripts and optional renders only; shared portable fields"
                     if export_fields
                     else "not published in summary-only result profile"
                 ),
@@ -3952,6 +3961,7 @@ class Project:
                 None if fields_path is None else _field_bundle_summary(fields_path)
             ),
             "recipes": [],
+            "layouts": [],
         }
         if run_directory is not None:
             recipe_manifest = postprocessing.read_recipe_manifest(run_directory)
@@ -3966,6 +3976,18 @@ class Project:
                     for recipe in recipe_manifest["recipes"]
                     if isinstance(recipe, dict)
                     and isinstance(recipe.get("script"), str)
+                ]
+            if isinstance(recipe_manifest, dict) and isinstance(
+                recipe_manifest.get("layouts"), list
+            ):
+                postprocess["layouts"] = [
+                    {
+                        **layout,
+                        "script": str(run_directory / "postprocess" / layout["script"]),
+                    }
+                    for layout in recipe_manifest["layouts"]
+                    if isinstance(layout, dict)
+                    and isinstance(layout.get("script"), str)
                 ]
         progress = _run_progress_snapshot(
             self.root,
@@ -5015,6 +5037,7 @@ class Project:
                         run_directory,
                         step.output.views,
                         manifest,
+                        step.output.layouts,
                     )
                 )
                 result.artifacts["postprocess.manifest"] = Artifact.from_path(
@@ -5452,6 +5475,7 @@ def build(*, mean_velocity=0.5, baffle_height=0.12):
                     field="fluid.vorticity",
                     origin=(0.6, 0.1, 0.05),
                     normal=(0.0, 0.0, 1.0),
+                    component="normal",
                 ),
                 outputs.streamline_view(
                     "wake-streamlines",
@@ -5465,6 +5489,14 @@ def build(*, mean_velocity=0.5, baffle_height=0.12):
                     start=(0.05, 0.10, 0.05),
                     end=(1.15, 0.10, 0.05),
                     samples=121,
+                ),
+            ),
+            layouts=(
+                outputs.render_layout(
+                    "wake-overview",
+                    views=("midplane-vorticity", "wake-streamlines"),
+                    columns=2,
+                    export=outputs.render(size=(1280, 720)),
                 ),
             ),
         ),

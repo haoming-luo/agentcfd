@@ -6,7 +6,14 @@ import json
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from .outputs import ContourView, LineProfile, SliceView, StreamlineView, ViewRecipe
+from .outputs import (
+    ContourView,
+    LineProfile,
+    RenderLayout,
+    SliceView,
+    StreamlineView,
+    ViewRecipe,
+)
 
 
 def _python_value(value: object) -> str:
@@ -28,21 +35,65 @@ def _field_index(manifest: Mapping[str, object]) -> dict[str, dict[str, object]]
     return result
 
 
-def _color_command(record: Mapping[str, object]) -> str:
+def _color_command(
+    record: Mapping[str, object],
+    *,
+    display: str = "display",
+    component: str | None = None,
+) -> str:
     association = "POINTS" if record.get("association") == "point" else "CELLS"
     name = str(record["export_name"])
     components = record.get("components")
-    selection: tuple[str, ...] = (
-        (association, name, "Magnitude")
-        if isinstance(components, list) and len(components) > 1
-        else (association, name)
+    if isinstance(components, list) and len(components) > 1:
+        selected = (
+            "Magnitude" if component in {None, "magnitude"} else component.upper()
+        )
+        selection: tuple[str, ...] = (association, name, selected)
+    else:
+        selection = (association, name)
+    return f"ColorBy({display}, {_python_value(selection)})"
+
+
+def _slice_projection_lines(
+    recipe: SliceView,
+    record: Mapping[str, object],
+    *,
+    input_name: str,
+    output_name: str,
+) -> tuple[list[str], str, Mapping[str, object]]:
+    """Create an explicit normal/tangential scalar without changing the payload."""
+
+    if recipe.component not in {"normal", "tangential"}:
+        return [], input_name, record
+    source_name = str(record["export_name"])
+    vector = f"inputs[0].PointData[{source_name!r}]"
+    normal = list(recipe.normal)
+    projected = " + ".join(
+        f"{vector}[:, {index}] * {value!r}" for index, value in enumerate(normal)
     )
-    return f"ColorBy(display, {_python_value(selection)})"
+    if recipe.component == "normal":
+        expression = projected
+    else:
+        expression = f"sqrt(abs(mag({vector}) ** 2 - ({projected}) ** 2))"
+    result_name = f"{recipe.field}.{recipe.component}"
+    lines = [
+        f"{output_name} = PythonCalculator(registrationName={result_name!r}, Input={input_name})",
+        f"{output_name}.ArrayAssociation = 'Point Data'",
+        f"{output_name}.ArrayName = {result_name!r}",
+        f"{output_name}.Expression = {expression!r}",
+    ]
+    return (
+        lines,
+        output_name,
+        {
+            "association": "point",
+            "export_name": result_name,
+            "components": [],
+        },
+    )
 
 
-def _line_profile_script(
-    recipe: LineProfile, record: Mapping[str, object]
-) -> str:
+def _line_profile_script(recipe: LineProfile, record: Mapping[str, object]) -> str:
     """Create a final-frame chart and selected-column CSV without field copies."""
 
     field_name = str(record["export_name"])
@@ -160,6 +211,16 @@ def _recipe_script(recipe: ViewRecipe, record: Mapping[str, object]) -> str:
         ]
     else:  # pragma: no cover - closed public union and OutputRequest validation
         raise TypeError(f"Unsupported post-processing recipe {type(recipe).__name__}.")
+    projection_lines: list[str] = []
+    display_input = "filtered"
+    color_record = record
+    if isinstance(recipe, SliceView):
+        projection_lines, display_input, color_record = _slice_projection_lines(
+            recipe,
+            record,
+            input_name="filtered",
+            output_name="projected",
+        )
     camera = recipe.camera
     camera_lines = (
         ["view.ResetCamera()"]
@@ -200,23 +261,206 @@ def _recipe_script(recipe: ViewRecipe, record: Mapping[str, object]) -> str:
                 f"FrameRate={export.frame_rate})"
             )
     finish = [
-        "display = Show(filtered, view)",
-        _color_command(record),
+        f"display = Show({display_input}, view)",
+        _color_command(
+            color_record,
+            component=(
+                recipe.component
+                if isinstance(recipe, SliceView)
+                and recipe.component not in {"normal", "tangential"}
+                else None
+            ),
+        ),
         "display.SetScalarBarVisibility(view, True)",
         "Hide(source, view)",
+        *(["Hide(filtered, view)"] if display_input != "filtered" else []),
         *camera_lines,
         "Render()",
         *export_lines,
         f"SaveState(str(recipe_dir / {recipe.name + '.pvsm'!r}))",
         "",
     ]
-    return "\n".join([*common, *filter_lines, *finish])
+    return "\n".join([*common, *filter_lines, *projection_lines, *finish])
+
+
+def _layout_recipe_lines(
+    recipe: SliceView | ContourView | StreamlineView,
+    record: Mapping[str, object],
+    *,
+    index: int,
+) -> list[str]:
+    """Build one render pipeline inside a shared ParaView layout."""
+
+    view = f"views[{index}]"
+    filtered = f"filtered_{index}"
+    association = "POINTS" if record.get("association") == "point" else "CELLS"
+    field_name = str(record["export_name"])
+    lines: list[str] = []
+    if isinstance(recipe, SliceView):
+        lines.extend(
+            [
+                f"{filtered} = Slice(registrationName={recipe.name!r}, Input=source)",
+                f'{filtered}.SliceType = "Plane"',
+                f"{filtered}.SliceType.Origin = {_python_value(list(recipe.origin))}",
+                f"{filtered}.SliceType.Normal = {_python_value(list(recipe.normal))}",
+            ]
+        )
+    elif isinstance(recipe, ContourView):
+        lines.extend(
+            [
+                f"{filtered} = Contour(registrationName={recipe.name!r}, Input=source)",
+                f"{filtered}.ContourBy = {_python_value([association, field_name])}",
+                f"{filtered}.Isosurfaces = {_python_value(list(recipe.values))}",
+            ]
+        )
+    else:
+        directions = {"forward": "FORWARD", "backward": "BACKWARD", "both": "BOTH"}
+        lines.extend(
+            [
+                f"{filtered} = StreamTracer(registrationName={recipe.name!r}, Input=source, SeedType='Line')",
+                f"{filtered}.Vectors = {_python_value([association, field_name])}",
+                f"{filtered}.SeedType.Point1 = {_python_value(list(recipe.seed_start))}",
+                f"{filtered}.SeedType.Point2 = {_python_value(list(recipe.seed_end))}",
+                f"{filtered}.SeedType.Resolution = {recipe.seeds - 1}",
+                f"{filtered}.IntegrationDirection = {directions[recipe.direction]!r}",
+            ]
+        )
+    shown = filtered
+    color_record = record
+    if isinstance(recipe, SliceView):
+        projection, shown, color_record = _slice_projection_lines(
+            recipe,
+            record,
+            input_name=filtered,
+            output_name=f"projected_{index}",
+        )
+        lines.extend(projection)
+    display = f"display_{index}"
+    lines.extend(
+        [
+            f"{display} = Show({shown}, {view})",
+            _color_command(
+                color_record,
+                display=display,
+                component=(
+                    recipe.component
+                    if isinstance(recipe, SliceView)
+                    and recipe.component not in {"normal", "tangential"}
+                    else None
+                ),
+            ),
+            f"{display}.SetScalarBarVisibility({view}, True)",
+            f"color_map_{index} = GetColorTransferFunction({str(color_record['export_name'])!r})",
+            f"color_bar_{index} = GetScalarBar(color_map_{index}, {view})",
+            f"color_bar_{index}.Orientation = 'Horizontal'",
+            f"color_bar_{index}.WindowLocation = 'Upper Center'",
+            f"color_bar_{index}.ScalarBarLength = 0.35",
+            f"color_bar_{index}.ScalarBarThickness = 10",
+            f"color_bar_{index}.TitleFontSize = 10",
+            f"color_bar_{index}.LabelFontSize = 9",
+            f"Hide(source, {view})",
+        ]
+    )
+    if shown != filtered:
+        lines.append(f"Hide({filtered}, {view})")
+    camera = recipe.camera
+    if camera is None:
+        lines.append(f"{view}.ResetCamera()")
+    else:
+        lines.extend(
+            [
+                f"{view}.CameraPosition = {_python_value(list(camera.position))}",
+                f"{view}.CameraFocalPoint = {_python_value(list(camera.focal_point))}",
+                f"{view}.CameraViewUp = {_python_value(list(camera.view_up))}",
+            ]
+        )
+        if camera.parallel_scale is not None:
+            lines.extend(
+                [
+                    f"{view}.CameraParallelProjection = 1",
+                    f"{view}.CameraParallelScale = {camera.parallel_scale!r}",
+                ]
+            )
+    return lines
+
+
+def _layout_script(
+    layout: RenderLayout,
+    recipes: Sequence[
+        tuple[SliceView | ContourView | StreamlineView, Mapping[str, object]]
+    ],
+) -> str:
+    common = [
+        '"""Generated AgentCFD multi-view layout; rerun the project to regenerate."""',
+        "from pathlib import Path",
+        "from paraview.simple import *",
+        "",
+        "recipe_dir = Path(__file__).resolve().parent",
+        'fields_path = recipe_dir.parent / "fields" / "fields.xdmf"',
+        f"source = XDMFReader(registrationName={layout.name!r}, FileNames=[str(fields_path)])",
+        "source.UpdatePipeline()",
+        "animation = GetAnimationScene()",
+        "animation.UpdateAnimationUsingDataTimeSteps()",
+        f"layout = CreateLayout(name={layout.name!r})",
+        f"rows = {layout.rows}",
+        f"columns = {layout.columns}",
+        f"views = [CreateView('RenderView') for _ in range({len(recipes)})]",
+        "layout.AssignView(0, views[0])",
+        "for row_index in range(1, rows):",
+        "    index = row_index * columns",
+        "    location = layout.SplitViewVertical(view=views[(row_index - 1) * columns], fraction=1.0 / (rows - row_index + 1))",
+        "    layout.AssignView(location + 1, views[index])",
+        "for row_index in range(rows):",
+        "    start = row_index * columns",
+        "    row_count = min(columns, len(views) - start)",
+        "    for column_index in range(1, row_count):",
+        "        index = start + column_index",
+        "        location = layout.SplitViewHorizontal(view=views[index - 1], fraction=1.0 / (row_count - column_index + 1))",
+        "        layout.AssignView(location + 1, views[index])",
+        "",
+    ]
+    pipelines: list[str] = []
+    for index, (recipe, record) in enumerate(recipes):
+        pipelines.extend(
+            [
+                *_layout_recipe_lines(recipe, record, index=index),
+                "",
+            ]
+        )
+    export_lines: list[str] = ["RenderAllViews()"]
+    export = layout.export
+    if export is not None:
+        if export.screenshot:
+            export_lines.append(
+                f"SaveScreenshot(str(recipe_dir / {layout.name + '.png'!r}), layout, "
+                f"ImageResolution={_python_value(list(export.size))}, "
+                f"TransparentBackground={int(export.transparent_background)})"
+            )
+        if export.animation is not None:
+            animation_name = (
+                f"{layout.name}.%04d.png"
+                if export.animation == "png-sequence"
+                else f"{layout.name}.mp4"
+            )
+            export_lines.append(
+                f"SaveAnimation(str(recipe_dir / {animation_name!r}), layout, "
+                f"ImageResolution={_python_value(list(export.size))}, "
+                f"FrameRate={export.frame_rate})"
+            )
+    export_lines.extend(
+        [
+            f"SaveState(str(recipe_dir / {layout.name + '.pvsm'!r}))",
+            "",
+        ]
+    )
+    return "\n".join([*common, *pipelines, *export_lines])
 
 
 def publish_paraview_recipes(
     run_directory: str | Path,
     recipes: Sequence[ViewRecipe],
     field_manifest: Mapping[str, object],
+    layouts: Sequence[RenderLayout] = (),
 ) -> tuple[Path, tuple[Path, ...]]:
     """Write tiny editable scripts; never duplicate the XDMF/HDF5 field payload."""
 
@@ -240,6 +484,24 @@ def publish_paraview_recipes(
         components = field_record.get("components")
         component_names = components if isinstance(components, list) else []
         component_count = len(component_names)
+        if (
+            isinstance(recipe, SliceView)
+            and recipe.component is not None
+            and component_count <= 1
+        ):
+            raise ValueError(
+                f"Slice recipe {recipe.name!r} cannot select component "
+                f"{recipe.component!r} from scalar field {recipe.field!r}."
+            )
+        if (
+            isinstance(recipe, SliceView)
+            and recipe.component in {"x", "y", "z"}
+            and recipe.component not in component_names
+        ):
+            raise ValueError(
+                f"Slice recipe {recipe.name!r} component {recipe.component!r} "
+                f"is absent from field {recipe.field!r}."
+            )
         if isinstance(recipe, ContourView) and component_count > 1:
             raise ValueError(
                 f"Contour recipe {recipe.name!r} requires a scalar field; "
@@ -280,6 +542,35 @@ def publish_paraview_recipes(
             )
         resolved.append((recipe, field_record))
 
+    resolved_by_name = {recipe.name: (recipe, record) for recipe, record in resolved}
+    resolved_layouts: list[
+        tuple[
+            RenderLayout,
+            list[tuple[SliceView | ContourView | StreamlineView, Mapping[str, object]]],
+        ]
+    ] = []
+    for layout in layouts:
+        if not isinstance(layout, RenderLayout):
+            raise TypeError("Post-processing layouts must be AgentCFD render layouts.")
+        selected: list[
+            tuple[SliceView | ContourView | StreamlineView, Mapping[str, object]]
+        ] = []
+        for name in layout.views:
+            try:
+                recipe, record = resolved_by_name[name]
+            except KeyError as error:
+                raise ValueError(
+                    f"Render layout {layout.name!r} references unpublished view "
+                    f"{name!r}."
+                ) from error
+            if isinstance(recipe, LineProfile):
+                raise ValueError(
+                    f"Render layout {layout.name!r} cannot contain line profile "
+                    f"{name!r}."
+                )
+            selected.append((recipe, record))
+        resolved_layouts.append((layout, selected))
+
     directory.mkdir(parents=True, exist_ok=True)
     records = []
     scripts = []
@@ -296,9 +587,7 @@ def publish_paraview_recipes(
                 render_outputs.append(f"{recipe.name}.%04d.png")
             elif export.animation == "mp4":
                 render_outputs.append(f"{recipe.name}.mp4")
-        data_outputs = (
-            [f"{recipe.name}.csv"] if isinstance(recipe, LineProfile) else []
-        )
+        data_outputs = [f"{recipe.name}.csv"] if isinstance(recipe, LineProfile) else []
         records.append(
             {
                 **recipe.to_dict(),
@@ -311,6 +600,29 @@ def publish_paraview_recipes(
                 "shares_field_payload": "../fields/fields.xdmf",
             }
         )
+    layout_records = []
+    for layout, selected in resolved_layouts:
+        script = directory / f"{layout.name}.py"
+        script.write_text(_layout_script(layout, selected), encoding="utf-8")
+        scripts.append(script)
+        render_outputs = [f"{layout.name}.pvsm"]
+        if layout.export is not None:
+            if layout.export.screenshot:
+                render_outputs.append(f"{layout.name}.png")
+            if layout.export.animation == "png-sequence":
+                render_outputs.append(f"{layout.name}.%04d.png")
+            elif layout.export.animation == "mp4":
+                render_outputs.append(f"{layout.name}.mp4")
+        layout_records.append(
+            {
+                **layout.to_dict(),
+                "script": script.name,
+                "state_after_launch": f"{layout.name}.pvsm",
+                "render_outputs_after_launch": render_outputs,
+                "data_outputs_after_launch": [],
+                "shares_field_payload": "../fields/fields.xdmf",
+            }
+        )
     manifest_path = directory / "manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -319,6 +631,7 @@ def publish_paraview_recipes(
                 "source": "../fields/fields.xdmf",
                 "payload_copies": 0,
                 "recipes": records,
+                "layouts": layout_records,
             },
             indent=2,
             sort_keys=True,

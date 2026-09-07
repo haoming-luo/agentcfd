@@ -107,6 +107,9 @@
                   "field": {"type": "string", "minLength": 1},
                   "origin": {"$ref": "#/$defs/vector3"},
                   "normal": {"$ref": "#/$defs/vector3"},
+                  "component": {
+                    "enum": [null, "x", "y", "z", "magnitude", "normal", "tangential"]
+                  },
                   "camera": {"$ref": "#/$defs/viewCamera"},
                   "export": {"$ref": "#/$defs/viewExport"}
                 },
@@ -169,6 +172,28 @@
                 "additionalProperties": false
               }
             ]
+          }
+        },
+        "layouts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "name", "views", "columns", "rows", "export"],
+            "properties": {
+              "type": {"const": "render-layout"},
+              "name": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+              "views": {
+                "type": "array",
+                "items": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"},
+                "minItems": 2,
+                "maxItems": 9,
+                "uniqueItems": true
+              },
+              "columns": {"type": "integer", "minimum": 1, "maximum": 4},
+              "rows": {"type": "integer", "minimum": 1, "maximum": 9},
+              "export": {"$ref": "#/$defs/viewExport"}
+            },
+            "additionalProperties": false
           }
         }
       },

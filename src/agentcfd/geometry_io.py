@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Iterable, Iterator, Mapping
 
 
+_Triangle = tuple[tuple[float, float, float], ...]
+_TaggedTriangle = tuple[str | None, _Triangle]
+
+
 _UNIT_SCALE_TO_M = {
     "m": 1.0,
     "mm": 1.0e-3,
@@ -144,7 +148,7 @@ def _binary_stl(path: Path) -> tuple[bool, int | None]:
 
 def _binary_stl_triangles(
     path: Path, count: int
-) -> Iterator[tuple[tuple[float, float, float], ...]]:
+) -> Iterator[_TaggedTriangle]:
     with path.open("rb") as stream:
         stream.seek(84)
         for _ in range(count):
@@ -153,9 +157,12 @@ def _binary_stl_triangles(
                 raise GeometryInspectionError("Binary STL ended before its declared face count.")
             values = struct.unpack("<12fH", record)
             yield (
-                (float(values[3]), float(values[4]), float(values[5])),
-                (float(values[6]), float(values[7]), float(values[8])),
-                (float(values[9]), float(values[10]), float(values[11])),
+                None,
+                (
+                    (float(values[3]), float(values[4]), float(values[5])),
+                    (float(values[6]), float(values[7]), float(values[8])),
+                    (float(values[9]), float(values[10]), float(values[11])),
+                ),
             )
 
 
@@ -178,14 +185,20 @@ def _ascii_stl_regions(path: Path) -> tuple[str, ...]:
 
 def _ascii_stl_triangles(
     path: Path,
-) -> Iterator[tuple[tuple[float, float, float], ...]]:
+) -> Iterator[_TaggedTriangle]:
     vertices: list[tuple[float, float, float]] = []
+    region: str | None = None
     try:
         with path.open("r", encoding="utf-8", errors="strict") as stream:
             for line_number, raw in enumerate(stream, start=1):
                 stripped = raw.strip()
                 lower = stripped.lower()
-                if lower.startswith("vertex"):
+                if lower.startswith("solid"):
+                    selected = stripped[5:].strip()
+                    region = selected or None
+                elif lower.startswith("endsolid"):
+                    region = None
+                elif lower.startswith("vertex"):
                     parts = stripped.split()
                     if len(parts) != 4:
                         raise GeometryInspectionError(
@@ -203,7 +216,7 @@ def _ascii_stl_triangles(
                         )
                     vertices.append(vertex)
                     if len(vertices) == 3:
-                        yield tuple(vertices)
+                        yield region, tuple(vertices)
                         vertices.clear()
     except UnicodeDecodeError as error:
         raise GeometryInspectionError(
@@ -251,14 +264,17 @@ def _obj_metadata(
 def _obj_triangles(
     path: Path,
     vertices: list[tuple[float, float, float]],
-) -> Iterator[tuple[tuple[float, float, float], ...]]:
+) -> Iterator[_TaggedTriangle]:
+    region: str | None = None
     with path.open("r", encoding="utf-8", errors="strict") as stream:
         for line_number, raw in enumerate(stream, start=1):
             stripped = raw.strip()
             if not stripped or stripped.startswith("#"):
                 continue
             parts = stripped.split()
-            if parts[0] == "f":
+            if parts[0] in {"o", "g", "usemtl"} and len(parts) > 1:
+                region = " ".join(parts[1:])
+            elif parts[0] == "f":
                 if len(parts) < 4:
                     raise GeometryInspectionError(
                         f"OBJ face at line {line_number} has fewer than three vertices."
@@ -280,14 +296,17 @@ def _obj_triangles(
                     indices.append(resolved)
                 for offset in range(1, len(indices) - 1):
                     yield (
-                        vertices[indices[0]],
-                        vertices[indices[offset]],
-                        vertices[indices[offset + 1]],
+                        region,
+                        (
+                            vertices[indices[0]],
+                            vertices[indices[offset]],
+                            vertices[indices[offset + 1]],
+                        ),
                     )
 
 
 def _surface_metrics(
-    triangles: Iterable[tuple[tuple[float, float, float], ...]],
+    triangles: Iterable[_TaggedTriangle],
     *,
     topology_triangle_limit: int,
     merge_tolerance: float,
@@ -300,7 +319,8 @@ def _surface_metrics(
     degenerate_count = 0
     signed_volume = 0.0
     topology_complete = True
-    for triangle in triangles:
+    region_accumulators: dict[str, dict[str, object]] = {}
+    for region, triangle in triangles:
         triangle_count += 1
         for vertex in triangle:
             for axis, value in enumerate(vertex):
@@ -314,8 +334,31 @@ def _surface_metrics(
             ab[2] * ac[0] - ab[0] * ac[2],
             ab[0] * ac[1] - ab[1] * ac[0],
         )
-        if math.sqrt(sum(value * value for value in cross)) <= 1.0e-30:
+        cross_magnitude = math.sqrt(sum(value * value for value in cross))
+        area = 0.5 * cross_magnitude
+        if cross_magnitude <= 1.0e-30:
             degenerate_count += 1
+        if region is not None:
+            accumulator = region_accumulators.setdefault(
+                region,
+                {
+                    "triangle_count": 0,
+                    "area_native": 0.0,
+                    "area_vector_native": [0.0, 0.0, 0.0],
+                    "centroid_moment_native": [0.0, 0.0, 0.0],
+                },
+            )
+            accumulator["triangle_count"] = int(accumulator["triangle_count"]) + 1
+            accumulator["area_native"] = float(accumulator["area_native"]) + area
+            area_vector = accumulator["area_vector_native"]
+            centroid_moment = accumulator["centroid_moment_native"]
+            assert isinstance(area_vector, list)
+            assert isinstance(centroid_moment, list)
+            for axis in range(3):
+                area_vector[axis] += 0.5 * cross[axis]
+                centroid_moment[axis] += (
+                    area * sum(vertex[axis] for vertex in triangle) / 3.0
+                )
         signed_volume += (
             a[0] * (b[1] * c[2] - b[2] * c[1])
             + a[1] * (b[2] * c[0] - b[0] * c[2])
@@ -355,6 +398,28 @@ def _surface_metrics(
             sum(counts) == 2 and (counts[0] == 2 or counts[1] == 2)
             for counts in edge_counts.values()
         )
+    region_metrics: dict[str, dict[str, object]] = {}
+    for name, accumulator in sorted(region_accumulators.items()):
+        area = float(accumulator["area_native"])
+        area_vector = accumulator["area_vector_native"]
+        centroid_moment = accumulator.pop("centroid_moment_native")
+        assert isinstance(area_vector, list)
+        assert isinstance(centroid_moment, list)
+        vector_magnitude = math.sqrt(sum(value * value for value in area_vector))
+        region_metrics[name] = {
+            **accumulator,
+            "centroid_native": (
+                [value / area for value in centroid_moment] if area > 0.0 else None
+            ),
+            "mean_unit_normal": (
+                [value / vector_magnitude for value in area_vector]
+                if vector_magnitude > 0.0
+                else None
+            ),
+            "normal_coherence": (
+                min(1.0, vector_magnitude / area) if area > 0.0 else None
+            ),
+        }
     return {
         "triangle_count": triangle_count,
         "unique_vertex_count": len(unique_vertices) if topology_complete else None,
@@ -371,6 +436,7 @@ def _surface_metrics(
             else None
         ),
         "signed_volume_native": signed_volume if triangle_count else None,
+        "region_metrics": region_metrics,
     }
 
 
@@ -465,6 +531,7 @@ def inspect_geometry(
             "orientation_conflict_count": None,
             "watertight": None,
             "signed_volume_native": None,
+            "region_metrics": {},
         }
         if suffix in _CAD_FORMATS:
             issue(
@@ -555,6 +622,30 @@ def inspect_geometry(
     bounds_m = None
     dimensions_m = None
     volume_m3 = None
+    region_metrics = metrics["region_metrics"]
+    assert isinstance(region_metrics, dict)
+    scaled_region_metrics: dict[str, dict[str, object]] = {}
+    for name, raw_metric in region_metrics.items():
+        assert isinstance(raw_metric, dict)
+        area_native = raw_metric["area_native"]
+        centroid_native = raw_metric["centroid_native"]
+        area_vector_native = raw_metric["area_vector_native"]
+        scaled_region_metrics[name] = {
+            **raw_metric,
+            "area_m2": (
+                None if scale is None else float(area_native) * scale**2
+            ),
+            "centroid_m": (
+                None
+                if scale is None or centroid_native is None
+                else [float(value) * scale for value in centroid_native]
+            ),
+            "area_vector_m2": (
+                None
+                if scale is None
+                else [float(value) * scale**2 for value in area_vector_native]
+            ),
+        }
     if scale is not None and metrics["bounds"] is not None:
         bounds = metrics["bounds"]
         assert isinstance(bounds, dict)
@@ -627,6 +718,41 @@ def inspect_geometry(
                 "Unsupported roles for regions: " + ", ".join(invalid) + ".",
                 "Use inlet, outlet, wall, symmetry, periodic, interface, farfield, opening, or empty.",
             )
+        flow_regions_without_faces = sorted(
+            name
+            for name, role in confirmed_roles.items()
+            if role in {"inlet", "outlet"}
+            and (
+                name not in scaled_region_metrics
+                or float(scaled_region_metrics[name]["area_native"]) <= 0.0
+            )
+        )
+        if flow_regions_without_faces:
+            issue(
+                "FLOW_BOUNDARY_REGION_EMPTY",
+                "error",
+                "Flow boundary regions contain no positive-area faces: "
+                + ", ".join(flow_regions_without_faces)
+                + ".",
+                "Re-export inlet and outlet as named regions containing surface faces.",
+            )
+        nonplanar_flow_regions = sorted(
+            name
+            for name, role in confirmed_roles.items()
+            if role in {"inlet", "outlet"}
+            and name in scaled_region_metrics
+            and isinstance(scaled_region_metrics[name]["normal_coherence"], float)
+            and float(scaled_region_metrics[name]["normal_coherence"]) < 0.95
+        )
+        if nonplanar_flow_regions:
+            issue(
+                "FLOW_BOUNDARY_NORMALS_DIVERGE",
+                "warning",
+                "Flow boundary face normals are not nearly parallel: "
+                + ", ".join(nonplanar_flow_regions)
+                + ".",
+                "Confirm that each inlet/outlet is an intentional curved opening or re-export a planar cap.",
+            )
         role_values = set(confirmed_roles.values())
         if internal_flow and "inlet" not in role_values:
             issue(
@@ -649,6 +775,7 @@ def inspect_geometry(
             "INTERNAL_FLOW_INLET_MISSING",
             "INTERNAL_FLOW_OUTLET_MISSING",
             "BOUNDARY_REGIONS_UNAVAILABLE",
+            "FLOW_BOUNDARY_REGION_EMPTY",
         }
         boundary_roles_ready = bool(regions) and not any(
             item["code"] in role_error_codes for item in issues
@@ -674,6 +801,7 @@ def inspect_geometry(
             "bounds_m": bounds_m,
             "dimensions_m": dimensions_m,
             "enclosed_volume_m3": volume_m3,
+            "region_metrics": scaled_region_metrics,
         },
         "policy": {
             "require_watertight": require_watertight,

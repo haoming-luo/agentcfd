@@ -2612,6 +2612,21 @@ def main(argv: list[str] | None = None) -> int:
                     f"{float(value):.6g}" for value in surface["dimensions_m"]
                 )
                 print(f"size: {dimensions} m")
+            confirmed_roles = report["boundary_roles"]["confirmed"]
+            region_metrics = surface["region_metrics"]
+            if isinstance(confirmed_roles, dict) and isinstance(region_metrics, dict):
+                for name, role in sorted(confirmed_roles.items()):
+                    metric = region_metrics.get(name)
+                    if role not in {"inlet", "outlet"} or not isinstance(metric, dict):
+                        continue
+                    area = metric.get("area_m2")
+                    normal = metric.get("mean_unit_normal")
+                    if isinstance(area, (int, float)) and isinstance(normal, list):
+                        direction = ", ".join(f"{float(value):.4g}" for value in normal)
+                        print(
+                            f"{role} {name}: area {float(area):.6g} m^2 | "
+                            f"mean normal ({direction})"
+                        )
             for issue in report["issues"]:
                 print(f"{issue['severity']}: {issue['code']} | {issue['repair']}")
             print(f"next: {report['next_action']['message']}")

@@ -74,6 +74,12 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     assert report["surface"]["region_names"] == ["fluid"]
     assert report["surface"]["dimensions_m"] == [0.001, 0.001, 0.001]
     assert math.isclose(report["surface"]["enclosed_volume_m3"], 1.0e-9 / 6.0)
+    fluid_metric = report["surface"]["region_metrics"]["fluid"]
+    assert fluid_metric["triangle_count"] == 4
+    assert fluid_metric["area_m2"] == pytest.approx(
+        (1.5 + math.sqrt(3.0) / 2.0) * 1.0e-6
+    )
+    assert fluid_metric["normal_coherence"] == pytest.approx(0.0, abs=1.0e-15)
     assert report["observation_cost"]["external_processes_started"] == 0
     assert entrypoint(["geometry-check", str(surface), "--unit", "mm", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["surface"]["watertight"] is True
@@ -127,6 +133,13 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
         internal_flow=True,
         boundary_roles=roles,
     )
+    jsonschema.Draft202012Validator(
+        contracts.load("geometry-inspection.schema.json")
+    ).validate(report)
+    inlet_metric = report["surface"]["region_metrics"]["inlet"]
+    assert inlet_metric["area_m2"] == pytest.approx(0.5e-6)
+    assert inlet_metric["mean_unit_normal"] == pytest.approx([0.0, 0.0, -1.0])
+    assert inlet_metric["normal_coherence"] == pytest.approx(1.0)
     domain = geometry.imported_surface_from_inspection(
         report,
         asset="geometry/fluid.stl",
@@ -171,7 +184,9 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
         )
         == 0
     )
-    assert "watertight true" in capsys.readouterr().out
+    human = capsys.readouterr().out
+    assert "watertight true" in human
+    assert "inlet inlet: area 5e-07 m^2 | mean normal (0, 0, -1)" in human
     assert json.loads(output.read_text())["source"]["sha256"] == domain.source_sha256
 
 
@@ -250,6 +265,32 @@ def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_pat
     assert complete["readiness"]["boundary_roles_ready"] is True
     assert complete["boundary_roles"]["suggestions"]["inlet_main"]["role"] == "inlet"
     assert complete["boundary_roles"]["suggestions"]["outlet_main"]["role"] == "outlet"
+
+
+def test_internal_flow_rejects_named_flow_region_without_faces(tmp_path):
+    obj = tmp_path / "empty-inlet.obj"
+    obj.write_text(
+        "o inlet\n"
+        "o outlet\n"
+        "v 0 0 0\n"
+        "v 0 1 0\n"
+        "v 0 0 1\n"
+        "f 1 2 3\n"
+    )
+
+    report = geometry_io.inspect_geometry(
+        obj,
+        unit="m",
+        require_watertight=False,
+        internal_flow=True,
+        boundary_roles={"inlet": "inlet", "outlet": "outlet"},
+    )
+
+    assert report["readiness"]["boundary_roles_ready"] is False
+    assert any(
+        issue["code"] == "FLOW_BOUNDARY_REGION_EMPTY"
+        for issue in report["issues"]
+    )
 
 
 def test_name_role_suggestions_require_explicit_complete_acceptance(tmp_path):

@@ -3,6 +3,42 @@
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/geometry-inspection.schema.json",
   "title": "AgentCFD imported geometry inspection 0.1",
   "type": "object",
+  "$defs": {
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "regionMetric": {
+      "type": "object",
+      "required": [
+        "triangle_count", "area_native", "area_vector_native",
+        "centroid_native", "mean_unit_normal", "normal_coherence",
+        "area_m2", "centroid_m", "area_vector_m2"
+      ],
+      "properties": {
+        "triangle_count": {"type": "integer", "minimum": 1},
+        "area_native": {"type": "number", "minimum": 0},
+        "area_vector_native": {"$ref": "#/$defs/vector3"},
+        "centroid_native": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/vector3"}]
+        },
+        "mean_unit_normal": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/vector3"}]
+        },
+        "normal_coherence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "area_m2": {"type": ["number", "null"], "minimum": 0},
+        "centroid_m": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/vector3"}]
+        },
+        "area_vector_m2": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/vector3"}]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "required": ["schema", "source", "surface", "policy", "boundary_roles", "tools", "readiness", "issues", "next_action", "observation_cost"],
   "properties": {
     "schema": {"const": "agentcfd.geometry-inspection/0.1"},
@@ -27,7 +63,7 @@
         "bounds", "dimensions", "topology_complete", "boundary_edge_count",
         "non_manifold_edge_count", "orientation_conflict_count", "watertight",
         "signed_volume_native", "region_names", "bounds_m", "dimensions_m",
-        "enclosed_volume_m3"
+        "enclosed_volume_m3", "region_metrics"
       ],
       "properties": {
         "triangle_count": {"type": ["integer", "null"], "minimum": 0},
@@ -44,7 +80,11 @@
         "region_names": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "bounds_m": {"type": ["object", "null"]},
         "dimensions_m": {"type": ["array", "null"], "items": {"type": "number"}},
-        "enclosed_volume_m3": {"type": ["number", "null"], "minimum": 0}
+        "enclosed_volume_m3": {"type": ["number", "null"], "minimum": 0},
+        "region_metrics": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/regionMetric"}
+        }
       },
       "additionalProperties": false
     },
@@ -114,7 +154,7 @@
       "type": "object",
       "required": ["kind", "message"],
       "properties": {
-        "kind": {"enum": ["repair", "boundary-confirmation", "provider-roadmap"]},
+        "kind": {"enum": ["repair", "boundary-confirmation", "model-setup"]},
         "message": {"type": "string"}
       },
       "additionalProperties": false

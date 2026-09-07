@@ -12,6 +12,10 @@
 - Tighten the project-status contract so every discovered factory parameter and
   its UI/agent metadata are structurally validated instead of exposed as an
   unconstrained object.
+- Compute named-surface triangle count, area, centroid, oriented area vector,
+  mean normal, and normal coherence during bounded STL/OBJ inspection. Empty
+  inlet/outlet regions now fail before meshing, and human geometry output shows
+  SI area and direction for confirmed flow patches.
 - Lower `boundaries.mass_flow_inlet(kg_per_s)` for steady laminar imported
   volumes through OpenFOAM `flowRateInletVelocity`. Constant density converts
   the request to volume flow, patch normals set direction, and recovered mass

@@ -61,6 +61,17 @@ checks shared-edge orientation, estimates enclosed volume, and reports the
 available `surfaceCheck`, `snappyHexMesh`, and `gmsh` tools. Edge topology has
 an explicit triangle limit; when it is exceeded, bounds still complete but the
 report refuses to invent watertightness.
+
+For each named region, the same single pass also reports triangle count,
+surface area, area-weighted centroid, oriented area vector, mean unit normal,
+and a 0--1 normal-coherence measure. SI values appear when units are declared;
+the compact human view prints confirmed inlet/outlet area and direction.
+Named flow regions with no positive-area faces fail before meshing, while
+strongly diverging normals warn that an opening may be curved rather than a
+well-defined cap. These metrics follow OpenFOAM's region-to-patch convention
+and area-normal view of mesh faces; they are geometry evidence, not a substitute
+for `surfaceCheck`, meshing, or post-mesh patch integration.
+
 Exact vertex matching is the default. If a tessellator emitted numerically
 near-coincident vertices, `--merge-tolerance` applies an explicit tolerance in
 source units to topology keys only. The report records it and warns that it

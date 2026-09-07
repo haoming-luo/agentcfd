@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import boundaries, outputs, procedures
+from .. import boundaries, engineering, outputs, procedures
 from .._version import __version__
 from ..errors import ProviderUnavailableError, UnsupportedCaseError
 from ..geometry import ImportedSurface
@@ -36,6 +36,7 @@ from .openfoam import (
     _latest_time_directory,
     _mesh_quality_quantities,
     _read_scalar_series,
+    _read_y_plus_series,
     _runtime_version,
     _stop_timed_out_container,
     _transport_properties,
@@ -54,8 +55,11 @@ from .openfoam_reports import (
 
 _CAPABILITY = "openfoam.imported-surface-mesh"
 _FLOW_CAPABILITY = "openfoam.steady-laminar-imported-surface"
+_RANS_FLOW_CAPABILITY = "openfoam.steady-rans-imported-surface"
 _FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SUPPORTED_ROLES = {"inlet", "outlet", "wall", "symmetry", "empty"}
+_MINIMUM_WALL_FUNCTION_Y_PLUS = 30.0
+_MAXIMUM_WALL_FUNCTION_Y_PLUS = 300.0
 
 
 def _foam_scalar(value: float) -> str:
@@ -670,12 +674,18 @@ def _flow_velocity_field(step: Step) -> str:
     conditions = step.model.boundary_conditions
     inlet_name = next(name for name, role in domain.boundary_roles if role == "inlet")
     inlet = conditions[inlet_name]
-    assert isinstance(inlet, boundaries.VelocityInlet)
+    assert isinstance(
+        inlet,
+        (boundaries.VelocityInlet, boundaries.TurbulentVelocityInlet),
+    )
     blocks: list[str] = []
     for name, role in domain.boundary_roles:
         condition = conditions[name]
         if role == "inlet":
-            assert isinstance(condition, boundaries.VelocityInlet)
+            assert isinstance(
+                condition,
+                (boundaries.VelocityInlet, boundaries.TurbulentVelocityInlet),
+            )
             body = f"type fixedValue;\n        value uniform {_foam_point(condition.velocity)};"
         elif role == "outlet":
             body = "type zeroGradient;"
@@ -728,6 +738,92 @@ boundaryField
     )
 
 
+def _imported_turbulence_fields(step: Step) -> dict[str, str]:
+    """Render k-omega SST fields for arbitrary confirmed patch names."""
+
+    domain = step.model.domain
+    assert isinstance(domain, ImportedSurface)
+    inlet_name = next(name for name, role in domain.boundary_roles if role == "inlet")
+    outlet_name = next(name for name, role in domain.boundary_roles if role == "outlet")
+    inlet = step.model.boundary_conditions[inlet_name]
+    assert isinstance(inlet, boundaries.TurbulentVelocityInlet)
+    estimate = engineering.turbulence_inlet_from_intensity(
+        mean_velocity=inlet.magnitude,
+        intensity=inlet.turbulence_intensity,
+        length_scale=inlet.turbulence_length_scale,
+    )
+    kinetic_energy = estimate.turbulent_kinetic_energy
+    omega = estimate.specific_dissipation_rate
+
+    def patches(field: str) -> str:
+        blocks: list[str] = []
+        for name, role in domain.boundary_roles:
+            if role == "inlet":
+                body = (
+                    f"type fixedValue;\n        value uniform "
+                    f"{_foam_scalar(kinetic_energy if field == 'k' else omega)};"
+                    if field in {"k", "omega"}
+                    else "type calculated;\n        value uniform 0;"
+                )
+            elif role == "outlet":
+                body = (
+                    "type zeroGradient;"
+                    if field in {"k", "omega"}
+                    else "type calculated;\n        value uniform 0;"
+                )
+            elif role == "wall":
+                body = {
+                    "k": (
+                        "type kqRWallFunction;\n        value uniform "
+                        f"{_foam_scalar(kinetic_energy)};"
+                    ),
+                    "omega": (
+                        "type omegaWallFunction;\n        blending binomial;\n        "
+                        f"value uniform {_foam_scalar(omega)};"
+                    ),
+                    "nut": "type nutUBlendedWallFunction;\n        value uniform 0;",
+                }[field]
+            elif role == "symmetry":
+                body = "type symmetry;"
+            else:
+                body = "type empty;"
+            blocks.append(f"    {name}\n    {{\n        {body}\n    }}")
+        return "\n".join(blocks)
+
+    return {
+        "0/k": (
+            _header(object_name="k", class_name="volScalarField", location="0")
+            + f"""dimensions [0 2 -2 0 0 0 0];
+internalField uniform {_foam_scalar(kinetic_energy)};
+boundaryField
+{{
+{patches("k")}
+}}
+"""
+        ),
+        "0/omega": (
+            _header(object_name="omega", class_name="volScalarField", location="0")
+            + f"""dimensions [0 0 -1 0 0 0 0];
+internalField uniform {_foam_scalar(omega)};
+boundaryField
+{{
+{patches("omega")}
+}}
+"""
+        ),
+        "0/nut": (
+            _header(object_name="nut", class_name="volScalarField", location="0")
+            + f"""dimensions [0 2 -1 0 0 0 0];
+internalField uniform 0;
+boundaryField
+{{
+{patches("nut")}
+}}
+"""
+        ),
+    }
+
+
 def _write_imported_flow_files(
     step: Step, prepared: PreparedImportedMesh
 ) -> PreparedImportedMesh:
@@ -735,27 +831,34 @@ def _write_imported_flow_files(
     assert isinstance(domain, ImportedSurface)
     inlet = next(name for name, role in domain.boundary_roles if role == "inlet")
     outlet = next(name for name, role in domain.boundary_roles if role == "outlet")
+    turbulent = not step.model.study.laminar
+    flow_capability = _RANS_FLOW_CAPABILITY if turbulent else _FLOW_CAPABILITY
     rendered = {
         "0/U": _flow_velocity_field(step),
         "0/p": _flow_pressure_field(step),
         "constant/transportProperties": _transport_properties(
             step.model.fluid.kinematic_viscosity
         ),
-        "constant/turbulenceProperties": _turbulence_properties(turbulent=False),
+        "constant/turbulenceProperties": _turbulence_properties(
+            turbulent=turbulent,
+            turbulence_model=step.model.study.turbulence or "k-omega-sst",
+        ),
         "system/controlDict": _flow_control_dict(
             step.procedure.maximum_iterations,
             inlet=inlet,
             outlet=outlet,
-            turbulent=False,
+            turbulent=turbulent,
             compress=True,
             extra_functions=render_report_functions(step),
         ),
-        "system/fvSchemes": _flow_fv_schemes(turbulent=False),
+        "system/fvSchemes": _flow_fv_schemes(turbulent=turbulent),
         "system/fvSolution": _flow_fv_solution(
             step.procedure.relative_tolerance,
-            turbulent=False,
+            turbulent=turbulent,
         ),
     }
+    if turbulent:
+        rendered.update(_imported_turbulence_fields(step))
     for relative, content in sorted(rendered.items()):
         path = prepared.directory / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -778,7 +881,7 @@ def _write_imported_flow_files(
         json.dumps(
             {
                 "schema": "agentcfd.openfoam-imported-flow-case/0.1",
-                "capability": _FLOW_CAPABILITY,
+                "capability": flow_capability,
                 "model_sha256": step.model.fingerprint(),
                 "analysis_sha256": _analysis_sha256(step),
                 **updated.to_dict(),
@@ -828,7 +931,7 @@ class OpenFOAMImportedProvider:
                 if self.container_image
                 else "filesystem-and-subprocess"
             ),
-            capabilities=(_CAPABILITY, _FLOW_CAPABILITY),
+            capabilities=(_CAPABILITY, _FLOW_CAPABILITY, _RANS_FLOW_CAPABILITY),
         )
 
     def validate(self, step: Step) -> None:
@@ -844,10 +947,19 @@ class OpenFOAMImportedProvider:
             or study.compressible
             or study.energy
             or study.reacting
-            or not study.laminar
+            or study.turbulence not in {None, "k-omega-sst"}
         ):
             raise UnsupportedCaseError(
-                "First imported flow slice supports steady incompressible isothermal laminar flow only."
+                "Imported flow supports steady incompressible isothermal laminar or "
+                "k-omega-sst RANS flow only."
+            )
+        if (
+            not study.laminar
+            and study.wall_treatment != "blended-wall-functions"
+        ):
+            raise UnsupportedCaseError(
+                "Imported k-omega-sst flow requires explicitly declared "
+                "blended-wall-functions treatment."
             )
         if not isinstance(step.procedure, procedures.SteadyProcedure):
             raise UnsupportedCaseError(
@@ -865,9 +977,22 @@ class OpenFOAMImportedProvider:
                 "First imported flow slice requires exactly one inlet and one outlet."
             )
         conditions = step.model.boundary_conditions
-        if not isinstance(conditions[inlet_names[0]], boundaries.VelocityInlet):
+        expected_inlet = (
+            boundaries.VelocityInlet
+            if study.laminar
+            else boundaries.TurbulentVelocityInlet
+        )
+        if not isinstance(conditions[inlet_names[0]], expected_inlet):
             raise UnsupportedCaseError(
-                "Imported geometry requires boundaries.velocity_inlet((ux, uy, uz)); direction is never guessed."
+                "Imported geometry requires "
+                + (
+                    "boundaries.velocity_inlet((ux, uy, uz))."
+                    if study.laminar
+                    else "boundaries.turbulent_velocity_inlet((ux, uy, uz), "
+                    "intensity=..., length_scale=...)."
+                )
+                + " The direction is never guessed, and turbulence assumptions "
+                "must be explicit."
             )
         if not isinstance(conditions[outlet_names[0]], boundaries.PressureOutlet):
             raise UnsupportedCaseError(
@@ -887,7 +1012,15 @@ class OpenFOAMImportedProvider:
                 and condition.roughness not in {None, 0.0}
             ):
                 raise UnsupportedCaseError(
-                    "Wall roughness is not lowered in the first imported laminar slice."
+                    "Wall roughness is not lowered in the imported flow slice."
+                )
+            if (
+                not study.laminar
+                and role == "wall"
+                and not isinstance(condition, boundaries.NoSlipWall)
+            ):
+                raise UnsupportedCaseError(
+                    "Imported RANS wall functions require no-slip wall intent."
                 )
             if role in {"symmetry", "empty"} and not isinstance(
                 condition, boundaries.Symmetry
@@ -895,17 +1028,23 @@ class OpenFOAMImportedProvider:
                 raise UnsupportedCaseError(
                     f"Imported {role} patch {name!r} requires boundaries.symmetry()."
                 )
-        unsupported_fields = set(step.output.fields) - {
-            "fluid.velocity",
-            "fluid.pressure",
-        }
-        unsupported_histories = set(step.output.histories) - {
-            "flow.mass_balance",
-            "flow.pressure_drop",
-        }
+        supported_fields = {"fluid.velocity", "fluid.pressure"}
+        supported_histories = {"flow.mass_balance", "flow.pressure_drop"}
+        if not study.laminar:
+            supported_fields.update(
+                {
+                    "turbulence.kinetic_energy",
+                    "turbulence.specific_dissipation_rate",
+                    "turbulence.kinematic_eddy_viscosity",
+                }
+            )
+            supported_histories.add("wall.y_plus")
+        unsupported_fields = set(step.output.fields) - supported_fields
+        unsupported_histories = set(step.output.histories) - supported_histories
         if unsupported_fields or unsupported_histories:
             raise UnsupportedCaseError(
-                "First imported flow slice supports velocity/pressure fields and mass-balance/pressure-drop histories only."
+                "Imported flow received fields or histories outside its declared "
+                "laminar/RANS output contract."
             )
         lowered_report_names = [foam_name(report.name) for report in step.output.reports]
         if (
@@ -1019,6 +1158,8 @@ class OpenFOAMImportedProvider:
 
     def run(self, step: Step) -> SimulationResult:
         prepared = self.prepare(step)
+        turbulent = not step.model.study.laminar
+        flow_capability = _RANS_FLOW_CAPABILITY if turbulent else _FLOW_CAPABILITY
         mesh_result = execute_imported_mesh(
             prepared,
             container_image=self.container_image,
@@ -1084,14 +1225,102 @@ class OpenFOAMImportedProvider:
                 abscissa_name="solver_iteration",
                 abscissa_unit="1",
             )
+        y_plus_recovered = False
+        y_plus_range_ok = False
+        if turbulent:
+            raw_y_plus = _read_y_plus_series(prepared.directory)
+            y_plus_times = sorted(
+                set.intersection(*(set(values) for values in raw_y_plus.values()))
+            )
+            for statistic in ("minimum", "maximum", "average"):
+                values = tuple(
+                    raw_y_plus[statistic][time_value]
+                    for time_value in y_plus_times
+                )
+                if not values:
+                    continue
+                name = f"wall.y_plus.{statistic}"
+                histories[name] = History(
+                    tuple(y_plus_times),
+                    values,
+                    unit="1",
+                    abscissa_name="solver_iteration",
+                    abscissa_unit="1",
+                    description=(
+                        f"Wall y-plus {statistic} reported by OpenFOAM; use the full "
+                        "range to review the selected wall treatment."
+                    ),
+                )
+                quantities[name] = Quantity(
+                    values[-1],
+                    "1",
+                    kind="verification_metric",
+                )
+            y_plus_recovered = all(
+                f"wall.y_plus.{statistic}" in histories
+                for statistic in ("minimum", "maximum", "average")
+            )
+            if y_plus_recovered:
+                y_plus_range_ok = bool(
+                    quantities["wall.y_plus.minimum"].value
+                    >= _MINIMUM_WALL_FUNCTION_Y_PLUS
+                    and quantities["wall.y_plus.maximum"].value
+                    <= _MAXIMUM_WALL_FUNCTION_Y_PLUS
+                )
+            inlet_name = next(
+                name for name, role in step.model.domain.boundary_roles
+                if role == "inlet"
+            )
+            inlet = step.model.boundary_conditions[inlet_name]
+            assert isinstance(inlet, boundaries.TurbulentVelocityInlet)
+            estimate = engineering.turbulence_inlet_from_intensity(
+                mean_velocity=inlet.magnitude,
+                intensity=inlet.turbulence_intensity,
+                length_scale=inlet.turbulence_length_scale,
+            )
+            quantities["turbulence.inlet.kinetic_energy"] = Quantity(
+                estimate.turbulent_kinetic_energy,
+                "m^2/s^2",
+                kind="scientific_input",
+            )
+            quantities["turbulence.inlet.specific_dissipation_rate"] = Quantity(
+                estimate.specific_dissipation_rate,
+                "1/s",
+                kind="scientific_input",
+            )
         mesh_sha256, mesh_manifest = _write_mesh_manifest(prepared.directory)
         fields: dict[str, FieldRecord] = {}
         latest = _latest_time_directory(prepared.directory)
         if latest is not None:
-            for native, canonical, unit, components in (
+            requested_native_fields = (
                 ("U", "fluid.velocity", "m/s", ("x", "y", "z")),
                 ("p", "fluid.pressure", "m^2/s^2", ()),
-            ):
+                *(
+                    (
+                        (
+                            "k",
+                            "turbulence.kinetic_energy",
+                            "m^2/s^2",
+                            (),
+                        ),
+                        (
+                            "omega",
+                            "turbulence.specific_dissipation_rate",
+                            "1/s",
+                            (),
+                        ),
+                        (
+                            "nut",
+                            "turbulence.kinematic_eddy_viscosity",
+                            "m^2/s",
+                            (),
+                        ),
+                    )
+                    if turbulent
+                    else ()
+                ),
+            )
+            for native, canonical, unit, components in requested_native_fields:
                 path = latest / native
                 if canonical in step.output.fields and path.is_file():
                     fields[native] = FieldRecord(
@@ -1118,17 +1347,33 @@ class OpenFOAMImportedProvider:
             artifacts["mesh_manifest"] = Artifact.from_path(
                 mesh_manifest, role="mesh-manifest", media_type="application/json"
             )
+        if turbulent:
+            y_plus_root = prepared.directory / "postProcessing/agentcfd_y_plus"
+            if y_plus_root.is_dir():
+                for index, path in enumerate(sorted(y_plus_root.rglob("*.dat"))):
+                    artifacts[f"wall_y_plus_{index}"] = Artifact.from_path(
+                        path,
+                        role="compact-report",
+                        media_type="text/plain",
+                    )
         recover_reports(step, prepared.directory, quantities, histories, artifacts)
         requested_history_map = {
             "flow.mass_balance": "flow.relative_mass_imbalance",
             "flow.pressure_drop": "flow.pressure_drop",
+            "wall.y_plus": "wall.y_plus.average",
         }
         missing = [
             name
             for name in step.output.histories
             if requested_history_map[name] not in histories
         ]
-        requested_field_map = {"fluid.velocity": "U", "fluid.pressure": "p"}
+        requested_field_map = {
+            "fluid.velocity": "U",
+            "fluid.pressure": "p",
+            "turbulence.kinetic_energy": "k",
+            "turbulence.specific_dissipation_rate": "omega",
+            "turbulence.kinematic_eddy_viscosity": "nut",
+        }
         missing.extend(
             name
             for name in step.output.fields
@@ -1197,6 +1442,49 @@ class OpenFOAMImportedProvider:
                 limit="OpenCFD v2606",
                 kind="runtime",
             ),
+            *(
+                (
+                    Check(
+                        "wall-y-plus-recovery",
+                        y_plus_recovered,
+                        value=(
+                            len(histories["wall.y_plus.average"].values)
+                            if y_plus_recovered
+                            else 0
+                        ),
+                        limit="at least one complete min/max/average wall y-plus sample",
+                        kind="verification",
+                        observable="wall.y_plus",
+                        message=(
+                            "The arbitrary-geometry RANS slice requires complete "
+                            "wall-resolution evidence before acceptance."
+                        ),
+                    ),
+                    Check(
+                        "wall-y-plus-range",
+                        y_plus_range_ok,
+                        value=(
+                            f"{quantities['wall.y_plus.minimum'].value:.6g}.."
+                            f"{quantities['wall.y_plus.maximum'].value:.6g}"
+                            if y_plus_recovered
+                            else None
+                        ),
+                        limit=(
+                            f"all wall y+ in [{_MINIMUM_WALL_FUNCTION_Y_PLUS:g}, "
+                            f"{_MAXIMUM_WALL_FUNCTION_Y_PLUS:g}]"
+                        ),
+                        kind="verification",
+                        observable="wall.y_plus",
+                        message=(
+                            "The full wall range must match the declared blended "
+                            "wall-function strategy; refine or coarsen near-wall "
+                            "spacing and rerun before promotion."
+                        ),
+                    ),
+                )
+                if turbulent
+                else ()
+            ),
             Check(
                 "requested-output-completeness",
                 not missing,
@@ -1221,11 +1509,20 @@ class OpenFOAMImportedProvider:
                 "analysis_sha256": _analysis_sha256(step),
                 "case_sha256": prepared.case_sha256,
                 "mesh_sha256": mesh_sha256,
-                "provider_capability": _FLOW_CAPABILITY,
+                "provider_capability": flow_capability,
                 "runtime_version": runtime_version,
+                "turbulence_model": step.model.study.turbulence,
             },
             messages=(
-                "Experimental steady laminar imported-volume workflow; accepted means numerical/workflow gates passed, not physical validation.",
+                "Experimental steady imported-volume workflow; accepted means numerical/workflow gates passed, not physical validation.",
+                *(
+                    (
+                        "RANS wall y-plus must pass the declared wall-function range; "
+                        "prism-layer and grid evidence remain open gates.",
+                    )
+                    if turbulent
+                    else ()
+                ),
             ),
             name=step.model.name,
         )

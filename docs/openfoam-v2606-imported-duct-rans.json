@@ -1,0 +1,49 @@
+{
+  "accepted": true,
+  "analysis_sha256": "196a3bfa988271783f37a23809c27b68e93fb537d1bc92457e8bdbc6098c020b",
+  "case": "generated imported_duct_mesh project with explicit RANS parameters",
+  "claim": "workflow-and-numerical-gates-not-physical-validation",
+  "distribution": {
+    "artifact": "wheel",
+    "io_extra_installed": true,
+    "version": "0.1.0a3"
+  },
+  "flow": {
+    "pressure_drop_pa": 9.03080719487128,
+    "relative_mass_imbalance": 4.200000005609802e-10
+  },
+  "mesh": {
+    "cells": 6400,
+    "maximum_aspect_ratio": 1.382976019,
+    "maximum_non_orthogonality_deg": 15.74214263,
+    "maximum_skewness": 0.1040891993,
+    "source_sha256": "95c46972dfb7d9c00b1fcd44bdd9b5a9b594a1fe2d6b01ce5ae94d4dcadfd0bb"
+  },
+  "model_sha256": "35bf56fa4c1d0bd4aaaa8092d93fb660556bf285b1c4c3e52f960f9cb7127f0c",
+  "portable_fields": {
+    "bytes": 258825,
+    "formats": ["xdmf", "hdf5"],
+    "frames": 1,
+    "points": 7749,
+    "verified": true
+  },
+  "runtime": "OpenCFD v2606",
+  "schema": "agentcfd.openfoam-imported-flow-evidence/0.1",
+  "solver_iterations": 319,
+  "source_sha256": "sha256:010c8a05cc5d0c16910ea12ef87add15cc81362790a31599411e596aff31c537",
+  "turbulence": {
+    "inlet_intensity": 0.05,
+    "inlet_kinetic_energy_m2_s2": 0.0009375000000000002,
+    "inlet_length_scale_m": 0.025,
+    "inlet_specific_dissipation_rate_s_inv": 2.23606797749979,
+    "model": "k-omega-sst",
+    "wall_treatment": "blended-wall-functions"
+  },
+  "wall_y_plus": {
+    "accepted_range": [30.0, 300.0],
+    "average": 253.75907662,
+    "maximum": 292.34057074,
+    "minimum": 176.80940874
+  },
+  "workspace_bytes_after_publish": 0
+}

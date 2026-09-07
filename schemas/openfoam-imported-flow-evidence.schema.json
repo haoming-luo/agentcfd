@@ -37,6 +37,39 @@
       },
       "additionalProperties": false
     },
+    "turbulence": {
+      "type": "object",
+      "required": [
+        "model", "wall_treatment", "inlet_intensity",
+        "inlet_length_scale_m", "inlet_kinetic_energy_m2_s2",
+        "inlet_specific_dissipation_rate_s_inv"
+      ],
+      "properties": {
+        "model": {"const": "k-omega-sst"},
+        "wall_treatment": {"const": "blended-wall-functions"},
+        "inlet_intensity": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+        "inlet_length_scale_m": {"type": "number", "exclusiveMinimum": 0},
+        "inlet_kinetic_energy_m2_s2": {"type": "number", "exclusiveMinimum": 0},
+        "inlet_specific_dissipation_rate_s_inv": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "wall_y_plus": {
+      "type": "object",
+      "required": ["minimum", "maximum", "average", "accepted_range"],
+      "properties": {
+        "minimum": {"type": "number", "minimum": 0},
+        "maximum": {"type": "number", "minimum": 0},
+        "average": {"type": "number", "minimum": 0},
+        "accepted_range": {
+          "type": "array",
+          "prefixItems": [{"const": 30.0}, {"const": 300.0}],
+          "minItems": 2,
+          "maxItems": 2
+        }
+      },
+      "additionalProperties": false
+    },
     "portable_fields": {
       "type": "object",
       "required": ["formats", "frames", "points", "bytes"],

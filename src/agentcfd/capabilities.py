@@ -124,6 +124,25 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="openfoam.steady-rans-imported-surface",
+        maturity="experimental",
+        scope=(
+            "Steady incompressible isothermal k-omega SST flow on a "
+            "content-addressed imported fluid volume with explicit Cartesian "
+            "velocity, turbulence intensity, length scale, and blended wall treatment."
+        ),
+        evidence=(
+            "deterministic arbitrary-patch turbulence-field lowering tests",
+            "explicit vector inlet and turbulence-assumption identity",
+            "runtime y-plus range, convergence, conservation, mesh, and output gates",
+        ),
+        limitations=(
+            "Only k-omega SST and blended wall functions are currently supported.",
+            "Prism-layer automation, automatic y-plus correction, grid sensitivity, and physical validation remain open gates.",
+            "Heat, compressibility, reactions, rough walls, and vector surface reductions remain unsupported.",
+        ),
+    ),
+    Capability(
         name="reference.hagen-poiseuille",
         maturity="release",
         scope="Steady fully developed incompressible Newtonian laminar flow in a circular pipe.",
@@ -271,7 +290,7 @@ _CAPABILITIES = (
             "OpenCFD v2606 k-omega SST and k-epsilon precursor execution evidence",
         ),
         limitations=(
-            "Steady imported-volume flow is limited to the explicit laminar slice.",
+            "Steady imported-volume flow supports explicit laminar and experimental k-omega SST slices.",
             "Downstream turbulent pipes remain limited to k-omega SST; k-epsilon is precursor-only.",
             "OpenCFD v2606 is the currently exercised runtime dialect.",
             "Each laminar or turbulent slice has its own validation and grid-evidence gate.",

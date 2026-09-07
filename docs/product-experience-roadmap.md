@@ -119,13 +119,17 @@ files stay hidden and reproducible.
 - content-addressed imported-surface `Model` intent with confirmed boundary
   roles, portable fingerprints, atomic inspection reports, and project asset
   presence/hash gates;
+- explicit arbitrary-geometry k-omega SST intent and lowering, including a
+  Cartesian turbulent inlet, blended wall functions, portable turbulence
+  fields, and compact wall y-plus evidence;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 
 ### Next: eliminate repeated setup work
 
-1. Extend the released steady laminar imported-volume slice with controlled
-   STEP/IGES tessellation, prism layers, turbulence, and thermal physics.
+1. Extend the imported-volume slice with controlled STEP/IGES tessellation,
+   prism layers, automatic y-plus correction, and thermal physics; promote
+   RANS only after grid and physical evidence.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
    fan/pump, heated pipe, and buoyant enclosure workflows.
 3. Extend the shipped filter recipes with multi-view layout and explicit normal

@@ -59,6 +59,7 @@ class Model:
                     boundary_types.VelocityInlet,
                     boundary_types.FullyDevelopedVelocityInlet,
                     boundary_types.TurbulentMeanVelocityInlet,
+                    boundary_types.TurbulentVelocityInlet,
                     boundary_types.PressureInlet,
                     boundary_types.PressureOutlet,
                     boundary_types.MassFlowOutlet,
@@ -111,6 +112,7 @@ class Model:
             boundary_types.VelocityInlet,
             boundary_types.FullyDevelopedVelocityInlet,
             boundary_types.TurbulentMeanVelocityInlet,
+            boundary_types.TurbulentVelocityInlet,
             boundary_types.PressureInlet,
         )
         outlet_types = (boundary_types.PressureOutlet, boundary_types.MassFlowOutlet)

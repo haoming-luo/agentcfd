@@ -159,15 +159,46 @@ maximum non-orthogonality, 0.104 maximum skewness, and 1.383 maximum aspect
 ratio. This is workflow/mesh evidence, not flow-physics validation; the compact
 record is `docs/openfoam-v2606-imported-duct-mesh.json`.
 
-The same project now runs end to end with `agentcfd run .` for the deliberately
-narrow steady incompressible isothermal laminar slice. Arbitrary geometry uses
-`boundaries.velocity_inlet((ux, uy, uz))`; AgentCFD refuses to infer direction
-from a scalar. The first executable slice requires exactly one vector-velocity
-inlet, one pressure outlet, default initialization, and velocity/pressure plus
-mass-balance/pressure-drop outputs. It does not silently ignore turbulence,
-heat, roughness, layers, or reactions. Point velocity/pressure probes, scalar
-pressure surface reductions, and wall-force reports are compact histories;
-vector surface reductions remain fail-closed.
+The same project now runs end to end with `agentcfd run .` for steady,
+incompressible, isothermal laminar or k-omega SST flow. Arbitrary laminar
+geometry uses `boundaries.velocity_inlet((ux, uy, uz))`; RANS uses the explicit
+form below. AgentCFD refuses to infer direction or turbulence assumptions from
+a scalar:
+
+```python
+study = studies.internal_flow(
+    turbulence="k-omega-sst",
+    wall_treatment="blended-wall-functions",
+)
+inlet = boundaries.turbulent_velocity_inlet(
+    (5.0, 0.0, 0.0),
+    intensity=0.05,
+    length_scale=0.01,
+)
+output = outputs.turbulent_internal_flow()
+```
+
+Generated imported projects expose the same transition without rewriting the
+model. Keep the three turbulence values absent for laminar flow, or provide all
+three explicitly:
+
+```bash
+agentcfd run . \
+  --param turbulence_model='"k-omega-sst"' \
+  --param turbulence_intensity=0.05 \
+  --param turbulence_length_scale=0.01
+```
+
+The RANS slice writes `k`, `omega`, and `nut`, and always computes compact
+minimum, maximum, and average wall y-plus histories. OpenFOAM's blended
+`omegaWallFunction`/`nutUBlendedWallFunction` treatment is used with no-slip
+walls. The full wall y-plus range must stay between 30 and 300 or acceptance is
+blocked. This is workflow evidence only: prism-layer automation, automatic
+near-wall correction, grid sensitivity, and physical validation remain open gates. Heat,
+compressibility, reactions, roughness, k-epsilon, and vector surface
+reductions still fail closed. Point velocity/pressure probes, scalar pressure
+surface reductions, and wall-force reports remain compact histories in both
+laminar and RANS runs.
 
 The checked OpenCFD v2606 run converged by SIMPLE residual control in 344
 iterations with `1.8e-10` relative mass imbalance and 1.179 Pa pressure drop.
@@ -175,6 +206,15 @@ Its verified one-frame XDMF/H5 bundle contains 7,749 points and occupies about
 190 KiB; the complete ordinary output is about 633 KiB. The source-linked
 record is `docs/openfoam-v2606-imported-duct-flow.json`. These are numerical and
 workflow gates, not an experimental validation claim.
+
+The matching guarded RANS run used an explicit 0.5 m/s inlet, 5% intensity,
+0.025 m turbulence length scale, k-omega SST, and blended wall functions. It
+converged in 319 SIMPLE iterations with `4.2e-10` relative mass imbalance and
+9.031 Pa pressure drop. Its complete wall y-plus range was 176.81--292.34, so
+the run passed the public 30--300 wall-function gate; this is not a claim that
+the coarse grid is physically validated. The verified five-field XDMF/H5
+bundle occupies about 253 KiB and the source-linked record is
+`docs/openfoam-v2606-imported-duct-rans.json`.
 
 STEP/IGES are recognized but not silently tessellated. A future CAD adapter
 must make tessellation tolerance, units, face-name retention, and source hash
@@ -197,3 +237,5 @@ Primary references:
 - [OpenFOAM v2606 snappyHexMesh overview](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/snappyhexmesh/)
 - [OpenFOAM triangulated geometry and surface regions](https://doc.openfoam.com/2212/tools/pre-processing/mesh/generation/snappyhexmesh/geometry/)
 - [OpenFOAM castellation, refinement and maxGlobalCells](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/snappyhexmesh/castellation/)
+- [OpenFOAM v2606 turbulence models](https://doc.openfoam.com/2606/tools/processing/models/turbulence/)
+- [OpenFOAM v2606 wall functions and y-plus requirements](https://doc.openfoam.com/2606/tools/processing/models/turbulence/ras/wall-functions/)

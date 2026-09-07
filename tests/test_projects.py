@@ -194,6 +194,22 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
     assert report["template"] == "imported-internal-flow"
     assert report["provider"] == "openfoam"
     assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
+    turbulent_parameters = {
+        "turbulence_model": "k-omega-sst",
+        "turbulence_intensity": 0.05,
+        "turbulence_length_scale": 0.025,
+    }
+    turbulent_plan = projects.Project(root).plan(parameters=turbulent_parameters)
+    assert turbulent_plan["readiness"]["provider_compatible"] is True
+    assert turbulent_plan["decisions"]["required_capability"] == (
+        "openfoam.steady-rans-imported-surface"
+    )
+    assert turbulent_plan["model"]["summary"]["boundaries"]["inlet"] == {
+        "type": "turbulent-velocity-inlet",
+        "velocity": [0.5, 0.0, 0.0],
+        "turbulence_intensity": 0.05,
+        "turbulence_length_scale": 0.025,
+    }
 
 
 def test_cli_can_explicitly_accept_unambiguous_name_roles(tmp_path, capsys):

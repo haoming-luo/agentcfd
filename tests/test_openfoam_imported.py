@@ -65,6 +65,32 @@ def _step(payload: bytes, **domain_overrides):
     )
 
 
+def _turbulent_step(payload: bytes):
+    laminar = _step(payload)
+    domain = laminar.model.domain
+    model = Model(
+        name="imported-rans-duct",
+        study=studies.internal_flow(
+            turbulence="k-omega-sst",
+            wall_treatment="blended-wall-functions",
+        ),
+        domain=domain,
+        fluid=laminar.model.fluid,
+    ).boundaries(
+        inlet=boundaries.turbulent_velocity_inlet(
+            (5.0, 0.0, 0.0),
+            intensity=0.05,
+            length_scale=0.005,
+        ),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    )
+    return model.step(
+        mesh=laminar.mesh,
+        output=outputs.turbulent_internal_flow(),
+    )
+
+
 def _imported_project(root, payload):
     project = projects.init_project(root, provider="openfoam")
     asset = root / "geometry" / "fluid.stl"
@@ -402,6 +428,14 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid():
     jsonschema.Draft202012Validator(
         contracts.load("openfoam-imported-flow-evidence.schema.json")
     ).validate(flow_record)
+    rans_record = json.loads(
+        (repository / "docs" / "openfoam-v2606-imported-duct-rans.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-imported-flow-evidence.schema.json")
+    ).validate(rans_record)
+    assert rans_record["wall_y_plus"]["maximum"] <= 300.0
+    assert rans_record["wall_y_plus"]["minimum"] >= 30.0
     project_plan = example.plan()
     assert project_plan["readiness"]["ready_to_run"] is True
     assert project_plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 200_000
@@ -432,6 +466,74 @@ def test_imported_flow_provider_requires_vector_direction_and_prepares_case(tmp_
     scalar_step.model.boundaries(inlet=boundaries.mean_velocity_inlet(0.5))
     with pytest.raises(UnsupportedCaseError, match="direction is never guessed"):
         OpenFOAMImportedProvider(source=source).validate(scalar_step)
+
+
+def test_imported_rans_provider_lowers_explicit_vector_turbulence_intent(tmp_path):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    provider = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    )
+
+    prepared = provider.prepare(_turbulent_step(payload))
+
+    assert "value uniform (5 0 0);" in (prepared.directory / "0/U").read_text()
+    assert "RASModel        kOmegaSST;" in (
+        prepared.directory / "constant/turbulenceProperties"
+    ).read_text()
+    assert "type kqRWallFunction;" in (prepared.directory / "0/k").read_text()
+    assert "type omegaWallFunction;" in (prepared.directory / "0/omega").read_text()
+    assert "type nutUBlendedWallFunction;" in (
+        prepared.directory / "0/nut"
+    ).read_text()
+    assert "type yPlus;" in (prepared.directory / "system/controlDict").read_text()
+    manifest = json.loads(
+        (prepared.directory / "agentcfd-imported-flow-case.json").read_text()
+    )
+    assert manifest["capability"] == "openfoam.steady-rans-imported-surface"
+
+
+def test_imported_rans_requires_matching_study_inlet_and_wall_treatment(tmp_path):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    provider = OpenFOAMImportedProvider(source=source)
+    turbulent = _turbulent_step(payload)
+
+    wrong_inlet_model = Model(
+        name="wrong-inlet",
+        study=turbulent.model.study,
+        domain=turbulent.model.domain,
+        fluid=turbulent.model.fluid,
+    ).boundaries(
+        inlet=boundaries.velocity_inlet((5.0, 0.0, 0.0)),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    )
+    wrong_inlet = wrong_inlet_model.step(
+        mesh=turbulent.mesh,
+        output=turbulent.output,
+    )
+    with pytest.raises(UnsupportedCaseError, match="turbulent_velocity_inlet"):
+        provider.validate(wrong_inlet)
+
+    wrong_treatment_model = Model(
+        name="wrong-treatment",
+        study=studies.internal_flow(
+            turbulence="k-omega-sst",
+            wall_treatment="wall-resolved",
+        ),
+        domain=turbulent.model.domain,
+        fluid=turbulent.model.fluid,
+    ).boundaries(**turbulent.model.boundary_conditions)
+    wrong_treatment = wrong_treatment_model.step(
+        mesh=turbulent.mesh,
+        output=turbulent.output,
+    )
+    with pytest.raises(UnsupportedCaseError, match="blended-wall-functions"):
+        provider.validate(wrong_treatment)
 
 
 def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
@@ -499,3 +601,89 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
     )
     assert result.provenance["mesh_sha256"] == result.fields["U"].mesh_sha256
     assert result.provenance["mesh_sha256"] == result.fields["p"].mesh_sha256
+
+
+@pytest.mark.parametrize(
+    ("minimum_y_plus", "maximum_y_plus", "accepted"),
+    ((38.0, 220.0, True), (18.0, 220.0, False), (38.0, 320.0, False)),
+)
+def test_imported_rans_provider_recovers_fields_and_gates_y_plus(
+    tmp_path,
+    monkeypatch,
+    minimum_y_plus,
+    maximum_y_plus,
+    accepted,
+):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    provider = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    )
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_imported.shutil.which", lambda name: f"/{name}"
+    )
+
+    def completed(argv, **kwargs):
+        executable = argv[0].rsplit("/", 1)[-1]
+        case = Path(kwargs["stdout"].name).parent
+        if executable == "blockMesh":
+            poly_mesh = case / "constant/polyMesh"
+            poly_mesh.mkdir(parents=True)
+            for name in ("points", "faces", "owner", "neighbour", "boundary"):
+                (poly_mesh / name).write_text(name)
+        if executable == "checkMesh":
+            kwargs["stdout"].write(
+                "    cells:            4200\n"
+                "Max aspect ratio = 12.5\n"
+                "Mesh non-orthogonality Max: 42 average: 8\n"
+                "Max skewness = 1.2\nMesh OK.\n"
+            )
+        elif executable == "simpleFoam":
+            final = case / "10"
+            final.mkdir()
+            for name in ("U", "p", "k", "omega", "nut"):
+                (final / name).write_bytes((case / "0" / name).read_bytes())
+            values = {
+                "agentcfd_inlet_flow": -0.05,
+                "agentcfd_outlet_flow": 0.05,
+                "agentcfd_inlet_pressure": 0.1,
+                "agentcfd_outlet_pressure": 0.0,
+            }
+            for name, value in values.items():
+                folder = case / "postProcessing" / name / "0"
+                folder.mkdir(parents=True)
+                (folder / "surfaceFieldValue.dat").write_text(f"10 {value}\n")
+            y_plus = case / "postProcessing/agentcfd_y_plus/0/yPlus.dat"
+            y_plus.parent.mkdir(parents=True)
+            y_plus.write_text(
+                f"10 walls {minimum_y_plus:g} {maximum_y_plus:g} 74\n"
+            )
+            kwargs["stdout"].write(
+                "Time = 10\nSIMPLE solution converged in 10 iterations\nEnd\n"
+            )
+        else:
+            kwargs["stdout"].write("End\n")
+        kwargs["stdout"].write("| Version: 2606  |\n")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_imported.subprocess.run", completed
+    )
+
+    result = provider.run(_turbulent_step(payload))
+
+    assert result.accepted is accepted
+    assert set(result.fields) == {"U", "p", "k", "omega", "nut"}
+    assert result.quantity("wall.y_plus.minimum").value == minimum_y_plus
+    assert result.quantity("wall.y_plus.maximum").value == maximum_y_plus
+    assert result.histories["wall.y_plus.average"].abscissa_name == (
+        "solver_iteration"
+    )
+    assert result.provenance["provider_capability"] == (
+        "openfoam.steady-rans-imported-surface"
+    )
+    assert next(
+        check for check in result.checks if check.name == "wall-y-plus-range"
+    ).passed is accepted

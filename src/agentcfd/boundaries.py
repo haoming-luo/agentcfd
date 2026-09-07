@@ -119,6 +119,46 @@ class TurbulentMeanVelocityInlet:
 
 
 @dataclass(frozen=True, slots=True)
+class TurbulentVelocityInlet:
+    """Cartesian RANS inlet velocity plus explicit turbulence assumptions."""
+
+    velocity: tuple[float, float, float]
+    turbulence_intensity: float
+    turbulence_length_scale: float
+
+    def __post_init__(self) -> None:
+        selected = VelocityInlet(self.velocity).velocity
+        object.__setattr__(self, "velocity", selected)
+        intensity = positive_float(
+            self.turbulence_intensity,
+            name="Turbulence intensity",
+        )
+        if intensity >= 1.0:
+            raise ValueError("Turbulence intensity must be a fraction below one.")
+        object.__setattr__(self, "turbulence_intensity", intensity)
+        object.__setattr__(
+            self,
+            "turbulence_length_scale",
+            positive_float(
+                self.turbulence_length_scale,
+                name="Turbulence length scale",
+            ),
+        )
+
+    @property
+    def magnitude(self) -> float:
+        return math.sqrt(sum(value * value for value in self.velocity))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "turbulent-velocity-inlet",
+            "velocity": list(self.velocity),
+            "turbulence_intensity": self.turbulence_intensity,
+            "turbulence_length_scale": self.turbulence_length_scale,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class PressureOutlet:
     gauge_pressure: float = 0.0
 
@@ -206,9 +246,9 @@ Boundary = (
     MassFlowInlet
     | MeanVelocityInlet
     | VelocityInlet
-    | VelocityInlet
     | FullyDevelopedVelocityInlet
     | TurbulentMeanVelocityInlet
+    | TurbulentVelocityInlet
     | PressureInlet
     | PressureOutlet
     | MassFlowOutlet
@@ -249,6 +289,21 @@ def turbulent_mean_velocity_inlet(
     )
 
 
+def turbulent_velocity_inlet(
+    value: tuple[float, float, float],
+    *,
+    intensity: float,
+    length_scale: float,
+) -> TurbulentVelocityInlet:
+    """Declare a Cartesian RANS inlet using explicit SI assumptions."""
+
+    return TurbulentVelocityInlet(
+        velocity=value,
+        turbulence_intensity=intensity,
+        turbulence_length_scale=length_scale,
+    )
+
+
 def pressure_outlet(value: float = 0.0) -> PressureOutlet:
     return PressureOutlet(gauge_pressure=value)
 
@@ -282,6 +337,7 @@ Inlet = (
     | MeanVelocityInlet
     | FullyDevelopedVelocityInlet
     | TurbulentMeanVelocityInlet
+    | TurbulentVelocityInlet
     | PressureInlet
 )
 Outlet = PressureOutlet | MassFlowOutlet
@@ -302,6 +358,7 @@ __all__ = [
     "SlipWall",
     "Symmetry",
     "TurbulentMeanVelocityInlet",
+    "TurbulentVelocityInlet",
     "VelocityInlet",
     "Wall",
     "fully_developed_velocity_inlet",
@@ -314,5 +371,6 @@ __all__ = [
     "slip_wall",
     "symmetry",
     "turbulent_mean_velocity_inlet",
+    "turbulent_velocity_inlet",
     "velocity_inlet",
 ]

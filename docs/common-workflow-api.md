@@ -50,11 +50,13 @@ is now the first executable non-pipe slice: a deterministic structured
 five-block mesh, low-Re transient flow, compact reports, and standard field
 output. A separate bounded imported-volume slice now owns checked STL/OBJ,
 explicit region roles, an interior seed, a hard mesh budget, and steady laminar
-OpenFOAM execution. `init --request` exposes creation as strict JSON for agents
-and GUIs without replacing the generated Python source of truth. The imported
-provider consumes the same point, scalar pressure-surface, and wall-force
-report objects as the channel provider, producing small solver-iteration
-histories rather than more full-field frames.
+or explicitly parameterized k-omega SST OpenFOAM execution. `init --request`
+exposes creation as strict JSON for agents and GUIs without replacing the
+generated Python source of truth. The imported provider consumes the same
+point, scalar pressure-surface, and wall-force report objects as the channel
+provider, producing small solver-iteration histories rather than more
+full-field frames. Cartesian RANS inlets carry velocity, turbulence intensity,
+and length scale in one typed boundary object.
 
 ## Output and result ergonomics
 
@@ -94,9 +96,11 @@ The API object is not a capability claim. At this checkpoint:
   the existing OpenFOAM provider;
 - one bottom-attached rectangular-channel baffle is executable for transient,
   incompressible, constant-property flow with hydraulic Re below 2300;
-- arbitrary channels, turbulent or thermal imported geometry, vector surface
-  reductions, crash-safe in-run checkpoint publication, and turbulent baffle
-  flow remain pending and fail closed. Completed baffled-channel runs publish a verified rolling ZIP
+- arbitrary channels, thermal imported geometry, vector surface reductions,
+  crash-safe in-run checkpoint publication, prism-layer automation, and
+  turbulent baffle flow remain pending and fail closed. Imported k-omega SST is
+  an experimental workflow slice with y-plus evidence, not a physical-validation
+  claim. Completed baffled-channel runs publish a verified rolling ZIP
   and can resume from `initialization.previous_result(...)`.
 
 This separation lets the product language grow coherently while every numerical
@@ -116,6 +120,9 @@ solver's file syntax:
 - [OpenFOAM boundary-condition categories](https://doc.openfoam.com/2606/tools/processing/boundary-conditions/)
   and [mesh-quality controls](https://doc.openfoam.com/2306/tools/pre-processing/mesh/generation/snappyhexmesh/meshquality/)
   for provider-side lowering and quality gates;
+- [OpenFOAM RANS turbulence models](https://doc.openfoam.com/2606/tools/processing/models/turbulence/)
+  and [wall functions](https://doc.openfoam.com/2606/tools/processing/models/turbulence/ras/wall-functions/)
+  for explicit k-omega SST and y-plus review requirements;
 - [OpenFOAM surfaceFieldValue](https://doc.openfoam.com/2312/tools/post-processing/function-objects/field/surfaceFieldValue/)
   and [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
   for area, mass-flow, integral, uniformity, and probe-style reports;

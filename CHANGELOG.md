@@ -12,6 +12,10 @@
 - Add explicit `--accept-name-roles` and the matching versioned request gesture
   for well-named geometry. Every surface suggestion must be unambiguous; no
   fallback role is invented and failure occurs before project files are written.
+- Add an explicit Cartesian turbulent-velocity inlet and the first imported
+  k-omega SST RANS slice with blended wall functions, `k`/`omega`/`nut` fields,
+  mandatory min/max/average y-plus evidence, a 30--300 hard acceptance range,
+  and generated-project parameters.
 - Make the public analysis-request fingerprint the sole project/provider result
   identity and refuse to publish a provider result carrying a different one.
 - Lower imported-volume point probes, scalar pressure surface reports, and wall

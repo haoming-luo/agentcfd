@@ -1207,7 +1207,11 @@ class Project:
         descriptor = selected.descriptor()
         study = step.model.study
         if isinstance(step.model.domain, ImportedSurface):
-            required_capability = "openfoam.steady-laminar-imported-surface"
+            required_capability = (
+                "openfoam.steady-laminar-imported-surface"
+                if study.laminar
+                else "openfoam.steady-rans-imported-surface"
+            )
         elif selected_name == "reference":
             required_capability = "reference.hagen-poiseuille"
         elif isinstance(step.model.domain, RectangularChannel):
@@ -4090,10 +4094,7 @@ def _imported_internal_flow_template(
     conditions = []
     for name, role in sorted(roles.items()):
         constructor = {
-            "inlet": (
-                "boundaries.velocity_inlet("
-                "(velocity_x, velocity_y, velocity_z))"
-            ),
+            "inlet": "inlet_condition",
             "outlet": "boundaries.pressure_outlet()",
             "wall": "boundaries.no_slip_wall()",
             "symmetry": "boundaries.symmetry()",
@@ -4127,6 +4128,9 @@ def build(
     dynamic_viscosity=1.002e-3,
     base_size={base_size_m!r},
     maximum_cells={maximum_cells!r},
+    turbulence_model=None,
+    turbulence_intensity=None,
+    turbulence_length_scale=None,
 ):
     root = Path(__file__).parent
     inspection = json.loads((root / "geometry/inspection.json").read_text())
@@ -4135,12 +4139,41 @@ def build(
         asset={asset!r},
         interior_point_m={interior_point_m!r},
     )
+    velocity = (velocity_x, velocity_y, velocity_z)
+    if turbulence_model is None:
+        if turbulence_intensity is not None or turbulence_length_scale is not None:
+            raise ValueError(
+                "Turbulence intensity and length scale require a turbulence model."
+            )
+        study = studies.internal_flow()
+        inlet_condition = boundaries.velocity_inlet(velocity)
+        output_request = outputs.standard()
+    else:
+        if turbulence_model != "k-omega-sst":
+            raise ValueError("Imported RANS currently supports k-omega-sst only.")
+        if turbulence_intensity is None or turbulence_length_scale is None:
+            raise ValueError(
+                "Imported RANS requires explicit turbulence_intensity and "
+                "turbulence_length_scale."
+            )
+        study = studies.internal_flow(
+            turbulence=turbulence_model,
+            wall_treatment="blended-wall-functions",
+        )
+        inlet_condition = boundaries.turbulent_velocity_inlet(
+            velocity,
+            intensity=turbulence_intensity,
+            length_scale=turbulence_length_scale,
+        )
+        output_request = outputs.turbulent_internal_flow(
+            turbulence_model=turbulence_model,
+        )
     boundary_conditions = {{
 {boundary_block}
     }}
     model = Model(
         name={model_name!r},
-        study=studies.internal_flow(),
+        study=study,
         domain=domain,
         fluid=fluids.newtonian(
             "water",
@@ -4154,7 +4187,7 @@ def build(
             base_size=base_size,
             maximum_cells=maximum_cells,
         ),
-        output=outputs.standard(),
+        output=output_request,
     )
 '''
 
@@ -4535,7 +4568,9 @@ timeout_seconds = 3600
         + (
             "The owned geometry, explicit units, confirmed boundary roles, and "
             "inspection record live in `geometry/`. `case.py` contains the inlet "
-            "vector, fluid, mesh size, and hard cell budget.\n\n"
+            "vector, fluid, mesh size, and hard cell budget. It defaults to laminar; "
+            "set turbulence_model, turbulence_intensity, and "
+            "turbulence_length_scale together for the guarded k-omega SST path.\n\n"
             if template == "imported-internal-flow"
             else ""
         )

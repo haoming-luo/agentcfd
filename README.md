@@ -156,6 +156,23 @@ channels. Add `outputs.probe(...)`, a scalar-pressure
 publish small SI histories and final quantities without increasing XDMF/H5
 frame count.
 
+The same generated project can move from laminar screening to explicit
+k-omega SST without editing provider files. Supply all three RANS assumptions
+as project parameters; omitting any one fails before meshing:
+
+```bash
+agentcfd run my-duct \
+  --param turbulence_model='"k-omega-sst"' \
+  --param turbulence_intensity=0.05 \
+  --param turbulence_length_scale=0.01
+```
+
+AgentCFD publishes `k`, `omega`, `nut`, and compact wall y-plus histories. The
+current arbitrary-geometry RANS slice requires all wall y-plus values to stay
+between 30 and 300, but remains for workflow development and engineering
+review; it does not claim validated near-wall accuracy before prism-layer and
+grid evidence exist.
+
 `case.py` is the modeling source of truth. `agentcfd.toml` contains only
 operational settings such as the default provider, output directory, container,
 and mesh controls. An ordinary execution replaces the managed `output/`
@@ -670,6 +687,8 @@ authoritative.
 - [OpenFOAM v2606 Spalding fixed-wall evidence](docs/openfoam-v2606-spalding-fixed-wall-study.json)
 - [OpenFOAM v2606 turbulence-model sensitivity evidence](docs/openfoam-v2606-turbulent-model-study.json)
 - [OpenFOAM v2606 multi-Re turbulence-model matrix](docs/openfoam-v2606-turbulent-model-sweep.json)
+- [OpenFOAM v2606 imported laminar duct-flow evidence](docs/openfoam-v2606-imported-duct-flow.json)
+- [OpenFOAM v2606 imported k-omega SST duct-flow evidence](docs/openfoam-v2606-imported-duct-rans.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

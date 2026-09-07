@@ -18,6 +18,11 @@ def test_public_physical_inputs_reject_non_finite_values(invalid):
             intensity=invalid,
             length_scale=0.01,
         ),
+        lambda: boundaries.turbulent_velocity_inlet(
+            (1.0, 0.0, 0.0),
+            intensity=invalid,
+            length_scale=0.01,
+        ),
         lambda: boundaries.pressure_outlet(invalid),
         lambda: boundaries.no_slip_wall(roughness=invalid),
         lambda: geometry.circular_pipe(length=invalid, diameter=0.1),
@@ -82,6 +87,19 @@ def test_turbulent_inlet_is_explicit_and_fractional():
             intensity=5.0,
             length_scale=0.01,
         )
+
+    vector = boundaries.turbulent_velocity_inlet(
+        (2, 0, 0),
+        intensity=0.05,
+        length_scale=0.01,
+    )
+    assert vector.to_dict() == {
+        "type": "turbulent-velocity-inlet",
+        "velocity": [2.0, 0.0, 0.0],
+        "turbulence_intensity": 0.05,
+        "turbulence_length_scale": 0.01,
+    }
+    assert vector.magnitude == 2.0
 
 
 def test_model_rejects_unknown_boundaries_and_unstable_metadata():

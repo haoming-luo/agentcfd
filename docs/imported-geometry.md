@@ -72,6 +72,15 @@ well-defined cap. These metrics follow OpenFOAM's region-to-patch convention
 and area-normal view of mesh faces; they are geometry evidence, not a substitute
 for `surfaceCheck`, meshing, or post-mesh patch integration.
 
+For a Cartesian velocity inlet, AgentCFD combines the consistently oriented
+inlet normal with the sign of the enclosed volume to determine the outward
+direction. A vector pointing out of the named inlet is rejected during project
+creation and again whenever factory parameters are changed, before any mesh or
+solver process starts. The versioned assessment is kept in model metadata. If
+watertightness, orientation, or a single inlet-normal direction is unavailable,
+the assessment says `indeterminate` and does not pretend that direction was
+proved; OpenFOAM's post-mesh signed-flow acceptance gate still remains active.
+
 Exact vertex matching is the default. If a tessellator emitted numerically
 near-coincident vertices, `--merge-tolerance` applies an explicit tolerance in
 source units to topology keys only. The report records it and warns that it

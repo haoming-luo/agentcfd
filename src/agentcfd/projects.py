@@ -4373,6 +4373,7 @@ from agentcfd import (
     boundaries,
     fluids,
     geometry,
+    geometry_io,
     meshing,
     outputs,
     parameters,
@@ -4468,6 +4469,11 @@ def build(
         and not velocity_active
     ):
         raise ValueError("A non-zero velocity or scalar inlet control is required.")
+    direction_assessment = (
+        geometry_io.validate_inlet_velocity_direction(inspection, velocity)
+        if mass_flow_rate is None and inlet_total_gauge_pressure is None
+        else None
+    )
     if turbulence_model is None:
         if turbulence_intensity is not None or turbulence_length_scale is not None:
             raise ValueError(
@@ -4522,6 +4528,11 @@ def build(
             "water",
             density=density,
             dynamic_viscosity=dynamic_viscosity,
+        ),
+        metadata=(
+            {{"inlet_velocity_direction": direction_assessment}}
+            if direction_assessment is not None
+            else {{}}
         ),
     ).boundaries(**boundary_conditions)
     return model.step(
@@ -4869,6 +4880,11 @@ def init_project(
         if role_values.count("inlet") != 1 or role_values.count("outlet") != 1:
             raise ProjectError(
                 "The released imported internal-flow template requires exactly one inlet and one outlet."
+            )
+        if selected_velocity is not None:
+            geometry_io.validate_inlet_velocity_direction(
+                imported_report,
+                selected_velocity,
             )
         invalid_names = sorted(
             name

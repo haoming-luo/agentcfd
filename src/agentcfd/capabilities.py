@@ -70,12 +70,15 @@ _CAPABILITIES = (
         maturity="experimental",
         scope=(
             "Read-only STL/OBJ format, SI-unit, bounds, region, degeneracy, "
-            "watertightness, manifoldness, orientation, and memory-guard preflight."
+            "watertightness, manifoldness, orientation, named-patch geometry, "
+            "inlet-vector direction, and memory-guard preflight."
         ),
         evidence=(
             "closed and open ASCII STL topology tests",
             "binary STL and OBJ polygon tests",
             "explicit internal-flow boundary-role mapping tests",
+            "named-patch SI area, centroid, area-vector, and normal tests",
+            "pre-solve signed inlet-vector direction tests",
             "fail-closed explicit acceptance of complete name-role suggestions",
             "installed geometry-inspection JSON contract",
         ),

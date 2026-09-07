@@ -140,6 +140,17 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
     assert inlet_metric["area_m2"] == pytest.approx(0.5e-6)
     assert inlet_metric["mean_unit_normal"] == pytest.approx([0.0, 0.0, -1.0])
     assert inlet_metric["normal_coherence"] == pytest.approx(1.0)
+    inward = geometry_io.assess_inlet_velocity_direction(report, (0.0, 0.0, 2.0))
+    jsonschema.Draft202012Validator(
+        contracts.load("inlet-direction-assessment.schema.json")
+    ).validate(inward)
+    assert inward["status"] == "passed"
+    assert inward["regions"][0]["inward_normal_velocity_m_s"] == pytest.approx(2.0)
+    outward = geometry_io.assess_inlet_velocity_direction(report, (0.0, 0.0, -2.0))
+    assert outward["status"] == "failed"
+    assert outward["regions"][0]["alignment_cosine"] == pytest.approx(-1.0)
+    with pytest.raises(geometry_io.GeometryInspectionError, match="Reverse or correct"):
+        geometry_io.validate_inlet_velocity_direction(report, (0.0, 0.0, -2.0))
     domain = geometry.imported_surface_from_inspection(
         report,
         asset="geometry/fluid.stl",

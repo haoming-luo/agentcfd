@@ -92,6 +92,7 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "turbulent-model-sweep.schema.json" in contracts.available()
     assert "openfoam-turbulent-model-sweep.schema.json" in contracts.available()
     assert "time-step-sensitivity.schema.json" in contracts.available()
+    assert "inlet-direction-assessment.schema.json" in contracts.available()
     assert "project-status.schema.json" in contracts.available()
     assert "project-storage.schema.json" in contracts.available()
     assert "project-clean.schema.json" in contracts.available()

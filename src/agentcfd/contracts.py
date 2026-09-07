@@ -24,6 +24,7 @@ _SCHEMAS = (
     "field-bundle.schema.json",
     "grid-convergence.schema.json",
     "geometry-inspection.schema.json",
+    "inlet-direction-assessment.schema.json",
     "license-catalog.schema.json",
     "openfoam-case.schema.json",
     "openfoam-grid-study.schema.json",

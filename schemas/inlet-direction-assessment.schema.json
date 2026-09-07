@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/inlet-direction-assessment.schema.json",
+  "title": "AgentCFD inlet velocity direction assessment 0.1",
+  "type": "object",
+  "required": [
+    "schema", "status", "velocity_m_s", "speed_m_s", "minimum_alignment",
+    "orientation_basis", "regions", "reason"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.inlet-direction-assessment/0.1"},
+    "status": {"enum": ["passed", "failed", "indeterminate"]},
+    "velocity_m_s": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "speed_m_s": {"type": "number", "exclusiveMinimum": 0},
+    "minimum_alignment": {"type": "number", "minimum": 0, "exclusiveMaximum": 1},
+    "orientation_basis": {"enum": ["signed-enclosed-volume", null]},
+    "regions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "outward_unit_normal", "inward_normal_velocity_m_s",
+          "alignment_cosine", "passed"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "outward_unit_normal": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 3,
+            "items": {"type": "number"}
+          },
+          "inward_normal_velocity_m_s": {"type": "number"},
+          "alignment_cosine": {"type": "number", "minimum": -1, "maximum": 1},
+          "passed": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "reason": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

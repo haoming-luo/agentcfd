@@ -128,6 +128,157 @@ def accept_name_role_suggestions(
     return accepted
 
 
+def assess_inlet_velocity_direction(
+    inspection: Mapping[str, object],
+    velocity_m_s: tuple[float, float, float],
+    *,
+    minimum_alignment: float = 1.0e-8,
+) -> dict[str, object]:
+    """Assess whether a Cartesian velocity points into confirmed inlet regions.
+
+    Outward direction is derived only for a watertight, consistently oriented
+    surface. Curved or otherwise ambiguous inlet normals remain indeterminate
+    rather than being guessed.
+    """
+
+    if inspection.get("schema") != "agentcfd.geometry-inspection/0.1":
+        raise GeometryInspectionError(
+            "Inlet direction assessment requires an AgentCFD geometry inspection."
+        )
+    if (
+        isinstance(minimum_alignment, bool)
+        or not isinstance(minimum_alignment, (int, float))
+        or not math.isfinite(minimum_alignment)
+        or not 0.0 <= minimum_alignment < 1.0
+    ):
+        raise GeometryInspectionError(
+            "Minimum inlet alignment must be finite and in the interval [0, 1)."
+        )
+    try:
+        velocity = tuple(float(value) for value in velocity_m_s)
+    except (TypeError, ValueError) as error:
+        raise GeometryInspectionError(
+            "Inlet velocity direction requires three finite Cartesian components."
+        ) from error
+    if len(velocity) != 3 or any(not math.isfinite(value) for value in velocity):
+        raise GeometryInspectionError(
+            "Inlet velocity direction requires three finite Cartesian components."
+        )
+    speed = math.sqrt(sum(value * value for value in velocity))
+    if speed <= 0.0:
+        raise GeometryInspectionError("Inlet velocity direction cannot be zero.")
+
+    surface = inspection.get("surface")
+    role_record = inspection.get("boundary_roles")
+    reason: str | None = None
+    if not isinstance(surface, Mapping) or not isinstance(role_record, Mapping):
+        reason = "Inspection lacks surface or confirmed boundary-role evidence."
+    elif surface.get("watertight") is not True:
+        reason = "Outward direction is indeterminate because the surface is not watertight."
+    elif surface.get("orientation_conflict_count") != 0:
+        reason = "Outward direction is indeterminate because face orientations conflict."
+    signed_volume = surface.get("signed_volume_native") if reason is None else None
+    if reason is None and (
+        not isinstance(signed_volume, (int, float))
+        or isinstance(signed_volume, bool)
+        or not math.isfinite(float(signed_volume))
+        or abs(float(signed_volume)) <= 1.0e-30
+    ):
+        reason = "Outward direction is indeterminate because signed volume is zero."
+    confirmed = role_record.get("confirmed") if isinstance(role_record, Mapping) else None
+    if reason is None and not isinstance(confirmed, Mapping):
+        reason = "Inlet direction requires explicitly confirmed boundary roles."
+    inlet_names = (
+        sorted(name for name, role in confirmed.items() if role == "inlet")
+        if isinstance(confirmed, Mapping)
+        else []
+    )
+    if reason is None and not inlet_names:
+        reason = "Inlet direction requires at least one confirmed inlet region."
+    metrics = surface.get("region_metrics") if isinstance(surface, Mapping) else None
+    if reason is None and not isinstance(metrics, Mapping):
+        reason = "Inspection lacks named-region area and normal metrics."
+
+    regions: list[dict[str, object]] = []
+    orientation_sign = 1.0 if isinstance(signed_volume, (int, float)) and signed_volume > 0 else -1.0
+    if reason is None:
+        assert isinstance(metrics, Mapping)
+        for name in inlet_names:
+            metric = metrics.get(name)
+            normal = metric.get("mean_unit_normal") if isinstance(metric, Mapping) else None
+            coherence = metric.get("normal_coherence") if isinstance(metric, Mapping) else None
+            if (
+                not isinstance(normal, list)
+                or len(normal) != 3
+                or not isinstance(coherence, (int, float))
+                or isinstance(coherence, bool)
+                or float(coherence) < 0.95
+            ):
+                reason = (
+                    f"Inlet region {name!r} has no reliable single normal direction."
+                )
+                regions.clear()
+                break
+            outward = [orientation_sign * float(value) for value in normal]
+            inward_speed = -sum(
+                velocity[index] * outward[index] for index in range(3)
+            )
+            alignment = inward_speed / speed
+            regions.append(
+                {
+                    "name": name,
+                    "outward_unit_normal": outward,
+                    "inward_normal_velocity_m_s": inward_speed,
+                    "alignment_cosine": alignment,
+                    "passed": alignment > float(minimum_alignment),
+                }
+            )
+
+    status = (
+        "indeterminate"
+        if reason is not None
+        else "passed"
+        if all(bool(region["passed"]) for region in regions)
+        else "failed"
+    )
+    if status == "passed":
+        reason = "Velocity has a positive inward-normal component on every inlet."
+    elif status == "failed":
+        failed = ", ".join(
+            str(region["name"]) for region in regions if not region["passed"]
+        )
+        reason = (
+            "Velocity does not point into the confirmed inlet region(s): "
+            + failed
+            + ". Reverse or correct the Cartesian inlet vector."
+        )
+    assert reason is not None
+    return {
+        "schema": "agentcfd.inlet-direction-assessment/0.1",
+        "status": status,
+        "velocity_m_s": list(velocity),
+        "speed_m_s": speed,
+        "minimum_alignment": float(minimum_alignment),
+        "orientation_basis": (
+            "signed-enclosed-volume" if status != "indeterminate" else None
+        ),
+        "regions": regions,
+        "reason": reason,
+    }
+
+
+def validate_inlet_velocity_direction(
+    inspection: Mapping[str, object],
+    velocity_m_s: tuple[float, float, float],
+) -> dict[str, object]:
+    """Reject a reliably reversed velocity and return auditable direction evidence."""
+
+    assessment = assess_inlet_velocity_direction(inspection, velocity_m_s)
+    if assessment["status"] == "failed":
+        raise GeometryInspectionError(str(assessment["reason"]))
+    return assessment
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -866,5 +1017,7 @@ def inspect_geometry(
 __all__ = [
     "GeometryInspectionError",
     "accept_name_role_suggestions",
+    "assess_inlet_velocity_direction",
     "inspect_geometry",
+    "validate_inlet_velocity_direction",
 ]

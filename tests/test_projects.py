@@ -114,7 +114,11 @@ def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):
     assert plan["readiness"]["provider_compatible"] is True
     assert plan["decisions"]["imported_mesh_plan"]["maximum_cells"] == 200_000
     assert step.model.boundary_conditions["inlet"].velocity == (0.5, 0.0, 0.0)
+    assert step.model.metadata["inlet_velocity_direction"]["status"] == "passed"
     assert "cross_section_cells" not in project.manifest.openfoam
+
+    with pytest.raises(ProjectError, match="Reverse or correct"):
+        project.plan(parameters={"velocity_x": -0.5})
 
     source.write_bytes(source.read_bytes() + b"\nexternal change")
     assert copied.read_bytes() != source.read_bytes()
@@ -144,6 +148,30 @@ def test_imported_internal_flow_init_fails_before_writing_unsupported_intent(
             },
             interior_point_m=(0.5, 0.25, 0.1),
             inlet_velocity_m_s=(0.5, 0.0, 0.0),
+            base_size_m=0.05,
+            maximum_cells=200_000,
+        )
+
+    assert not root.exists()
+
+
+def test_imported_internal_flow_rejects_reversed_velocity_before_writing(tmp_path):
+    source = (
+        Path(__file__).parents[1]
+        / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
+    root = tmp_path / "reversed-inlet"
+
+    with pytest.raises(geometry_io.GeometryInspectionError, match="Reverse or correct"):
+        projects.init_project(
+            root,
+            provider="openfoam",
+            template="imported-internal-flow",
+            geometry_path=source,
+            geometry_unit="m",
+            accept_name_roles=True,
+            interior_point_m=(0.5, 0.25, 0.1),
+            inlet_velocity_m_s=(-0.5, 0.0, 0.0),
             base_size_m=0.05,
             maximum_cells=200_000,
         )

@@ -112,6 +112,7 @@ agentcfd verify project . # hash result artifacts and verify XDMF/H5 consistency
 agentcfd run .          # full portable fields for spatial review
 agentcfd run . --summary-only  # compact evidence, no permanent field bundle
 agentcfd watch .        # follow a long active run, then stop automatically
+agentcfd performance .  # bounded comparable-run timing and ETA calibration
 agentcfd diagnose .     # classify bounded evidence and recommend one safe action
 agentcfd logs .         # raw bounded tail when deeper evidence is needed
 agentcfd resume .       # continue an identical interrupted transient checkpoint
@@ -341,7 +342,9 @@ Its `next_action.operation` is a bounded machine verb, so consumers do not need
 to infer intent by parsing a display command. The equivalent dependency-free
 Python surface is `agentcfd.open_project(path).snapshot()`. A snapshot is
 strictly observational: it never opens HDF5, launches ParaView, or starts a
-solver.
+solver. Runtime scheduling evidence is available separately through
+`agentcfd.open_project(path).performance()` so it cannot be confused with the
+scientific result.
 
 When integrity—not just a lightweight overview—is required, run `agentcfd
 verify project . --json`. This explicit operation hashes every registered

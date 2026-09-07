@@ -65,6 +65,15 @@ separates observation, review, maintenance, and solver-starting execution; the
 snapshot itself is always read-only. Python integrations use
 `agentcfd.open_project(path).snapshot()` instead of importing CLI internals.
 
+`agentcfd performance PROJECT --json` and `Project.performance()` expose a
+bounded runtime-evidence record for scheduling and human expectations. The
+calibration key includes provider/runtime version, capability, solver,
+geometry, boundary types, Reynolds-number regime, mesh, procedure, and output
+profile, but deliberately excludes field payloads. Active
+`status.progress.estimated_remaining` reports how many comparable completed
+runs support its range. Runtime calibration is advisory and cannot alter
+`accepted`, `trust_level`, or solver settings.
+
 At a handoff boundary, `agentcfd verify project PROJECT --json` performs the
 expensive counterpart: it checks the run/result identity, hashes registered
 artifacts, verifies the content-addressed solution plan, and verifies an
@@ -290,7 +299,9 @@ The authoritative machine schemas live in `schemas/simulation-result.schema.json
 `schemas/field-bundle.schema.json`, and
 `schemas/time-step-sensitivity.schema.json`. Project automation additionally
 uses `schemas/project-status.schema.json`, `schemas/project-storage.schema.json`,
-`schemas/project-clean.schema.json`, `schemas/project-view.schema.json`, and
-`schemas/error.schema.json`.
+`schemas/project-clean.schema.json`, `schemas/project-view.schema.json`,
+`schemas/project-snapshot.schema.json`, `schemas/project-verification.schema.json`,
+`schemas/project-performance.schema.json`,
+`schemas/performance-history.schema.json`, and `schemas/error.schema.json`.
 Release wheels also install them under `share/agentcfd/schemas` in the active
 Python environment so non-Python consumers can discover the same contracts.

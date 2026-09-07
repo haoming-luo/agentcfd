@@ -74,6 +74,8 @@ files stay hidden and reproducible.
   coordinate, residual, Courant, mass/pressure monitor, elapsed, and optional
   workspace-size evidence;
 - terminal-aware `watch` streaming for people and JSON-Line agents;
+- bounded 50-sample runtime history with comparable-setup calibration used by
+  `performance`, `status`, and `watch`, without reading or retaining fields;
 - automatic failed-workspace retention and bounded project-aware solver-log
   access with phase selection and a versioned agent contract;
 - evidence-linked deterministic classification of common resource,
@@ -143,8 +145,6 @@ files stay hidden and reproducible.
    fan/pump, heated pipe, and buoyant enclosure workflows.
 3. Extend the shipped filter recipes with multi-view layout and explicit normal
    or tangential vector projection intent while preserving one field payload.
-4. Persist bounded progress history and learned ETA calibration across runs,
-   without converting monitoring into high-frequency field output.
 
 ### Then: scale without scaling attention
 

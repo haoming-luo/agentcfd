@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/performance-history.schema.json",
+  "title": "AgentCFD bounded runtime performance history 0.1",
+  "type": "object",
+  "required": ["schema", "updated_at", "maximum_samples", "samples"],
+  "properties": {
+    "schema": {"const": "agentcfd.performance-history/0.1"},
+    "updated_at": {"type": ["string", "null"]},
+    "maximum_samples": {"const": 50},
+    "samples": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "run_id", "recorded_at", "status", "accepted", "provider",
+          "performance_key", "analysis_sha256", "result_profile", "model_name",
+          "solver", "estimated_mesh_cells", "total_seconds"
+        ],
+        "properties": {
+          "run_id": {"type": ["string", "null"]},
+          "recorded_at": {"type": ["string", "null"]},
+          "status": {"type": ["string", "null"]},
+          "accepted": {"type": ["boolean", "null"]},
+          "provider": {"type": "string", "minLength": 1},
+          "performance_key": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "analysis_sha256": {"type": ["string", "null"]},
+          "result_profile": {"type": ["string", "null"]},
+          "model_name": {"type": ["string", "null"]},
+          "solver": {"type": ["string", "null"]},
+          "estimated_mesh_cells": {"type": ["integer", "null"], "minimum": 1},
+          "total_seconds": {"type": "number", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

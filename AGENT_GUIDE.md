@@ -15,6 +15,7 @@ agentcfd project first-flow --json
 agentcfd status first-flow --json
 agentcfd run first-flow --json
 agentcfd status first-flow --storage --json
+agentcfd performance first-flow --json
 agentcfd view first-flow --json
 agentcfd verify project first-flow --json
 python -m pytest -q
@@ -91,6 +92,9 @@ python -m pytest -q
 25. Use `verify project --json` before archive, coupling, or dataset admission.
     Keep byte integrity, scientific acceptance, and trust level separate; a
     verified artifact set does not repair a failed physical check.
+26. Use `performance --json` only for scheduling and ETA. Its bounded comparable
+    runtime history is advisory and must never be treated as convergence,
+    accuracy, acceptance, or permission to change the requested model.
 
 ## Current boundary
 

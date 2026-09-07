@@ -81,6 +81,14 @@ wide ETA range for transient time advancement. It never opens a volume field.
 Workspace byte accounting remains opt-in through `status --storage` because a
 recursive scan itself can become expensive on very large cases.
 
+Every completed managed run also contributes one tiny record to
+`.agentcfd/performance.json`. The file is capped at 50 samples and never stores
+solver fields. `agentcfd performance .` groups only comparable provider,
+solver, geometry, mesh, procedure, and output profiles; `status` and `watch`
+prefer that evidence over linear extrapolation when available. A missing,
+damaged, or unwritable calibration file never blocks a simulation or weakens a
+scientific acceptance gate.
+
 `agentcfd watch .` follows this contract at a two-second default cadence and
 exits automatically when the project leaves `running`. Human output is one
 compact append-only line per sample; `watch --json` emits JSON Lines for an AI

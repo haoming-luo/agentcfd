@@ -1690,6 +1690,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     storage_command.add_argument("project", nargs="?", type=Path, default=Path("."))
     storage_command.add_argument("--json", action="store_true", dest="as_json")
+    performance_command = subparsers.add_parser(
+        "performance",
+        help="Show bounded runtime history and comparable-run ETA calibration.",
+    )
+    performance_command.add_argument(
+        "project", nargs="?", type=Path, default=Path(".")
+    )
+    performance_command.add_argument("--json", action="store_true", dest="as_json")
 
     campaigns = subparsers.add_parser(
         "campaigns",
@@ -3159,6 +3167,29 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{name}: {item['display']} | {item['file_count']} files")
             if report["next_action"] is not None:
                 print(f"next: {report['next_action']['command']}")
+        return 0
+    if args.command == "performance":
+        report = projects.open_project(args.project).performance()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            history = report["history"]
+            current = report["current"]
+            calibration = current["calibration"]
+            print(
+                f"Runtime history {history['sample_count']}/{history['maximum_samples']} "
+                f"samples | {history['status']}"
+            )
+            if calibration is None:
+                print("current setup: no comparable completed run")
+            else:
+                print(
+                    f"current setup: {calibration['sample_count']} comparable | "
+                    f"median {calibration['median_display']} | "
+                    f"range {calibration['minimum_display']}–"
+                    f"{calibration['maximum_display']}"
+                )
+            print(f"next: {report['next_action']['command']}")
         return 0
     if args.command == "campaigns":
         project = projects.Project.discover(args.project)

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add bounded per-project runtime history and `Project.performance()` /
+  `agentcfd performance`. Completed runs contribute at most 50 field-free
+  samples; active `status` and `watch` prefer comparable-run ETA calibration,
+  while corrupt or unwritable advisory history can never fail a simulation.
 - Add `Project.verify()` and `agentcfd verify project` as one explicit integrity
   boundary for the run record, content-addressed solution plan, scientific result,
   registered artifacts, and an optional XDMF/H5 field bundle. The report keeps

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-performance.schema.json",
+  "title": "AgentCFD bounded project runtime performance 0.1",
+  "$defs": {
+    "sample": {
+      "type": "object",
+      "required": [
+        "run_id", "recorded_at", "status", "accepted", "provider",
+        "performance_key", "analysis_sha256", "result_profile", "model_name",
+        "solver", "estimated_mesh_cells", "total_seconds"
+      ],
+      "properties": {
+        "run_id": {"type": ["string", "null"]},
+        "recorded_at": {"type": ["string", "null"]},
+        "status": {"type": ["string", "null"]},
+        "accepted": {"type": ["boolean", "null"]},
+        "provider": {"type": "string", "minLength": 1},
+        "performance_key": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "analysis_sha256": {"type": ["string", "null"]},
+        "result_profile": {"type": ["string", "null"]},
+        "model_name": {"type": ["string", "null"]},
+        "solver": {"type": ["string", "null"]},
+        "estimated_mesh_cells": {"type": ["integer", "null"], "minimum": 1},
+        "total_seconds": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "required": ["schema", "root", "history", "current", "recent_samples", "next_action"],
+  "properties": {
+    "schema": {"const": "agentcfd.project-performance/0.1"},
+    "root": {"type": "string", "minLength": 1},
+    "history": {
+      "type": "object",
+      "required": ["path", "status", "maximum_samples", "sample_count"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "status": {"enum": ["missing", "valid", "invalid"]},
+        "maximum_samples": {"const": 50},
+        "sample_count": {"type": "integer", "minimum": 0, "maximum": 50}
+      },
+      "additionalProperties": false
+    },
+    "current": {
+      "type": "object",
+      "required": [
+        "performance_key", "provider", "result_profile",
+        "estimated_mesh_cells", "calibration"
+      ],
+      "properties": {
+        "performance_key": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "provider": {"type": "string", "minLength": 1},
+        "result_profile": {"enum": ["summary-only", "full-fields"]},
+        "estimated_mesh_cells": {"type": ["integer", "null"], "minimum": 1},
+        "calibration": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "required": [
+                "sample_count", "minimum_seconds", "median_seconds",
+                "maximum_seconds", "minimum_display", "median_display",
+                "maximum_display", "basis"
+              ],
+              "properties": {
+                "sample_count": {"type": "integer", "minimum": 1},
+                "minimum_seconds": {"type": "number", "minimum": 0},
+                "median_seconds": {"type": "number", "minimum": 0},
+                "maximum_seconds": {"type": "number", "minimum": 0},
+                "minimum_display": {"type": "string", "minLength": 1},
+                "median_display": {"type": "string", "minLength": 1},
+                "maximum_display": {"type": "string", "minLength": 1},
+                "basis": {"type": "string", "minLength": 1}
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "recent_samples": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {"$ref": "#/$defs/sample"}
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

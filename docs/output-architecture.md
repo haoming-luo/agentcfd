@@ -128,6 +128,8 @@ Implemented now:
 - selected-time and selected-field conversion before temporary VTK creation;
 - project storage inventory plus preview-first cleanup that protects active
   runs, sole recovery checkpoints, and explicitly retained expert workspaces;
+- a 50-sample, field-free runtime history used to calibrate `status`/`watch`
+  ETA for comparable project setups without growing with solver time steps;
 - separated baffled-channel XDMF frame selection and content-addressed rolling
   restart ZIPs, with trust/model/member verification before continuation.
 
@@ -137,3 +139,8 @@ does not claim crash-safe mid-run archival. Next provider milestones are
 streaming frame conversion, crash-safe checkpoint publication, and then an
 in-situ extraction adapter. Those are execution optimizations, not new user
 concepts; existing `case.py` files keep the same API.
+
+The compact-monitoring direction follows OpenFOAM's function-object model,
+which is explicitly intended to standardize batch post-processing while
+avoiding unnecessary full-field retention:
+<https://doc.openfoam.com/2212/tools/post-processing/function-objects/>.

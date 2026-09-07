@@ -13,6 +13,7 @@ import os
 import re
 import shlex
 import shutil
+import statistics
 import sys
 import tempfile
 import tomllib
@@ -498,6 +499,8 @@ def _process_is_alive(pid: object) -> bool:
 
 
 _OPENFOAM_NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+_PERFORMANCE_HISTORY_LIMIT = 50
+_PERFORMANCE_HISTORY_MAX_BYTES = 512 * 1024
 
 
 def _human_duration(seconds: float) -> str:
@@ -511,6 +514,222 @@ def _human_duration(seconds: float) -> str:
     if minutes:
         return f"{minutes}m {secs}s"
     return f"{secs}s"
+
+
+def _elapsed_seconds(started_at: object, completed_at: object) -> float | None:
+    try:
+        start = datetime.fromisoformat(str(started_at))
+        end = datetime.fromisoformat(str(completed_at))
+    except (TypeError, ValueError):
+        return None
+    value = (end - start).total_seconds()
+    return value if math.isfinite(value) and value >= 0.0 else None
+
+
+def _performance_key(
+    plan: Mapping[str, object],
+    *,
+    provider: str,
+    result_profile: str,
+) -> str:
+    """Identify runtime-relevant intent without coupling ETA to exact flow values."""
+
+    decisions = plan.get("decisions", {})
+    model = plan.get("model", {})
+    summary = model.get("summary", {}) if isinstance(model, Mapping) else {}
+    domain = summary.get("domain") if isinstance(summary, Mapping) else None
+    boundary_records = (
+        summary.get("boundaries", {}) if isinstance(summary, Mapping) else {}
+    )
+    boundary_types = {
+        str(name): {
+            key: value
+            for key, value in record.items()
+            if key in {"type", "thermal"}
+        }
+        for name, record in (
+            boundary_records.items() if isinstance(boundary_records, Mapping) else ()
+        )
+        if isinstance(record, Mapping)
+    }
+    reynolds = model.get("reynolds_number") if isinstance(model, Mapping) else None
+    reynolds_band = (
+        math.floor(math.log2(float(reynolds)))
+        if isinstance(reynolds, (int, float))
+        and not isinstance(reynolds, bool)
+        and float(reynolds) > 0.0
+        and math.isfinite(float(reynolds))
+        else None
+    )
+    study = decisions.get("study") if isinstance(decisions, Mapping) else None
+    output_plan = (
+        decisions.get("output_plan", {}) if isinstance(decisions, Mapping) else {}
+    )
+    frames = (
+        output_plan.get("channels", {}).get("field_frames")
+        if isinstance(output_plan, Mapping)
+        and isinstance(output_plan.get("channels"), Mapping)
+        else None
+    )
+    provider_record = (
+        decisions.get("provider", {}) if isinstance(decisions, Mapping) else {}
+    )
+    payload = {
+        "provider": provider,
+        "provider_version": (
+            provider_record.get("version")
+            if isinstance(provider_record, Mapping)
+            else None
+        ),
+        "required_capability": (
+            decisions.get("required_capability")
+            if isinstance(decisions, Mapping)
+            else None
+        ),
+        "solver": decisions.get("solver") if isinstance(decisions, Mapping) else None,
+        "study": study,
+        "procedure": (
+            decisions.get("procedure") if isinstance(decisions, Mapping) else None
+        ),
+        "mesh": (
+            decisions.get("mesh_intent") if isinstance(decisions, Mapping) else None
+        ),
+        "domain": domain,
+        "boundary_types": boundary_types,
+        "reynolds_factor_two_band": reynolds_band,
+        "estimated_mesh_cells": (
+            output_plan.get("estimated_mesh_cells")
+            if isinstance(output_plan, Mapping)
+            else None
+        ),
+        "field_frames": frames,
+        "result_profile": result_profile,
+    }
+    return content_fingerprint(payload)
+
+
+def _read_performance_history(root: Path) -> tuple[list[dict[str, object]], str]:
+    path = root / ".agentcfd" / "performance.json"
+    if not path.is_file():
+        return [], "missing"
+    try:
+        if path.stat().st_size > _PERFORMANCE_HISTORY_MAX_BYTES:
+            raise ValueError("AgentCFD performance history exceeds its size limit.")
+        record = strict_json_object(
+            path.read_text(encoding="utf-8"),
+            label=f"AgentCFD performance history {path}",
+        )
+        samples = record.get("samples")
+        if (
+            record.get("schema") != "agentcfd.performance-history/0.1"
+            or not isinstance(samples, list)
+            or set(record)
+            != {"schema", "updated_at", "maximum_samples", "samples"}
+            or record.get("maximum_samples") != _PERFORMANCE_HISTORY_LIMIT
+            or len(samples) > _PERFORMANCE_HISTORY_LIMIT
+            or (
+                record.get("updated_at") is not None
+                and not isinstance(record.get("updated_at"), str)
+            )
+        ):
+            raise ValueError("Unsupported AgentCFD performance-history record.")
+        required = {
+            "run_id",
+            "recorded_at",
+            "status",
+            "accepted",
+            "provider",
+            "performance_key",
+            "analysis_sha256",
+            "result_profile",
+            "model_name",
+            "solver",
+            "estimated_mesh_cells",
+            "total_seconds",
+        }
+        valid = []
+        for item in samples:
+            if not isinstance(item, Mapping) or set(item) != required:
+                raise ValueError("Performance history contains an invalid sample.")
+            key = item.get("performance_key")
+            duration = item.get("total_seconds")
+            provider = item.get("provider")
+            cells = item.get("estimated_mesh_cells")
+            nullable_strings = (
+                item.get("run_id"),
+                item.get("recorded_at"),
+                item.get("status"),
+                item.get("analysis_sha256"),
+                item.get("result_profile"),
+                item.get("model_name"),
+                item.get("solver"),
+            )
+            if (
+                not isinstance(key, str)
+                or re.fullmatch(r"sha256:[0-9a-f]{64}", key) is None
+                or not isinstance(provider, str)
+                or not provider
+                or not isinstance(duration, (int, float))
+                or isinstance(duration, bool)
+                or not math.isfinite(float(duration))
+                or float(duration) < 0.0
+                or any(
+                    value is not None and not isinstance(value, str)
+                    for value in nullable_strings
+                )
+                or (
+                    item.get("accepted") is not None
+                    and not isinstance(item.get("accepted"), bool)
+                )
+                or (
+                    cells is not None
+                    and (
+                        not isinstance(cells, int)
+                        or isinstance(cells, bool)
+                        or cells < 1
+                    )
+                )
+            ):
+                raise ValueError("Performance history contains an invalid sample.")
+            valid.append(dict(item))
+    except (OSError, TypeError, ValueError):
+        return [], "invalid"
+    return valid[-_PERFORMANCE_HISTORY_LIMIT:], "valid"
+
+
+def _calibrated_remaining(
+    root: Path,
+    record: Mapping[str, object],
+    *,
+    elapsed_seconds: float,
+) -> dict[str, object] | None:
+    key = record.get("performance_key")
+    if not isinstance(key, str):
+        return None
+    samples, status = _read_performance_history(root)
+    if status != "valid":
+        return None
+    durations = [
+        float(item["total_seconds"])
+        for item in samples
+        if item.get("performance_key") == key
+        and item.get("status") == "completed"
+        and isinstance(item.get("total_seconds"), (int, float))
+        and float(item["total_seconds"]) >= 0.0
+    ]
+    if not durations:
+        return None
+    median = statistics.median(durations)
+    lower_total = min(durations) if len(durations) > 1 else median * 0.75
+    upper_total = max(durations) if len(durations) > 1 else median * 1.5
+    upper_remaining = max(1.0, upper_total - elapsed_seconds)
+    if elapsed_seconds > upper_total:
+        upper_remaining = max(upper_remaining, elapsed_seconds * 0.5)
+    return {
+        "minimum_seconds": round(max(0.0, lower_total - elapsed_seconds), 1),
+        "maximum_seconds": round(upper_remaining, 1),
+        "basis": f"bounded project history; {len(durations)} comparable run(s)",
+    }
 
 
 def _read_text_tail(path: Path, *, maximum_bytes: int = 256 * 1024) -> tuple[str, int]:
@@ -731,12 +950,7 @@ def _run_progress_snapshot(
     now = datetime.now(UTC)
     started_at = record.get("started_at")
     completed_at = record.get("completed_at")
-    try:
-        start = datetime.fromisoformat(str(started_at))
-        end = datetime.fromisoformat(str(completed_at)) if completed_at else now
-        elapsed_seconds = max(0.0, (end - start).total_seconds())
-    except (TypeError, ValueError):
-        elapsed_seconds = None
+    elapsed_seconds = _elapsed_seconds(started_at, completed_at or now.isoformat())
 
     remaining_range = None
     if (
@@ -751,6 +965,14 @@ def _run_progress_snapshot(
             "maximum_seconds": round(linear_remaining * 2.0, 1),
             "basis": "wide linear extrapolation; meshing and export excluded",
         }
+    if isinstance(elapsed_seconds, float):
+        calibrated = _calibrated_remaining(
+            root,
+            record,
+            elapsed_seconds=elapsed_seconds,
+        )
+        if calibrated is not None:
+            remaining_range = calibrated
 
     workspace_bytes = None
     workspace_files = None
@@ -3277,6 +3499,139 @@ class Project:
             "next_action": next_action,
         }
 
+    def _record_performance(
+        self,
+        *,
+        run_record: Mapping[str, object],
+        plan: Mapping[str, object],
+        execution_provider: str,
+        performance_key: str,
+    ) -> None:
+        """Append one bounded runtime sample without risking a completed result."""
+
+        total_seconds = _elapsed_seconds(
+            run_record.get("started_at"), run_record.get("completed_at")
+        )
+        if total_seconds is None:
+            return
+        samples, history_status = _read_performance_history(self.root)
+        if history_status == "invalid":
+            # Runtime calibration is advisory. Never overwrite an unrecognized
+            # record or turn a successful simulation into a failed run.
+            return
+        decisions = plan.get("decisions", {})
+        output_plan = (
+            decisions.get("output_plan", {})
+            if isinstance(decisions, Mapping)
+            else {}
+        )
+        samples.append(
+            {
+                "run_id": run_record.get("run_id"),
+                "recorded_at": run_record.get("completed_at"),
+                "status": run_record.get("status"),
+                "accepted": run_record.get("accepted"),
+                "provider": execution_provider,
+                "performance_key": performance_key,
+                "analysis_sha256": run_record.get("analysis_sha256"),
+                "result_profile": run_record.get("result_profile"),
+                "model_name": run_record.get("model_name"),
+                "solver": (
+                    decisions.get("solver")
+                    if isinstance(decisions, Mapping)
+                    else None
+                ),
+                "estimated_mesh_cells": (
+                    output_plan.get("estimated_mesh_cells")
+                    if isinstance(output_plan, Mapping)
+                    else None
+                ),
+                "total_seconds": round(total_seconds, 6),
+            }
+        )
+        samples = samples[-_PERFORMANCE_HISTORY_LIMIT:]
+        path = self.root / ".agentcfd" / "performance.json"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(
+                path,
+                {
+                    "schema": "agentcfd.performance-history/0.1",
+                    "updated_at": run_record.get("completed_at"),
+                    "maximum_samples": _PERFORMANCE_HISTORY_LIMIT,
+                    "samples": samples,
+                },
+            )
+        except (OSError, TypeError, ValueError):
+            return
+
+    def performance(self) -> dict[str, object]:
+        """Return bounded runtime evidence and current-project ETA calibration."""
+
+        plan = self.plan()
+        provider = self.manifest.default_provider
+        result_profile = str(plan["decisions"]["result_profile"])
+        current_key = _performance_key(
+            plan,
+            provider=provider,
+            result_profile=result_profile,
+        )
+        samples, history_status = _read_performance_history(self.root)
+        comparable = [
+            item
+            for item in samples
+            if item.get("performance_key") == current_key
+            and item.get("status") == "completed"
+            and isinstance(item.get("total_seconds"), (int, float))
+        ]
+        durations = [float(item["total_seconds"]) for item in comparable]
+        calibration = (
+            None
+            if not durations
+            else {
+                "sample_count": len(durations),
+                "minimum_seconds": min(durations),
+                "median_seconds": statistics.median(durations),
+                "maximum_seconds": max(durations),
+                "minimum_display": _human_duration(min(durations)),
+                "median_display": _human_duration(statistics.median(durations)),
+                "maximum_display": _human_duration(max(durations)),
+                "basis": (
+                    "same provider, solver, geometry, boundary types, Reynolds "
+                    "regime, mesh, procedure, and output profile"
+                ),
+            }
+        )
+        project_argument = self._cli_project_argument()
+        return {
+            "schema": "agentcfd.project-performance/0.1",
+            "root": str(self.root),
+            "history": {
+                "path": str(self.root / ".agentcfd" / "performance.json"),
+                "status": history_status,
+                "maximum_samples": _PERFORMANCE_HISTORY_LIMIT,
+                "sample_count": len(samples),
+            },
+            "current": {
+                "performance_key": current_key,
+                "provider": provider,
+                "result_profile": result_profile,
+                "estimated_mesh_cells": plan["decisions"]["output_plan"].get(
+                    "estimated_mesh_cells"
+                ),
+                "calibration": calibration,
+            },
+            "recent_samples": samples[-10:],
+            "next_action": {
+                "command": f"agentcfd status {project_argument}",
+                "reason": (
+                    "Run the project to create the first comparable runtime sample."
+                    if calibration is None
+                    else "Use status/watch for a history-calibrated remaining-time range."
+                ),
+            },
+        }
+
     def storage(self) -> dict[str, object]:
         """Inventory managed project data without reading field arrays."""
 
@@ -3287,6 +3642,7 @@ class Project:
             "campaigns": self.root / "campaigns",
             "temporary_workspaces": workspace_root,
             "mesh_cache": self.root / ".agentcfd" / "mesh-cache",
+            "runtime_history": self.root / ".agentcfd" / "performance.json",
         }
         categories: dict[str, dict[str, object]] = {}
         for name, path in groups.items():
@@ -3358,6 +3714,7 @@ class Project:
                 "campaign_run": "retain immutable campaigns",
                 "temporary_workspaces": "removed after successful export unless explicitly kept or interrupted",
                 "mesh_cache": "content-addressed and retained for compatible imported-geometry runs",
+                "runtime_history": "bounded to 50 field-free advisory samples",
                 "portable_fields": "XDMF index plus compressed HDF5 payload",
             },
             "next_action": (
@@ -4399,6 +4756,17 @@ class Project:
             container_image=container_image,
             portable_fields=portable_fields,
         )
+        result_profile = (
+            "summary-only"
+            if selected_name == "openfoam"
+            and plan["decisions"]["portable_field_bundle"] is False
+            else "full-fields"
+        )
+        performance_key = _performance_key(
+            plan,
+            provider=selected_name,
+            result_profile=result_profile,
+        )
         marker_record: dict[str, object] = {
             "schema": "agentcfd.project-run/0.1",
             "run_id": run_id,
@@ -4413,12 +4781,8 @@ class Project:
             "execution_sha256": execution_sha256,
             "resume_execution_sha256": resume_execution_sha256,
             "result_execution_sha256": result_execution_sha256,
-            "result_profile": (
-                "summary-only"
-                if selected_name == "openfoam"
-                and plan["decisions"]["portable_field_bundle"] is False
-                else "full-fields"
-            ),
+            "result_profile": result_profile,
+            "performance_key": performance_key,
             "parameters": selected_parameters,
             "model_name": step.model.name,
             "reynolds_number": _inlet_reynolds(step),
@@ -4726,6 +5090,7 @@ class Project:
         run_record["resume_execution_sha256"] = resume_execution_sha256
         run_record["result_execution_sha256"] = result_execution_sha256
         run_record["result_profile"] = marker_record["result_profile"]
+        run_record["performance_key"] = performance_key
         run_record["phase"] = "complete"
         run_record["pid"] = None
         run_record["started_at"] = started_at
@@ -4755,6 +5120,12 @@ class Project:
         (run_directory / "run.json").write_text(
             json.dumps(run_record, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
+        )
+        self._record_performance(
+            run_record=run_record,
+            plan=plan,
+            execution_provider=selected_name,
+            performance_key=performance_key,
         )
         if (
             _resume_source_run_id is not None
@@ -5829,8 +6200,9 @@ timeout_seconds = 3600
         "only the corresponding declared command when authorized, and re-read the "
         "snapshot after each action. Do not edit generated OpenFOAM dictionaries to "
         "change scientific intent. Preserve plan, result, XDMF/H5, selected NPZ, and "
-        "failed checks together. Run `agentcfd verify project . --json` before a "
-        "handoff. Follow `resume_after_repair` only after the diagnosed "
+        "failed checks together. Use `agentcfd performance . --json` only for "
+        "scheduling; it is not scientific evidence. Run `agentcfd verify project "
+        ". --json` before a handoff. Follow `resume_after_repair` only after the diagnosed "
         "cause is fixed. Never promote a result whose `accepted` value is false.\n",
         encoding="utf-8",
     )

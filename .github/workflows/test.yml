@@ -37,7 +37,7 @@ jobs:
       - run: wheel-test/bin/python -c "import importlib.util; assert importlib.util.find_spec('numpy') is None"
       - run: wheel-test/bin/agentcfd doctor --json
       - run: wheel-test/bin/agentcfd contracts --json
-      - run: wheel-test/bin/python -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file(); assert contracts.path('project-verification.schema.json').is_file()"
+      - run: wheel-test/bin/python -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file(); assert contracts.path('project-verification.schema.json').is_file(); assert contracts.path('project-performance.schema.json').is_file(); assert contracts.path('performance-history.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-precursor-map.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-precursor-grid-study.schema.json').is_file()"
@@ -50,6 +50,7 @@ jobs:
       - run: wheel-test/bin/agentcfd init operating-point-project --template industrial-pipe
       - run: wheel-test/bin/agentcfd project operating-point-project --no-result --json
       - run: wheel-test/bin/agentcfd run operating-point-project --json
+      - run: wheel-test/bin/agentcfd performance operating-point-project --json
       - run: wheel-test/bin/agentcfd verify project operating-point-project --json
       - run: wheel-test/bin/agentcfd params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
       - run: wheel-test/bin/agentcfd plan operating-point-project --param-file operating-point.json --json

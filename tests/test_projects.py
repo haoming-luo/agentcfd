@@ -222,6 +222,12 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         projects.Project(root).plan(
             parameters={**turbulent_parameters, "mass_flow_rate": 49.91}
         )
+    with pytest.raises(ProjectError, match="violates its declared contract"):
+        projects.Project(root).plan(parameters={"base_size": -0.01})
+    with pytest.raises(ProjectError, match="must be an integer"):
+        projects.Project(root).plan(parameters={"maximum_cells": 10.5})
+    with pytest.raises(ProjectError, match="must be one of"):
+        projects.Project(root).plan(parameters={"turbulence_model": "invented"})
 
 
 def test_cli_initializes_imported_flow_with_mass_flow_as_primary_control(

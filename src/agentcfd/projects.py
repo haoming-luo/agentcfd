@@ -1024,6 +1024,30 @@ class Project:
         self._factory_cache = (entrypoint_sha256, factory)
         return factory
 
+    @staticmethod
+    def _parameter_specs(factory) -> dict[str, parameter_definitions.ParameterSpec]:
+        declared = getattr(factory, "__agentcfd_parameter_specs__", {})
+        if not isinstance(declared, Mapping):
+            raise ProjectError("Project factory parameter metadata must be a mapping.")
+        signature_names = set(inspect.signature(factory).parameters)
+        unknown = sorted(set(declared) - signature_names)
+        if unknown:
+            raise ProjectError(
+                "Project parameter metadata targets unknown inputs: "
+                + ", ".join(unknown)
+                + "."
+            )
+        invalid = sorted(
+            name
+            for name, specification in declared.items()
+            if not isinstance(specification, parameter_definitions.ParameterSpec)
+        )
+        if invalid:
+            raise ProjectError(
+                "Invalid project parameter metadata: " + ", ".join(invalid) + "."
+            )
+        return dict(declared)
+
     def parameter_contract(
         self,
         selected: Mapping[str, object] | None = None,
@@ -1036,18 +1060,10 @@ class Project:
 
         factory = self._factory()
         selected_parameters = self._parameters(selected)
-        declared = getattr(factory, "__agentcfd_parameter_specs__", {})
-        if not isinstance(declared, Mapping):
-            raise ProjectError("Project factory parameter metadata must be a mapping.")
+        declared = self._parameter_specs(factory)
         records: list[dict[str, object]] = []
         for parameter in inspect.signature(factory).parameters.values():
             specification = declared.get(parameter.name)
-            if specification is not None and not isinstance(
-                specification, parameter_definitions.ParameterSpec
-            ):
-                raise ProjectError(
-                    f"Project parameter metadata for {parameter.name!r} is invalid."
-                )
             keyword_overrideable = parameter.kind in {
                 inspect.Parameter.POSITIONAL_OR_KEYWORD,
                 inspect.Parameter.KEYWORD_ONLY,
@@ -1099,6 +1115,18 @@ class Project:
             raise ProjectError(
                 f"Project factory rejected parameter selection ({supplied}): {error}"
             ) from error
+        specifications = self._parameter_specs(factory)
+        for name, value in selected_parameters.items():
+            specification = specifications.get(name)
+            if specification is None:
+                continue
+            try:
+                specification.validate(value, name=name)
+            except ValueError as error:
+                raise ProjectError(
+                    f"Project parameter {name!r} violates its declared contract: "
+                    f"{error}"
+                ) from error
         try:
             step = factory(**selected_parameters)
         except Exception as error:
@@ -4387,7 +4415,7 @@ from agentcfd import (
         "Base mesh size", unit="m", minimum=0, exclusive_minimum=True,
         description="Target background cell size before local surface refinement.",
     ),
-    maximum_cells=parameters.number(
+    maximum_cells=parameters.integer(
         "Maximum cells", unit="1", minimum=1,
         description="Hard global cell-count safety limit.",
     ),

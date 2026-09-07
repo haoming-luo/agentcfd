@@ -122,8 +122,9 @@ Projects can keep UI/agent meaning beside the Python model with the optional
 `parameters.describe(...)` decorator. Generated templates use
 `parameters.number(...)` and `parameters.choice(...)` to declare labels,
 canonical units, bounds, nullability, choices, and short descriptions. This is
-presentation metadata, not a second input file; the engineering constructors
-remain the source of scientific validation.
+not a second input file: AgentCFD uses the declared scalar bounds and choices
+for immediate parameter preflight, while the engineering constructors remain
+the final source of coupled scientific validation.
 
 For owned STL/OBJ internal-flow geometry, initialization can perform the
 inspection-to-project handoff without asking the user to author `case.py` from

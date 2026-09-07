@@ -43,3 +43,33 @@ def test_choice_metadata_rejects_empty_or_duplicate_values():
         parameters.choice("Mode", (), description="Solver mode.")
     with pytest.raises(ValueError, match="unique"):
         parameters.choice("Mode", ("a", "a"), description="Solver mode.")
+
+
+def test_parameter_specs_validate_values_without_provider_work():
+    positive = parameters.number(
+        "Size",
+        description="Positive length.",
+        minimum=0,
+        exclusive_minimum=True,
+    )
+    count = parameters.integer(
+        "Count",
+        description="Integral count.",
+        minimum=1,
+    )
+    mode = parameters.choice(
+        "Mode",
+        ("laminar", "rans"),
+        description="Flow closure.",
+        nullable=True,
+    )
+
+    positive.validate(0.1, name="size")
+    count.validate(2, name="count")
+    mode.validate(None, name="mode")
+    with pytest.raises(ValueError, match="greater than 0"):
+        positive.validate(0, name="size")
+    with pytest.raises(ValueError, match="integer"):
+        count.validate(2.5, name="count")
+    with pytest.raises(ValueError, match="must be one of"):
+        mode.validate("les", name="mode")

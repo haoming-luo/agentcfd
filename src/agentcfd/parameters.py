@@ -45,8 +45,8 @@ class ParameterSpec:
     nullable: bool = False
 
     def __post_init__(self) -> None:
-        if self.kind not in {"number", "choice"}:
-            raise ValueError("Parameter kind must be 'number' or 'choice'.")
+        if self.kind not in {"number", "integer", "choice"}:
+            raise ValueError("Parameter kind must be 'number', 'integer', or 'choice'.")
         object.__setattr__(self, "label", _optional_text(self.label, name="Label"))
         object.__setattr__(
             self,
@@ -71,8 +71,39 @@ class ParameterSpec:
             if len(set(choices)) != len(choices):
                 raise ValueError("Parameter choices must be unique.")
         elif choices:
-            raise ValueError("Number parameters cannot declare choices.")
+            raise ValueError("Numeric parameters cannot declare choices.")
         object.__setattr__(self, "choices", choices)
+
+    def validate(self, value: object, *, name: str) -> None:
+        """Validate one explicit override against the declared presentation contract."""
+
+        if value is None:
+            if self.nullable:
+                return
+            raise ValueError(f"{name} cannot be null.")
+        if self.kind == "choice":
+            if not isinstance(value, str) or value not in self.choices:
+                allowed = ", ".join(repr(item) for item in self.choices)
+                raise ValueError(f"{name} must be one of: {allowed}.")
+            return
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must be a number.")
+        if self.kind == "integer" and not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer.")
+        selected = float(value)
+        if not math.isfinite(selected):
+            raise ValueError(f"{name} must be finite.")
+        if self.minimum is not None:
+            invalid = (
+                selected <= self.minimum
+                if self.exclusive_minimum
+                else selected < self.minimum
+            )
+            if invalid:
+                relation = "greater than" if self.exclusive_minimum else "at least"
+                raise ValueError(f"{name} must be {relation} {self.minimum:g}.")
+        if self.maximum is not None and selected > self.maximum:
+            raise ValueError(f"{name} must be at most {self.maximum:g}.")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -130,6 +161,28 @@ def choice(
     )
 
 
+def integer(
+    label: str,
+    *,
+    description: str,
+    unit: str | None = None,
+    minimum: int | None = None,
+    maximum: int | None = None,
+    nullable: bool = False,
+) -> ParameterSpec:
+    """Describe one integral project input such as a hard cell limit."""
+
+    return ParameterSpec(
+        kind="integer",
+        label=label,
+        description=description,
+        unit=unit,
+        minimum=minimum,
+        maximum=maximum,
+        nullable=nullable,
+    )
+
+
 def describe(**specifications: ParameterSpec):
     """Attach explicit UI/agent metadata to a readable ``build()`` factory."""
 
@@ -151,4 +204,4 @@ def describe(**specifications: ParameterSpec):
     return decorator
 
 
-__all__ = ["ParameterSpec", "choice", "describe", "number"]
+__all__ = ["ParameterSpec", "choice", "describe", "integer", "number"]

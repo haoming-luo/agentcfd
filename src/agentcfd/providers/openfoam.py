@@ -2430,6 +2430,11 @@ class OpenFOAMProvider:
                 "Generic initialization and mesh-intent lowering are not implemented "
                 "by the current OpenFOAM pipe provider."
             )
+        if not study.steady or study.compressible or study.energy or study.reacting:
+            raise UnsupportedCaseError(
+                "The OpenFOAM pipe provider supports steady, incompressible, "
+                "isothermal, Newtonian internal flow only."
+            )
         if step.output.reports:
             raise UnsupportedCaseError(
                 "Generic point and surface report lowering is not implemented by the "
@@ -2443,11 +2448,6 @@ class OpenFOAMProvider:
             unsupported = ", ".join((*unsupported_fields, *unsupported_histories))
             raise UnsupportedCaseError(
                 f"The OpenFOAM pipe provider cannot recover requested outputs: {unsupported}."
-            )
-        if not study.steady or study.compressible or study.energy or study.reacting:
-            raise UnsupportedCaseError(
-                "The OpenFOAM pipe provider supports steady, incompressible, "
-                "isothermal, Newtonian internal flow only."
             )
         if study.turbulence not in (None, "k-omega-sst"):
             raise UnsupportedCaseError(

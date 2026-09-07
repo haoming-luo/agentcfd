@@ -951,6 +951,47 @@ def turbulent_internal_flow(
     )
 
 
+def thermal_internal_flow(
+    *,
+    turbulence_model: str | None = None,
+    portable_profile: str = "visualization",
+    portable_formats: tuple[str, ...] = ("xdmf",),
+    storage_policy: StoragePolicy | None = None,
+    reports: tuple[Report, ...] = (),
+    views: tuple[ViewRecipe, ...] = (),
+) -> OutputRequest:
+    """Request flow plus absolute temperature for an energy study."""
+
+    base = (
+        standard(
+            portable_profile=portable_profile,
+            portable_formats=portable_formats,
+            storage_policy=storage_policy,
+            reports=reports,
+            views=views,
+        )
+        if turbulence_model is None
+        else turbulent_internal_flow(
+            turbulence_model=turbulence_model,
+            portable_profile=portable_profile,
+            portable_formats=portable_formats,
+            reports=reports,
+            views=views,
+        )
+    )
+    return OutputRequest(
+        fields=(*base.fields, "thermal.temperature"),
+        histories=base.histories,
+        portable_profile=base.portable_profile,
+        portable_formats=base.portable_formats,
+        frames=base.frames,
+        checkpoints=base.checkpoints,
+        storage=storage_policy or base.storage,
+        reports=base.reports,
+        views=base.views,
+    )
+
+
 __all__ = [
     "Checkpoints",
     "ContourView",
@@ -982,4 +1023,5 @@ __all__ = [
     "streamline_view",
     "line_profile",
     "turbulent_internal_flow",
+    "thermal_internal_flow",
 ]

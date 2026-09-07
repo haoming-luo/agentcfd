@@ -109,6 +109,17 @@ def test_thermophysical_state_rejects_ambiguous_manual_records():
     with pytest.raises(ValueError, match="phase must be a non-empty string"):
         properties.ThermophysicalState(**{**values, "phase": ""})
 
+    state = properties.ThermophysicalState(**values)
+    fluid = state.as_constant_property_fluid(name="water-at-operating-point")
+    assert fluid.to_dict() == {
+        "type": "newtonian",
+        "name": "water-at-operating-point",
+        "density": 998.0,
+        "dynamic_viscosity": 1.0e-3,
+        "specific_heat": 4180.0,
+        "thermal_conductivity": 0.6,
+    }
+
 
 def test_frozen_if97_runtime_evidence_matches_upstream_reference_values():
     path = Path(__file__).parents[1] / "docs" / "coolprop-if97-validation.json"

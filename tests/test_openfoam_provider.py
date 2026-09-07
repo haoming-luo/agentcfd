@@ -49,19 +49,33 @@ def pipe_model(
     fully_developed: bool = False,
 ) -> Model:
     inlet = (
-        boundaries.fully_developed_velocity_inlet(velocity)
+        boundaries.fully_developed_velocity_inlet(
+            velocity,
+            temperature=300.0 if energy else None,
+        )
         if fully_developed
-        else boundaries.mean_velocity_inlet(velocity)
+        else boundaries.mean_velocity_inlet(
+            velocity,
+            temperature=300.0 if energy else None,
+        )
     )
     return Model(
         name="openfoam-pipe",
         study=studies.internal_flow(energy=energy),
         domain=geometry.circular_pipe(length=2.0, diameter=0.1, roughness=roughness),
-        fluid=fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3),
+        fluid=fluids.newtonian(
+            "water",
+            density=998.2,
+            dynamic_viscosity=1.002e-3,
+            specific_heat=4180.0 if energy else None,
+            thermal_conductivity=0.6 if energy else None,
+        ),
     ).boundaries(
         inlet=inlet,
         outlet=boundaries.pressure_outlet(),
-        wall=boundaries.no_slip_wall(),
+        wall=boundaries.no_slip_wall(
+            thermal=boundaries.adiabatic() if energy else None
+        ),
     )
 
 
@@ -510,8 +524,9 @@ def test_openfoam_turbulence_requires_matching_study_inlet_and_reynolds(tmp_path
     ],
 )
 def test_openfoam_provider_fails_closed_on_unsupported_physics(tmp_path, model, message):
+    output = outputs.thermal_internal_flow() if model.study.energy else None
     with pytest.raises(UnsupportedCaseError, match=message):
-        OpenFOAMProvider().prepare(model.step(), tmp_path / "case")
+        OpenFOAMProvider().prepare(model.step(output=output), tmp_path / "case")
 
 
 def test_openfoam_provider_never_overwrites_a_case(tmp_path):

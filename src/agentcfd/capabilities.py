@@ -66,6 +66,24 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="workflow.thermal-internal-flow-intent",
+        maturity="experimental",
+        scope=(
+            "Solver-neutral energy-study intent with inlet temperature, explicit "
+            "adiabatic/fixed-temperature/signed-heat-flux walls, complete constant "
+            "properties, and canonical temperature-field output."
+        ),
+        evidence=(
+            "thermal boundary serialization and finite-input tests",
+            "energy-study property, inlet, wall, and output completeness gates",
+            "CoolProp state to constant-property fluid bridge",
+        ),
+        limitations=(
+            "No OpenFOAM energy-equation provider is released yet.",
+            "Phase change, conjugate heat transfer, radiation, species, and combustion remain unsupported intent.",
+        ),
+    ),
+    Capability(
         name="geometry.imported-surface-inspection",
         maturity="experimental",
         scope=(

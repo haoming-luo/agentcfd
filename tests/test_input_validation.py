@@ -25,6 +25,8 @@ def test_public_physical_inputs_reject_non_finite_values(invalid):
         ),
         lambda: boundaries.pressure_outlet(invalid),
         lambda: boundaries.no_slip_wall(roughness=invalid),
+        lambda: boundaries.fixed_temperature(invalid),
+        lambda: boundaries.heat_flux_into_fluid(invalid),
         lambda: geometry.circular_pipe(length=invalid, diameter=0.1),
         lambda: geometry.circular_pipe(length=1.0, diameter=invalid),
         lambda: fluids.newtonian(
@@ -159,6 +161,98 @@ def test_turbulent_output_request_tracks_model_specific_dissipation_field():
     assert "turbulence.specific_dissipation_rate" not in k_epsilon.fields
     with pytest.raises(ValueError, match="turbulence_model"):
         outputs.turbulent_internal_flow(turbulence_model="invented")
+
+
+def test_energy_intent_requires_complete_properties_boundaries_and_output():
+    domain = geometry.circular_pipe(length=1.0, diameter=0.1)
+    incomplete_fluid = fluids.newtonian(
+        "water", density=998.2, dynamic_viscosity=0.001002
+    )
+    complete_fluid = fluids.newtonian(
+        "water",
+        density=998.2,
+        dynamic_viscosity=0.001002,
+        specific_heat=4180.0,
+        thermal_conductivity=0.6,
+    )
+
+    missing_properties = Model(
+        study=studies.internal_flow(energy=True),
+        domain=domain,
+        fluid=incomplete_fluid,
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.1, temperature=300.0),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(thermal=boundaries.adiabatic()),
+    )
+    with pytest.raises(ModelValidationError, match="specific_heat"):
+        missing_properties.validate()
+
+    missing_inlet_temperature = Model(
+        study=studies.internal_flow(energy=True),
+        domain=domain,
+        fluid=complete_fluid,
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.1),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(thermal=boundaries.adiabatic()),
+    )
+    with pytest.raises(ModelValidationError, match="temperature on every inlet"):
+        missing_inlet_temperature.validate()
+
+    missing_wall_thermal = Model(
+        study=studies.internal_flow(energy=True),
+        domain=domain,
+        fluid=complete_fluid,
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.1, temperature=300.0),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(),
+    )
+    with pytest.raises(ModelValidationError, match="thermal condition on every wall"):
+        missing_wall_thermal.validate()
+
+    model = Model(
+        study=studies.internal_flow(energy=True),
+        domain=domain,
+        fluid=complete_fluid,
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.1, temperature=300.0),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(
+            thermal=boundaries.heat_flux_into_fluid(5000.0)
+        ),
+    )
+    model.validate()
+    with pytest.raises(ValueError, match="thermal.temperature"):
+        model.step(output=outputs.standard())
+    step = model.step(output=outputs.thermal_internal_flow())
+
+    assert "thermal.temperature" in step.output.fields
+    assert step.model.to_dict()["boundaries"]["inlet"]["temperature"] == 300.0
+    assert step.model.to_dict()["boundaries"]["wall"]["thermal"] == {
+        "type": "heat-flux",
+        "heat_flux_into_fluid": 5000.0,
+    }
+
+
+def test_thermal_boundary_intent_cannot_be_silently_ignored():
+    model = Model(
+        study=studies.internal_flow(),
+        domain=geometry.circular_pipe(length=1.0, diameter=0.1),
+        fluid=fluids.newtonian(
+            "water", density=998.2, dynamic_viscosity=0.001002
+        ),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.1, temperature=300.0),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(
+            thermal=boundaries.fixed_temperature(350.0)
+        ),
+    )
+
+    with pytest.raises(ModelValidationError, match="require study energy=True"):
+        model.validate()
 
 
 def test_animation_output_separates_frames_checkpoints_and_storage_budget():

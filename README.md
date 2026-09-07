@@ -42,6 +42,9 @@ and steam, and only later combustion and multiphase breadth.
 The [product experience roadmap](docs/product-experience-roadmap.md) tracks the
 parallel goal of reducing user attention, failure recovery work, and storage
 amplification per trusted result.
+[Thermal and steam architecture](docs/thermal-and-steam-roadmap.md) defines the
+released solver-neutral heat-flow intent and the evidence gates required before
+an OpenFOAM energy provider can claim support.
 [Post-processing recipes](docs/postprocessing-recipes.md) turn named slices,
 contours, and streamlines into portable ParaView scripts without copying the
 XDMF/HDF5 field payload. Optional typed camera and render intent can reproduce

@@ -6,11 +6,14 @@ import importlib.util
 import math
 from dataclasses import asdict, dataclass
 from importlib.metadata import PackageNotFoundError, version
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from ._validation import positive_float
 from .errors import ProviderUnavailableError
 from .providers.base import ProviderDescriptor
+
+if TYPE_CHECKING:
+    from .fluids import NewtonianFluid
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +61,21 @@ class ThermophysicalState:
 
     def to_dict(self) -> dict[str, float | str]:
         return asdict(self)
+
+    def as_constant_property_fluid(
+        self, *, name: str | None = None
+    ) -> NewtonianFluid:
+        """Create solver-neutral constant properties at this exact P-T state."""
+
+        from .fluids import NewtonianFluid
+
+        return NewtonianFluid(
+            name=self.fluid if name is None else name,
+            density=self.density,
+            dynamic_viscosity=self.dynamic_viscosity,
+            specific_heat=self.specific_heat,
+            thermal_conductivity=self.thermal_conductivity,
+        )
 
 
 def _coolprop_api() -> tuple[Callable[..., float], Callable[..., str]]:

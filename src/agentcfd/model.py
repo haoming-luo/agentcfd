@@ -169,6 +169,64 @@ class Model:
                 + ", ".join(missing_names)
                 + "."
             )
+        thermal_inlets = [
+            name
+            for name, condition in self._boundaries.items()
+            if isinstance(condition, inlet_types)
+            and getattr(condition, "temperature", None) is not None
+        ]
+        thermal_walls = [
+            name
+            for name, condition in self._boundaries.items()
+            if isinstance(condition, (boundary_types.NoSlipWall, boundary_types.SlipWall))
+            and condition.thermal is not None
+        ]
+        if self.study.energy:
+            missing_properties = [
+                name
+                for name, value in (
+                    ("specific_heat", self.fluid.specific_heat),
+                    ("thermal_conductivity", self.fluid.thermal_conductivity),
+                )
+                if value is None
+            ]
+            if missing_properties:
+                raise ModelValidationError(
+                    "Energy studies require fluid properties: "
+                    + ", ".join(missing_properties)
+                    + "."
+                )
+            missing_inlet_temperatures = sorted(
+                name
+                for name, condition in self._boundaries.items()
+                if isinstance(condition, inlet_types)
+                and getattr(condition, "temperature", None) is None
+            )
+            if missing_inlet_temperatures:
+                raise ModelValidationError(
+                    "Energy studies require absolute temperature on every inlet: "
+                    + ", ".join(missing_inlet_temperatures)
+                    + "."
+                )
+            missing_wall_thermal = sorted(
+                name
+                for name, condition in self._boundaries.items()
+                if isinstance(
+                    condition,
+                    (boundary_types.NoSlipWall, boundary_types.SlipWall),
+                )
+                and condition.thermal is None
+            )
+            if missing_wall_thermal:
+                raise ModelValidationError(
+                    "Energy studies require an explicit thermal condition on every wall: "
+                    + ", ".join(missing_wall_thermal)
+                    + "."
+                )
+        elif thermal_inlets or thermal_walls:
+            raise ModelValidationError(
+                "Temperature and wall-heat conditions require study energy=True."
+            )
         if not any(
             isinstance(
                 value, (boundary_types.PressureInlet, boundary_types.PressureOutlet)
@@ -258,6 +316,13 @@ class Step:
             raise ValueError(
                 "Study and procedure disagree: steady studies require steady procedures, "
                 "and transient studies require transient procedures."
+            )
+        if (
+            self.model.study.energy
+            and "thermal.temperature" not in self.output.fields
+        ):
+            raise ValueError(
+                "Energy studies must request the canonical thermal.temperature field."
             )
         coordinate = "solver-iteration" if self.model.study.steady else "physical-time"
         if (

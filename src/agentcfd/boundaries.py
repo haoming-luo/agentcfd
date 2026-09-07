@@ -11,6 +11,7 @@ from ._validation import finite_float, nonnegative_float, positive_float
 @dataclass(frozen=True, slots=True)
 class MassFlowInlet:
     mass_flow_rate: float
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -18,14 +19,27 @@ class MassFlowInlet:
             "mass_flow_rate",
             positive_float(self.mass_flow_rate, name="Mass-flow rate"),
         )
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                positive_float(self.temperature, name="Inlet temperature"),
+            )
 
     def to_dict(self) -> dict[str, object]:
-        return {"type": "mass-flow-inlet", **asdict(self)}
+        record: dict[str, object] = {
+            "type": "mass-flow-inlet",
+            "mass_flow_rate": self.mass_flow_rate,
+        }
+        if self.temperature is not None:
+            record["temperature"] = self.temperature
+        return record
 
 
 @dataclass(frozen=True, slots=True)
 class MeanVelocityInlet:
     velocity: float
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -33,9 +47,21 @@ class MeanVelocityInlet:
             "velocity",
             positive_float(self.velocity, name="Inlet velocity"),
         )
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                positive_float(self.temperature, name="Inlet temperature"),
+            )
 
     def to_dict(self) -> dict[str, object]:
-        return {"type": "mean-velocity-inlet", **asdict(self)}
+        record: dict[str, object] = {
+            "type": "mean-velocity-inlet",
+            "velocity": self.velocity,
+        }
+        if self.temperature is not None:
+            record["temperature"] = self.temperature
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +69,7 @@ class VelocityInlet:
     """Explicit Cartesian inlet velocity vector in metres per second."""
 
     velocity: tuple[float, float, float]
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.velocity, (tuple, list)) or len(self.velocity) != 3:
@@ -54,13 +81,25 @@ class VelocityInlet:
         if math.sqrt(sum(value * value for value in selected)) == 0.0:
             raise ValueError("Velocity inlet vector cannot be zero.")
         object.__setattr__(self, "velocity", selected)
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                positive_float(self.temperature, name="Inlet temperature"),
+            )
 
     @property
     def magnitude(self) -> float:
         return math.sqrt(sum(value * value for value in self.velocity))
 
     def to_dict(self) -> dict[str, object]:
-        return {"type": "velocity-inlet", "velocity": list(self.velocity)}
+        record: dict[str, object] = {
+            "type": "velocity-inlet",
+            "velocity": list(self.velocity),
+        }
+        if self.temperature is not None:
+            record["temperature"] = self.temperature
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +107,7 @@ class FullyDevelopedVelocityInlet:
     """Mean velocity for an analytic fully developed circular-pipe profile."""
 
     velocity: float
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -75,9 +115,21 @@ class FullyDevelopedVelocityInlet:
             "velocity",
             positive_float(self.velocity, name="Inlet velocity"),
         )
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                positive_float(self.temperature, name="Inlet temperature"),
+            )
 
     def to_dict(self) -> dict[str, object]:
-        return {"type": "fully-developed-velocity-inlet", **asdict(self)}
+        record: dict[str, object] = {
+            "type": "fully-developed-velocity-inlet",
+            "velocity": self.velocity,
+        }
+        if self.temperature is not None:
+            record["temperature"] = self.temperature
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +143,7 @@ class TurbulentMeanVelocityInlet:
     velocity: float
     turbulence_intensity: float
     turbulence_length_scale: float
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -113,9 +166,23 @@ class TurbulentMeanVelocityInlet:
                 name="Turbulence length scale",
             ),
         )
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                positive_float(self.temperature, name="Inlet temperature"),
+            )
 
     def to_dict(self) -> dict[str, object]:
-        return {"type": "turbulent-mean-velocity-inlet", **asdict(self)}
+        record: dict[str, object] = {
+            "type": "turbulent-mean-velocity-inlet",
+            "velocity": self.velocity,
+            "turbulence_intensity": self.turbulence_intensity,
+            "turbulence_length_scale": self.turbulence_length_scale,
+        }
+        if self.temperature is not None:
+            record["temperature"] = self.temperature
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +192,7 @@ class TurbulentVelocityInlet:
     velocity: tuple[float, float, float]
     turbulence_intensity: float
     turbulence_length_scale: float
+    temperature: float | None = None
 
     def __post_init__(self) -> None:
         selected = VelocityInlet(self.velocity).velocity
@@ -144,6 +212,12 @@ class TurbulentVelocityInlet:
                 name="Turbulence length scale",
             ),
         )
+        if self.temperature is not None:
+            object.__setattr__(
+                self,
+                "temperature",
+                positive_float(self.temperature, name="Inlet temperature"),
+            )
 
     @property
     def magnitude(self) -> float:
@@ -155,6 +229,11 @@ class TurbulentVelocityInlet:
             "velocity": list(self.velocity),
             "turbulence_intensity": self.turbulence_intensity,
             "turbulence_length_scale": self.turbulence_length_scale,
+            **(
+                {"temperature": self.temperature}
+                if self.temperature is not None
+                else {}
+            ),
         }
 
 
@@ -213,8 +292,60 @@ class MassFlowOutlet:
 
 
 @dataclass(frozen=True, slots=True)
+class AdiabaticWall:
+    """Zero heat flux at a wall."""
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "adiabatic"}
+
+
+@dataclass(frozen=True, slots=True)
+class FixedTemperatureWall:
+    """Fixed absolute wall temperature in kelvin."""
+
+    temperature: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "temperature",
+            positive_float(self.temperature, name="Wall temperature"),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "fixed-temperature", "temperature": self.temperature}
+
+
+@dataclass(frozen=True, slots=True)
+class HeatFluxWall:
+    """Signed heat flux into the fluid in watts per square metre."""
+
+    heat_flux_into_fluid: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "heat_flux_into_fluid",
+            finite_float(
+                self.heat_flux_into_fluid,
+                name="Wall heat flux into fluid",
+            ),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "heat-flux",
+            "heat_flux_into_fluid": self.heat_flux_into_fluid,
+        }
+
+
+ThermalWall = AdiabaticWall | FixedTemperatureWall | HeatFluxWall
+
+
+@dataclass(frozen=True, slots=True)
 class NoSlipWall:
     roughness: float | None = None
+    thermal: ThermalWall | None = None
 
     def __post_init__(self) -> None:
         if self.roughness is not None:
@@ -223,17 +354,40 @@ class NoSlipWall:
                 "roughness",
                 nonnegative_float(self.roughness, name="Wall roughness"),
             )
+        if self.thermal is not None and not isinstance(
+            self.thermal,
+            (AdiabaticWall, FixedTemperatureWall, HeatFluxWall),
+        ):
+            raise TypeError("Wall thermal condition must be an AgentCFD thermal wall.")
 
     def to_dict(self) -> dict[str, object]:
-        return {"type": "no-slip-wall", **asdict(self)}
+        record: dict[str, object] = {
+            "type": "no-slip-wall",
+            "roughness": self.roughness,
+        }
+        if self.thermal is not None:
+            record["thermal"] = self.thermal.to_dict()
+        return record
 
 
 @dataclass(frozen=True, slots=True)
 class SlipWall:
     """Impermeable zero-shear wall."""
 
+    thermal: ThermalWall | None = None
+
+    def __post_init__(self) -> None:
+        if self.thermal is not None and not isinstance(
+            self.thermal,
+            (AdiabaticWall, FixedTemperatureWall, HeatFluxWall),
+        ):
+            raise TypeError("Wall thermal condition must be an AgentCFD thermal wall.")
+
     def to_dict(self) -> dict[str, object]:
-        return {"type": "slip-wall"}
+        record: dict[str, object] = {"type": "slip-wall"}
+        if self.thermal is not None:
+            record["thermal"] = self.thermal.to_dict()
+        return record
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,20 +412,28 @@ Boundary = (
 )
 
 
-def mass_flow_inlet(value: float) -> MassFlowInlet:
-    return MassFlowInlet(mass_flow_rate=value)
+def mass_flow_inlet(
+    value: float, *, temperature: float | None = None
+) -> MassFlowInlet:
+    return MassFlowInlet(mass_flow_rate=value, temperature=temperature)
 
 
-def mean_velocity_inlet(value: float) -> MeanVelocityInlet:
-    return MeanVelocityInlet(velocity=value)
+def mean_velocity_inlet(
+    value: float, *, temperature: float | None = None
+) -> MeanVelocityInlet:
+    return MeanVelocityInlet(velocity=value, temperature=temperature)
 
 
-def velocity_inlet(value: tuple[float, float, float]) -> VelocityInlet:
-    return VelocityInlet(velocity=value)
+def velocity_inlet(
+    value: tuple[float, float, float], *, temperature: float | None = None
+) -> VelocityInlet:
+    return VelocityInlet(velocity=value, temperature=temperature)
 
 
-def fully_developed_velocity_inlet(value: float) -> FullyDevelopedVelocityInlet:
-    return FullyDevelopedVelocityInlet(velocity=value)
+def fully_developed_velocity_inlet(
+    value: float, *, temperature: float | None = None
+) -> FullyDevelopedVelocityInlet:
+    return FullyDevelopedVelocityInlet(velocity=value, temperature=temperature)
 
 
 def turbulent_mean_velocity_inlet(
@@ -279,6 +441,7 @@ def turbulent_mean_velocity_inlet(
     *,
     intensity: float,
     length_scale: float,
+    temperature: float | None = None,
 ) -> TurbulentMeanVelocityInlet:
     """Declare a flow-rate-constrained RANS inlet using SI values."""
 
@@ -286,6 +449,7 @@ def turbulent_mean_velocity_inlet(
         velocity=value,
         turbulence_intensity=intensity,
         turbulence_length_scale=length_scale,
+        temperature=temperature,
     )
 
 
@@ -294,6 +458,7 @@ def turbulent_velocity_inlet(
     *,
     intensity: float,
     length_scale: float,
+    temperature: float | None = None,
 ) -> TurbulentVelocityInlet:
     """Declare a Cartesian RANS inlet using explicit SI assumptions."""
 
@@ -301,6 +466,7 @@ def turbulent_velocity_inlet(
         velocity=value,
         turbulence_intensity=intensity,
         turbulence_length_scale=length_scale,
+        temperature=temperature,
     )
 
 
@@ -320,12 +486,28 @@ def mass_flow_outlet(value: float) -> MassFlowOutlet:
     return MassFlowOutlet(mass_flow_rate=value)
 
 
-def no_slip_wall(*, roughness: float | None = None) -> NoSlipWall:
-    return NoSlipWall(roughness=roughness)
+def adiabatic() -> AdiabaticWall:
+    return AdiabaticWall()
 
 
-def slip_wall() -> SlipWall:
-    return SlipWall()
+def fixed_temperature(value: float) -> FixedTemperatureWall:
+    return FixedTemperatureWall(temperature=value)
+
+
+def heat_flux_into_fluid(value: float) -> HeatFluxWall:
+    return HeatFluxWall(heat_flux_into_fluid=value)
+
+
+def no_slip_wall(
+    *,
+    roughness: float | None = None,
+    thermal: ThermalWall | None = None,
+) -> NoSlipWall:
+    return NoSlipWall(roughness=roughness, thermal=thermal)
+
+
+def slip_wall(*, thermal: ThermalWall | None = None) -> SlipWall:
+    return SlipWall(thermal=thermal)
 
 
 def symmetry() -> Symmetry:
@@ -346,8 +528,11 @@ Wall = NoSlipWall | SlipWall
 
 
 __all__ = [
+    "AdiabaticWall",
     "Boundary",
+    "FixedTemperatureWall",
     "FullyDevelopedVelocityInlet",
+    "HeatFluxWall",
     "Inlet",
     "MassFlowInlet",
     "MassFlowOutlet",
@@ -358,11 +543,15 @@ __all__ = [
     "PressureOutlet",
     "SlipWall",
     "Symmetry",
+    "ThermalWall",
     "TurbulentMeanVelocityInlet",
     "TurbulentVelocityInlet",
     "VelocityInlet",
     "Wall",
+    "adiabatic",
+    "fixed_temperature",
     "fully_developed_velocity_inlet",
+    "heat_flux_into_fluid",
     "mass_flow_inlet",
     "mass_flow_outlet",
     "mean_velocity_inlet",

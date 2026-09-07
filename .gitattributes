@@ -1,0 +1,3 @@
+# Geometry identities must survive Git checkouts on every operating system.
+*.stl -text
+*.obj -text

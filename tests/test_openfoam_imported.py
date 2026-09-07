@@ -442,6 +442,7 @@ def test_imported_mesh_cli_plans_and_prepares_without_openfoam(tmp_path, capsys)
 def test_checked_in_imported_duct_example_and_evidence_are_valid(monkeypatch):
     monkeypatch.setattr(projects.shutil, "which", lambda _command: "/mock/runtime")
     repository = Path(__file__).resolve().parents[1]
+    assert "*.stl -text" in (repository / ".gitattributes").read_text()
     example = projects.Project(repository / "examples" / "imported_duct_mesh")
     step = example.load_step()
     step.model.validate()

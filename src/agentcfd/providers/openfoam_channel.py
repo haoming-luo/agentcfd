@@ -122,7 +122,10 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
     members: dict[str, dict[str, object]] = {}
     payloads: list[tuple[str, bytes]] = []
     for _, time_directory in retained:
-        for path in sorted(time_directory.rglob("*")):
+        for path in sorted(
+            time_directory.rglob("*"),
+            key=lambda item: item.relative_to(time_directory).as_posix(),
+        ):
             if not path.is_file() or path.is_symlink():
                 continue
             relative = path.relative_to(time_directory).as_posix()
@@ -135,7 +138,10 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
             payloads.append((archive_name, data))
     postprocessing = prepared.directory / "postProcessing"
     if postprocessing.is_dir():
-        for path in sorted(postprocessing.rglob("*")):
+        for path in sorted(
+            postprocessing.rglob("*"),
+            key=lambda item: item.relative_to(postprocessing).as_posix(),
+        ):
             if not path.is_file() or path.is_symlink():
                 continue
             relative = path.relative_to(postprocessing).as_posix()

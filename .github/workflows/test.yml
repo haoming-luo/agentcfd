@@ -37,6 +37,7 @@ jobs:
       - run: wheel-test/bin/python -c "import importlib.util; assert importlib.util.find_spec('numpy') is None"
       - run: wheel-test/bin/agentcfd doctor --json
       - run: wheel-test/bin/agentcfd contracts --json
+      - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-precursor-map.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-precursor-grid-study.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-function-study.schema.json').is_file(); assert contracts.path('turbulent-wall-function-study.schema.json').is_file()"
@@ -44,8 +45,13 @@ jobs:
       - run: wheel-test/bin/agentcfd calculate compressibility --velocity 100 --speed-of-sound 400 --json
       - run: wheel-test/bin/agentcfd calculate wall-resolution --density 998.2 --viscosity 0.001002 --velocity 0.5 --diameter 0.1 --target-y-plus 40 --json
       - run: wheel-test/bin/agentcfd demo pipe --output pipe-result.json
+      - run: wheel-test/bin/agentcfd init operating-point-project --template industrial-pipe
+      - run: wheel-test/bin/agentcfd params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
+      - run: wheel-test/bin/agentcfd plan operating-point-project --param-file operating-point.json --json
       - run: wheel-test/bin/agentcfd init imported-pressure --template imported-internal-flow --geometry examples/imported_duct_mesh/geometry/fluid.stl --unit m --roles examples/imported_duct_mesh/geometry/boundary-roles.json --interior-point-m 0.5 0.25 0.1 --inlet-total-gauge-pressure-pa 0.001 --base-size-m 0.05 --maximum-cells 200000
       - run: wheel-test/bin/python -c "from agentcfd import projects; p=projects.Project('imported-pressure'); assert p.load_step().model.boundary_conditions['inlet'].total_gauge_pressure == 0.001; assert len(p.parameter_contract()) == 12"
+      - run: wheel-test/bin/agentcfd init imported-velocity --template imported-internal-flow --geometry examples/imported_duct_mesh/geometry/fluid.stl --unit m --roles examples/imported_duct_mesh/geometry/boundary-roles.json --interior-point-m 0.5 0.25 0.1 --inlet-velocity-m-s 0.5 0 0 --base-size-m 0.05 --maximum-cells 200000
+      - run: wheel-test/bin/python -c "from agentcfd import projects; assert projects.Project('imported-velocity').load_step().model.metadata['inlet_velocity_direction']['status'] == 'passed'"
       - run: wheel-test/bin/agentcfd prepare openfoam-pipe openfoam-pipe --fully-developed --cross-section-cells 4 --axial-cells 20 --json
       - run: wheel-test/bin/agentcfd prepare openfoam-turbulent-pipe openfoam-turbulent-pipe --cross-section-cells 4 --axial-cells 20 --json
       - run: wheel-test/bin/agentcfd prepare openfoam-turbulent-precursor openfoam-turbulent-precursor --cross-section-cells 4 --maximum-iterations 20 --json

@@ -272,6 +272,55 @@ def test_cli_initializes_imported_flow_with_mass_flow_as_primary_control(
     assert "velocity_x=0.0" in case_source
 
 
+def test_cli_initializes_imported_flow_with_total_pressure_as_primary_control(
+    tmp_path, capsys
+):
+    example = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry"
+    root = tmp_path / "pressure-driven-duct"
+
+    assert (
+        entrypoint(
+            [
+                "init",
+                str(root),
+                "--template",
+                "imported-internal-flow",
+                "--geometry",
+                str(example / "fluid.stl"),
+                "--unit",
+                "m",
+                "--roles",
+                str(example / "boundary-roles.json"),
+                "--interior-point-m",
+                "0.5",
+                "0.25",
+                "0.1",
+                "--inlet-total-gauge-pressure-pa",
+                "10",
+                "--base-size-m",
+                "0.05",
+                "--maximum-cells",
+                "200000",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["provider"] == "openfoam"
+    project = projects.Project(root)
+    assert project.load_step().model.boundary_conditions["inlet"].to_dict() == {
+        "type": "pressure-inlet",
+        "total_gauge_pressure": 10.0,
+        "temperature": None,
+    }
+    assert project.plan()["readiness"]["ready_to_run"] is True
+    case_source = (root / "case.py").read_text()
+    assert "inlet_total_gauge_pressure=10.0" in case_source
+    assert "velocity_x=0.0" in case_source
+
+
 def test_imported_init_rejects_missing_or_conflicting_inlet_control_before_write(
     tmp_path,
 ):
@@ -482,6 +531,20 @@ def test_creation_request_accepts_mass_flow_and_rejects_ambiguous_controls(tmp_p
     with pytest.raises(ProjectError, match="exactly one"):
         projects.init_project_from_request(ambiguous_root, ambiguous)
     assert not ambiguous_root.exists()
+
+    pressure_request = dict(request)
+    pressure_request.pop("inlet_mass_flow_kg_s")
+    pressure_request["inlet_total_gauge_pressure_pa"] = 10.0
+    validator.validate(pressure_request)
+    pressure_project = projects.init_project_from_request(
+        tmp_path / "pressure-request",
+        pressure_request,
+    )
+    assert pressure_project.load_step().model.boundary_conditions["inlet"].to_dict() == {
+        "type": "pressure-inlet",
+        "total_gauge_pressure": 10.0,
+        "temperature": None,
+    }
 
 
 def test_creation_request_rejects_unknown_automation_intent_before_writing(tmp_path):

@@ -117,9 +117,10 @@ unsupported roles or ambiguous inlet/outlet count, and copies the source into
 `geometry/`. It writes a portable `inspection.json`, normalized
 `boundary-roles.json`, and a readable `case.py`; a later change to the original
 external file cannot silently change the project. Exactly one inlet control is
-required: `--inlet-velocity-m-s UX UY UZ` or, for constant-density laminar
-flow, `--inlet-mass-flow-kg-s KG_S`. SI mesh size, interior point, and the hard
-cell limit are also required rather than guessed.
+required: `--inlet-velocity-m-s UX UY UZ`, `--inlet-mass-flow-kg-s KG_S`, or
+`--inlet-total-gauge-pressure-pa PA`. The scalar controls currently target
+constant-density laminar flow. SI mesh size, interior point, and the hard cell
+limit are also required rather than guessed.
 
 For automation, `agentcfd init DESTINATION --request REQUEST.json` accepts the
 installed `project-creation-request.schema.json` contract. Its geometry path is
@@ -129,8 +130,9 @@ fingerprint. Geometry must contain exactly one of an explicit inline
 `"role_confirmation": "accept-name-suggestions"`. The JSON is only a
 creation envelope; it generates the same readable `case.py` and does not become
 a shadow source of model truth. Imported requests likewise require exactly one
-of `inlet_velocity_m_s` or `inlet_mass_flow_kg_s`; the installed JSON Schema
-rejects both and neither.
+of `inlet_velocity_m_s`, `inlet_mass_flow_kg_s`, or
+`inlet_total_gauge_pressure_pa`; the installed JSON Schema rejects ambiguous or
+missing control.
 
 `agentcfd plan .` verifies the asset still exists and still matches the
 inspected SHA-256 before any provider action. Missing or changed geometry has
@@ -208,6 +210,28 @@ agentcfd run . --param mass_flow_rate=0.25
 Combining `mass_flow_rate` with imported RANS currently fails before meshing;
 that path needs a released turbulence-aware flow-rate inlet rather than an
 invented reference velocity.
+
+For pressure-driven laminar equipment, AgentCFD uses OpenFOAM's documented
+[total-pressure inlet and static-pressure outlet combination](https://doc.openfoam.com/2606/tools/processing/boundary-conditions/common-combinations/).
+The velocity boundary derives flux-normal motion and tolerates local return
+flow. Results keep the requested total-to-static pressure difference separate
+from the recovered area-averaged static pressure drop, and always expose the
+recovered inlet mass flow:
+
+```bash
+agentcfd run . --param inlet_total_gauge_pressure=250
+agentcfd result . \
+  --quantity reference.flow.total_to_static_pressure_difference \
+  --quantity flow.pressure_drop \
+  --quantity flow.inlet_mass_flow_rate
+```
+
+The OpenCFD v2606 pressure-driven workflow evidence used a deliberately small
+0.001 Pa total-to-static request to remain laminar on the coarse example duct.
+It converged in 326 SIMPLE iterations with a relative mass imbalance of
+1.71e-9, recovered 0.0862 kg/s, and published a verified 190,014-byte XDMF/H5
+bundle. This is workflow and numerical-gate evidence, not physical validation;
+the compact record is `openfoam-v2606-imported-duct-pressure-driven.json`.
 
 The RANS slice writes `k`, `omega`, and `nut`, and always computes compact
 minimum, maximum, and average wall y-plus histories. OpenFOAM's blended

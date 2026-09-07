@@ -35,6 +35,7 @@
     "interior_point_m": {"$ref": "#/$defs/vector3"},
     "inlet_velocity_m_s": {"$ref": "#/$defs/vector3"},
     "inlet_mass_flow_kg_s": {"type": "number", "exclusiveMinimum": 0},
+    "inlet_total_gauge_pressure_pa": {"type": "number", "exclusiveMinimum": 0},
     "mesh": {
       "type": "object",
       "additionalProperties": false,
@@ -53,7 +54,8 @@
         "properties": {"provider": {"const": "openfoam"}},
         "oneOf": [
           {"required": ["inlet_velocity_m_s"]},
-          {"required": ["inlet_mass_flow_kg_s"]}
+          {"required": ["inlet_mass_flow_kg_s"]},
+          {"required": ["inlet_total_gauge_pressure_pa"]}
         ]
       },
       "else": {
@@ -62,6 +64,7 @@
           "interior_point_m": false,
           "inlet_velocity_m_s": false,
           "inlet_mass_flow_kg_s": false,
+          "inlet_total_gauge_pressure_pa": false,
           "mesh": false
         }
       }

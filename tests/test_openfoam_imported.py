@@ -106,6 +106,21 @@ def _mass_flow_step(payload: bytes):
     return model.step(mesh=base.mesh, output=base.output)
 
 
+def _pressure_driven_step(payload: bytes):
+    base = _step(payload)
+    model = Model(
+        name="imported-pressure-driven-duct",
+        study=studies.internal_flow(),
+        domain=base.model.domain,
+        fluid=base.model.fluid,
+    ).boundaries(
+        inlet=boundaries.pressure_inlet(10.0),
+        outlet=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    )
+    return model.step(mesh=base.mesh, output=base.output)
+
+
 def _imported_project(root, payload):
     project = projects.init_project(root, provider="openfoam")
     asset = root / "geometry" / "fluid.stl"
@@ -462,6 +477,18 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid():
         contracts.load("openfoam-imported-flow-evidence.schema.json")
     ).validate(mass_flow_record)
     assert mass_flow_record["inlet_mass_flow"]["relative_error"] <= 1.0e-4
+    pressure_record = json.loads(
+        (
+            repository
+            / "docs"
+            / "openfoam-v2606-imported-duct-pressure-driven.json"
+        ).read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-imported-flow-evidence.schema.json")
+    ).validate(pressure_record)
+    assert pressure_record["pressure_control"]["recovered_mass_flow_kg_s"] > 0.0
+    assert pressure_record["flow"]["relative_mass_imbalance"] <= 1.0e-4
     project_plan = example.plan()
     assert project_plan["readiness"]["ready_to_run"] is True
     assert project_plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 200_000
@@ -492,6 +519,38 @@ def test_imported_flow_provider_requires_vector_direction_and_prepares_case(tmp_
     scalar_step.model.boundaries(inlet=boundaries.mean_velocity_inlet(0.5))
     with pytest.raises(UnsupportedCaseError, match="direction is never guessed"):
         OpenFOAMImportedProvider(source=source).validate(scalar_step)
+
+
+def test_imported_flow_provider_lowers_total_to_static_pressure_drive(tmp_path):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    provider = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "pressure-case",
+    )
+
+    prepared = provider.prepare(_pressure_driven_step(payload))
+    velocity = (prepared.directory / "0/U").read_text()
+    pressure = (prepared.directory / "0/p").read_text()
+
+    assert velocity.count("type pressureInletOutletVelocity;") == 2
+    assert "type totalPressure;" in pressure
+    assert "rho none;" in pressure
+    assert "p0 uniform 0.010018032" in pressure
+    assert "type fixedValue;" in pressure
+
+    with_temperature = _pressure_driven_step(payload)
+    with_temperature.model.boundaries(
+        inlet=boundaries.pressure_inlet(10.0, temperature=300.0)
+    )
+    with pytest.raises(UnsupportedCaseError, match="does not accept an inlet temperature"):
+        OpenFOAMImportedProvider(source=source).validate(with_temperature)
+
+    reversed_pressure = _pressure_driven_step(payload)
+    reversed_pressure.model.boundaries(inlet=boundaries.pressure_inlet(-1.0))
+    with pytest.raises(UnsupportedCaseError, match="above outlet static"):
+        OpenFOAMImportedProvider(source=source).validate(reversed_pressure)
 
 
 def test_imported_rans_provider_lowers_explicit_vector_turbulence_intent(tmp_path):
@@ -684,6 +743,21 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
         check for check in mass_flow.checks if check.name == "mass-flow-inlet-target"
     ).passed is True
     assert commands.count("simpleFoam") == 4
+
+    pressure_driven = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case-5",
+        mesh_cache_directory=tmp_path / "mesh-cache",
+    ).run(_pressure_driven_step(payload))
+
+    assert pressure_driven.accepted is True
+    assert pressure_driven.quantity("flow.inlet_mass_flow_rate").value == pytest.approx(
+        49.91
+    )
+    assert pressure_driven.quantity(
+        "reference.flow.total_to_static_pressure_difference"
+    ).value == pytest.approx(10.0)
+    assert commands.count("simpleFoam") == 5
 
 
 def test_imported_flow_returns_failed_result_when_meshing_stops_early(

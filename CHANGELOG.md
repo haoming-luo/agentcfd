@@ -10,6 +10,11 @@
 - Make velocity and mass flow mutually exclusive first-class inlet choices for
   imported-project creation in both CLI and versioned request APIs. Generated
   `case.py` preserves the chosen control as its readable default.
+- Add steady laminar pressure-driven imported flow using the documented
+  total-pressure inlet/static-pressure outlet combination with return-flow-safe
+  velocity boundaries. Creation APIs accept an explicit total gauge pressure,
+  while results distinguish requested total-to-static pressure, recovered
+  static pressure drop, and mass flow.
 - Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
   view over the latest or selected run. It exposes quantities, failed checks,
   histories and field names without opening HDF5 or hashing external artifacts,

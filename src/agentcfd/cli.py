@@ -1334,6 +1334,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="Positive inlet mass flow for constant-density laminar flow.",
     )
+    init_inlet.add_argument(
+        "--inlet-total-gauge-pressure-pa",
+        type=float,
+        help="Positive inlet total gauge pressure for pressure-driven laminar flow.",
+    )
     init.add_argument("--base-size-m", type=float)
     init.add_argument("--maximum-cells", type=int)
     init.add_argument(
@@ -2371,6 +2376,7 @@ def main(argv: list[str] | None = None) -> int:
             args.interior_point_m,
             args.inlet_velocity_m_s,
             args.inlet_mass_flow_kg_s,
+            args.inlet_total_gauge_pressure_pa,
             args.base_size_m,
             args.maximum_cells,
         )
@@ -2423,6 +2429,7 @@ def main(argv: list[str] | None = None) -> int:
                     else None
                 ),
                 inlet_mass_flow_kg_s=args.inlet_mass_flow_kg_s,
+                inlet_total_gauge_pressure_pa=args.inlet_total_gauge_pressure_pa,
                 base_size_m=args.base_size_m,
                 maximum_cells=args.maximum_cells,
             )

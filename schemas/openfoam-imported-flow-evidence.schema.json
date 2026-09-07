@@ -47,6 +47,20 @@
       },
       "additionalProperties": false
     },
+    "pressure_control": {
+      "type": "object",
+      "required": [
+        "requested_total_to_static_pa",
+        "recovered_static_pressure_drop_pa",
+        "recovered_mass_flow_kg_s"
+      ],
+      "properties": {
+        "requested_total_to_static_pa": {"type": "number", "exclusiveMinimum": 0},
+        "recovered_static_pressure_drop_pa": {"type": "number"},
+        "recovered_mass_flow_kg_s": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    },
     "turbulence": {
       "type": "object",
       "required": [

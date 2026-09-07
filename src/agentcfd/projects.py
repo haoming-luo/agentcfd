@@ -4215,6 +4215,7 @@ def _imported_internal_flow_template(
     interior_point_m: tuple[float, float, float],
     inlet_velocity_m_s: tuple[float, float, float] | None,
     inlet_mass_flow_kg_s: float | None,
+    inlet_total_gauge_pressure_pa: float | None,
     base_size_m: float,
     maximum_cells: int,
 ) -> str:
@@ -4253,6 +4254,7 @@ def build(
     velocity_y={default_velocity[1]!r},
     velocity_z={default_velocity[2]!r},
     mass_flow_rate={inlet_mass_flow_kg_s!r},
+    inlet_total_gauge_pressure={inlet_total_gauge_pressure_pa!r},
     density=998.2,
     dynamic_viscosity=1.002e-3,
     base_size={base_size_m!r},
@@ -4269,17 +4271,29 @@ def build(
         interior_point_m={interior_point_m!r},
     )
     velocity = (velocity_x, velocity_y, velocity_z)
+    velocity_active = any(component != 0.0 for component in velocity)
+    if mass_flow_rate is not None and inlet_total_gauge_pressure is not None:
+        raise ValueError(
+            "Mass flow and inlet total gauge pressure cannot be active together."
+        )
+    if (
+        mass_flow_rate is None
+        and inlet_total_gauge_pressure is None
+        and not velocity_active
+    ):
+        raise ValueError("A non-zero velocity or scalar inlet control is required.")
     if turbulence_model is None:
         if turbulence_intensity is not None or turbulence_length_scale is not None:
             raise ValueError(
                 "Turbulence intensity and length scale require a turbulence model."
             )
         study = studies.internal_flow()
-        inlet_condition = (
-            boundaries.velocity_inlet(velocity)
-            if mass_flow_rate is None
-            else boundaries.mass_flow_inlet(mass_flow_rate)
-        )
+        if mass_flow_rate is not None:
+            inlet_condition = boundaries.mass_flow_inlet(mass_flow_rate)
+        elif inlet_total_gauge_pressure is not None:
+            inlet_condition = boundaries.pressure_inlet(inlet_total_gauge_pressure)
+        else:
+            inlet_condition = boundaries.velocity_inlet(velocity)
         output_request = outputs.standard()
     else:
         if turbulence_model != "k-omega-sst":
@@ -4292,6 +4306,11 @@ def build(
         if mass_flow_rate is not None:
             raise ValueError(
                 "Imported RANS mass-flow inlet is not released; use an explicit "
+                "velocity vector."
+            )
+        if inlet_total_gauge_pressure is not None:
+            raise ValueError(
+                "Imported RANS pressure inlet is not released; use an explicit "
                 "velocity vector."
             )
         study = studies.internal_flow(
@@ -4353,6 +4372,7 @@ def init_project_from_request(
         "interior_point_m",
         "inlet_velocity_m_s",
         "inlet_mass_flow_kg_s",
+        "inlet_total_gauge_pressure_pa",
         "mesh",
     }
     unknown = sorted(set(payload) - allowed)
@@ -4374,6 +4394,7 @@ def init_project_from_request(
                 "interior_point_m",
                 "inlet_velocity_m_s",
                 "inlet_mass_flow_kg_s",
+                "inlet_total_gauge_pressure_pa",
                 "mesh",
             )
             if key in payload
@@ -4399,12 +4420,17 @@ def init_project_from_request(
         )
     inlet_controls = sum(
         key in payload
-        for key in ("inlet_velocity_m_s", "inlet_mass_flow_kg_s")
+        for key in (
+            "inlet_velocity_m_s",
+            "inlet_mass_flow_kg_s",
+            "inlet_total_gauge_pressure_pa",
+        )
     )
     if inlet_controls != 1:
         raise ProjectError(
             "Imported project creation requires exactly one of "
-            "inlet_velocity_m_s or inlet_mass_flow_kg_s."
+            "inlet_velocity_m_s, inlet_mass_flow_kg_s, or "
+            "inlet_total_gauge_pressure_pa."
         )
     geometry_record = payload["geometry"]
     mesh_record = payload["mesh"]
@@ -4485,6 +4511,9 @@ def init_project_from_request(
         interior_point_m=payload["interior_point_m"],
         inlet_velocity_m_s=payload.get("inlet_velocity_m_s"),
         inlet_mass_flow_kg_s=payload.get("inlet_mass_flow_kg_s"),
+        inlet_total_gauge_pressure_pa=payload.get(
+            "inlet_total_gauge_pressure_pa"
+        ),
         base_size_m=mesh_record["base_size_m"],
         maximum_cells=mesh_record["maximum_cells"],
     )
@@ -4502,6 +4531,7 @@ def init_project(
     interior_point_m: tuple[float, float, float] | None = None,
     inlet_velocity_m_s: tuple[float, float, float] | None = None,
     inlet_mass_flow_kg_s: float | None = None,
+    inlet_total_gauge_pressure_pa: float | None = None,
     base_size_m: float | None = None,
     maximum_cells: int | None = None,
 ) -> Project:
@@ -4528,6 +4558,7 @@ def init_project(
         interior_point_m,
         inlet_velocity_m_s,
         inlet_mass_flow_kg_s,
+        inlet_total_gauge_pressure_pa,
         base_size_m,
         maximum_cells,
     )
@@ -4568,10 +4599,19 @@ def init_project(
                 + ", ".join(missing)
                 + "."
             )
-        if (inlet_velocity_m_s is None) == (inlet_mass_flow_kg_s is None):
+        inlet_control_count = sum(
+            value is not None
+            for value in (
+                inlet_velocity_m_s,
+                inlet_mass_flow_kg_s,
+                inlet_total_gauge_pressure_pa,
+            )
+        )
+        if inlet_control_count != 1:
             raise ValueError(
                 "Imported internal-flow initialization requires exactly one of "
-                "inlet_velocity_m_s or inlet_mass_flow_kg_s."
+                "inlet_velocity_m_s, inlet_mass_flow_kg_s, or "
+                "inlet_total_gauge_pressure_pa."
             )
         selected_velocity = (
             boundaries.VelocityInlet(inlet_velocity_m_s).velocity
@@ -4583,6 +4623,18 @@ def init_project(
             if inlet_mass_flow_kg_s is not None
             else None
         )
+        selected_total_pressure = (
+            boundaries.PressureInlet(
+                inlet_total_gauge_pressure_pa
+            ).total_gauge_pressure
+            if inlet_total_gauge_pressure_pa is not None
+            else None
+        )
+        if selected_total_pressure is not None and selected_total_pressure <= 0.0:
+            raise ValueError(
+                "Imported inlet total gauge pressure must exceed the default "
+                "zero-gauge outlet pressure."
+            )
         assert geometry_path is not None
         assert geometry_unit is not None
         assert interior_point_m is not None
@@ -4677,6 +4729,7 @@ def init_project(
             interior_point_m=selected_interior,
             inlet_velocity_m_s=selected_velocity,
             inlet_mass_flow_kg_s=selected_mass_flow,
+            inlet_total_gauge_pressure_pa=selected_total_pressure,
             base_size_m=float(base_size_m),
             maximum_cells=maximum_cells,
         )

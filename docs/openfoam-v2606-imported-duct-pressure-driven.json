@@ -1,0 +1,40 @@
+{
+  "accepted": true,
+  "analysis_sha256": "564ca29dd35d6309da9ab30d8aaa6464907fd827f7cf0978106f14814d976924",
+  "case": "generated imported_duct_mesh project with inlet_total_gauge_pressure=0.001 Pa",
+  "claim": "workflow-and-numerical-gates-not-physical-validation",
+  "distribution": {
+    "artifact": "wheel",
+    "io_extra_installed": true,
+    "version": "0.1.0a3"
+  },
+  "flow": {
+    "pressure_drop_pa": 0.0006248394961463341,
+    "relative_mass_imbalance": 1.7145166105360647e-09
+  },
+  "mesh": {
+    "cells": 6400,
+    "maximum_aspect_ratio": 1.382976019,
+    "maximum_non_orthogonality_deg": 15.74214263,
+    "maximum_skewness": 0.1040891993,
+    "source_sha256": "95c46972dfb7d9c00b1fcd44bdd9b5a9b594a1fe2d6b01ce5ae94d4dcadfd0bb"
+  },
+  "model_sha256": "a97ce0a7554614cc225f7245c79937a1ac73dd74fc139124d29cc89773962550",
+  "portable_fields": {
+    "bytes": 190014,
+    "formats": ["xdmf", "hdf5"],
+    "frames": 1,
+    "points": 7749,
+    "verified": true
+  },
+  "pressure_control": {
+    "recovered_mass_flow_kg_s": 0.0861663314989596,
+    "recovered_static_pressure_drop_pa": 0.0006248394961463341,
+    "requested_total_to_static_pa": 0.001
+  },
+  "runtime": "OpenCFD v2606",
+  "schema": "agentcfd.openfoam-imported-flow-evidence/0.1",
+  "solver_iterations": 326,
+  "source_sha256": "sha256:010c8a05cc5d0c16910ea12ef87add15cc81362790a31599411e596aff31c537",
+  "workspace_bytes_after_publish": 0
+}

@@ -137,9 +137,20 @@ agentcfd init my-duct --template imported-internal-flow \
   --maximum-cells 500000
 ```
 
-The two inlet controls are mutually exclusive. The generated `case.py` keeps
-the selected control as a readable default and can still be parameterized for
-screening or campaigns.
+Pressure-driven equipment is also a first-class laminar setup. This declares
+inlet total gauge pressure against the generated zero-gauge static outlet:
+
+```bash
+agentcfd init my-duct --template imported-internal-flow \
+  --geometry fluid.stl --unit mm --roles boundary-roles.json \
+  --interior-point-m 0.15 0.03 0.03 \
+  --inlet-total-gauge-pressure-pa 0.001 --base-size-m 0.005 \
+  --maximum-cells 500000
+```
+
+Velocity, mass flow, and total pressure are mutually exclusive creation
+controls. The generated `case.py` keeps the selected control as a readable
+default and can still be parameterized for screening or campaigns.
 
 When every surface carries an unambiguous name such as `inlet`, `outlet`, and
 `walls`, replace `--roles boundary-roles.json` with

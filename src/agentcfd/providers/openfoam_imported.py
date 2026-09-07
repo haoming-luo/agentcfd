@@ -829,15 +829,17 @@ def _flow_velocity_field(step: Step) -> str:
         inlet,
         (
             boundaries.MassFlowInlet,
+            boundaries.PressureInlet,
             boundaries.VelocityInlet,
             boundaries.TurbulentVelocityInlet,
         ),
     )
     initial_velocity = (
         (0.0, 0.0, 0.0)
-        if isinstance(inlet, boundaries.MassFlowInlet)
+        if isinstance(inlet, (boundaries.MassFlowInlet, boundaries.PressureInlet))
         else inlet.velocity
     )
+    pressure_driven = isinstance(inlet, boundaries.PressureInlet)
     blocks: list[str] = []
     for name, role in domain.boundary_roles:
         condition = conditions[name]
@@ -846,6 +848,7 @@ def _flow_velocity_field(step: Step) -> str:
                 condition,
                 (
                     boundaries.MassFlowInlet,
+                    boundaries.PressureInlet,
                     boundaries.VelocityInlet,
                     boundaries.TurbulentVelocityInlet,
                 ),
@@ -858,13 +861,22 @@ def _flow_velocity_field(step: Step) -> str:
                     "        extrapolateProfile false;\n        "
                     "value uniform (0 0 0);"
                 )
+            elif isinstance(condition, boundaries.PressureInlet):
+                body = (
+                    "type pressureInletOutletVelocity;\n        "
+                    "value uniform (0 0 0);"
+                )
             else:
                 body = (
                     "type fixedValue;\n        "
                     f"value uniform {_foam_point(condition.velocity)};"
                 )
         elif role == "outlet":
-            body = "type zeroGradient;"
+            body = (
+                "type pressureInletOutletVelocity;\n        value uniform (0 0 0);"
+                if pressure_driven
+                else "type zeroGradient;"
+            )
         elif role == "wall" and isinstance(condition, boundaries.NoSlipWall):
             body = "type noSlip;"
         elif role == "wall" and isinstance(condition, boundaries.SlipWall):
@@ -893,7 +905,14 @@ def _flow_pressure_field(step: Step) -> str:
     blocks: list[str] = []
     for name, role in domain.boundary_roles:
         condition = conditions[name]
-        if role == "outlet":
+        if role == "inlet" and isinstance(condition, boundaries.PressureInlet):
+            value = condition.total_gauge_pressure / step.model.fluid.density
+            body = (
+                "type totalPressure;\n        rho none;\n        "
+                f"p0 uniform {_foam_scalar(value)};\n        "
+                f"value uniform {_foam_scalar(value)};"
+            )
+        elif role == "outlet":
             assert isinstance(condition, boundaries.PressureOutlet)
             value = condition.gauge_pressure / step.model.fluid.density
             body = f"type fixedValue;\n        value uniform {_foam_scalar(value)};"
@@ -1158,7 +1177,11 @@ class OpenFOAMImportedProvider:
             )
         conditions = step.model.boundary_conditions
         expected_inlet = (
-            (boundaries.VelocityInlet, boundaries.MassFlowInlet)
+            (
+                boundaries.VelocityInlet,
+                boundaries.MassFlowInlet,
+                boundaries.PressureInlet,
+            )
             if study.laminar
             else (boundaries.TurbulentVelocityInlet,)
         )
@@ -1167,18 +1190,36 @@ class OpenFOAMImportedProvider:
                 "Imported geometry requires "
                 + (
                     "boundaries.velocity_inlet((ux, uy, uz)) or "
-                    "boundaries.mass_flow_inlet(kg_per_s)."
+                    "boundaries.mass_flow_inlet(kg_per_s), or "
+                    "boundaries.pressure_inlet(total_gauge_pa)."
                     if study.laminar
                     else "boundaries.turbulent_velocity_inlet((ux, uy, uz), "
                     "intensity=..., length_scale=...)."
                 )
                 + " Cartesian direction is never guessed; mass flow follows the "
-                "inlet patch normal, and turbulence assumptions must be explicit."
+                "inlet patch normal, pressure flow is flux-normal, and turbulence "
+                "assumptions must be explicit."
+            )
+        if (
+            isinstance(conditions[inlet_names[0]], boundaries.PressureInlet)
+            and conditions[inlet_names[0]].temperature is not None
+        ):
+            raise UnsupportedCaseError(
+                "Imported incompressible isothermal pressure inlet does not accept "
+                "an inlet temperature."
             )
         if not isinstance(conditions[outlet_names[0]], boundaries.PressureOutlet):
             raise UnsupportedCaseError(
                 "First imported flow slice requires a pressure_outlet."
             )
+        if isinstance(conditions[inlet_names[0]], boundaries.PressureInlet):
+            inlet_pressure = conditions[inlet_names[0]].total_gauge_pressure
+            outlet_pressure = conditions[outlet_names[0]].gauge_pressure
+            if inlet_pressure <= outlet_pressure:
+                raise UnsupportedCaseError(
+                    "Imported pressure-driven flow requires inlet total gauge "
+                    "pressure above outlet static gauge pressure."
+                )
         for name, role in domain.boundary_roles:
             condition = conditions[name]
             if role == "wall" and not isinstance(
@@ -1377,7 +1418,11 @@ class OpenFOAMImportedProvider:
         inlet_name = next(
             name for name, role in step.model.domain.boundary_roles if role == "inlet"
         )
+        outlet_name = next(
+            name for name, role in step.model.domain.boundary_roles if role == "outlet"
+        )
         inlet_condition = step.model.boundary_conditions[inlet_name]
+        outlet_condition = step.model.boundary_conditions[outlet_name]
         mass_flow_times = sorted(inlet_flow)
         inlet_mass_flow = tuple(
             abs(inlet_flow[t]) * step.model.fluid.density for t in mass_flow_times
@@ -1422,7 +1467,7 @@ class OpenFOAMImportedProvider:
             quantities["flow.relative_mass_imbalance"] = Quantity(imbalance[-1], "1")
         if pressure_drop:
             quantities["flow.pressure_drop"] = Quantity(pressure_drop[-1], "Pa")
-        if inlet_mass_flow and requested_mass_flow is not None:
+        if inlet_mass_flow:
             quantities["flow.inlet_mass_flow_rate"] = Quantity(
                 inlet_mass_flow[-1], "kg/s"
             )
@@ -1437,6 +1482,20 @@ class OpenFOAMImportedProvider:
                 mass_flow_relative_error,
                 "1",
                 kind="verification_metric",
+            )
+        if isinstance(inlet_condition, boundaries.PressureInlet):
+            assert isinstance(outlet_condition, boundaries.PressureOutlet)
+            quantities["reference.flow.total_to_static_pressure_difference"] = (
+                Quantity(
+                    inlet_condition.total_gauge_pressure
+                    - outlet_condition.gauge_pressure,
+                    "Pa",
+                    kind="scientific_input",
+                    description=(
+                        "Requested inlet total pressure minus outlet static "
+                        "pressure; this is not the area-averaged static pressure drop."
+                    ),
+                )
             )
         histories: dict[str, History] = {}
         if imbalance:
@@ -1455,7 +1514,7 @@ class OpenFOAMImportedProvider:
                 abscissa_name="solver_iteration",
                 abscissa_unit="1",
             )
-        if inlet_mass_flow and requested_mass_flow is not None:
+        if inlet_mass_flow:
             histories["flow.inlet_mass_flow_rate"] = History(
                 tuple(mass_flow_times),
                 inlet_mass_flow,

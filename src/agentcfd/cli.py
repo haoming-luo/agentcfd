@@ -1915,6 +1915,25 @@ def build_parser() -> argparse.ArgumentParser:
     wall_resolution.add_argument("--target-y-plus", type=float, required=True)
     wall_resolution.add_argument("--roughness", type=float, default=0.0)
     wall_resolution.add_argument("--json", action="store_true", dest="as_json")
+    thermal_screen = calculate_subparsers.add_parser(
+        "thermal-flow",
+        help="Screen constant-property internal-flow heat transport.",
+    )
+    thermal_screen.add_argument("--density", type=float, required=True)
+    thermal_screen.add_argument("--viscosity", type=float, required=True)
+    thermal_screen.add_argument("--specific-heat", type=float, required=True)
+    thermal_screen.add_argument("--thermal-conductivity", type=float, required=True)
+    thermal_screen.add_argument("--velocity", type=float, required=True)
+    thermal_screen.add_argument("--diameter", type=float, required=True)
+    thermal_screen.add_argument("--flow-area", type=float, required=True)
+    thermal_screen.add_argument("--inlet-temperature", type=float, required=True)
+    thermal_screen.add_argument("--heat-rate", type=float, required=True)
+    thermal_screen.add_argument(
+        "--maximum-temperature-change-fraction",
+        type=float,
+        default=0.05,
+    )
+    thermal_screen.add_argument("--json", action="store_true", dest="as_json")
 
     property_command = subparsers.add_parser(
         "properties",
@@ -3525,6 +3544,36 @@ def main(argv: list[str] | None = None) -> int:
                 f"Re {report['reynolds_number']:.6g} | target y+ "
                 f"{report['target_y_plus']:.6g} | nominal first-cell thickness "
                 f"{report['nominal_first_cell_thickness']:.6g} m"
+            )
+        return 0
+    if args.command == "calculate" and args.calculation == "thermal-flow":
+        report = engineering.screen_thermal_internal_flow(
+            density=args.density,
+            dynamic_viscosity=args.viscosity,
+            specific_heat=args.specific_heat,
+            thermal_conductivity=args.thermal_conductivity,
+            mean_velocity=args.velocity,
+            hydraulic_diameter=args.diameter,
+            flow_area=args.flow_area,
+            inlet_bulk_temperature=args.inlet_temperature,
+            heat_rate_into_fluid=args.heat_rate,
+            maximum_temperature_change_fraction=(
+                args.maximum_temperature_change_fraction
+            ),
+        ).to_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            decision = (
+                "within" if report["within_declared_temperature_change_limit"] else "above"
+            )
+            print(
+                f"Re {report['reynolds_number']:.6g} | Pr "
+                f"{report['prandtl_number']:.6g} | Pe {report['peclet_number']:.6g}"
+            )
+            print(
+                f"estimated outlet {report['estimated_outlet_bulk_temperature']:.6g} K | "
+                f"temperature change is {decision} declared limit"
             )
         return 0
     if args.command == "properties" and args.property_operation == "state":

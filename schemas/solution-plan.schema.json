@@ -96,7 +96,7 @@
         "study", "procedure", "outputs", "initialization", "mesh_intent",
         "provider", "required_capability",
         "mesh_strategy", "solver", "result_profile", "portable_field_bundle",
-        "portable_formats", "imported_mesh_plan"
+        "portable_formats", "imported_mesh_plan", "thermal_preflight"
       ],
       "properties": {
         "study": {"type": "object"},
@@ -116,7 +116,43 @@
           "uniqueItems": true
         },
         "output_plan": {"type": "object"},
-        "imported_mesh_plan": {"type": ["object", "null"]}
+        "imported_mesh_plan": {"type": ["object", "null"]},
+        "thermal_preflight": {
+          "type": "object",
+          "required": ["status", "reason", "calculation"],
+          "properties": {
+            "status": {"enum": ["not-requested", "calculated", "deferred"]},
+            "reason": {"type": "string", "minLength": 1},
+            "calculation": {
+              "type": ["object", "null"],
+              "properties": {
+                "reynolds_number": {"type": "number", "exclusiveMinimum": 0},
+                "prandtl_number": {"type": "number", "exclusiveMinimum": 0},
+                "peclet_number": {"type": "number", "exclusiveMinimum": 0},
+                "thermal_diffusivity": {"type": "number", "exclusiveMinimum": 0},
+                "mass_flow_rate": {"type": "number", "exclusiveMinimum": 0},
+                "heat_rate_into_fluid": {"type": "number"},
+                "inlet_bulk_temperature": {"type": "number", "exclusiveMinimum": 0},
+                "estimated_outlet_bulk_temperature": {"type": "number", "exclusiveMinimum": 0},
+                "estimated_bulk_temperature_change": {"type": "number"},
+                "absolute_temperature_change_fraction": {"type": "number", "minimum": 0},
+                "maximum_temperature_change_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+                "within_declared_temperature_change_limit": {"type": "boolean"}
+              },
+              "required": [
+                "reynolds_number", "prandtl_number", "peclet_number",
+                "thermal_diffusivity", "mass_flow_rate", "heat_rate_into_fluid",
+                "inlet_bulk_temperature", "estimated_outlet_bulk_temperature",
+                "estimated_bulk_temperature_change",
+                "absolute_temperature_change_fraction",
+                "maximum_temperature_change_fraction",
+                "within_declared_temperature_change_limit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

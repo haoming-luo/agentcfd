@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
-from ._validation import nonnegative_float, positive_float
+from ._validation import finite_float, nonnegative_float, positive_float
 
 
 def _positive(value: float, name: str) -> float:
@@ -271,6 +271,151 @@ def screen_incompressible_flow(
         mach_number=mach,
         maximum_incompressible_mach=threshold,
         incompressible_model_appropriate=mach < threshold,
+    )
+
+
+def thermal_diffusivity(
+    *,
+    thermal_conductivity: float,
+    density: float,
+    specific_heat: float,
+) -> float:
+    """Return constant-property thermal diffusivity ``alpha = k/(rho cp)``."""
+
+    return _positive(thermal_conductivity, "thermal_conductivity") / (
+        _positive(density, "density") * _positive(specific_heat, "specific_heat")
+    )
+
+
+def prandtl_number(
+    *,
+    dynamic_viscosity: float,
+    specific_heat: float,
+    thermal_conductivity: float,
+) -> float:
+    """Return the constant-property Prandtl number ``Pr = mu cp/k``."""
+
+    return (
+        _positive(dynamic_viscosity, "dynamic_viscosity")
+        * _positive(specific_heat, "specific_heat")
+        / _positive(thermal_conductivity, "thermal_conductivity")
+    )
+
+
+def bulk_temperature_change(
+    *,
+    heat_rate_into_fluid: float,
+    mass_flow_rate: float,
+    specific_heat: float,
+) -> float:
+    """Return the signed mixed-mean change ``Qdot/(mdot cp)`` in kelvin."""
+
+    heat_rate = finite_float(heat_rate_into_fluid, name="heat_rate_into_fluid")
+    return heat_rate / (
+        _positive(mass_flow_rate, "mass_flow_rate")
+        * _positive(specific_heat, "specific_heat")
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ThermalFlowScreening:
+    """Auditable constant-property internal-flow thermal preflight."""
+
+    reynolds_number: float
+    prandtl_number: float
+    peclet_number: float
+    thermal_diffusivity: float
+    mass_flow_rate: float
+    heat_rate_into_fluid: float
+    inlet_bulk_temperature: float
+    estimated_outlet_bulk_temperature: float
+    estimated_bulk_temperature_change: float
+    absolute_temperature_change_fraction: float
+    maximum_temperature_change_fraction: float
+    within_declared_temperature_change_limit: bool
+
+    def to_dict(self) -> dict[str, float | bool]:
+        return asdict(self)
+
+
+def screen_thermal_internal_flow(
+    *,
+    density: float,
+    dynamic_viscosity: float,
+    specific_heat: float,
+    thermal_conductivity: float,
+    mean_velocity: float,
+    hydraulic_diameter: float,
+    flow_area: float,
+    inlet_bulk_temperature: float,
+    heat_rate_into_fluid: float,
+    maximum_temperature_change_fraction: float = 0.05,
+) -> ThermalFlowScreening:
+    """Screen dimensionless transport and the first-law bulk temperature change.
+
+    The threshold is an explicit workflow policy, not proof that properties are
+    constant. Positive heat enters the fluid and negative heat removes it.
+    """
+
+    selected_density = _positive(density, "density")
+    selected_viscosity = _positive(dynamic_viscosity, "dynamic_viscosity")
+    selected_specific_heat = _positive(specific_heat, "specific_heat")
+    selected_conductivity = _positive(
+        thermal_conductivity,
+        "thermal_conductivity",
+    )
+    velocity = _positive(mean_velocity, "mean_velocity")
+    diameter = _positive(hydraulic_diameter, "hydraulic_diameter")
+    area = _positive(flow_area, "flow_area")
+    inlet_temperature = _positive(inlet_bulk_temperature, "inlet_bulk_temperature")
+    heat_rate = finite_float(heat_rate_into_fluid, name="heat_rate_into_fluid")
+    limit = _positive(
+        maximum_temperature_change_fraction,
+        "maximum_temperature_change_fraction",
+    )
+    if limit >= 1.0:
+        raise ValueError("maximum_temperature_change_fraction must be below one.")
+
+    reynolds = reynolds_number(
+        density=selected_density,
+        mean_velocity=velocity,
+        hydraulic_diameter=diameter,
+        dynamic_viscosity=selected_viscosity,
+    )
+    prandtl = prandtl_number(
+        dynamic_viscosity=selected_viscosity,
+        specific_heat=selected_specific_heat,
+        thermal_conductivity=selected_conductivity,
+    )
+    mass_flow = selected_density * velocity * area
+    temperature_change = bulk_temperature_change(
+        heat_rate_into_fluid=heat_rate,
+        mass_flow_rate=mass_flow,
+        specific_heat=selected_specific_heat,
+    )
+    outlet_temperature = inlet_temperature + temperature_change
+    if outlet_temperature <= 0.0:
+        raise ValueError(
+            "The estimated outlet bulk temperature must remain above absolute zero."
+        )
+    change_fraction = abs(temperature_change) / inlet_temperature
+    return ThermalFlowScreening(
+        reynolds_number=reynolds,
+        prandtl_number=prandtl,
+        peclet_number=reynolds * prandtl,
+        thermal_diffusivity=thermal_diffusivity(
+            thermal_conductivity=selected_conductivity,
+            density=selected_density,
+            specific_heat=selected_specific_heat,
+        ),
+        mass_flow_rate=mass_flow,
+        heat_rate_into_fluid=heat_rate,
+        inlet_bulk_temperature=inlet_temperature,
+        estimated_outlet_bulk_temperature=outlet_temperature,
+        estimated_bulk_temperature_change=temperature_change,
+        absolute_temperature_change_fraction=change_fraction,
+        maximum_temperature_change_fraction=limit,
+        within_declared_temperature_change_limit=change_fraction <= limit,
     )
 
 

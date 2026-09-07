@@ -245,6 +245,105 @@ def _inlet_reynolds(step: Step) -> float | None:
     )
 
 
+def _thermal_preflight(step: Step) -> dict[str, object]:
+    """Return a truthful thermal planning record without pretending to solve."""
+
+    if not step.model.study.energy:
+        return {
+            "status": "not-requested",
+            "reason": "The study does not request an energy equation.",
+            "calculation": None,
+        }
+    domain = step.model.domain
+    if not isinstance(domain, CircularPipe):
+        return {
+            "status": "deferred",
+            "reason": (
+                "Automatic heat-rate preflight currently requires circular-pipe "
+                "wall area; imported and baffled surface areas remain explicit inputs."
+            ),
+            "calculation": None,
+        }
+    inlet = next(
+        (
+            condition
+            for condition in step.model.boundary_conditions.values()
+            if isinstance(condition, boundaries.Inlet)
+        ),
+        None,
+    )
+    if inlet is None or getattr(inlet, "temperature", None) is None:
+        return {
+            "status": "deferred",
+            "reason": "A resolved inlet bulk temperature is required.",
+            "calculation": None,
+        }
+    if isinstance(inlet, boundaries.MassFlowInlet):
+        mean_velocity = inlet.mass_flow_rate / (
+            step.model.fluid.density * domain.area
+        )
+    elif isinstance(
+        inlet,
+        (
+            boundaries.MeanVelocityInlet,
+            boundaries.FullyDevelopedVelocityInlet,
+            boundaries.TurbulentMeanVelocityInlet,
+        ),
+    ):
+        mean_velocity = inlet.velocity
+    else:
+        return {
+            "status": "deferred",
+            "reason": (
+                "Pressure-driven or Cartesian imported flow requires a solved or "
+                "explicit bulk flow rate before thermal screening."
+            ),
+            "calculation": None,
+        }
+    wall = step.model.boundary_conditions.get("wall")
+    thermal = getattr(wall, "thermal", None)
+    if isinstance(thermal, boundaries.AdiabaticWall):
+        heat_rate = 0.0
+    elif isinstance(thermal, boundaries.HeatFluxWall):
+        heat_rate = (
+            thermal.heat_flux_into_fluid
+            * math.pi
+            * domain.diameter
+            * domain.length
+        )
+    else:
+        return {
+            "status": "deferred",
+            "reason": (
+                "Fixed wall temperature requires a solved wall heat rate; the plan "
+                "does not invent a heat-transfer coefficient."
+            ),
+            "calculation": None,
+        }
+    fluid = step.model.fluid
+    assert fluid.specific_heat is not None
+    assert fluid.thermal_conductivity is not None
+    calculation = engineering.screen_thermal_internal_flow(
+        density=fluid.density,
+        dynamic_viscosity=fluid.dynamic_viscosity,
+        specific_heat=fluid.specific_heat,
+        thermal_conductivity=fluid.thermal_conductivity,
+        mean_velocity=mean_velocity,
+        hydraulic_diameter=domain.hydraulic_diameter,
+        flow_area=domain.area,
+        inlet_bulk_temperature=inlet.temperature,
+        heat_rate_into_fluid=heat_rate,
+    ).to_dict()
+    return {
+        "status": "calculated",
+        "reason": (
+            "First-law mixed-mean estimate from declared flow, properties, and "
+            "circular-pipe heat-flux area; this is not a CFD result."
+        ),
+        "calculation": calculation,
+    }
+
+
 def _human_bytes(value: int) -> str:
     for unit, divisor in (("GiB", 1024**3), ("MiB", 1024**2), ("KiB", 1024)):
         if value >= divisor:
@@ -1542,6 +1641,15 @@ class Project:
             ),
             "output_plan": output_plan,
             "imported_mesh_plan": imported_mesh_plan,
+            "thermal_preflight": (
+                _thermal_preflight(step)
+                if model_valid
+                else {
+                    "status": "deferred",
+                    "reason": "Thermal preflight requires a valid model.",
+                    "calculation": None,
+                }
+            ),
         }
         plan: dict[str, object] = {
             "schema": "agentcfd.solution-plan/0.1",

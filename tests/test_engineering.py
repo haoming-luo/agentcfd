@@ -179,6 +179,66 @@ def test_ideal_gas_speed_of_sound_requires_physical_heat_capacity_ratio():
         )
 
 
+def test_thermal_internal_flow_screening_closes_first_law_and_transport_groups():
+    report = engineering.screen_thermal_internal_flow(
+        density=998.2,
+        dynamic_viscosity=0.001002,
+        specific_heat=4182.0,
+        thermal_conductivity=0.598,
+        mean_velocity=0.5,
+        hydraulic_diameter=0.1,
+        flow_area=math.pi * 0.1**2 / 4.0,
+        inlet_bulk_temperature=300.0,
+        heat_rate_into_fluid=1000.0,
+    )
+
+    expected_mass_flow = 998.2 * 0.5 * math.pi * 0.1**2 / 4.0
+    expected_change = 1000.0 / (expected_mass_flow * 4182.0)
+    assert report.mass_flow_rate == pytest.approx(expected_mass_flow)
+    assert report.prandtl_number == pytest.approx(0.001002 * 4182.0 / 0.598)
+    assert report.peclet_number == pytest.approx(
+        report.reynolds_number * report.prandtl_number
+    )
+    assert report.thermal_diffusivity == pytest.approx(0.598 / (998.2 * 4182.0))
+    assert report.estimated_bulk_temperature_change == pytest.approx(expected_change)
+    assert report.estimated_outlet_bulk_temperature == pytest.approx(
+        300.0 + expected_change
+    )
+    assert report.within_declared_temperature_change_limit is True
+
+
+def test_thermal_internal_flow_screening_keeps_policy_and_cooling_explicit():
+    report = engineering.screen_thermal_internal_flow(
+        density=1.0,
+        dynamic_viscosity=1.0e-5,
+        specific_heat=1000.0,
+        thermal_conductivity=0.03,
+        mean_velocity=1.0,
+        hydraulic_diameter=0.1,
+        flow_area=0.01,
+        inlet_bulk_temperature=300.0,
+        heat_rate_into_fluid=-1000.0,
+        maximum_temperature_change_fraction=0.1,
+    )
+    assert report.estimated_bulk_temperature_change == pytest.approx(-100.0)
+    assert report.estimated_outlet_bulk_temperature == pytest.approx(200.0)
+    assert report.within_declared_temperature_change_limit is False
+    assert report.to_dict()["maximum_temperature_change_fraction"] == 0.1
+
+    with pytest.raises(ValueError, match="absolute zero"):
+        engineering.screen_thermal_internal_flow(
+            density=1.0,
+            dynamic_viscosity=1.0e-5,
+            specific_heat=1000.0,
+            thermal_conductivity=0.03,
+            mean_velocity=1.0,
+            hydraulic_diameter=0.1,
+            flow_area=0.01,
+            inlet_bulk_temperature=300.0,
+            heat_rate_into_fluid=-4000.0,
+        )
+
+
 def test_incompressible_screening_records_threshold_and_decision():
     low_mach = engineering.screen_incompressible_flow(
         velocity=100.0,

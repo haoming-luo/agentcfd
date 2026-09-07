@@ -1,5 +1,6 @@
 import json
 import hashlib
+import math
 import os
 import shlex
 import shutil
@@ -45,6 +46,7 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
     assert plan["decisions"]["portable_formats"] == []
+    assert plan["decisions"]["thermal_preflight"]["status"] == "not-requested"
     assert (
         plan["decisions"]["output_plan"]["channels"]["field_frames"]["resolved_count"]
         == 1
@@ -69,6 +71,48 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     assert inspection["run_count"] == 1
     assert inspection["latest_run"]["run_id"] == completed.run_id
     assert inspection["latest_run"]["trust_level"] == "verified"
+
+
+def test_project_plan_exposes_thermal_first_law_preflight(tmp_path):
+    project = projects.init_project(tmp_path / "heated-pipe", provider="openfoam")
+    project.entrypoint.write_text(
+        """from agentcfd import Model, boundaries, fluids, geometry, outputs, studies
+
+def build():
+    model = Model(
+        study=studies.internal_flow(energy=True),
+        domain=geometry.circular_pipe(length=2.0, diameter=0.1),
+        fluid=fluids.newtonian(
+            \"water\", density=1000.0, dynamic_viscosity=0.001,
+            specific_heat=4000.0, thermal_conductivity=0.6,
+        ),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(0.01, temperature=300.0),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(
+            thermal=boundaries.heat_flux_into_fluid(100.0)
+        ),
+    )
+    return model.step(output=outputs.thermal_internal_flow())
+""",
+        encoding="utf-8",
+    )
+
+    plan = projects.Project(project.root).plan()
+    preflight = plan["decisions"]["thermal_preflight"]
+    expected_heat = 100.0 * math.pi * 0.1 * 2.0
+    expected_flow = 1000.0 * 0.01 * math.pi * 0.1**2 / 4.0
+    assert preflight["status"] == "calculated"
+    assert preflight["calculation"]["heat_rate_into_fluid"] == pytest.approx(
+        expected_heat
+    )
+    assert preflight["calculation"]["mass_flow_rate"] == pytest.approx(expected_flow)
+    assert preflight["calculation"]["estimated_bulk_temperature_change"] == pytest.approx(
+        expected_heat / (expected_flow * 4000.0)
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("solution-plan.schema.json")
+    ).validate(plan)
 
 
 def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):

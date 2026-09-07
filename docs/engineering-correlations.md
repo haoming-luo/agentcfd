@@ -106,6 +106,30 @@ The same decision record is available without Python code through
 `agentcfd calculate compressibility --velocity U --speed-of-sound A --json`,
 which makes the threshold visible to shell automation and AI agents.
 
+## Thermal-flow preflight
+
+`thermal_diffusivity`, `prandtl_number`, `bulk_temperature_change`, and
+`screen_thermal_internal_flow` expose the transport groups and first-law bulk
+temperature estimate needed before an energy solve. The combined record
+contains `Re`, `Pr`, `Pe`, mass flow, signed heat rate, estimated mixed-mean
+outlet temperature, and the exact temperature-change policy used for the
+decision. Positive heat enters the fluid; negative heat removes it.
+
+The default five-percent temperature-change screen is an explicit AgentCFD
+workflow policy, not proof that constant properties are valid. A user can set
+the threshold, and must still assess property variation, buoyancy, radiation,
+phase change, and conjugate walls. The same record is available without Python
+through `agentcfd calculate thermal-flow --help`.
+
+OpenFOAM documents `fixedValue`, `zeroGradient`, and `fixedGradient` as the
+ordinary fixed-temperature, adiabatic, and fixed-heat-flux wall combinations.
+Its `scalarTransport` function object can evolve a scalar with a declared
+diffusivity. AgentCFD records those as the intended first constant-property
+lowering path, but the engineering screen remains useful independently and is
+not labelled as a CFD solution. See the official
+[heat-transfer boundary combinations](https://doc.openfoam.com/2606/tools/processing/boundary-conditions/common-combinations/)
+and [scalar-transport documentation](https://doc.openfoam.com/2606/tools/post-processing/function-objects/solvers/scalarTransport/).
+
 ## Numerical verification
 
 `agentcfd.verification.grid_convergence_index` implements the monotonic

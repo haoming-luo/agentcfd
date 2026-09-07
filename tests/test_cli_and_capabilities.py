@@ -215,6 +215,42 @@ def test_cli_exposes_turbulent_wall_resolution_screen(capsys):
     )
 
 
+def test_cli_exposes_auditable_thermal_flow_screen(capsys):
+    assert (
+        main(
+            [
+                "calculate",
+                "thermal-flow",
+                "--density",
+                "1000",
+                "--viscosity",
+                "0.001",
+                "--specific-heat",
+                "4000",
+                "--thermal-conductivity",
+                "0.6",
+                "--velocity",
+                "1",
+                "--diameter",
+                "0.1",
+                "--flow-area",
+                "0.01",
+                "--inlet-temperature",
+                "300",
+                "--heat-rate",
+                "40000",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    report = json.loads(capsys.readouterr().out)
+    assert report["mass_flow_rate"] == pytest.approx(10.0)
+    assert report["estimated_bulk_temperature_change"] == pytest.approx(1.0)
+    assert report["estimated_outlet_bulk_temperature"] == pytest.approx(301.0)
+    assert report["within_declared_temperature_change_limit"] is True
+
+
 def test_cli_exposes_versioned_thermophysical_state(monkeypatch, capsys):
     state = properties.ThermophysicalState(
         fluid="IF97::Water",

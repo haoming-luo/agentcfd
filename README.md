@@ -766,6 +766,7 @@ authoritative.
 - [Engineering correlations](docs/engineering-correlations.md)
 - [Benchmark catalog](docs/benchmark-catalog.md)
 - [OpenFOAM v2606 execution evidence](docs/openfoam-v2606-validation.json)
+- [OpenFOAM v2606 heated-pipe evidence](docs/openfoam-v2606-heated-pipe-validation.json)
 - [OpenFOAM v2606 grid-validation evidence](docs/openfoam-v2606-grid-validation.json)
 - [OpenFOAM v2606 turbulent-pipe diagnostic evidence](docs/openfoam-v2606-turbulent-pipe-diagnostic.json)
 - [OpenFOAM v2606 periodic precursor evidence](docs/openfoam-v2606-periodic-precursor-validation.json)

@@ -1,0 +1,82 @@
+{
+  "schema": "agentcfd.validation-evidence/0.1",
+  "recorded_at": "2026-09-07",
+  "agentcfd_commit": "1f28d43",
+  "capability": "openfoam.steady-laminar-heated-circular-pipe",
+  "case": {
+    "model_sha256": "ff7e3b7c072f52b7bbebb734b4932b6154a8239a5ea80d78fe208a21756d8002",
+    "analysis_sha256": "b43d3e53d764cab83c8744dbca12a3ee8a9b17e604a6f4db8b24b51071ed0566",
+    "lowered_case_sha256": "c90a33488876a72e37f2face213b2b8413b8feaef28736c6d30e575440d1ebaa",
+    "length_m": 2.0,
+    "diameter_m": 0.1,
+    "mean_velocity_m_per_s": 0.01,
+    "inlet_temperature_k": 300.0,
+    "wall_heat_flux_into_fluid_w_per_m2": 100.0,
+    "density_kg_per_m3": 998.2,
+    "dynamic_viscosity_pa_s": 0.001002,
+    "specific_heat_j_per_kg_k": 4180.0,
+    "thermal_conductivity_w_per_m_k": 0.6
+  },
+  "runtime": {
+    "distribution": "OpenCFD OpenFOAM",
+    "version": "2606",
+    "container_image": "opencfd/openfoam-run:2606",
+    "container_digest": "sha256:4229997e74defb81548222d511b8e3b95b98305e5df41b8e88b031813fe47eeb",
+    "platform": "linux/arm64",
+    "wall_seconds": 110.42965904099401
+  },
+  "mesh": {
+    "mesh_sha256": "a4b08092c6185ee0757202e9083924206f8f7a769103beae250c6b49c2b7fcba",
+    "cross_section_cells": 16,
+    "axial_cells": 80,
+    "hex_cells": 102400,
+    "check_mesh_result": "Mesh OK",
+    "maximum_non_orthogonality_deg": 35.97814995,
+    "maximum_skewness": 0.8691113211,
+    "maximum_aspect_ratio": 28.77433228
+  },
+  "flow": {
+    "reynolds_number": 996.2075848303394,
+    "pressure_drop_pa": 0.06463040342971521,
+    "hagen_poiseuille_pressure_drop_pa": 0.06412799593973866,
+    "relative_pressure_drop_error": 0.007834448630652205,
+    "relative_mass_imbalance": 1.2663640507952555e-07
+  },
+  "thermal": {
+    "method": "simpleFoam plus scalarTransport(T)",
+    "thermal_diffusivity_m2_per_s": 1.4379950897261002e-07,
+    "inlet_flux_weighted_temperature_k": 300.0,
+    "outlet_flux_weighted_temperature_k": 300.19163253,
+    "first_law_expected_outlet_temperature_k": 300.1917326907697,
+    "wall_heat_rate_into_fluid_w": 62.83185307179587,
+    "advected_heat_rate_w": 62.799029838886966,
+    "relative_energy_imbalance": 0.0005223979765708534
+  },
+  "portable_output": {
+    "formats": ["XDMF", "HDF5"],
+    "frame_count": 2,
+    "fields": [
+      "thermal.temperature.point",
+      "fluid.velocity.point",
+      "fluid.kinematic_pressure.point",
+      "fluid.pressure.point"
+    ],
+    "bytes": 1489595,
+    "xdmf_sha256": "94e43390f12d42062aacd6c615a214c4d96c5f852637624ff983dbe07d02be2b",
+    "hdf5_sha256": "72f272e5b86c5c138ea2c4e6eb976e594dc2dcebc7c07acdeeed8e45429458a1",
+    "manifest_sha256": "196dfe35d2c252ae8b8328e43834a5ffa1d2f8fa9d7a8f4ad6da4fc0e1f2dc12"
+  },
+  "acceptance": {
+    "scientifically_accepted": true,
+    "trust_level": "validated",
+    "passed_checks": 21,
+    "failed_checks": 0,
+    "pressure_error_limit": 0.02,
+    "energy_imbalance_limit": 0.02
+  },
+  "limitations": [
+    "This is one-way-coupled constant-property laminar heat transport.",
+    "The record is one accepted grid, not a thermal grid-convergence study.",
+    "Buoyancy, conjugate heat transfer, phase change, and steam are excluded."
+  ]
+}

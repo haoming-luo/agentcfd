@@ -36,6 +36,22 @@ this case prescribes a uniform inlet profile and includes the developing
 entrance region. Its pressure-reference applicability check fails closed. The
 fully developed inlet plus grid convergence is the validation path.
 
+## Constant-property heated-pipe evidence
+
+The first accepted temperature-transport run is recorded in
+`docs/openfoam-v2606-heated-pipe-validation.json`. An immutable OpenCFD v2606
+Linux/arm64 container solved a fully developed laminar circular pipe on 102,400
+hexahedra with `simpleFoam` plus `scalarTransport(T)`. Every runtime,
+convergence, mesh, output, mass, pressure, and thermal check passed.
+
+The pressure-drop error against Hagen–Poiseuille was 0.783%. Flux-weighted
+outlet temperature was 300.191633 K versus the first-law estimate 300.191733 K,
+giving 0.0522% relative energy imbalance. Standard XDMF/HDF5 conversion retained
+temperature, velocity, kinematic pressure, and physical pressure in 1.49 MB.
+This validates the bounded integration and conservation path on one grid; it is
+not a thermal grid-convergence, variable-property, buoyancy, conjugate-wall,
+phase-change, or steam claim.
+
 Numerical capabilities will add, as appropriate:
 
 - method of manufactured solutions;

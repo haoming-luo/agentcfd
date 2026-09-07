@@ -392,12 +392,12 @@ _CAPABILITIES = (
             "deterministic T field, scalarTransport, diffusivity, and heat-flux lowering tests",
             "mass-flow-weighted inlet and outlet bulk-temperature recovery",
             "first-law advected-enthalpy versus wall-heat acceptance gate",
-            "real OpenCFD v2606 temperature-field execution with 0.17% diagnostic energy closure",
+            "accepted 102,400-cell OpenCFD v2606 run with 0.052% energy imbalance and 0.78% pressure error",
         ),
         limitations=(
             "Velocity and properties do not respond to temperature; buoyancy and viscous heating are excluded.",
             "Only a non-zero prescribed heat flux on the single circular-pipe wall is lowered.",
-            "Runtime validation is pending a run that simultaneously passes pressure and energy gates.",
+            "One accepted grid is recorded; formal thermal grid-convergence evidence remains pending.",
         ),
     ),
     Capability(

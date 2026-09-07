@@ -76,6 +76,14 @@ buoyancy, viscous heating, phase change, radiation, and conjugate walls are
 excluded. `fixed_temperature` and `adiabatic` remain public intent but are not
 yet lowered by this first slice.
 
+The first accepted OpenCFD v2606 integration record uses 102,400 hexahedra. It
+reports 0.783% pressure-drop error, 0.0522% energy imbalance, a mixed-mean
+outlet temperature of 300.191633 K versus the first-law 300.191733 K, and a
+1.49 MB XDMF/HDF5 bundle containing `T`, `U`, and pressure. The exact hashes,
+runtime identity, inputs, limits, and limitations are retained in
+[`openfoam-v2606-heated-pipe-validation.json`](openfoam-v2606-heated-pipe-validation.json).
+This is one accepted grid, not a thermal grid-convergence claim.
+
 ## OpenFOAM lowering sequence
 
 The staged provider work is deliberately narrower than the public intent:

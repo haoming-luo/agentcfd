@@ -101,10 +101,10 @@ _CASES = (
             "https://doc.openfoam.com/2606/tools/post-processing/"
             "function-objects/solvers/scalarTransport/"
         ),
-        status="diagnostic-active",
+        status="accepted-integration",
         next_gate=(
-            "Pass pressure-loss and energy-balance gates together on an identified "
-            "OpenCFD v2606 grid."
+            "Complete an identified three-grid temperature and wall-heat "
+            "sensitivity study."
         ),
     ),
     BenchmarkCase(

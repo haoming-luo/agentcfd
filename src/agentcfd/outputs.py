@@ -981,7 +981,7 @@ def thermal_internal_flow(
     )
     return OutputRequest(
         fields=(*base.fields, "thermal.temperature"),
-        histories=base.histories,
+        histories=(*base.histories, "thermal.energy_balance"),
         portable_profile=base.portable_profile,
         portable_formats=base.portable_formats,
         frames=base.frames,

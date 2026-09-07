@@ -115,6 +115,35 @@ def build():
     ).validate(plan)
 
 
+def test_heated_pipe_template_is_ready_and_exposes_editable_operating_point(
+    tmp_path,
+    capsys,
+):
+    root = tmp_path / "heated-template"
+    assert (
+        entrypoint(["init", str(root), "--template", "heated-pipe", "--json"])
+        == 0
+    )
+    initialization = json.loads(capsys.readouterr().out)
+    project = projects.Project(root)
+    plan = project.plan()
+    parameters = {item["name"]: item for item in project.parameter_contract()}
+
+    assert initialization["provider"] == "openfoam"
+    assert project.manifest.openfoam["cross_section_cells"] == 16
+    assert project.manifest.openfoam["axial_cells"] == 80
+    assert plan["readiness"]["provider_compatible"] is True
+    assert plan["decisions"]["required_capability"] == (
+        "openfoam.steady-laminar-heated-circular-pipe"
+    )
+    assert plan["decisions"]["solver"] == "simpleFoam + scalarTransport(T)"
+    assert plan["decisions"]["thermal_preflight"]["status"] == "calculated"
+    assert "thermal.temperature" in plan["decisions"]["outputs"]["fields"]
+    assert "thermal.energy_balance" in plan["decisions"]["outputs"]["histories"]
+    assert parameters["wall_heat_flux"]["metadata"]["unit"] == "W/m^2"
+    assert "not a steam" in (root / "README.md").read_text()
+
+
 def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):
     original = (
         Path(__file__).parents[1]

@@ -308,6 +308,8 @@ def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
 def _result_quantity_group(name: str, quantity: dict[str, object]) -> str:
     """Group flat canonical quantities without changing the machine contract."""
 
+    if name.startswith("thermal."):
+        return "Thermal results"
     kind = quantity.get("kind")
     if kind == "scientific_input" or name.startswith("reference."):
         return "Inputs"
@@ -1347,7 +1349,12 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("directory", nargs="?", type=Path, default=Path("."))
     init.add_argument(
         "--template",
-        choices=("industrial-pipe", "baffle-channel", "imported-internal-flow"),
+        choices=(
+            "industrial-pipe",
+            "heated-pipe",
+            "baffle-channel",
+            "imported-internal-flow",
+        ),
         default=None,
     )
     init.add_argument(
@@ -2538,7 +2545,7 @@ def main(argv: list[str] | None = None) -> int:
                 or (
                     "openfoam"
                     if selected_template
-                    in {"baffle-channel", "imported-internal-flow"}
+                    in {"heated-pipe", "baffle-channel", "imported-internal-flow"}
                     else "reference"
                 ),
                 template=selected_template,
@@ -3024,6 +3031,7 @@ def main(argv: list[str] | None = None) -> int:
                 grouped.setdefault(group, []).append((name, quantity))
             for group in (
                 "Flow results",
+                "Thermal results",
                 "Inputs",
                 "Mesh quality",
                 "Verification",

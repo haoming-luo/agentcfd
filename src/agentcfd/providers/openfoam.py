@@ -45,15 +45,18 @@ _OUTPUT_FIELD_KEYS = {
     "turbulence.specific_dissipation_rate": "omega",
     "turbulence.dissipation_rate": "epsilon",
     "turbulence.kinematic_eddy_viscosity": "nut",
+    "thermal.temperature": "T",
 }
 _OUTPUT_HISTORY_KEYS = {
     "flow.mass_balance": "flow.relative_mass_imbalance",
     "flow.pressure_drop": "flow.pressure_drop",
     "wall.y_plus": "wall.y_plus.average",
+    "thermal.energy_balance": "thermal.relative_energy_imbalance",
 }
 
 _LAMINAR_CAPABILITY = "openfoam.steady-laminar-circular-pipe"
 _TURBULENT_CAPABILITY = "openfoam.steady-rans-smooth-circular-pipe"
+_THERMAL_CAPABILITY = "openfoam.steady-laminar-heated-circular-pipe"
 _PRECURSOR_PROVIDER = "openfoam-periodic-precursor"
 _PRECURSOR_FIELDS = ("U", "p", "k", "omega", "nut")
 
@@ -63,6 +66,8 @@ def _is_turbulent_step(step) -> bool:
 
 
 def _case_capability(step) -> str:
+    if step.model.study.energy:
+        return _THERMAL_CAPABILITY
     return _TURBULENT_CAPABILITY if _is_turbulent_step(step) else _LAMINAR_CAPABILITY
 
 
@@ -950,6 +955,137 @@ def _recover_patch_data(
     )
 
 
+def _recover_thermal_data(
+    case_directory: Path,
+    *,
+    mass_flow_rate: float,
+    specific_heat: float,
+    inlet_temperature: float,
+    expected_heat_rate: float,
+    maximum_relative_energy_imbalance: float,
+) -> tuple[dict[str, Quantity], dict[str, History], tuple[Check, ...]]:
+    """Recover bulk-temperature evidence and close the prescribed heat rate."""
+
+    inlet_series = _read_scalar_series(
+        case_directory,
+        "agentcfd_inlet_temperature",
+    )
+    outlet_series = _read_scalar_series(
+        case_directory,
+        "agentcfd_outlet_temperature",
+    )
+    common_times = tuple(sorted(set(inlet_series) & set(outlet_series)))
+    if not common_times:
+        return (
+            {},
+            {},
+            (
+                Check(
+                    name="thermal-output-recovery",
+                    passed=False,
+                    value="missing",
+                    limit="common inlet and outlet temperature samples",
+                    kind="verification",
+                    observable="thermal.temperature",
+                ),
+            ),
+        )
+    selected_mass_flow = positive_float(mass_flow_rate, name="mass_flow_rate")
+    selected_specific_heat = positive_float(specific_heat, name="specific_heat")
+    selected_inlet_temperature = positive_float(
+        inlet_temperature,
+        name="inlet_temperature",
+    )
+    selected_limit = positive_float(
+        maximum_relative_energy_imbalance,
+        name="maximum_relative_energy_imbalance",
+    )
+    expected_heat = float(expected_heat_rate)
+    if not math.isfinite(expected_heat) or expected_heat == 0.0:
+        raise ValueError("expected_heat_rate must be finite and non-zero.")
+    inlet_values = tuple(inlet_series[time] for time in common_times)
+    outlet_values = tuple(outlet_series[time] for time in common_times)
+    transported_heat = tuple(
+        selected_mass_flow * selected_specific_heat * (outlet - inlet)
+        for inlet, outlet in zip(inlet_values, outlet_values)
+    )
+    relative_imbalance = tuple(
+        abs(value - expected_heat) / abs(expected_heat) for value in transported_heat
+    )
+    expected_outlet = selected_inlet_temperature + expected_heat / (
+        selected_mass_flow * selected_specific_heat
+    )
+    quantities = {
+        "thermal.inlet_bulk_temperature": Quantity(inlet_values[-1], "K"),
+        "thermal.outlet_bulk_temperature": Quantity(outlet_values[-1], "K"),
+        "thermal.expected_outlet_bulk_temperature": Quantity(
+            expected_outlet,
+            "K",
+            kind="verification_metric",
+        ),
+        "thermal.wall_heat_rate_into_fluid": Quantity(expected_heat, "W"),
+        "thermal.advected_heat_rate": Quantity(
+            transported_heat[-1],
+            "W",
+            kind="verification_metric",
+        ),
+        "thermal.relative_energy_imbalance": Quantity(
+            relative_imbalance[-1],
+            "1",
+            kind="verification_metric",
+        ),
+    }
+    histories = {
+        "thermal.inlet_bulk_temperature": History(
+            common_times,
+            inlet_values,
+            unit="K",
+            abscissa_name="iteration",
+            abscissa_unit="1",
+        ),
+        "thermal.outlet_bulk_temperature": History(
+            common_times,
+            outlet_values,
+            unit="K",
+            abscissa_name="iteration",
+            abscissa_unit="1",
+        ),
+        "thermal.relative_energy_imbalance": History(
+            common_times,
+            relative_imbalance,
+            unit="1",
+            abscissa_name="iteration",
+            abscissa_unit="1",
+        ),
+    }
+    return (
+        quantities,
+        histories,
+        (
+            Check(
+                name="thermal-output-recovery",
+                passed=True,
+                value=float(len(common_times)),
+                limit="at least one common temperature sample",
+                kind="runtime",
+                observable="thermal.temperature",
+            ),
+            Check(
+                name="energy-balance",
+                passed=relative_imbalance[-1] <= selected_limit,
+                value=relative_imbalance[-1],
+                limit=selected_limit,
+                message=(
+                    "Advected mixed-mean enthalpy change must match the declared "
+                    "wall heat rate."
+                ),
+                kind="verification",
+                observable="thermal.relative_energy_imbalance",
+            ),
+        ),
+    )
+
+
 def _recover_turbulence_data(
     case_directory: Path,
     *,
@@ -1125,6 +1261,7 @@ class OpenFOAMValidationPolicy:
     maximum_relative_mass_imbalance: float = 1.0e-6
     maximum_relative_pressure_error: float = 0.02
     maximum_relative_inlet_flow_error: float = 0.01
+    maximum_relative_energy_imbalance: float = 0.02
     maximum_relative_pressure_drop_drift: float = 1.0e-4
     maximum_relative_turbulent_pressure_drop_drift: float = 5.0e-4
     minimum_steady_samples: int = 5
@@ -1161,6 +1298,14 @@ class OpenFOAMValidationPolicy:
             positive_float(
                 self.maximum_relative_inlet_flow_error,
                 name="maximum_relative_inlet_flow_error",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "maximum_relative_energy_imbalance",
+            positive_float(
+                self.maximum_relative_energy_imbalance,
+                name="maximum_relative_energy_imbalance",
             ),
         )
         object.__setattr__(
@@ -1482,10 +1627,11 @@ class OpenFOAMProvider:
     """Lower a bounded model to an external ``simpleFoam`` workflow.
 
     The supported cases are intentionally narrow: steady, incompressible,
-    isothermal, Newtonian flow through a smooth circular pipe, either laminar
-    or the explicitly declared k-omega SST RANS slice. Case generation is
-    deterministic and testable without an OpenFOAM installation. Execution
-    additionally requires ``blockMesh``, ``checkMesh``, and ``simpleFoam``.
+    Newtonian flow through a smooth circular pipe: isothermal laminar flow,
+    explicitly declared k-omega SST RANS, or constant-property laminar heat
+    transport with prescribed wall heat flux. Case generation is deterministic
+    and testable without an OpenFOAM installation. Execution additionally
+    requires ``blockMesh``, ``checkMesh``, and ``simpleFoam``.
     """
 
     def __init__(
@@ -1590,7 +1736,11 @@ class OpenFOAMProvider:
                 if self.container_image
                 else "filesystem-and-subprocess"
             ),
-            capabilities=(_LAMINAR_CAPABILITY, _TURBULENT_CAPABILITY),
+            capabilities=(
+                _LAMINAR_CAPABILITY,
+                _TURBULENT_CAPABILITY,
+                _THERMAL_CAPABILITY,
+            ),
         )
 
     def validate(self, step) -> None:
@@ -2017,6 +2167,61 @@ class OpenFOAMProvider:
                 else "The uniform inlet includes developing-flow effects in the total pressure drop."
             ),
         )
+        thermal = step.model.study.energy
+        thermal_checks: tuple[Check, ...] = ()
+        if thermal:
+            inlet = next(
+                value
+                for value in step.model.boundary_conditions.values()
+                if isinstance(
+                    value,
+                    (
+                        boundaries.MassFlowInlet,
+                        boundaries.MeanVelocityInlet,
+                        boundaries.FullyDevelopedVelocityInlet,
+                    ),
+                )
+            )
+            wall = next(
+                value
+                for value in step.model.boundary_conditions.values()
+                if isinstance(value, boundaries.NoSlipWall)
+            )
+            assert inlet.temperature is not None
+            assert isinstance(wall.thermal, boundaries.HeatFluxWall)
+            assert step.model.fluid.specific_heat is not None
+            recovered_mass_flow = quantities.get("flow.mass_flow_rate")
+            if recovered_mass_flow is None:
+                thermal_checks = (
+                    Check(
+                        name="energy-balance",
+                        passed=False,
+                        value="missing mass flow",
+                        limit=self.validation.maximum_relative_energy_imbalance,
+                        kind="verification",
+                        observable="thermal.relative_energy_imbalance",
+                    ),
+                )
+            else:
+                thermal_quantities, thermal_histories, thermal_checks = (
+                    _recover_thermal_data(
+                        prepared.directory,
+                        mass_flow_rate=recovered_mass_flow.value,
+                        specific_heat=step.model.fluid.specific_heat,
+                        inlet_temperature=inlet.temperature,
+                        expected_heat_rate=(
+                            wall.thermal.heat_flux_into_fluid
+                            * math.pi
+                            * step.model.domain.diameter
+                            * step.model.domain.length
+                        ),
+                        maximum_relative_energy_imbalance=(
+                            self.validation.maximum_relative_energy_imbalance
+                        ),
+                    )
+                )
+                quantities.update(thermal_quantities)
+                histories.update(thermal_histories)
         if mapping_contract is not None:
             quantities["reference.flow.precursor_pressure_drop"] = Quantity(
                 reference_drop,
@@ -2127,7 +2332,9 @@ class OpenFOAMProvider:
                 else step.procedure.relative_tolerance
             ),
             axial_velocity_component=(None if explicit_solver_converged else "Uz"),
-            additional_fields=(("k", "omega") if turbulent else ()),
+            additional_fields=(
+                ("k", "omega") if turbulent else ("T",) if thermal else ()
+            ),
         )
         pressure_stability_check = _pressure_drop_stability_check(
             histories.get("flow.pressure_drop"),
@@ -2193,6 +2400,7 @@ class OpenFOAMProvider:
                     ("omega", "1/s"),
                     ("nut", "m^2/s"),
                 ) if turbulent else ()),
+                *(((("T", "K"),)) if thermal else ()),
             )
             for name, unit in field_units:
                 path = latest_time / name
@@ -2362,6 +2570,7 @@ class OpenFOAMProvider:
                 *container_checks,
                 *recovery_checks,
                 *turbulence_checks,
+                *thermal_checks,
             ),
             artifacts={
                 name: Artifact.from_path(
@@ -2430,10 +2639,14 @@ class OpenFOAMProvider:
                 "Generic initialization and mesh-intent lowering are not implemented "
                 "by the current OpenFOAM pipe provider."
             )
-        if not study.steady or study.compressible or study.energy or study.reacting:
+        if not study.steady or study.compressible or study.reacting:
             raise UnsupportedCaseError(
                 "The OpenFOAM pipe provider supports steady, incompressible, "
-                "isothermal, Newtonian internal flow only."
+                "non-reacting Newtonian internal flow only."
+            )
+        if study.energy and not study.laminar:
+            raise UnsupportedCaseError(
+                "The first constant-property thermal pipe slice is laminar only."
             )
         if step.output.reports:
             raise UnsupportedCaseError(
@@ -2488,6 +2701,17 @@ class OpenFOAMProvider:
             raise UnsupportedCaseError("Rough-wall lowering is not implemented.")
         if len(wall_conditions) != 1:
             raise UnsupportedCaseError("The initial OpenFOAM pipe mesh requires exactly one wall boundary.")
+        if study.energy:
+            thermal = wall_conditions[0].thermal
+            if not isinstance(thermal, boundaries.HeatFluxWall):
+                raise UnsupportedCaseError(
+                    "The first thermal pipe slice requires an explicit non-zero "
+                    "heat_flux_into_fluid wall condition."
+                )
+            if thermal.heat_flux_into_fluid == 0.0:
+                raise UnsupportedCaseError(
+                    "The first thermal pipe slice requires non-zero wall heat flux."
+                )
         reynolds = (
             model.fluid.density
             * self._mean_velocity(model)
@@ -2586,6 +2810,7 @@ class OpenFOAMProvider:
             axial_cells = max(20, min(800, math.ceil(2.0 * model.domain.length / model.domain.diameter)))
 
         turbulent = _is_turbulent_step(step)
+        thermal = model.study.energy
         files = {
             "0/U": _velocity_field(
                 inlet_name,
@@ -2617,15 +2842,43 @@ class OpenFOAMProvider:
                 inlet=inlet_name,
                 outlet=outlet_name,
                 turbulent=turbulent,
+                thermal=thermal,
+                thermal_diffusivity=(
+                    model.fluid.thermal_conductivity
+                    / (model.fluid.density * model.fluid.specific_heat)
+                    if thermal
+                    else None
+                ),
                 compress=step.output.storage.compression != "none",
             ),
-            "system/fvSchemes": _fv_schemes(turbulent=turbulent),
+            "system/fvSchemes": _fv_schemes(
+                turbulent=turbulent,
+                thermal=thermal,
+            ),
             "system/fvSolution": _fv_solution(
                 step.procedure.relative_tolerance,
                 turbulent=turbulent,
+                thermal=thermal,
                 strict_velocity_solve=self.precursor_case is not None,
             ),
         }
+        if thermal:
+            wall = next(
+                value
+                for value in model.boundary_conditions.values()
+                if isinstance(value, boundaries.NoSlipWall)
+                and isinstance(value.thermal, boundaries.HeatFluxWall)
+            )
+            files["0/T"] = _temperature_field(
+                inlet_name,
+                outlet_name,
+                wall_names,
+                inlet_temperature=inlet.temperature,
+                wall_temperature_gradient=(
+                    wall.thermal.heat_flux_into_fluid
+                    / model.fluid.thermal_conductivity
+                ),
+            )
         if turbulent:
             estimate = engineering.turbulence_inlet_from_intensity(
                 mean_velocity=mean_velocity,
@@ -2790,6 +3043,40 @@ boundaryField
     {{
         type fixedValue;
         value uniform {pressure:.17g};
+    }}
+{wall_blocks}
+}}
+"""
+
+
+def _temperature_field(
+    inlet: str,
+    outlet: str,
+    walls: tuple[str, ...],
+    *,
+    inlet_temperature: float,
+    wall_temperature_gradient: float,
+) -> str:
+    wall_blocks = "\n".join(
+        f"""    {name}
+    {{
+        type fixedGradient;
+        gradient uniform {wall_temperature_gradient:.17g};
+    }}"""
+        for name in walls
+    )
+    return _header(object_name="T", class_name="volScalarField", location="0") + f"""dimensions      [0 0 0 1 0 0 0];
+internalField   uniform {inlet_temperature:.17g};
+boundaryField
+{{
+    {inlet}
+    {{
+        type fixedValue;
+        value uniform {inlet_temperature:.17g};
+    }}
+    {outlet}
+    {{
+        type zeroGradient;
     }}
 {wall_blocks}
 }}
@@ -3141,6 +3428,8 @@ def _control_dict(
     inlet: str,
     outlet: str,
     turbulent: bool = False,
+    thermal: bool = False,
+    thermal_diffusivity: float | None = None,
     compress: bool = True,
     extra_functions: str = "",
 ) -> str:
@@ -3158,6 +3447,49 @@ def _control_dict(
         log true;
     }
 """ if turbulent else ""
+    if thermal and thermal_diffusivity is None:
+        raise ValueError("Thermal controlDict requires thermal diffusivity.")
+    thermal_functions = f"""
+    agentcfd_temperature_transport
+    {{
+        type scalarTransport;
+        libs ("libsolverFunctionObjects.so");
+        field T;
+        phi phi;
+        schemesField T;
+        D {thermal_diffusivity:.17g};
+        resetOnStartUp no;
+        executeControl timeStep;
+        executeInterval 1;
+        writeControl writeTime;
+    }}
+    agentcfd_inlet_temperature
+    {{
+        type surfaceFieldValue;
+        libs (fieldFunctionObjects);
+        writeControl timeStep;
+        writeInterval 1;
+        writeFields false;
+        regionType patch;
+        name {inlet};
+        operation weightedAverage;
+        weightField phi;
+        fields (T);
+    }}
+    agentcfd_outlet_temperature
+    {{
+        type surfaceFieldValue;
+        libs (fieldFunctionObjects);
+        writeControl timeStep;
+        writeInterval 1;
+        writeFields false;
+        regionType patch;
+        name {outlet};
+        operation weightedAverage;
+        weightField phi;
+        fields (T);
+    }}
+""" if thermal else ""
     return _header(object_name="controlDict", class_name="dictionary", location="system") + f"""application     simpleFoam;
 startFrom       startTime;
 startTime       0;
@@ -3174,6 +3506,7 @@ runTimeModifiable true;
 
 functions
 {{
+{thermal_functions}
     agentcfd_inlet_flow
     {{
         type surfaceFieldValue;
@@ -3228,11 +3561,12 @@ functions
 """
 
 
-def _fv_schemes(*, turbulent: bool = False) -> str:
+def _fv_schemes(*, turbulent: bool = False, thermal: bool = False) -> str:
     turbulence_divergence = """
     div(phi,k) bounded Gauss upwind;
     div(phi,omega) bounded Gauss upwind;
 """ if turbulent else ""
+    thermal_divergence = "    div(phi,T) bounded Gauss upwind;\n" if thermal else ""
     return _header(object_name="fvSchemes", class_name="dictionary", location="system") + f"""ddtSchemes
 {{
     default steadyState;
@@ -3247,6 +3581,7 @@ divSchemes
     div(phi,U) bounded Gauss linearUpwind grad(U);
     div((nuEff*dev2(T(grad(U))))) Gauss linear;
 {turbulence_divergence}
+{thermal_divergence}
 }}
 laplacianSchemes
 {{
@@ -3271,6 +3606,7 @@ def _fv_solution(
     relative_tolerance: float,
     *,
     turbulent: bool = False,
+    thermal: bool = False,
     strict_velocity_solve: bool = False,
 ) -> str:
     pressure_relative_tolerance = 0.1 if turbulent else 0.01
@@ -3284,14 +3620,27 @@ def _fv_solution(
         relTol 0.1;
     }}
 """ if turbulent else ""
+    thermal_solver = f"""
+    T
+    {{
+        solver smoothSolver;
+        smoother symGaussSeidel;
+        tolerance {relative_tolerance:.17g};
+        relTol 0;
+    }}
+""" if thermal else ""
     turbulence_residuals = f"""
         k {relative_tolerance:.17g};
         omega {relative_tolerance:.17g};
 """ if turbulent else ""
+    thermal_residual = (
+        f"        T {relative_tolerance:.17g};\n" if thermal else ""
+    )
     turbulence_relaxation = """
         k 0.7;
         omega 0.7;
 """ if turbulent else ""
+    thermal_relaxation = "        T 0.9;\n" if thermal else ""
     return _header(object_name="fvSolution", class_name="dictionary", location="system") + f"""solvers
 {{
     p
@@ -3309,6 +3658,7 @@ def _fv_solution(
         relTol {velocity_relative_tolerance:.17g};
     }}
 {turbulence_solvers}
+{thermal_solver}
 }}
 
 SIMPLE
@@ -3320,6 +3670,7 @@ SIMPLE
         p {relative_tolerance:.17g};
         U {relative_tolerance:.17g};
 {turbulence_residuals}
+{thermal_residual}
     }}
 }}
 
@@ -3333,6 +3684,7 @@ relaxationFactors
     {{
         U 0.7;
 {turbulence_relaxation}
+{thermal_relaxation}
     }}
 }}
 """

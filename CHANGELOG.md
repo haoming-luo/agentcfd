@@ -5,8 +5,13 @@
 - Add solver-neutral thermal internal-flow intent: inlet temperatures, explicit
   adiabatic/fixed-temperature/signed-heat-flux wall conditions, energy-model
   completeness gates, canonical temperature output, and a CoolProp-state bridge
-  to constant-property fluids. Existing providers still reject energy equations
-  until their numerical and physical acceptance evidence is implemented.
+  to constant-property fluids. Add a bounded OpenCFD v2606 circular-pipe
+  lowering using passive `scalarTransport`, flux-weighted bulk temperature,
+  thermal XDMF/HDF5 output, and an explicit first-law energy-balance gate.
+- Add `agentcfd init --template heated-pipe` with editable geometry, operating
+  point, inlet temperature, and signed wall heat flux. Its project plan reports
+  Re, Pr, Pe, expected outlet temperature, and the exact temperature-change
+  policy before an external solver starts.
 - Group the human `agentcfd result` view into flow, inputs, mesh quality,
   verification, runtime, and other engineering results, with dimensionless
   values rendered explicitly. The flat canonical JSON result contract is

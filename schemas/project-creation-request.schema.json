@@ -8,7 +8,7 @@
   "properties": {
     "schema": {"const": "agentcfd.project-creation-request/0.1"},
     "template": {
-      "enum": ["industrial-pipe", "baffle-channel", "imported-internal-flow"]
+      "enum": ["industrial-pipe", "heated-pipe", "baffle-channel", "imported-internal-flow"]
     },
     "provider": {"enum": ["reference", "openfoam"]},
     "geometry": {

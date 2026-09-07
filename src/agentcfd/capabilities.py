@@ -77,9 +77,10 @@ _CAPABILITIES = (
             "thermal boundary serialization and finite-input tests",
             "energy-study property, inlet, wall, and output completeness gates",
             "CoolProp state to constant-property fluid bridge",
+            "dimensionless and first-law thermal-flow planning record",
         ),
         limitations=(
-            "No OpenFOAM energy-equation provider is released yet.",
+            "The first OpenFOAM lowering is limited to one-way-coupled constant-property laminar heat transport in a circular pipe.",
             "Phase change, conjugate heat transfer, radiation, species, and combustion remain unsupported intent.",
         ),
     ),
@@ -377,6 +378,26 @@ _CAPABILITIES = (
             "Only a flow-rate-constrained mean-velocity inlet is supported.",
             "The first slice uses automatic blended wall treatment on a smooth wall.",
             "Physical accuracy remains diagnostic until grid and Reynolds-range validation pass.",
+        ),
+    ),
+    Capability(
+        name="openfoam.steady-laminar-heated-circular-pipe",
+        maturity="experimental",
+        scope=(
+            "OpenCFD v2606 steady incompressible laminar circular-pipe flow "
+            "with one-way constant-property temperature transport and prescribed "
+            "wall heat flux."
+        ),
+        evidence=(
+            "deterministic T field, scalarTransport, diffusivity, and heat-flux lowering tests",
+            "mass-flow-weighted inlet and outlet bulk-temperature recovery",
+            "first-law advected-enthalpy versus wall-heat acceptance gate",
+            "real OpenCFD v2606 temperature-field execution with 0.17% diagnostic energy closure",
+        ),
+        limitations=(
+            "Velocity and properties do not respond to temperature; buoyancy and viscous heating are excluded.",
+            "Only a non-zero prescribed heat flux on the single circular-pipe wall is lowered.",
+            "Runtime validation is pending a run that simultaneously passes pressure and energy gates.",
         ),
     ),
     Capability(

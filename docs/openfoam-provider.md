@@ -2,7 +2,7 @@
 
 ## Released truth
 
-`agentcfd.providers.OpenFOAMProvider` currently lowers two bounded slices of
+`agentcfd.providers.OpenFOAMProvider` currently lowers three bounded slices of
 one geometry:
 
 - steady, incompressible, isothermal, Newtonian internal flow;
@@ -16,6 +16,13 @@ one geometry:
   declared fully developed laminar profile inlet;
 - in-run `surfaceFieldValue` histories for both patch flows and both
   area-averaged patch pressures.
+
+The experimental thermal slice adds steady laminar one-way temperature
+transport for constant properties and a non-zero prescribed wall heat flux.
+It lowers an absolute `T` field, `alpha = k/(rho cp)`, and the wall-normal
+gradient; recovers flux-weighted bulk temperatures; and gates the result on
+advected enthalpy versus declared wall heat. It does not model buoyancy,
+temperature-dependent momentum/properties, phase change, or steam.
 
 The experimental RANS slice additionally requires a public
 `turbulence="k-omega-sst"` study and `turbulent_mean_velocity_inlet`. The inlet
@@ -42,8 +49,8 @@ result-based GCI implementation used by `verify grid-convergence`.
 
 ## Safety and failure behavior
 
-The provider validates the public model before lowering and rejects energy,
-compressibility, reaction, wall roughness, turbulence models other than the
+The provider validates the public model before lowering and rejects unsupported
+energy combinations, compressibility, reaction, wall roughness, turbulence models other than the
 bounded k-omega SST slice, invalid OpenFOAM patch names, and multiple wall
 patches. Laminar cases reject turbulent outputs and inlets; turbulent cases
 require the explicit turbulent inlet and Reynolds number at least 4000. It

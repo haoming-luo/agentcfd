@@ -1,8 +1,9 @@
-# Thermal flow and steam: contract before solver lowering
+# Thermal flow and steam: bounded lowering before real-fluid breadth
 
-AgentCFD now has a solver-neutral thermal internal-flow contract. This is the
-public language that future OpenFOAM energy providers must consume; it does not
-claim that an energy solve is released yet.
+AgentCFD has a solver-neutral thermal internal-flow contract and one deliberately
+narrow OpenFOAM lowering. The released experimental slice is constant-property,
+steady, incompressible, laminar circular-pipe flow with a non-zero prescribed
+wall heat flux. It is not a compressible steam solver.
 
 ```python
 from agentcfd import Model, boundaries, fluids, geometry, outputs, studies
@@ -58,12 +59,29 @@ state record in project evidence: converting one point to constant properties
 does not make those properties valid over an arbitrary pressure-temperature
 range and does not turn a single-phase model into a phase-change model.
 
+## First OpenFOAM lowering
+
+The pipe provider runs `simpleFoam` for pressure and velocity and OpenFOAM's
+`scalarTransport` function object for a passive absolute-temperature field. It
+sets `alpha = k/(rho cp)`, maps positive heat into the fluid to OpenFOAM's
+outward-normal temperature gradient, and reports mass-flow-weighted inlet and
+outlet temperatures. Area averaging is intentionally not used for the outlet:
+in developed flow, near-wall temperature and velocity are correlated, so it
+does not represent mixed-mean enthalpy.
+
+Acceptance includes the existing mesh, convergence, mass, and pressure gates
+plus `|mdot cp (Tout-Tin) - Qwall| / |Qwall|`. This one-way coupling is valid
+only when temperature does not materially change momentum or properties;
+buoyancy, viscous heating, phase change, radiation, and conjugate walls are
+excluded. `fixed_temperature` and `adiabatic` remain public intent but are not
+yet lowered by this first slice.
+
 ## OpenFOAM lowering sequence
 
 The staged provider work is deliberately narrower than the public intent:
 
-1. Lower and validate a constant-property, single-phase heated internal-flow
-   benchmark with temperature and energy-balance acceptance gates.
+1. Complete a grid-identified constant-property heated-pipe validation record;
+   then add fixed-temperature walls without inventing a heat-transfer coefficient.
 2. Add steady compressible `rhoSimpleFoam` gas flow with absolute pressure,
    temperature, thermophysical identity, low-Mach/transonic screening, and
    mandatory mass/energy conservation.
@@ -88,4 +106,6 @@ Authoritative OpenCFD references:
 - <https://doc.openfoam.com/2306/tools/processing/solvers/rtm/compressible/rhoSimpleFoam/>
 - <https://doc.openfoam.com/2306/tools/processing/solvers/rtm/heat-transfer/buoyantSimpleFoam/>
 - <https://doc.openfoam.com/2606/tools/processing/boundary-conditions/common-combinations/>
+- <https://doc.openfoam.com/2606/tools/post-processing/function-objects/solvers/scalarTransport/>
+- <https://api.openfoam.com/2606/classFoam_1_1functionObjects_1_1fieldValues_1_1surfaceFieldValue.html>
 - <https://doc.openfoam.com/2606/tools/processing/solvers/rtm/combustion/>

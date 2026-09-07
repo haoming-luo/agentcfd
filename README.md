@@ -15,7 +15,8 @@ principles established through AgentFEM, but it is a separate codebase with its
 own fluid-mechanics language, providers, validation evidence, and release cycle.
 
 > **Project status:** pre-alpha. The public workflow and circular-pipe reference
-> solution are executable. Deterministic OpenFOAM laminar, k-omega SST, and
+> solution are executable. Deterministic OpenFOAM laminar, constant-property
+> heated laminar, k-omega SST, and
 > bounded k-epsilon precursor generation, execution, mesh checks, result recovery, and
 > pressure-loss evidence are experimental capabilities; every run must still
 > earn acceptance.
@@ -43,8 +44,8 @@ The [product experience roadmap](docs/product-experience-roadmap.md) tracks the
 parallel goal of reducing user attention, failure recovery work, and storage
 amplification per trusted result.
 [Thermal and steam architecture](docs/thermal-and-steam-roadmap.md) defines the
-released solver-neutral heat-flow intent and the evidence gates required before
-an OpenFOAM energy provider can claim support.
+solver-neutral heat-flow intent, the bounded passive-temperature OpenFOAM slice,
+and the evidence gates required before advancing to real-fluid steam.
 [Post-processing recipes](docs/postprocessing-recipes.md) turn named slices,
 contours, and streamlines into portable ParaView scripts without copying the
 XDMF/HDF5 field payload. Optional typed camera and render intent can reproduce
@@ -116,6 +117,20 @@ agentcfd view .         # prints the latest XDMF or result target
 agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
 agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 ```
+
+For the first bounded heat-transfer workflow:
+
+```bash
+agentcfd init --template heated-pipe my-heated-pipe
+cd my-heated-pipe
+agentcfd plan .         # Re, Pr, Pe and first-law outlet estimate
+agentcfd run .          # pressure, velocity, temperature and conservation gates
+agentcfd view .         # standard XDMF/H5 contains T beside U and p
+```
+
+This template is steady, laminar, incompressible and constant-property, with a
+prescribed non-zero wall heat flux. It does not claim buoyancy, conjugate heat
+transfer, phase change, or steam support.
 
 The default `result` view groups engineering values by purpose instead of
 printing one undifferentiated list. Add `--json` when an agent or integration

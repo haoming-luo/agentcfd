@@ -13,6 +13,7 @@ def test_capability_catalog_is_truthful():
     assert maturity["reference.hagen-poiseuille"] == "release"
     assert maturity["provider.openfoam"] == "experimental"
     assert maturity["openfoam.steady-laminar-circular-pipe"] == "experimental"
+    assert maturity["openfoam.steady-laminar-heated-circular-pipe"] == "experimental"
     assert maturity["openfoam.periodic-k-epsilon-circular-pipe-precursor"] == (
         "experimental"
     )

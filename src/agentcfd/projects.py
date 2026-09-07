@@ -1443,6 +1443,9 @@ class Project:
             required_capability = "openfoam.transient-laminar-baffled-channel"
         else:
             required_capability = (
+                "openfoam.steady-laminar-heated-circular-pipe"
+                if study.energy
+                else
                 "openfoam.steady-laminar-circular-pipe"
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
@@ -1618,6 +1621,8 @@ class Project:
             "solver": (
                 "unresolved-provider-lowering"
                 if not provider_compatible
+                else "simpleFoam + scalarTransport(T)"
+                if selected_name == "openfoam" and study.energy
                 else "pimpleFoam"
                 if selected_name == "openfoam" and not study.steady
                 else "simpleFoam"
@@ -4389,6 +4394,71 @@ def build(*, length=10.0, diameter=0.05, mean_velocity=0.02):
 '''
 
 
+_HEATED_PIPE_TEMPLATE = '''"""Constant-property laminar heated-pipe validation workflow."""
+
+from agentcfd import Model, boundaries, fluids, geometry, outputs, parameters, procedures, studies
+
+
+@parameters.describe(
+    length=parameters.number(
+        "Pipe length", unit="m", minimum=0, exclusive_minimum=True,
+        description="Axial length of the circular fluid domain.",
+    ),
+    diameter=parameters.number(
+        "Pipe diameter", unit="m", minimum=0, exclusive_minimum=True,
+        description="Internal circular diameter.",
+    ),
+    mean_velocity=parameters.number(
+        "Mean inlet velocity", unit="m/s", minimum=0, exclusive_minimum=True,
+        description="Bulk velocity of the fully developed laminar inlet.",
+    ),
+    inlet_temperature=parameters.number(
+        "Inlet temperature", unit="K", minimum=0, exclusive_minimum=True,
+        description="Absolute mixed-mean inlet temperature.",
+    ),
+    wall_heat_flux=parameters.number(
+        "Wall heat flux into fluid", unit="W/m^2",
+        description="Signed heat flux; positive values heat the fluid.",
+    ),
+)
+def build(
+    *,
+    length=2.0,
+    diameter=0.1,
+    mean_velocity=0.01,
+    inlet_temperature=300.0,
+    wall_heat_flux=100.0,
+):
+    model = Model(
+        name="heated-water-pipe",
+        study=studies.internal_flow(energy=True),
+        domain=geometry.circular_pipe(length=length, diameter=diameter),
+        fluid=fluids.newtonian(
+            "constant-property-water",
+            density=998.2,
+            dynamic_viscosity=1.002e-3,
+            specific_heat=4180.0,
+            thermal_conductivity=0.6,
+        ),
+    ).boundaries(
+        inlet=boundaries.fully_developed_velocity_inlet(
+            mean_velocity, temperature=inlet_temperature
+        ),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(
+            thermal=boundaries.heat_flux_into_fluid(wall_heat_flux)
+        ),
+    )
+    return model.step(
+        procedure=procedures.steady(
+            relative_tolerance=1.0e-6,
+            maximum_iterations=700,
+        ),
+        output=outputs.thermal_internal_flow(),
+    )
+'''
+
+
 _BAFFLE_CHANNEL_TEMPLATE = '''"""Low-Re transient wake behind a bottom-attached baffle."""
 
 from agentcfd import Model, boundaries, fluids, geometry, initialization, meshing, outputs, parameters, procedures, studies
@@ -4865,14 +4935,19 @@ def init_project(
         raise ValueError("Project provider must be 'reference' or 'openfoam'.")
     if template not in {
         "industrial-pipe",
+        "heated-pipe",
         "baffle-channel",
         "imported-internal-flow",
     }:
         raise ValueError(
-            "Project template must be 'industrial-pipe', 'baffle-channel', or "
-            "'imported-internal-flow'."
+            "Project template must be 'industrial-pipe', 'heated-pipe', "
+            "'baffle-channel', or 'imported-internal-flow'."
         )
-    if template in {"baffle-channel", "imported-internal-flow"} and provider != "openfoam":
+    if template in {
+        "heated-pipe",
+        "baffle-channel",
+        "imported-internal-flow",
+    } and provider != "openfoam":
         raise ValueError(f"The {template} template requires provider='openfoam'.")
     imported_options = (
         geometry_path,
@@ -5066,6 +5141,8 @@ def init_project(
         case_template = (
             _BAFFLE_CHANNEL_TEMPLATE
             if template == "baffle-channel"
+            else _HEATED_PIPE_TEMPLATE
+            if template == "heated-pipe"
             else _CASE_TEMPLATE
         )
     root = Path(directory)
@@ -5073,8 +5150,12 @@ def init_project(
         raise FileExistsError(f"Project directory is not empty: {root}")
     root.mkdir(parents=True, exist_ok=True)
     pipe_mesh_settings = (
-        "cross_section_cells = 8\naxial_cells = 120\n"
-        if template == "industrial-pipe"
+        (
+            "cross_section_cells = 16\naxial_cells = 80\n"
+            if template == "heated-pipe"
+            else "cross_section_cells = 8\naxial_cells = 120\n"
+        )
+        if template in {"industrial-pipe", "heated-pipe"}
         else ""
     )
     manifest = f'''schema = "agentcfd.project/0.1"
@@ -5119,7 +5200,14 @@ timeout_seconds = 3600
             "set turbulence_model, turbulence_intensity, and "
             "turbulence_length_scale together for the guarded k-omega SST path.\n\n"
             if template == "imported-internal-flow"
-            else ""
+            else (
+                "This template is the bounded constant-property laminar thermal "
+                "slice. Positive wall heat flux enters the fluid. Review the plan's "
+                "thermal preflight before running; accepted results require both "
+                "pressure and energy closure. It is not a steam or buoyancy model.\n\n"
+                if template == "heated-pipe"
+                else ""
+            )
         )
         + "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
         "next action. The normal loop is `agentcfd run .` followed by "

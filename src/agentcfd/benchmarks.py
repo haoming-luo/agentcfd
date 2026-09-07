@@ -85,6 +85,29 @@ _CASES = (
         next_gate="Add compressible energy solver lowering and a public experimental dataset.",
     ),
     BenchmarkCase(
+        id="constant-property-heated-laminar-pipe",
+        stage="unit",
+        physics=(
+            "Steady incompressible laminar circular-pipe flow with prescribed "
+            "wall heat flux and passive constant-property temperature transport."
+        ),
+        observables=(
+            "mass-flow-weighted outlet temperature",
+            "advected heat rate",
+            "pressure loss",
+        ),
+        source="OpenFOAM scalarTransport and first-law bulk energy balance",
+        source_url=(
+            "https://doc.openfoam.com/2606/tools/post-processing/"
+            "function-objects/solvers/scalarTransport/"
+        ),
+        status="diagnostic-active",
+        next_gate=(
+            "Pass pressure-loss and energy-balance gates together on an identified "
+            "OpenCFD v2606 grid."
+        ),
+    ),
+    BenchmarkCase(
         id="iaea-tee-junction-thermal-mixing",
         stage="industrial-benchmark",
         physics="Transient single-phase non-isothermal mixing in a pipe tee junction.",

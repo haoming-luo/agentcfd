@@ -30,6 +30,7 @@ from agentcfd.providers.openfoam import (
     _read_scalar_series,
     _read_y_plus_series,
     _recover_turbulence_data,
+    _recover_thermal_data,
     _runtime_version,
     _runtime_version_key,
     _recover_patch_data,
@@ -102,6 +103,27 @@ def turbulent_pipe_model(*, velocity: float = 1.0) -> Model:
         ),
         outlet=boundaries.pressure_outlet(),
         wall=boundaries.no_slip_wall(),
+    )
+
+
+def heated_pipe_model(*, velocity: float = 0.01, heat_flux: float = 100.0) -> Model:
+    return Model(
+        name="heated-openfoam-pipe",
+        study=studies.internal_flow(energy=True),
+        domain=geometry.circular_pipe(length=2.0, diameter=0.1),
+        fluid=fluids.newtonian(
+            "water",
+            density=998.2,
+            dynamic_viscosity=1.002e-3,
+            specific_heat=4180.0,
+            thermal_conductivity=0.6,
+        ),
+    ).boundaries(
+        inlet=boundaries.mean_velocity_inlet(velocity, temperature=300.0),
+        outlet=boundaries.pressure_outlet(),
+        wall=boundaries.no_slip_wall(
+            thermal=boundaries.heat_flux_into_fluid(heat_flux)
+        ),
     )
 
 
@@ -518,7 +540,7 @@ def test_openfoam_turbulence_requires_matching_study_inlet_and_reynolds(tmp_path
 @pytest.mark.parametrize(
     "model, message",
     [
-        (pipe_model(energy=True), "isothermal"),
+        (pipe_model(energy=True), "heat_flux_into_fluid"),
         (pipe_model(roughness=1.0e-5), "smooth pipe"),
         (pipe_model(velocity=0.03), "laminar provider range"),
     ],
@@ -536,6 +558,60 @@ def test_openfoam_provider_never_overwrites_a_case(tmp_path):
     with pytest.raises(FileExistsError, match="not empty"):
         OpenFOAMProvider().prepare(pipe_model().step(), case_directory)
     assert (case_directory / "keep.txt").read_text() == "user data"
+
+
+def test_openfoam_prepares_constant_property_heated_pipe(tmp_path):
+    step = heated_pipe_model().step(output=outputs.thermal_internal_flow())
+    prepared = OpenFOAMProvider().prepare(step, tmp_path / "thermal-case")
+
+    temperature = (prepared.directory / "0/T").read_text()
+    control = (prepared.directory / "system/controlDict").read_text()
+    schemes = (prepared.directory / "system/fvSchemes").read_text()
+    solution = (prepared.directory / "system/fvSolution").read_text()
+    manifest = json.loads((prepared.directory / "agentcfd-case.json").read_text())
+    assert "dimensions      [0 0 0 1 0 0 0];" in temperature
+    assert "gradient uniform 166.66666666666669;" in temperature
+    assert "type scalarTransport;" in control
+    assert "field T;" in control
+    assert "D 1.4379950897261002e-07;" in control
+    assert control.count("operation weightedAverage;") == 2
+    assert control.count("weightField phi;") == 2
+    assert "div(phi,T) bounded Gauss upwind;" in schemes
+    assert "T\n    {" in solution
+    assert manifest["capability"] == "openfoam.steady-laminar-heated-circular-pipe"
+
+
+def test_thermal_recovery_closes_prescribed_heat_rate(tmp_path):
+    expected_heat = 100.0
+    mass_flow = 2.0
+    specific_heat = 1000.0
+    outlet_temperature = 300.0 + expected_heat / (mass_flow * specific_heat)
+    for name, value in (
+        ("agentcfd_inlet_temperature", 300.0),
+        ("agentcfd_outlet_temperature", outlet_temperature),
+    ):
+        directory = tmp_path / "postProcessing" / name / "0"
+        directory.mkdir(parents=True)
+        (directory / "surfaceFieldValue.dat").write_text(
+            f"# Time value\n1 {value}\n2 {value}\n"
+        )
+
+    quantities, histories, checks = _recover_thermal_data(
+        tmp_path,
+        mass_flow_rate=mass_flow,
+        specific_heat=specific_heat,
+        inlet_temperature=300.0,
+        expected_heat_rate=expected_heat,
+        maximum_relative_energy_imbalance=0.02,
+    )
+    assert quantities["thermal.advected_heat_rate"].value == pytest.approx(
+        expected_heat
+    )
+    assert quantities["thermal.relative_energy_imbalance"].value == pytest.approx(0.0)
+    assert histories["thermal.outlet_bulk_temperature"].values[-1] == pytest.approx(
+        outlet_temperature
+    )
+    assert all(check.passed for check in checks)
 
 
 def test_prepared_openfoam_case_is_verified_before_reuse(tmp_path):
@@ -839,6 +915,7 @@ def test_openfoam_run_recovers_an_accepted_result_end_to_end(tmp_path, monkeypat
         "maximum_relative_mass_imbalance": 1.0e-6,
         "maximum_relative_pressure_error": 0.02,
         "maximum_relative_inlet_flow_error": 0.01,
+        "maximum_relative_energy_imbalance": 0.02,
         "maximum_relative_pressure_drop_drift": 1.0e-4,
         "maximum_relative_turbulent_pressure_drop_drift": 5.0e-4,
         "minimum_steady_samples": 5,

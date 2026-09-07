@@ -492,7 +492,9 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid(monkeypatch):
     assert pressure_record["pressure_control"]["recovered_mass_flow_kg_s"] > 0.0
     assert pressure_record["flow"]["relative_mass_imbalance"] <= 1.0e-4
     project_plan = example.plan()
-    assert project_plan["readiness"]["ready_to_run"] is True
+    assert project_plan["readiness"]["provider_compatible"] is True
+    assert project_plan["readiness"]["input_assets_ready"] is True
+    assert project_plan["readiness"]["mesh_intent_ready"] is True
     assert project_plan["decisions"]["output_plan"]["estimated_mesh_cells"] == 200_000
 
 

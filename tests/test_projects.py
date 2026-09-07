@@ -26,7 +26,21 @@ def test_process_liveness_treats_permission_denied_as_existing(monkeypatch):
 
     monkeypatch.setattr(projects.os, "kill", denied)
 
-    assert projects._process_is_alive(12345) is True
+    assert projects._posix_process_is_alive(12345) is True
+
+
+def test_process_liveness_dispatches_to_windows_without_os_kill(monkeypatch):
+    observed = []
+
+    def missing(pid):
+        observed.append(pid)
+        return False
+
+    monkeypatch.setattr(projects.os, "name", "nt")
+    monkeypatch.setattr(projects, "_windows_process_is_alive", missing)
+
+    assert projects._process_is_alive(12345) is False
+    assert observed == [12345]
 
 
 def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):

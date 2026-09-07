@@ -395,9 +395,40 @@ def _tree_usage(path: Path) -> tuple[int, int]:
     return total, count
 
 
-def _process_is_alive(pid: object) -> bool:
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
+def _windows_process_is_alive(pid: int) -> bool:
+    """Query one Windows PID without using ``os.kill(pid, 0)``.
+
+    Python maps ``os.kill`` to Windows console/termination semantics rather
+    than the POSIX existence probe.  Calling it with signal zero can therefore
+    interrupt the test runner or, worse, the process being observed.
+    """
+
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    error_access_denied = 5
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == error_access_denied
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _posix_process_is_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
     except PermissionError:
@@ -411,6 +442,14 @@ def _process_is_alive(pid: object) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _process_is_alive(pid: object) -> bool:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    if os.name == "nt":
+        return _windows_process_is_alive(pid)
+    return _posix_process_is_alive(pid)
 
 
 _OPENFOAM_NUMBER = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"

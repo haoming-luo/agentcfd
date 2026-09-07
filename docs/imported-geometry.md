@@ -216,6 +216,16 @@ the coarse grid is physically validated. The verified five-field XDMF/H5
 bundle occupies about 253 KiB and the source-linked record is
 `docs/openfoam-v2606-imported-duct-rans.json`.
 
+Project runs keep one content-addressed mesh cache under
+`.agentcfd/mesh-cache/`. Its key covers the imported source bytes and complete
+resolved mesh plan plus the configured OpenFOAM runtime identity, not the
+velocity or turbulence operating point. Every hit
+re-hashes all cached `polyMesh` files before reuse; a mismatch falls back to
+native meshing and replaces the invalid entry. `agentcfd storage` accounts for
+this persistent accelerator separately, while ordinary `agentcfd clean`
+preserves it. Each result and run marker says whether its mesh was `generated`
+or a verified `cache-hit`.
+
 STEP/IGES are recognized but not silently tessellated. A future CAD adapter
 must make tessellation tolerance, units, face-name retention, and source hash
 explicit. Similarly, `geometry_ready: true` means that the released preflight

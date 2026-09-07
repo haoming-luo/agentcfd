@@ -8,6 +8,7 @@ import math
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,6 +61,12 @@ _FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SUPPORTED_ROLES = {"inlet", "outlet", "wall", "symmetry", "empty"}
 _MINIMUM_WALL_FUNCTION_Y_PLUS = 30.0
 _MAXIMUM_WALL_FUNCTION_Y_PLUS = 300.0
+_MESH_COMMAND_NAMES = (
+    "blockMesh",
+    "snappyHexMesh-check",
+    "snappyHexMesh",
+    "checkMesh",
+)
 
 
 def _foam_scalar(value: float) -> str:
@@ -150,6 +157,150 @@ class ImportedMeshResult:
             "return_codes": self.return_codes,
             "durations_seconds": self.durations_seconds,
         }
+
+
+def _mesh_cache_key(prepared: PreparedImportedMesh, runtime_identity: str) -> str:
+    return content_fingerprint(
+        {
+            "mesh_plan_sha256": prepared.mesh_plan.to_dict()["plan_sha256"],
+            "runtime_identity": runtime_identity,
+        }
+    ).removeprefix("sha256:")
+
+
+def _mesh_file_hashes(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): file_sha256(path)
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def _restore_cached_mesh(
+    prepared: PreparedImportedMesh,
+    cache_root: Path | None,
+    runtime_identity: str,
+) -> ImportedMeshResult | None:
+    """Restore only a byte-verified mesh produced by the exact mesh plan."""
+
+    if cache_root is None:
+        return None
+    key = _mesh_cache_key(prepared, runtime_identity)
+    candidate = cache_root / key
+    manifest_path = candidate / "mesh-cache.json"
+    mesh_root = candidate / "polyMesh"
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema") != "agentcfd.imported-mesh-cache/0.1"
+        or payload.get("mesh_plan_sha256")
+        != prepared.mesh_plan.to_dict()["plan_sha256"]
+        or payload.get("runtime_identity") != runtime_identity
+        or payload.get("accepted") is not True
+        or not isinstance(payload.get("files"), dict)
+        or not isinstance(payload.get("logs"), dict)
+        or not mesh_root.is_dir()
+    ):
+        return None
+    expected_files = payload["files"]
+    if _mesh_file_hashes(mesh_root) != expected_files:
+        return None
+    expected_logs = payload["logs"]
+    if set(expected_logs) != set(_MESH_COMMAND_NAMES) or any(
+        file_sha256(candidate / f"log.{name}") != expected_logs[name]
+        for name in _MESH_COMMAND_NAMES
+        if (candidate / f"log.{name}").is_file()
+    ):
+        return None
+    if any(
+        not (candidate / f"log.{name}").is_file()
+        for name in _MESH_COMMAND_NAMES
+    ):
+        return None
+    result_record = payload.get("mesh_result")
+    if not isinstance(result_record, dict):
+        return None
+    try:
+        result = ImportedMeshResult(
+            directory=prepared.directory,
+            accepted=result_record["accepted"] is True,
+            checks=tuple(result_record["checks"]),
+            quantities=dict(result_record["quantities"]),
+            return_codes={
+                str(name): int(code)
+                for name, code in dict(result_record["return_codes"]).items()
+            },
+            durations_seconds={
+                str(name): float(value)
+                for name, value in dict(result_record["durations_seconds"]).items()
+            },
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not result.accepted or any(
+        result.return_codes.get(name) != 0 for name in _MESH_COMMAND_NAMES
+    ):
+        return None
+    target = prepared.directory / "constant" / "polyMesh"
+    if target.exists():
+        return None
+    shutil.copytree(mesh_root, target)
+    for name in _MESH_COMMAND_NAMES:
+        cached_log = candidate / f"log.{name}"
+        if cached_log.is_file():
+            shutil.copy2(cached_log, prepared.directory / cached_log.name)
+    return result
+
+
+def _store_cached_mesh(
+    prepared: PreparedImportedMesh,
+    mesh_result: ImportedMeshResult,
+    cache_root: Path | None,
+    runtime_identity: str,
+) -> None:
+    """Atomically publish one accepted mesh for later operating points."""
+
+    mesh_root = prepared.directory / "constant" / "polyMesh"
+    if cache_root is None or not mesh_result.accepted or not mesh_root.is_dir():
+        return
+    cache_root.mkdir(parents=True, exist_ok=True)
+    key = _mesh_cache_key(prepared, runtime_identity)
+    target = cache_root / key
+    temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=cache_root))
+    try:
+        copied_mesh = temporary / "polyMesh"
+        shutil.copytree(mesh_root, copied_mesh)
+        logs: dict[str, str] = {}
+        for name in _MESH_COMMAND_NAMES:
+            log_path = prepared.directory / f"log.{name}"
+            if log_path.is_file():
+                copied_log = temporary / log_path.name
+                shutil.copy2(log_path, copied_log)
+                logs[name] = file_sha256(copied_log)
+        if set(logs) != set(_MESH_COMMAND_NAMES):
+            return
+        payload = {
+            "schema": "agentcfd.imported-mesh-cache/0.1",
+            "mesh_plan_sha256": prepared.mesh_plan.to_dict()["plan_sha256"],
+            "runtime_identity": runtime_identity,
+            "accepted": True,
+            "files": _mesh_file_hashes(copied_mesh),
+            "logs": logs,
+            "mesh_result": mesh_result.to_dict(),
+        }
+        (temporary / "mesh-cache.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if target.exists():
+            shutil.rmtree(target)
+        temporary.replace(target)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
 
 
 def plan_imported_mesh(step: Step) -> ImportedMeshPlan:
@@ -903,11 +1054,15 @@ class OpenFOAMImportedProvider:
         *,
         source: str | Path,
         case_directory: str | Path | None = None,
+        mesh_cache_directory: str | Path | None = None,
         container_image: str | None = None,
         timeout_seconds: float = 3600.0,
     ) -> None:
         self.source = Path(source)
         self.case_directory = None if case_directory is None else Path(case_directory)
+        self.mesh_cache_directory = (
+            None if mesh_cache_directory is None else Path(mesh_cache_directory)
+        )
         self.container_image = str(container_image).strip() if container_image else None
         if not math.isfinite(timeout_seconds) or timeout_seconds <= 0.0:
             raise ValueError("timeout_seconds must be positive and finite.")
@@ -1160,11 +1315,25 @@ class OpenFOAMImportedProvider:
         prepared = self.prepare(step)
         turbulent = not step.model.study.laminar
         flow_capability = _RANS_FLOW_CAPABILITY if turbulent else _FLOW_CAPABILITY
-        mesh_result = execute_imported_mesh(
+        runtime_identity = self.container_image or "externally-managed-openfoam"
+        mesh_result = _restore_cached_mesh(
             prepared,
-            container_image=self.container_image,
-            timeout_seconds=self.timeout_seconds,
+            self.mesh_cache_directory,
+            runtime_identity,
         )
+        mesh_reuse = mesh_result is not None
+        if mesh_result is None:
+            mesh_result = execute_imported_mesh(
+                prepared,
+                container_image=self.container_image,
+                timeout_seconds=self.timeout_seconds,
+            )
+            _store_cached_mesh(
+                prepared,
+                mesh_result,
+                self.mesh_cache_directory,
+                runtime_identity,
+            )
         solver_code = None
         solver_duration = 0.0
         solver_log = ""
@@ -1196,10 +1365,11 @@ class OpenFOAMImportedProvider:
             (inlet_pressure[t] - outlet_pressure[t]) * step.model.fluid.density
             for t in pressure_times
         )
+        check_mesh_log = prepared.directory / "log.checkMesh"
         quantities = _mesh_quality_quantities(
-            (prepared.directory / "log.checkMesh").read_text(
-                encoding="utf-8", errors="replace"
-            )
+            check_mesh_log.read_text(encoding="utf-8", errors="replace")
+            if check_mesh_log.is_file()
+            else ""
         )
         quantities["runtime.simpleFoam.wall_seconds"] = Quantity(
             solver_duration, "s", kind="runtime_metric"
@@ -1509,6 +1679,8 @@ class OpenFOAMImportedProvider:
                 "analysis_sha256": _analysis_sha256(step),
                 "case_sha256": prepared.case_sha256,
                 "mesh_sha256": mesh_sha256,
+                "mesh_acquisition": "cache-hit" if mesh_reuse else "generated",
+                "mesh_plan_sha256": prepared.mesh_plan.to_dict()["plan_sha256"],
                 "provider_capability": flow_capability,
                 "runtime_version": runtime_version,
                 "turbulence_model": step.model.study.turbulence,

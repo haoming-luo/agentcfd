@@ -1069,6 +1069,7 @@ class Project:
             return OpenFOAMImportedProvider(
                 source=source,
                 case_directory=case_directory,
+                mesh_cache_directory=self.root / ".agentcfd" / "mesh-cache",
                 container_image=str(selected_image) if selected_image else None,
                 timeout_seconds=timeout_seconds,
             )
@@ -2872,6 +2873,7 @@ class Project:
             "current_output": self.run_root,
             "campaigns": self.root / "campaigns",
             "temporary_workspaces": workspace_root,
+            "mesh_cache": self.root / ".agentcfd" / "mesh-cache",
         }
         categories: dict[str, dict[str, object]] = {}
         for name, path in groups.items():
@@ -2942,6 +2944,7 @@ class Project:
                 "ordinary_run": "replace managed current_output",
                 "campaign_run": "retain immutable campaigns",
                 "temporary_workspaces": "removed after successful export unless explicitly kept or interrupted",
+                "mesh_cache": "content-addressed and retained for compatible imported-geometry runs",
                 "portable_fields": "XDMF index plus compressed HDF5 payload",
             },
             "next_action": (
@@ -3024,7 +3027,11 @@ class Project:
             "include_retained": include_retained,
             "scope": "temporary-workspaces-only",
             "targets": targets,
-            "preserved": [str(self.run_root), str(self.root / "campaigns")],
+            "preserved": [
+                str(self.run_root),
+                str(self.root / "campaigns"),
+                str(self.root / ".agentcfd" / "mesh-cache"),
+            ],
             "protected_active_run_ids": sorted(active_run_ids),
             "protected_recovery_run_ids": sorted(recovery_run_ids),
             "protected_retained_run_ids": sorted(retained_run_ids),
@@ -3854,6 +3861,9 @@ class Project:
             name: {"value": quantity.value, "unit": quantity.unit}
             for name, quantity in sorted(result.quantities.items())
         }
+        mesh_acquisition = result.provenance.get("mesh_acquisition")
+        if isinstance(mesh_acquisition, str):
+            run_record["mesh_acquisition"] = mesh_acquisition
         if _resume_archive is not None:
             run_record["resume"] = marker_record["resume"]
         if _promotion_source_run_id is not None:

@@ -2031,12 +2031,16 @@ def test_storage_inventory_and_clean_preserve_results(tmp_path):
     workspace = project.root / ".agentcfd" / "work" / "debug-run"
     workspace.mkdir(parents=True)
     (workspace / "native-field").write_bytes(b"temporary")
+    mesh_cache = project.root / ".agentcfd" / "mesh-cache" / "identity"
+    mesh_cache.mkdir(parents=True)
+    (mesh_cache / "points").write_bytes(b"reusable-mesh")
 
     inventory = project.storage()
     jsonschema.Draft202012Validator(
         contracts.load("project-storage.schema.json")
     ).validate(inventory)
     assert inventory["reclaimable_bytes"] == len(b"temporary")
+    assert inventory["categories"]["mesh_cache"]["bytes"] == len(b"reusable-mesh")
     assert inventory["next_action"]["command"].endswith(" --apply")
 
     preview = project.clean()
@@ -2048,6 +2052,7 @@ def test_storage_inventory_and_clean_preserve_results(tmp_path):
     applied = project.clean(apply=True)
     assert applied["reclaimed_bytes"] == len(b"temporary")
     assert not workspace.exists()
+    assert (mesh_cache / "points").is_file()
     assert (project.run_root / "result.json").is_file()
 
 

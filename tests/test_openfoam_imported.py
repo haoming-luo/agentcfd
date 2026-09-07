@@ -543,13 +543,17 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
     provider = OpenFOAMImportedProvider(
         source=source,
         case_directory=tmp_path / "case",
+        mesh_cache_directory=tmp_path / "mesh-cache",
     )
     monkeypatch.setattr(
         "agentcfd.providers.openfoam_imported.shutil.which", lambda name: f"/{name}"
     )
 
+    commands = []
+
     def completed(argv, **kwargs):
         executable = argv[0].rsplit("/", 1)[-1]
+        commands.append(executable)
         case = Path(kwargs["stdout"].name).parent
         if executable == "blockMesh":
             poly_mesh = case / "constant" / "polyMesh"
@@ -601,6 +605,66 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
     )
     assert result.provenance["mesh_sha256"] == result.fields["U"].mesh_sha256
     assert result.provenance["mesh_sha256"] == result.fields["p"].mesh_sha256
+    assert result.provenance["mesh_acquisition"] == "generated"
+
+    second = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case-2",
+        mesh_cache_directory=tmp_path / "mesh-cache",
+    ).run(_step(payload))
+
+    assert second.accepted is True
+    assert second.provenance["mesh_acquisition"] == "cache-hit"
+    assert second.provenance["mesh_sha256"] == result.provenance["mesh_sha256"]
+    assert commands.count("blockMesh") == 1
+    assert commands.count("snappyHexMesh") == 2
+    assert commands.count("checkMesh") == 1
+    assert commands.count("simpleFoam") == 2
+
+    cached_points = next((tmp_path / "mesh-cache").glob("*/polyMesh/points"))
+    cached_points.write_text("corrupted")
+    repaired = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case-3",
+        mesh_cache_directory=tmp_path / "mesh-cache",
+    ).run(_step(payload))
+
+    assert repaired.accepted is True
+    assert repaired.provenance["mesh_acquisition"] == "generated"
+    assert commands.count("blockMesh") == 2
+    assert commands.count("snappyHexMesh") == 4
+    assert commands.count("checkMesh") == 2
+    assert commands.count("simpleFoam") == 3
+
+
+def test_imported_flow_returns_failed_result_when_meshing_stops_early(
+    tmp_path, monkeypatch
+):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    provider = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    )
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_imported.shutil.which", lambda name: f"/{name}"
+    )
+
+    def failed(argv, **kwargs):
+        kwargs["stdout"].write("FOAM FATAL ERROR\nsynthetic mesh failure\n")
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_imported.subprocess.run", failed
+    )
+
+    result = provider.run(_step(payload))
+
+    assert result.status == "failed"
+    assert result.accepted is False
+    assert result.provenance["mesh_acquisition"] == "generated"
+    assert next(check for check in result.checks if check.name == "mesh-quality").passed is False
 
 
 @pytest.mark.parametrize(

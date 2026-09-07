@@ -2691,6 +2691,21 @@ def main(argv: list[str] | None = None) -> int:
                 "failed",
             }:
                 print(f"phase: {latest.get('phase', latest.get('status', 'unknown'))}")
+            if isinstance(latest, dict) and latest.get("parameters"):
+                parameters = latest["parameters"]
+                assert isinstance(parameters, dict)
+                rendered = ", ".join(
+                    f"{name}={json.dumps(value, sort_keys=True)}"
+                    for name, value in sorted(parameters.items())
+                )
+                suffix = (
+                    " | current case.py defaults differ"
+                    if report["inputs_changed"]
+                    else ""
+                )
+                print(f"latest parameters: {rendered}{suffix}")
+            if isinstance(latest, dict) and latest.get("mesh_acquisition"):
+                print(f"mesh: {latest['mesh_acquisition']}")
             progress = report["progress"]
             if isinstance(progress, dict):
                 command = progress.get("current_command")

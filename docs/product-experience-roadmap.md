@@ -122,6 +122,8 @@ files stay hidden and reproducible.
 - explicit arbitrary-geometry k-omega SST intent and lowering, including a
   Cartesian turbulent inlet, blended wall functions, portable turbulence
   fields, and compact wall y-plus evidence;
+- byte-verified content-addressed imported meshes shared across compatible
+  operating points, with explicit acquisition provenance and storage accounting;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

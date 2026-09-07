@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Reuse byte-verified, content-addressed imported-geometry meshes across
+  operating points. Corrupt or mismatched cache entries fail closed and are
+  regenerated; storage inventory reports the cache separately and ordinary
+  cleanup preserves it.
+- Surface imported-mesh acquisition (`generated` or `cache-hit`) in result and
+  run provenance, and show the latest parameter overrides in human project
+  status so parameterized results cannot be mistaken for `case.py` defaults.
 - Add `init --template imported-internal-flow` as the safe geometry-to-project
   bridge. It inspects and owns STL/OBJ plus normalized role records, requires
   explicit units, interior seed, inlet vector, mesh size, and cell budget, and

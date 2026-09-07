@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
+  view over the latest or selected run. It exposes quantities, failed checks,
+  histories and field names without opening HDF5 or hashing external artifacts,
+  and points to the explicit full-integrity verification command.
 - Reuse byte-verified, content-addressed imported-geometry meshes across
   operating points. Corrupt or mismatched cache entries fail closed and are
   regenerated; storage inventory reports the cache separately and ordinary

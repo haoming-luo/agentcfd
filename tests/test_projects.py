@@ -1647,6 +1647,42 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     assert "Inputs changed" in modified["next_action"]["reason"]
 
 
+def test_result_summary_is_lightweight_filterable_and_cli_visible(
+    tmp_path, capsys
+):
+    project = projects.init_project(tmp_path / "pipe")
+    completed = project.run()
+
+    report = project.result_summary(quantities=("flow.pressure_drop",))
+
+    jsonschema.Draft202012Validator(
+        contracts.load("result-summary.schema.json")
+    ).validate(report)
+    assert report["run_id"] == completed.run_id
+    assert set(report["quantities"]) == {"flow.pressure_drop"}
+    assert "flow.mass_flow_rate" in report["available"]["quantities"]
+    assert report["observation_cost"]["field_payloads_opened"] == 0
+    assert report["artifact_integrity"]["verified"] is False
+
+    assert (
+        entrypoint(
+            [
+                "result",
+                str(project.root),
+                "--quantity",
+                "flow.pressure_drop",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_report = json.loads(capsys.readouterr().out)
+    assert set(cli_report["quantities"]) == {"flow.pressure_drop"}
+
+    with pytest.raises(ProjectError, match="Unknown result quantities"):
+        project.result_summary(quantities=("flow.misspelled",))
+
+
 def test_project_doctor_combines_health_resource_and_energy_truthfulness(
     tmp_path, capsys
 ):

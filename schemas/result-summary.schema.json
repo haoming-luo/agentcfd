@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/result-summary.schema.json",
+  "title": "AgentCFD lightweight project result summary 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "run_id", "result", "status", "converged",
+    "accepted", "trust_level", "provider", "parameters", "quantities",
+    "histories", "fields", "available", "failed_checks", "provenance",
+    "artifact_integrity", "observation_cost", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.result-summary/0.1"},
+    "root": {"type": "string"},
+    "run_id": {"type": ["string", "null"]},
+    "result": {"type": "string"},
+    "status": {"type": "string"},
+    "converged": {"type": "boolean"},
+    "accepted": {"type": "boolean"},
+    "trust_level": {"enum": ["not_computed", "computed", "converged", "verified", "validated"]},
+    "provider": {"type": "string"},
+    "parameters": {"type": "object"},
+    "quantities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["value", "unit", "kind", "description"],
+        "properties": {
+          "value": {"type": "number"},
+          "unit": {"type": ["string", "null"]},
+          "kind": {"type": "string"},
+          "description": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "histories": {"type": "object"},
+    "fields": {"type": "object"},
+    "available": {
+      "type": "object",
+      "required": ["quantities", "histories", "fields"],
+      "properties": {
+        "quantities": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "histories": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+      },
+      "additionalProperties": false
+    },
+    "failed_checks": {"type": "array", "items": {"type": "object"}},
+    "provenance": {"type": "object"},
+    "artifact_integrity": {
+      "type": "object",
+      "required": ["verified", "reason", "command"],
+      "properties": {
+        "verified": {"const": false},
+        "reason": {"type": "string"},
+        "command": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": ["result_json_bytes_read", "field_payloads_opened", "artifacts_hashed"],
+      "properties": {
+        "result_json_bytes_read": {"type": "integer", "minimum": 1},
+        "field_payloads_opened": {"const": 0},
+        "artifacts_hashed": {"const": 0}
+      },
+      "additionalProperties": false
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string"},
+        "reason": {"type": "string"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

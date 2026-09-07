@@ -99,6 +99,7 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "project-doctor.schema.json" in contracts.available()
     assert "project-logs.schema.json" in contracts.available()
     assert "project-recovery.schema.json" in contracts.available()
+    assert "result-summary.schema.json" in contracts.available()
     assert "project-view.schema.json" in contracts.available()
     assert "error.schema.json" in contracts.available()
     assert "postprocess-recipes.schema.json" in contracts.available()

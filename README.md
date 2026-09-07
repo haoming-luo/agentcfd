@@ -101,6 +101,7 @@ agentcfd init --template industrial-pipe my-flow
 cd my-flow
 agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
+agentcfd result .       # quantities and field metadata without opening HDF5
 agentcfd run .
 agentcfd watch .        # follow a long active run, then stop automatically
 agentcfd diagnose .     # classify bounded evidence and recommend one safe action

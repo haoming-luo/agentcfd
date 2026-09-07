@@ -57,6 +57,14 @@ CLI failures requested with `--json` use `agentcfd.error/0.1` with a stable code
 plain message, repair guidance, and `safe_to_retry`; agents do not need to parse
 human stderr. Active solver workspaces are protected from cleanup.
 
+`agentcfd result PROJECT --json` is the matching lightweight result surface.
+It validates the internal result record and returns canonical quantities,
+failed checks, history metadata, field metadata, provenance, and available
+names without opening HDF5 or hashing external artifacts. Repeat `--quantity`
+to request only the scalar values needed by a decision. The response states
+that artifact integrity is deferred and provides the exact `verify result`
+command for workflows that require a full byte-level audit.
+
 `output.views` carries named, typed post-processing intent in the same analysis
 fingerprint. After field publication, `output/postprocess/manifest.json` maps
 canonical fields to their exported point/cell arrays and portable ParaView

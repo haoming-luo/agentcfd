@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from . import (
     boundaries,
@@ -1613,6 +1613,95 @@ class Project:
                 "result_manifests_opened": 0,
                 "field_payloads_opened": 0,
                 "recursive_storage_scans": len(rows) if include_storage else 0,
+            },
+        }
+
+    def result_summary(
+        self,
+        *,
+        run_id: str | None = None,
+        quantities: Sequence[str] = (),
+    ) -> dict[str, object]:
+        """Return compact result metadata without opening external field payloads."""
+
+        selected_run = self._select_run_record(run_id)
+        if selected_run is None:
+            raise ProjectError("No project result exists; run the project first.")
+        run_directory = self._record_directory(selected_run)
+        if run_directory is None:
+            raise ProjectError("The selected run directory cannot be resolved.")
+        result_path = run_directory / "result.json"
+        if not result_path.is_file():
+            raise ProjectError(
+                "The selected run has no compact result.json; rerun or diagnose it."
+            )
+        record = read_result_record(result_path, verify_artifacts=False)
+        available_quantities = record["quantities"]
+        requested = tuple(dict.fromkeys(str(name).strip() for name in quantities))
+        if any(not name for name in requested):
+            raise ProjectError("Result quantity names must not be empty.")
+        unknown = sorted(set(requested) - set(available_quantities))
+        if unknown:
+            available = ", ".join(sorted(available_quantities)) or "none"
+            raise ProjectError(
+                "Unknown result quantities: "
+                + ", ".join(unknown)
+                + f". Available: {available}."
+            )
+        selected_quantities = (
+            {name: available_quantities[name] for name in requested}
+            if requested
+            else dict(available_quantities)
+        )
+        fields = record.get("fields", {})
+        histories = record.get("histories", {})
+        checks = record.get("checks", [])
+        project_argument = self._cli_project_argument()
+        verification_command = (
+            f"agentcfd verify result {shlex.quote(str(result_path))}"
+        )
+        return {
+            "schema": "agentcfd.result-summary/0.1",
+            "root": str(self.root),
+            "run_id": selected_run.get("run_id"),
+            "result": str(result_path),
+            "status": record["status"],
+            "converged": record["converged"],
+            "accepted": record["accepted"],
+            "trust_level": record["trust_level"],
+            "provider": record["provider"],
+            "parameters": selected_run.get("parameters", {}),
+            "quantities": selected_quantities,
+            "histories": histories,
+            "fields": fields,
+            "available": {
+                "quantities": sorted(available_quantities),
+                "histories": sorted(histories),
+                "fields": sorted(fields),
+            },
+            "failed_checks": [check for check in checks if not check["passed"]],
+            "provenance": record.get("provenance", {}),
+            "artifact_integrity": {
+                "verified": False,
+                "reason": "External artifacts were not opened by this lightweight view.",
+                "command": verification_command,
+            },
+            "observation_cost": {
+                "result_json_bytes_read": result_path.stat().st_size,
+                "field_payloads_opened": 0,
+                "artifacts_hashed": 0,
+            },
+            "next_action": {
+                "command": (
+                    f"agentcfd view {project_argument}"
+                    if run_id is None
+                    else verification_command
+                ),
+                "reason": (
+                    "Open the accepted result for spatial review."
+                    if record["accepted"]
+                    else "Review the failed checks before using this result."
+                ),
             },
         }
 

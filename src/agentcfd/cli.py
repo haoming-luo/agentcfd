@@ -1461,6 +1461,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status.add_argument("--json", action="store_true", dest="as_json")
 
+    result_command = subparsers.add_parser(
+        "result",
+        help="Read compact quantities, checks, and field metadata without opening HDF5.",
+    )
+    result_command.add_argument("project", nargs="?", type=Path, default=Path("."))
+    result_command.add_argument(
+        "--run-id",
+        help="Select one immutable campaign or historical run instead of the latest.",
+    )
+    result_command.add_argument(
+        "--quantity",
+        action="append",
+        default=[],
+        help="Return one canonical scalar quantity; repeat to select several.",
+    )
+    result_command.add_argument("--json", action="store_true", dest="as_json")
+
     watch = subparsers.add_parser(
         "watch",
         help="Follow lightweight project progress until the run reaches a terminal state.",
@@ -2774,6 +2791,34 @@ def main(argv: list[str] | None = None) -> int:
                     f"{storage['reclaimable_display']}"
                 )
         return 0 if report["state"] not in {"blocked", "failed"} else 3
+    if args.command == "result":
+        report = projects.Project.discover(args.project).result_summary(
+            run_id=args.run_id,
+            quantities=args.quantity,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Result {report['run_id']} | {str(report['status']).upper()} | "
+                f"accepted {str(report['accepted']).lower()} | "
+                f"trust {report['trust_level']}"
+            )
+            for name, quantity in report["quantities"].items():
+                unit = "" if quantity["unit"] is None else f" {quantity['unit']}"
+                print(f"{name}: {float(quantity['value']):.8g}{unit}")
+            available = report["available"]
+            print(
+                f"data: {len(available['histories'])} histories | "
+                f"{len(available['fields'])} fields | HDF5 not opened"
+            )
+            if report["failed_checks"]:
+                print(
+                    "failed checks: "
+                    + ", ".join(check["name"] for check in report["failed_checks"])
+                )
+            print(f"verify artifacts: {report['artifact_integrity']['command']}")
+        return 0 if report["accepted"] else 3
     if args.command == "storage":
         report = projects.Project(args.project).storage()
         if args.as_json:

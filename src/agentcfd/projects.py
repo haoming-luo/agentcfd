@@ -3150,7 +3150,14 @@ class Project:
         return tuple(
             sorted(
                 unique.values(),
-                key=lambda item: (modified(item), item[0]),
+                # A retained workspace is the authoritative live copy.  Do not
+                # let filesystem timestamp resolution decide between it and a
+                # published evidence copy (notably on Windows runners).
+                key=lambda item: (
+                    item[2] == "workspace",
+                    modified(item),
+                    item[0],
+                ),
             )
         )
 

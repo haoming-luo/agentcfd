@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-verification.schema.json",
+  "title": "AgentCFD published project integrity verification 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "run_id", "run_directory", "verified", "accepted",
+    "trust_level", "checks", "result", "field_bundle", "observation_cost",
+    "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-verification/0.1"},
+    "root": {"type": "string", "minLength": 1},
+    "run_id": {"type": ["string", "null"]},
+    "run_directory": {"type": "string", "minLength": 1},
+    "verified": {"type": "boolean"},
+    "accepted": {"type": ["boolean", "null"]},
+    "trust_level": {
+      "enum": [
+        "not_computed", "computed", "converged", "verified", "validated", null
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["code", "passed", "message", "path", "repair"],
+        "properties": {
+          "code": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+          "passed": {"type": "boolean"},
+          "message": {"type": "string", "minLength": 1},
+          "path": {"type": "string", "minLength": 1},
+          "repair": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "result": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["path", "artifact_count", "provider"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "artifact_count": {"type": "integer", "minimum": 0},
+            "provider": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "field_bundle": {"type": ["object", "null"]},
+    "observation_cost": {
+      "type": "object",
+      "required": [
+        "run_json_bytes_read", "plan_json_bytes_read", "result_json_bytes_read", "artifacts_hashed",
+        "field_payloads_opened", "recursive_storage_scan"
+      ],
+      "properties": {
+        "run_json_bytes_read": {"type": "integer", "minimum": 0},
+        "plan_json_bytes_read": {"type": "integer", "minimum": 0},
+        "result_json_bytes_read": {"type": "integer", "minimum": 0},
+        "artifacts_hashed": {"type": "integer", "minimum": 0},
+        "field_payloads_opened": {"type": "boolean"},
+        "recursive_storage_scan": {"const": false}
+      },
+      "additionalProperties": false
+    },
+    "next_action": {
+      "type": "object",
+      "required": [
+        "operation", "kind", "arguments", "mutates_project", "starts_solver",
+        "command", "reason"
+      ],
+      "properties": {
+        "operation": {"enum": ["run", "view"]},
+        "kind": {"enum": ["execute", "review"]},
+        "arguments": {"type": "array", "items": {"type": "string"}},
+        "mutates_project": {"type": "boolean"},
+        "starts_solver": {"type": "boolean"},
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

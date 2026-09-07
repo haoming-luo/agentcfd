@@ -108,6 +108,7 @@ agentcfd status .       # one state, one recommended next action
 agentcfd project .      # unified project/result/output view; no HDF5 read
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
+agentcfd verify project . # hash result artifacts and verify XDMF/H5 consistency
 agentcfd run .          # full portable fields for spatial review
 agentcfd run . --summary-only  # compact evidence, no permanent field bundle
 agentcfd watch .        # follow a long active run, then stop automatically
@@ -341,6 +342,15 @@ to infer intent by parsing a display command. The equivalent dependency-free
 Python surface is `agentcfd.open_project(path).snapshot()`. A snapshot is
 strictly observational: it never opens HDF5, launches ParaView, or starts a
 solver.
+
+When integrity—not just a lightweight overview—is required, run `agentcfd
+verify project . --json`. This explicit operation hashes every registered
+result artifact, verifies the saved solution-plan identity, compares the run
+and scientific-result identities, and opens the XDMF/H5 bundle when one exists.
+The reproducible compatibility rule recognizes 0.1.0a3 OpenFOAM identities
+without weakening verification. Integrity and scientific acceptance remain
+separate fields, so an intact but unaccepted result cannot be mistaken for an
+engineering decision.
 
 `agentcfd watch .` polls this same lightweight contract every two seconds and
 stops by itself at `complete`, `review`, `failed`, or `interrupted`. Use

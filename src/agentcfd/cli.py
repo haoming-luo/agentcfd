@@ -2433,6 +2433,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     result_check.add_argument("result", type=Path)
     result_check.add_argument("--json", action="store_true", dest="as_json")
+    project_check = verify_subparsers.add_parser(
+        "project",
+        help="Verify one published project run, result, and optional XDMF/H5 bundle.",
+    )
+    project_check.add_argument("project", nargs="?", type=Path, default=Path("."))
+    project_check.add_argument(
+        "--run-id",
+        help="Select one immutable campaign run instead of the latest project result.",
+    )
+    project_check.add_argument("--json", action="store_true", dest="as_json")
     bundle_check = verify_subparsers.add_parser(
         "field-bundle",
         help="Verify XDMF/H5 and any selected NPZ hashes and frame identity.",
@@ -4242,6 +4252,21 @@ def main(argv: list[str] | None = None) -> int:
                 f"artifacts {report['artifact_count']}"
             )
         return 0
+    if args.command == "verify" and args.verification == "project":
+        report = projects.open_project(args.project).verify(run_id=args.run_id)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Project integrity verified {str(report['verified']).lower()} | "
+                f"accepted {str(report['accepted']).lower()} | "
+                f"trust {report['trust_level']}"
+            )
+            for check in report["checks"]:
+                state = "PASS" if check["passed"] else "FAIL"
+                print(f"{state} {check['code']}: {check['message']}")
+            print(f"next: {report['next_action']['command']}")
+        return 0 if report["verified"] else 3
     if args.command == "verify" and args.verification == "field-bundle":
         report = data_exchange.verify_field_bundle(args.directory)
         if args.as_json:

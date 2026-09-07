@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `Project.verify()` and `agentcfd verify project` as one explicit integrity
+  boundary for the run record, content-addressed solution plan, scientific result,
+  registered artifacts, and an optional XDMF/H5 field bundle. The report keeps
+  byte verification, acceptance, and evidence trust separate, fails closed on
+  identity drift, and can prove the legacy 0.1.0a3 OpenFOAM analysis identity
+  from the verified plan without forcing an unnecessary rerun.
 - Add a dependency-free `open_project()` Python entry point, `Project.snapshot()`,
   and `agentcfd project`. The versioned read-only snapshot unifies lifecycle
   state, compact results, published file roles, XDMF/H5 entry points, hidden

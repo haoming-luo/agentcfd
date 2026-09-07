@@ -24,13 +24,15 @@ jobs:
           cd /tmp
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" doctor --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" capabilities --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file()"
+          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file(); assert contracts.path('project-verification.schema.json').is_file()"
           "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file()"
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" calculate compressibility --velocity 100 --speed-of-sound 400 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" calculate thermal-flow --density 998.2 --viscosity 0.001002 --specific-heat 4180 --thermal-conductivity 0.6 --velocity 0.01 --diameter 0.1 --flow-area 0.007853981633974483 --inlet-temperature 300 --heat-rate 62.83185307179586 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" demo pipe --output pipe-result.json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init operating-point-project --template industrial-pipe
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" project operating-point-project --no-result --json
+          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" run operating-point-project --json
+          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" verify project operating-point-project --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" plan operating-point-project --param-file operating-point.json --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init heated-pipe-project --template heated-pipe

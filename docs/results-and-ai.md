@@ -65,6 +65,13 @@ separates observation, review, maintenance, and solver-starting execution; the
 snapshot itself is always read-only. Python integrations use
 `agentcfd.open_project(path).snapshot()` instead of importing CLI internals.
 
+At a handoff boundary, `agentcfd verify project PROJECT --json` performs the
+expensive counterpart: it checks the run/result identity, hashes registered
+artifacts, verifies the content-addressed solution plan, and verifies an
+available field bundle internally. Its report keeps `verified`, `accepted`, and
+`trust_level` distinct and records whether field payloads were opened. An agent
+therefore cannot turn byte integrity into a scientific validation claim.
+
 `agentcfd result PROJECT --json` is the matching lightweight result surface.
 It validates the internal result record and returns canonical quantities,
 failed checks, history metadata, field metadata, provenance, and available

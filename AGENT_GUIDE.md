@@ -16,6 +16,7 @@ agentcfd status first-flow --json
 agentcfd run first-flow --json
 agentcfd status first-flow --storage --json
 agentcfd view first-flow --json
+agentcfd verify project first-flow --json
 python -m pytest -q
 ```
 
@@ -87,6 +88,9 @@ python -m pytest -q
 24. Treat `compact <run-id>` as destructive despite its safe default. Inspect
     the preview first and use `--apply` only when full fields are reproducible
     and no downstream consumer still needs that exact stored field payload.
+25. Use `verify project --json` before archive, coupling, or dataset admission.
+    Keep byte integrity, scientific acceptance, and trust level separate; a
+    verified artifact set does not repair a failed physical check.
 
 ## Current boundary
 

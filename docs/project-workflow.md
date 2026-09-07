@@ -50,6 +50,15 @@ snapshot = open_project(".").snapshot(include_storage=False)
 Snapshots do not execute the returned action, open field payloads, launch a
 viewer, or expose an ordinary user to generated OpenFOAM dictionaries.
 
+Use `agentcfd verify project .` at an explicit trust boundary such as handoff,
+archive, coupling, or training-data admission. It verifies the atomic run
+record and content-addressed `plan.json` against `result.json`, hashes every
+registered result artifact, and—if present—opens XDMF/H5 to compare hashes,
+schema identity, mesh identity, and frame axes. A legacy 0.1.0a3 OpenFOAM
+analysis identity is accepted only when it can be recomputed from that verified
+plan. Verification reports integrity separately from `accepted` and
+`trust_level`; it never upgrades the scientific evidence.
+
 Use `agentcfd doctor .` when a full project/runtime/resource audit is worth a
 recursive storage scan. It checks model/provider/runtime readiness, output
 budget, filesystem headroom, latest run health, acceptance, and recovery, then

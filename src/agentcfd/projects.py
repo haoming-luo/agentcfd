@@ -32,8 +32,14 @@ from . import (
     parameters as parameter_definitions,
     postprocessing,
 )
-from .errors import ModelValidationError, ProjectError, UnsupportedCaseError
+from .errors import (
+    AgentCFDError,
+    ModelValidationError,
+    ProjectError,
+    UnsupportedCaseError,
+)
 from .geometry import CircularPipe, ImportedSurface, RectangularChannel
+from .jsonio import strict_json_object
 from .model import Step
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
@@ -856,6 +862,7 @@ def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
             "Read `result.json` for quantities, checks, histories, provenance, and artifacts.",
             "Read `plan.json` for the resolved modeling and output decisions.",
             "Read `run.json` for lifecycle state and machine automation.",
+            "Run `agentcfd verify project .` before archive, coupling, or dataset handoff.",
             "",
             "Generated OpenFOAM dictionaries are intentionally not retained here. "
             "Edit the project's `case.py` and rerun instead.",
@@ -3837,6 +3844,308 @@ class Project:
             },
         }
 
+    def verify(self, *, run_id: str | None = None) -> dict[str, object]:
+        """Verify one published project result and its portable field bundle.
+
+        Unlike :meth:`snapshot`, this explicit integrity operation hashes every
+        result artifact and opens the standard XDMF/H5 bundle when present.
+        """
+
+        selected = self._select_run_record(run_id)
+        if selected is None:
+            raise ProjectError("No project result exists; run the project first.")
+        run_directory = self._record_directory(selected)
+        if run_directory is None:
+            raise ProjectError("The selected run directory cannot be resolved.")
+        run_path = run_directory / "run.json"
+        plan_path = run_directory / "plan.json"
+        result_path = run_directory / "result.json"
+        checks: list[dict[str, object]] = []
+
+        def add_check(
+            code: str,
+            passed: bool,
+            message: str,
+            path: Path,
+            repair: str,
+        ) -> None:
+            checks.append(
+                {
+                    "code": code,
+                    "passed": passed,
+                    "message": message,
+                    "path": str(path),
+                    "repair": None if passed else repair,
+                }
+            )
+
+        run_record = None
+        try:
+            run_record = strict_json_object(
+                run_path.read_text(encoding="utf-8"),
+                label=f"AgentCFD project run {run_path}",
+            )
+            if run_record.get("schema") != "agentcfd.project-run/0.1":
+                raise ValueError("Unsupported AgentCFD project-run schema.")
+            if run_record.get("run_id") != selected.get("run_id"):
+                raise ValueError("Run marker identity disagrees with project discovery.")
+        except (OSError, TypeError, ValueError) as error:
+            add_check(
+                "RUN_RECORD_INTEGRITY",
+                False,
+                str(error),
+                run_path,
+                "Restore the managed output from case.py with `agentcfd run .`.",
+            )
+        else:
+            add_check(
+                "RUN_RECORD_INTEGRITY",
+                True,
+                "The atomic project run record has a supported identity.",
+                run_path,
+                "",
+            )
+
+        plan_record = None
+        plan_analysis = None
+        legacy_analysis = None
+        try:
+            plan_record = strict_json_object(
+                plan_path.read_text(encoding="utf-8"),
+                label=f"AgentCFD solution plan {plan_path}",
+            )
+            if plan_record.get("schema") != "agentcfd.solution-plan/0.1":
+                raise ValueError("Unsupported AgentCFD solution-plan schema.")
+            recorded_plan_identity = plan_record.get("plan_sha256")
+            unsigned_plan = dict(plan_record)
+            unsigned_plan.pop("plan_sha256", None)
+            computed_plan_identity = content_fingerprint(unsigned_plan)
+            if recorded_plan_identity != computed_plan_identity:
+                raise ValueError("Solution plan content does not match plan_sha256.")
+            if (
+                run_record is not None
+                and run_record.get("plan_sha256") != computed_plan_identity
+            ):
+                raise ValueError("Run marker points to a different solution plan.")
+            model_record = plan_record.get("model")
+            decisions = plan_record.get("decisions")
+            if not isinstance(model_record, Mapping) or not isinstance(
+                decisions, Mapping
+            ):
+                raise ValueError("Solution plan is missing model or decision records.")
+            plan_analysis = model_record.get("analysis_sha256")
+            if not isinstance(plan_analysis, str) or not plan_analysis:
+                raise ValueError("Solution plan has no analysis identity.")
+            # 0.1.0a3 OpenFOAM results used this transparent precursor to the
+            # public Step fingerprint.  Recompute it only from the verified,
+            # content-addressed plan; accepting a legacy result remains fail-closed.
+            legacy_payload = {
+                "model": model_record.get("summary"),
+                "procedure": decisions.get("procedure"),
+                "output_request": decisions.get("outputs"),
+            }
+            if decisions.get("initialization") is not None:
+                legacy_payload["initialization"] = decisions["initialization"]
+            if decisions.get("mesh_intent") is not None:
+                legacy_payload["mesh"] = decisions["mesh_intent"]
+            legacy_analysis = content_fingerprint(legacy_payload).removeprefix(
+                "sha256:"
+            )
+        except (OSError, TypeError, ValueError) as error:
+            add_check(
+                "PLAN_INTEGRITY",
+                False,
+                str(error),
+                plan_path,
+                "Restore the managed output from case.py with `agentcfd run .`.",
+            )
+        else:
+            add_check(
+                "PLAN_INTEGRITY",
+                True,
+                "The saved solution plan and its recorded content identity agree.",
+                plan_path,
+                "",
+            )
+
+        result_record = None
+        artifact_count = 0
+        try:
+            result_record = read_result_record(result_path, verify_artifacts=True)
+            artifact_count = len(result_record["artifact_records"])
+        except (AgentCFDError, OSError, KeyError, TypeError, ValueError) as error:
+            add_check(
+                "RESULT_INTEGRITY",
+                False,
+                str(error),
+                result_path,
+                "Restore the managed output from case.py with `agentcfd run .`.",
+            )
+        else:
+            add_check(
+                "RESULT_INTEGRITY",
+                True,
+                f"The result and {artifact_count} registered artifacts match their identities.",
+                result_path,
+                "",
+            )
+
+        consistency_errors = []
+        legacy_identity = False
+        if run_record is not None and result_record is not None:
+            for key in ("status", "accepted", "trust_level", "provider"):
+                if run_record.get(key) != result_record.get(key):
+                    consistency_errors.append(key)
+            run_analysis = run_record.get("analysis_sha256")
+            provenance = result_record.get("provenance", {})
+            result_analysis = (
+                provenance.get("analysis_sha256")
+                if isinstance(provenance, Mapping)
+                else None
+            )
+            if (
+                isinstance(plan_analysis, str)
+                and run_analysis == plan_analysis
+                and result_analysis == plan_analysis
+            ):
+                pass
+            elif (
+                run_analysis is None
+                and isinstance(legacy_analysis, str)
+                and result_analysis == legacy_analysis
+            ):
+                legacy_identity = True
+            else:
+                consistency_errors.append("analysis_sha256")
+        elif run_record is None or result_record is None:
+            consistency_errors.append("unavailable-record")
+        add_check(
+            "RUN_RESULT_CONSISTENCY",
+            not consistency_errors,
+            (
+                (
+                    "Run lifecycle and scientific state agree; the analysis identity "
+                    "was verified through the reproducible 0.1.0a3 compatibility path."
+                    if legacy_identity
+                    else "Run lifecycle, scientific state, provider, and analysis identity agree."
+                )
+                if not consistency_errors
+                else "Run and result records disagree or are unavailable: "
+                + ", ".join(consistency_errors)
+                + "."
+            ),
+            run_directory,
+            "Treat this output as unverified and rerun from the readable case.py.",
+        )
+
+        fields_directory = run_directory / "fields"
+        field_paths = {
+            "xdmf": fields_directory / "fields.xdmf",
+            "h5": fields_directory / "fields.h5",
+            "manifest": fields_directory / "manifest.json",
+        }
+        present_fields = {name for name, path in field_paths.items() if path.is_file()}
+        field_bundle = None
+        field_payloads_opened = False
+        if present_fields:
+            missing = sorted(set(field_paths) - present_fields)
+            if missing:
+                add_check(
+                    "FIELD_BUNDLE_INTEGRITY",
+                    False,
+                    "The standard field bundle is incomplete; missing: "
+                    + ", ".join(missing)
+                    + ".",
+                    fields_directory,
+                    "Regenerate XDMF/H5 from the readable project with `agentcfd run .`.",
+                )
+            else:
+                field_payloads_opened = True
+                try:
+                    field_bundle = data_exchange.verify_field_bundle(fields_directory)
+                except (
+                    AgentCFDError,
+                    OSError,
+                    KeyError,
+                    TypeError,
+                    ValueError,
+                ) as error:
+                    add_check(
+                        "FIELD_BUNDLE_INTEGRITY",
+                        False,
+                        str(error),
+                        fields_directory,
+                        "Repair optional I/O dependencies or regenerate the field bundle.",
+                    )
+                else:
+                    add_check(
+                        "FIELD_BUNDLE_INTEGRITY",
+                        True,
+                        "XDMF, H5, manifest, hashes, mesh, and frame axes agree.",
+                        fields_directory,
+                        "",
+                    )
+
+        verified = all(check["passed"] is True for check in checks)
+        project_argument = self._cli_project_argument()
+        next_action = _structured_project_action(
+            {
+                "command": (
+                    f"agentcfd view {project_argument}"
+                    if verified
+                    else f"agentcfd run {project_argument}"
+                ),
+                "reason": (
+                    "Review the verified published result."
+                    if verified
+                    else "Regenerate the managed output from readable project intent."
+                ),
+            }
+        )
+        return {
+            "schema": "agentcfd.project-verification/0.1",
+            "root": str(self.root),
+            "run_id": selected.get("run_id"),
+            "run_directory": str(run_directory),
+            "verified": verified,
+            "accepted": (
+                result_record.get("accepted")
+                if isinstance(result_record, Mapping)
+                else None
+            ),
+            "trust_level": (
+                result_record.get("trust_level")
+                if isinstance(result_record, Mapping)
+                else None
+            ),
+            "checks": checks,
+            "result": (
+                None
+                if result_record is None
+                else {
+                    "path": str(result_path),
+                    "artifact_count": artifact_count,
+                    "provider": result_record["provider"],
+                }
+            ),
+            "field_bundle": field_bundle,
+            "observation_cost": {
+                "run_json_bytes_read": run_path.stat().st_size
+                if run_path.is_file()
+                else 0,
+                "plan_json_bytes_read": plan_path.stat().st_size
+                if plan_path.is_file()
+                else 0,
+                "result_json_bytes_read": result_path.stat().st_size
+                if result_path.is_file()
+                else 0,
+                "artifacts_hashed": artifact_count,
+                "field_payloads_opened": field_payloads_opened,
+                "recursive_storage_scan": False,
+            },
+            "next_action": next_action,
+        }
+
     def doctor(self) -> dict[str, object]:
         """Audit one project, runtime, and resource envelope without solving."""
 
@@ -5520,7 +5829,8 @@ timeout_seconds = 3600
         "only the corresponding declared command when authorized, and re-read the "
         "snapshot after each action. Do not edit generated OpenFOAM dictionaries to "
         "change scientific intent. Preserve plan, result, XDMF/H5, selected NPZ, and "
-        "failed checks together. Follow `resume_after_repair` only after the diagnosed "
+        "failed checks together. Run `agentcfd verify project . --json` before a "
+        "handoff. Follow `resume_after_repair` only after the diagnosed "
         "cause is fixed. Never promote a result whose `accepted` value is false.\n",
         encoding="utf-8",
     )

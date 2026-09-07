@@ -19,6 +19,8 @@
   overrideability in project status and solution plans. Human status shows a
   compact editable-input summary, while one-command execution caches the
   imported factory to avoid repeated user-code side effects.
+- Exercise pressure-controlled imported-project creation and parameter
+  discovery from the exact dependency-free wheel in test and release jobs.
 - Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
   view over the latest or selected run. It exposes quantities, failed checks,
   histories and field names without opening HDF5 or hashing external artifacts,

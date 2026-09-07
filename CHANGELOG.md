@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0a4 — 2026-09-07
+
 - Add solver-neutral thermal internal-flow intent: inlet temperatures, explicit
   adiabatic/fixed-temperature/signed-heat-flux wall conditions, energy-model
   completeness gates, canonical temperature output, and a CoolProp-state bridge

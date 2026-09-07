@@ -109,17 +109,20 @@ _CAPABILITIES = (
         scope=(
             "Steady incompressible isothermal laminar simpleFoam solution on a "
             "content-addressed, role-confirmed imported fluid volume with compact "
-            "point, pressure-surface, and wall-force reports."
+            "point, pressure-surface, wall-force, and bidirectional flow reports."
         ),
         evidence=(
-            "explicit Cartesian velocity or constant-density mass-flow inlet and pressure-outlet lowering tests",
+            "explicit Cartesian velocity, constant-density mass flow, or total-pressure inlet lowering tests",
+            "documented total-pressure inlet/static-pressure outlet OpenFOAM combination",
             "recovered mass-flow target error as a mandatory acceptance gate",
-            "solver, SIMPLE convergence, mesh, conservation, runtime, and output gates",
+            "signed inlet/outlet flow direction plus mass-conservation gates",
+            "solver, SIMPLE convergence, mesh, runtime, and output gates",
             "accepted 6,400-cell OpenCFD v2606 duct run with verified XDMF/H5",
+            "accepted pressure-driven OpenCFD v2606 run with recovered mass and volume flow",
             "real compact-report recovery with no additional full-field frames",
         ),
         limitations=(
-            "Exactly one velocity or mass-flow inlet and one pressure outlet are currently supported.",
+            "Exactly one velocity, mass-flow, or total-pressure inlet and one static-pressure outlet are supported.",
             "No turbulence, heat, compressibility, reactions, prism layers, or vector surface reductions yet.",
             "Acceptance is workflow/numerical evidence and does not claim physical validation.",
         ),

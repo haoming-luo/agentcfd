@@ -15,6 +15,10 @@
   velocity boundaries. Creation APIs accept an explicit total gauge pressure,
   while results distinguish requested total-to-static pressure, recovered
   static pressure drop, and mass flow.
+- Expose every `case.py` factory parameter, default, current selection, and
+  overrideability in project status and solution plans. Human status shows a
+  compact editable-input summary, while one-command execution caches the
+  imported factory to avoid repeated user-code side effects.
 - Add `agentcfd result` and `Project.result_summary()` as a filterable metadata
   view over the latest or selected run. It exposes quantities, failed checks,
   histories and field names without opening HDF5 or hashing external artifacts,

@@ -112,6 +112,12 @@ agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
 agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 ```
 
+`status` also discovers the editable `build()` parameters and their current
+defaults directly from `case.py`. Human output shows the first controls and the
+single `--param NAME=JSON` pattern; `status --json` and `plan --json` expose the
+complete parameter contract for agents and future forms. Unknown names still
+fail before any provider work.
+
 For owned STL/OBJ internal-flow geometry, initialization can perform the
 inspection-to-project handoff without asking the user to author `case.py` from
 scratch. Every ambiguous physical input stays explicit:

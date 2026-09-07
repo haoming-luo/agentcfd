@@ -2722,6 +2722,22 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"{report['model']['name']} | {str(report['state']).upper()}{decision}"
             )
+            adjustable = [
+                item
+                for item in report["parameters"]
+                if isinstance(item, dict) and item.get("overrideable") is True
+            ]
+            if adjustable:
+                visible = adjustable[:6]
+                rendered = ", ".join(
+                    f"{item['name']}={json.dumps(item['current'], sort_keys=True)}"
+                    for item in visible
+                )
+                remaining = len(adjustable) - len(visible)
+                if remaining:
+                    rendered += f", +{remaining} more"
+                print(f"adjustable: {rendered}")
+                print("change with: agentcfd run . --param NAME=JSON")
             if isinstance(latest, dict) and report["state"] in {
                 "running",
                 "interrupted",

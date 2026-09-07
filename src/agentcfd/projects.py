@@ -967,6 +967,7 @@ class Project:
         )
         if not self.entrypoint.is_file():
             raise FileNotFoundError(self.entrypoint)
+        self._factory_cache: tuple[str, object] | None = None
 
     @classmethod
     def discover(cls, start: str | Path = ".") -> "Project":
@@ -1006,13 +1007,76 @@ class Project:
             selected[name] = value
         return dict(sorted(selected.items()))
 
-    def load_step(self, parameters: Mapping[str, object] | None = None) -> Step:
+    def _factory(self):
+        entrypoint_sha256 = file_sha256(self.entrypoint)
+        if (
+            self._factory_cache is not None
+            and self._factory_cache[0] == entrypoint_sha256
+        ):
+            return self._factory_cache[1]
         module = _load_module(self.entrypoint, self.root)
         factory = getattr(module, self.manifest.factory, None)
         if not callable(factory):
             raise ProjectError(
                 f"Project entrypoint must define callable {self.manifest.factory}()."
             )
+        self._factory_cache = (entrypoint_sha256, factory)
+        return factory
+
+    def parameter_contract(
+        self,
+        selected: Mapping[str, object] | None = None,
+    ) -> list[dict[str, object]]:
+        """Describe the editable ``case.py`` factory surface without solving.
+
+        Defaults remain owned by Python. This record gives humans, agents, and
+        future GUIs the same bounded discovery surface used by ``--param``.
+        """
+
+        factory = self._factory()
+        selected_parameters = self._parameters(selected)
+        records: list[dict[str, object]] = []
+        for parameter in inspect.signature(factory).parameters.values():
+            keyword_overrideable = parameter.kind in {
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                inspect.Parameter.KEYWORD_ONLY,
+            }
+            has_default = parameter.default is not inspect.Parameter.empty
+            default = parameter.default if has_default else None
+            default_is_scalar = isinstance(
+                default, (str, int, float, bool, type(None))
+            ) and not (isinstance(default, float) and not math.isfinite(default))
+            overrideable = keyword_overrideable and (not has_default or default_is_scalar)
+            selected_here = parameter.name in selected_parameters
+            current = (
+                selected_parameters[parameter.name]
+                if selected_here
+                else default
+                if default_is_scalar
+                else None
+            )
+            records.append(
+                {
+                    "name": parameter.name,
+                    "required": not has_default,
+                    "default": default if default_is_scalar else None,
+                    "default_type": (
+                        "none"
+                        if default is None and default_is_scalar
+                        else type(default).__name__
+                        if default_is_scalar
+                        else None
+                    ),
+                    "overrideable": overrideable,
+                    "selected": selected_here,
+                    "current": current,
+                    "input_contract": "json-scalar" if overrideable else None,
+                }
+            )
+        return records
+
+    def load_step(self, parameters: Mapping[str, object] | None = None) -> Step:
+        factory = self._factory()
         selected_parameters = self._parameters(parameters)
         try:
             inspect.signature(factory).bind(**selected_parameters)
@@ -1426,6 +1490,7 @@ class Project:
                 "entrypoint_sha256": file_sha256(self.entrypoint),
                 "factory": self.manifest.factory,
                 "parameters": selected_parameters,
+                "factory_parameters": self.parameter_contract(selected_parameters),
             },
             "model": {
                 "name": step.model.name,
@@ -3347,6 +3412,7 @@ class Project:
             "active": active,
             "inputs_changed": changed,
             "model": plan["model"],
+            "parameters": plan["project"]["factory_parameters"],
             "readiness": plan["readiness"],
             "issues": plan["issues"],
             "run_count": len(runs),

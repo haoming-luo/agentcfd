@@ -1216,6 +1216,21 @@ def test_explicit_factory_parameters_change_plan_identity_and_reject_typos(
     varied = project.plan(parameters={"mean_velocity": 0.03})
 
     assert varied["project"]["parameters"] == {"mean_velocity": 0.03}
+    parameter = next(
+        item
+        for item in varied["project"]["factory_parameters"]
+        if item["name"] == "mean_velocity"
+    )
+    assert parameter == {
+        "name": "mean_velocity",
+        "required": False,
+        "default": 0.02,
+        "default_type": "float",
+        "overrideable": True,
+        "selected": True,
+        "current": 0.03,
+        "input_contract": "json-scalar",
+    }
     assert varied["model"]["reynolds_number"] != default["model"]["reynolds_number"]
     assert varied["plan_sha256"] != default["plan_sha256"]
     jsonschema.Draft202012Validator(
@@ -1239,6 +1254,31 @@ def test_explicit_factory_parameters_change_plan_identity_and_reject_typos(
         project.plan(parameters={"mean_velocty": 0.03})
     with pytest.raises(ProjectError, match="JSON scalar"):
         project.plan(parameters={"mean_velocity": [0.02, 0.03]})
+
+
+def test_status_discovers_parameter_contract_without_reimporting_case(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(tmp_path / "pipe")
+    original = projects._load_module
+    calls = 0
+
+    def counted(path, root):
+        nonlocal calls
+        calls += 1
+        return original(path, root)
+
+    monkeypatch.setattr(projects, "_load_module", counted)
+
+    status = project.status()
+
+    assert calls == 1
+    assert [item["name"] for item in status["parameters"]] == [
+        "length",
+        "diameter",
+        "mean_velocity",
+    ]
+    assert all(item["overrideable"] for item in status["parameters"])
 
 
 def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(

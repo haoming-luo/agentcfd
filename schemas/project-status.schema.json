@@ -4,7 +4,7 @@
   "title": "AgentCFD project decision surface 0.1",
   "type": "object",
   "required": [
-    "schema", "root", "state", "active", "inputs_changed", "model",
+    "schema", "root", "state", "active", "inputs_changed", "model", "parameters",
     "readiness", "issues", "run_count", "latest_run", "progress",
     "postprocess", "recovery", "next_action"
   ],
@@ -17,6 +17,7 @@
     "active": {"type": "boolean"},
     "inputs_changed": {"type": "boolean"},
     "model": {"type": "object"},
+    "parameters": {"type": "array", "items": {"type": "object"}},
     "readiness": {"type": "object"},
     "issues": {"type": "array", "items": {"type": "object"}},
     "run_count": {"type": "integer", "minimum": 0},

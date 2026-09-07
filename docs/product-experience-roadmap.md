@@ -124,6 +124,10 @@ files stay hidden and reproducible.
   fields, and compact wall y-plus evidence;
 - byte-verified content-addressed imported meshes shared across compatible
   operating points, with explicit acquisition provenance and storage accounting;
+- first-class velocity, mass-flow, and total-pressure creation controls for
+  imported laminar projects, plus compact recovered flow-rate evidence;
+- discoverable `case.py` factory parameters with defaults, current selections,
+  and JSON-scalar override contracts in both status and solution plans;
 - JSON Schemas for status, diagnosis, logs, storage, cleanup, and repairable
   errors.
 

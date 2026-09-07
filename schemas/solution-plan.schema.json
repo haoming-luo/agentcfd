@@ -11,7 +11,10 @@
     "schema": {"const": "agentcfd.solution-plan/0.1"},
     "project": {
       "type": "object",
-      "required": ["root", "entrypoint", "entrypoint_sha256", "factory", "parameters"],
+      "required": [
+        "root", "entrypoint", "entrypoint_sha256", "factory", "parameters",
+        "factory_parameters"
+      ],
       "properties": {
         "root": {"type": "string"},
         "entrypoint": {"type": "string"},
@@ -21,6 +24,27 @@
           "type": "object",
           "additionalProperties": {
             "type": ["string", "number", "integer", "boolean", "null"]
+          }
+        },
+        "factory_parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name", "required", "default", "default_type", "overrideable",
+              "selected", "current", "input_contract"
+            ],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "required": {"type": "boolean"},
+              "default": {"type": ["string", "number", "integer", "boolean", "null"]},
+              "default_type": {"type": ["string", "null"]},
+              "overrideable": {"type": "boolean"},
+              "selected": {"type": "boolean"},
+              "current": {"type": ["string", "number", "integer", "boolean", "null"]},
+              "input_contract": {"enum": ["json-scalar", null]}
+            },
+            "additionalProperties": false
           }
         }
       },

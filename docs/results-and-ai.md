@@ -65,6 +65,11 @@ to request only the scalar values needed by a decision. The response states
 that artifact integrity is deferred and provides the exact `verify result`
 command for workflows that require a full byte-level audit.
 
+Without `--json`, the same scalar values are grouped as flow results, inputs,
+mesh quality, verification, runtime, and other results. This presentation layer
+does not rename or nest canonical quantities in the machine response; unit `1`
+is shown as `[-]` so a dimensionless value is not mistaken for a missing unit.
+
 `output.views` carries named, typed post-processing intent in the same analysis
 fingerprint. After field publication, `output/postprocess/manifest.json` maps
 canonical fields to their exported point/cell arrays and portable ParaView

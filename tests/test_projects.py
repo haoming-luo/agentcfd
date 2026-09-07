@@ -1924,6 +1924,13 @@ def test_result_summary_is_lightweight_filterable_and_cli_visible(
     cli_report = json.loads(capsys.readouterr().out)
     assert set(cli_report["quantities"]) == {"flow.pressure_drop"}
 
+    assert entrypoint(["result", str(project.root)]) == 0
+    human = capsys.readouterr().out
+    assert "Flow results:\n" in human
+    assert "  flow.mass_flow_rate:" in human
+    assert "Other results:\n" in human
+    assert " [-]" in human
+
     with pytest.raises(ProjectError, match="Unknown result quantities"):
         project.result_summary(quantities=("flow.misspelled",))
 

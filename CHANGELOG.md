@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Group the human `agentcfd result` view into flow, inputs, mesh quality,
+  verification, runtime, and other engineering results, with dimensionless
+  values rendered explicitly. The flat canonical JSON result contract is
+  unchanged for agents and integrations.
 - Lower `boundaries.mass_flow_inlet(kg_per_s)` for steady laminar imported
   volumes through OpenFOAM `flowRateInletVelocity`. Constant density converts
   the request to volume flow, patch normals set direction, and recovered mass

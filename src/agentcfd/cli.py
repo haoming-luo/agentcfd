@@ -271,6 +271,23 @@ def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
     return payload
 
 
+def _result_quantity_group(name: str, quantity: dict[str, object]) -> str:
+    """Group flat canonical quantities without changing the machine contract."""
+
+    kind = quantity.get("kind")
+    if kind == "scientific_input" or name.startswith("reference."):
+        return "Inputs"
+    if kind == "runtime_metric" or name.startswith("runtime."):
+        return "Runtime"
+    if kind == "verification_metric":
+        return "Verification"
+    if name.startswith("mesh."):
+        return "Mesh quality"
+    if name.startswith("flow."):
+        return "Flow results"
+    return "Other results"
+
+
 def _error_cli_payload(error: Exception) -> dict[str, object]:
     repairs = {
         FileNotFoundError: "Check the project path or run `agentcfd init` to create one.",
@@ -2844,9 +2861,32 @@ def main(argv: list[str] | None = None) -> int:
                 f"accepted {str(report['accepted']).lower()} | "
                 f"trust {report['trust_level']}"
             )
+            grouped: dict[str, list[tuple[str, dict[str, object]]]] = {}
             for name, quantity in report["quantities"].items():
-                unit = "" if quantity["unit"] is None else f" {quantity['unit']}"
-                print(f"{name}: {float(quantity['value']):.8g}{unit}")
+                group = _result_quantity_group(name, quantity)
+                grouped.setdefault(group, []).append((name, quantity))
+            for group in (
+                "Flow results",
+                "Inputs",
+                "Mesh quality",
+                "Verification",
+                "Runtime",
+                "Other results",
+            ):
+                items = grouped.get(group, [])
+                if not items:
+                    continue
+                print(f"{group}:")
+                for name, quantity in items:
+                    raw_unit = quantity["unit"]
+                    unit = (
+                        ""
+                        if raw_unit is None
+                        else " [-]"
+                        if raw_unit == "1"
+                        else f" {raw_unit}"
+                    )
+                    print(f"  {name}: {float(quantity['value']):.8g}{unit}")
             available = report["available"]
             print(
                 f"data: {len(available['histories'])} histories | "

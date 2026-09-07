@@ -112,6 +112,10 @@ agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
 agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 ```
 
+The default `result` view groups engineering values by purpose instead of
+printing one undifferentiated list. Add `--json` when an agent or integration
+needs the unchanged flat canonical names and versioned machine contract.
+
 `status` also discovers the editable `build()` parameters and their current
 defaults directly from `case.py`. Human output shows the first controls and the
 single `--param NAME=JSON` pattern; `status --json` and `plan --json` expose the

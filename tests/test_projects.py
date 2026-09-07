@@ -14,6 +14,12 @@ from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
 
+def _mock_openfoam_runtime(monkeypatch):
+    """Keep project-lifecycle unit tests independent of host Docker installs."""
+
+    monkeypatch.setattr(projects.shutil, "which", lambda _command: "/mock/runtime")
+
+
 def test_process_liveness_treats_permission_denied_as_existing(monkeypatch):
     def denied(_pid, _signal):
         raise PermissionError("managed process boundary")
@@ -380,8 +386,9 @@ def test_cli_initializes_imported_flow_with_mass_flow_as_primary_control(
 
 
 def test_cli_initializes_imported_flow_with_total_pressure_as_primary_control(
-    tmp_path, capsys
+    tmp_path, capsys, monkeypatch
 ):
+    _mock_openfoam_runtime(monkeypatch)
     example = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry"
     root = tmp_path / "pressure-driven-duct"
 
@@ -531,8 +538,9 @@ def test_name_role_acceptance_fails_closed_before_project_write(tmp_path):
 
 
 def test_versioned_creation_request_resolves_owned_geometry_beside_request(
-    tmp_path, capsys
+    tmp_path, capsys, monkeypatch
 ):
+    _mock_openfoam_runtime(monkeypatch)
     source = (
         Path(__file__).parents[1]
         / "examples/imported_duct_mesh/geometry/fluid.stl"
@@ -873,6 +881,7 @@ def test_project_refuses_to_publish_a_result_for_another_analysis(
 def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
     tmp_path, monkeypatch
 ):
+    _mock_openfoam_runtime(monkeypatch)
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -912,6 +921,7 @@ def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
 def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
     tmp_path, monkeypatch
 ):
+    _mock_openfoam_runtime(monkeypatch)
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -955,6 +965,7 @@ def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
 def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
     tmp_path, monkeypatch, capsys
 ):
+    _mock_openfoam_runtime(monkeypatch)
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -1251,6 +1262,7 @@ def test_diagnose_cli_reports_storage_failure_and_safe_preview(tmp_path, capsys)
 
 
 def test_project_resume_stages_identical_interrupted_checkpoint(tmp_path, monkeypatch):
+    _mock_openfoam_runtime(monkeypatch)
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
@@ -1329,7 +1341,8 @@ def test_project_resume_stages_identical_interrupted_checkpoint(tmp_path, monkey
     assert not (project.root / ".agentcfd" / "work" / run_id).exists()
 
 
-def test_project_resume_refuses_changed_analysis(tmp_path):
+def test_project_resume_refuses_changed_analysis(tmp_path, monkeypatch):
+    _mock_openfoam_runtime(monkeypatch)
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )

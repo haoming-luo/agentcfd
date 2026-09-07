@@ -439,7 +439,8 @@ def test_imported_mesh_cli_plans_and_prepares_without_openfoam(tmp_path, capsys)
     assert "bytes changed" in capsys.readouterr().err
 
 
-def test_checked_in_imported_duct_example_and_evidence_are_valid():
+def test_checked_in_imported_duct_example_and_evidence_are_valid(monkeypatch):
+    monkeypatch.setattr(projects.shutil, "which", lambda _command: "/mock/runtime")
     repository = Path(__file__).resolve().parents[1]
     example = projects.Project(repository / "examples" / "imported_duct_mesh")
     step = example.load_step()

@@ -85,6 +85,7 @@ def test_benchmark_catalog_is_machine_readable_and_cli_visible(capsys):
 
 
 def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
+    assert "agentcae-compatibility.schema.json" in contracts.available()
     assert "simulation-result.schema.json" in contracts.available()
     assert "openfoam-precursor-map.schema.json" in contracts.available()
     assert "turbulent-wall-study.schema.json" in contracts.available()
@@ -123,6 +124,8 @@ def test_license_catalog_keeps_copyleft_solver_external(capsys):
     components = {item["name"]: item for item in report["components"]}
     assert report["core_has_mandatory_third_party_runtime_dependencies"] is False
     assert components["agentcfd"]["license_expression"] == "Apache-2.0"
+    assert components["agentcae"]["license_expression"] == "Apache-2.0"
+    assert components["agentcae"]["mandatory_runtime"] is False
     assert components["OpenFOAM"]["relationship"] == "user-managed-external-process"
     assert components["OpenFOAM"]["mandatory_runtime"] is False
 

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/agentcae-compatibility.schema.json",
+  "title": "AgentCFD to AgentCAE compatibility audit 0.1",
+  "type": "object",
+  "required": [
+    "schema", "status", "compatible", "agentcae_version",
+    "expected_contracts", "observed_contracts", "issues", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.agentcae-compatibility/0.1"},
+    "status": {
+      "enum": ["compatible", "incompatible", "not-installed", "unavailable"]
+    },
+    "compatible": {"type": ["boolean", "null"]},
+    "agentcae_version": {"type": ["string", "null"]},
+    "expected_contracts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/expected_contract"}
+    },
+    "observed_contracts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/contract_header"}
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "contract", "expected", "actual"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "contract": {"type": ["string", "null"]},
+          "expected": {"type": ["object", "null"]},
+          "actual": {"type": ["object", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_action": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["command", "reason"],
+          "properties": {
+            "command": {"type": "string", "minLength": 1},
+            "reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "contract_header": {
+      "type": "object",
+      "required": ["name", "schema", "schema_version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "schema": {"type": "string", "minLength": 1},
+        "schema_version": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "expected_contract": {
+      "type": "object",
+      "required": ["name", "schema", "schema_version", "producer_contract"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "schema": {"type": "string", "minLength": 1},
+        "schema_version": {"type": ["string", "null"]},
+        "producer_contract": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -62,6 +62,14 @@ require a JSON-schema validation library at runtime.
 The catalog includes `openfoam-mesh.schema.json`, which fixes the identity
 contract used to bind native CFD fields to their exact mesh.
 
+AgentCAE remains optional. Installing `agentcfd[interop]` adds its lightweight
+catalog without adding either numerical solver. `agentcfd contracts
+--check-agentcae --json` derives AgentCFD's four produced identities from the
+shipped JSON schemas and compares them with the installed AgentCAE catalog.
+Missing, duplicate, unexpected, or version-drifted identities fail the explicit
+audit with a machine-readable repair action; ordinary AgentCFD workflows remain
+dependency-free when no cross-product audit is requested.
+
 The intended sequence is:
 
 ```text

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add optional `agentcfd[interop]` installation of the Apache-2.0 AgentCAE
+  contract catalog and `agentcfd contracts --check-agentcae`. The audit derives
+  AgentCFD's four produced cross-product identities from its installed JSON
+  schemas, reports missing/duplicate/unexpected/version-drifted contracts, and
+  keeps ordinary CFD workflows dependency-free.
+
 ## 0.1.0a4 — 2026-09-07
 
 - Add solver-neutral thermal internal-flow intent: inlet temperatures, explicit

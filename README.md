@@ -429,6 +429,13 @@ agentcfd properties state \
 
 Both return structured records rather than presentation-only text. Installed
 AgentCFD/AgentCAE schemas can be discovered with `agentcfd contracts --json`.
+The core remains dependency-free. To install the neutral AgentCAE catalog and
+verify that AgentCFD's emitted record identities match it exactly:
+
+```bash
+python -m pip install "agentcfd[interop]"
+agentcfd contracts --check-agentcae --json
+```
 
 For editable development from the repository:
 

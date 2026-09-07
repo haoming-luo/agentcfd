@@ -1796,6 +1796,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Locate installed AgentCFD and AgentCAE JSON contracts.",
     )
     contract_catalog.add_argument("--json", action="store_true", dest="as_json")
+    contract_catalog.add_argument(
+        "--check-agentcae",
+        action="store_true",
+        help="Audit emitted contract identities against the optional AgentCAE package.",
+    )
 
     license_catalog = subparsers.add_parser(
         "licenses",
@@ -3415,12 +3420,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "contracts":
         report = contracts.catalog()
+        compatibility = None
+        if args.check_agentcae:
+            compatibility = contracts.agentcae_compatibility()
+            report["agentcae_compatibility"] = compatibility
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             for contract in report["contracts"]:
                 print(f"{contract['name']}: {contract['id']}")
-        return 0
+            if compatibility is not None:
+                print(f"AgentCAE compatibility: {compatibility['status']}")
+                next_action = compatibility.get("next_action")
+                if isinstance(next_action, dict):
+                    print(f"next: {next_action['command']}")
+        return 0 if compatibility is None or compatibility["compatible"] is True else 3
     if args.command == "licenses":
         report = licensing.as_dict()
         if args.as_json:

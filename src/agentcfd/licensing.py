@@ -28,6 +28,14 @@ _COMPONENTS = (
         redistribution_policy="included-with-license-and-notice",
     ),
     LicenseComponent(
+        name="agentcae",
+        role="neutral CFD/FEM/coupling and learning contract catalog",
+        license_expression="Apache-2.0",
+        relationship="optional-python-extra:interop",
+        mandatory_runtime=False,
+        redistribution_policy="included-only-when-user-selects-interop-extra",
+    ),
+    LicenseComponent(
         name="numpy",
         role="array hashing, interchange, and NPZ field bundles",
         license_expression="BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",

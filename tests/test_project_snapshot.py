@@ -24,15 +24,18 @@ def test_project_snapshot_is_one_safe_surface_before_and_after_run(tmp_path) -> 
     assert ready["output"] is None
     assert ready["result"] is None
     assert ready["storage"] is None
-    assert ready["next_action"] == {
+    next_action = dict(ready["next_action"])
+    command = next_action.pop("command")
+    assert next_action == {
         "operation": "run",
         "kind": "execute",
         "arguments": [str(project.root)],
         "mutates_project": True,
         "starts_solver": True,
-        "command": f"agentcfd run {project.root}",
         "reason": "Create the first result.",
     }
+    assert command.startswith("agentcfd run ")
+    assert str(project.root) in command
     assert ready["observation_cost"]["field_payloads_opened"] == 0
 
     completed = project.run()

@@ -2212,7 +2212,10 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     complete = project.status()
     assert complete["state"] == "complete"
     assert complete["next_action"]["command"].startswith("agentcfd view ")
-    assert complete["postprocess"]["result"].endswith("output/result.json")
+    assert Path(complete["postprocess"]["result"]).parts[-2:] == (
+        "output",
+        "result.json",
+    )
 
     case = project.entrypoint
     case.write_text(
@@ -2615,7 +2618,10 @@ def test_watch_follows_running_project_until_atomic_completion(
     snapshots = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert [snapshot["state"] for snapshot in snapshots] == ["running", "complete"]
     assert snapshots[0]["next_action"]["command"].startswith("agentcfd watch ")
-    assert snapshots[1]["postprocess"]["result"].endswith("output/result.json")
+    assert Path(snapshots[1]["postprocess"]["result"]).parts[-2:] == (
+        "output",
+        "result.json",
+    )
 
 
 def test_project_status_surfaces_failed_acceptance_checks(tmp_path):

@@ -1322,11 +1322,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         metavar=("X", "Y", "Z"),
     )
-    init.add_argument(
+    init_inlet = init.add_mutually_exclusive_group()
+    init_inlet.add_argument(
         "--inlet-velocity-m-s",
         nargs=3,
         type=float,
         metavar=("UX", "UY", "UZ"),
+    )
+    init_inlet.add_argument(
+        "--inlet-mass-flow-kg-s",
+        type=float,
+        help="Positive inlet mass flow for constant-density laminar flow.",
     )
     init.add_argument("--base-size-m", type=float)
     init.add_argument("--maximum-cells", type=int)
@@ -2364,6 +2370,7 @@ def main(argv: list[str] | None = None) -> int:
             True if args.accept_name_roles else None,
             args.interior_point_m,
             args.inlet_velocity_m_s,
+            args.inlet_mass_flow_kg_s,
             args.base_size_m,
             args.maximum_cells,
         )
@@ -2415,6 +2422,7 @@ def main(argv: list[str] | None = None) -> int:
                     if args.inlet_velocity_m_s is not None
                     else None
                 ),
+                inlet_mass_flow_kg_s=args.inlet_mass_flow_kg_s,
                 base_size_m=args.base_size_m,
                 maximum_cells=args.maximum_cells,
             )

@@ -116,8 +116,10 @@ Initialization runs the same bounded inspector before writing, rejects
 unsupported roles or ambiguous inlet/outlet count, and copies the source into
 `geometry/`. It writes a portable `inspection.json`, normalized
 `boundary-roles.json`, and a readable `case.py`; a later change to the original
-external file cannot silently change the project. Direction, SI mesh size,
-interior point, and the hard cell limit are required rather than guessed.
+external file cannot silently change the project. Exactly one inlet control is
+required: `--inlet-velocity-m-s UX UY UZ` or, for constant-density laminar
+flow, `--inlet-mass-flow-kg-s KG_S`. SI mesh size, interior point, and the hard
+cell limit are also required rather than guessed.
 
 For automation, `agentcfd init DESTINATION --request REQUEST.json` accepts the
 installed `project-creation-request.schema.json` contract. Its geometry path is
@@ -126,7 +128,9 @@ fingerprint. Geometry must contain exactly one of an explicit inline
 `boundary_roles` map or
 `"role_confirmation": "accept-name-suggestions"`. The JSON is only a
 creation envelope; it generates the same readable `case.py` and does not become
-a shadow source of model truth.
+a shadow source of model truth. Imported requests likewise require exactly one
+of `inlet_velocity_m_s` or `inlet_mass_flow_kg_s`; the installed JSON Schema
+rejects both and neither.
 
 `agentcfd plan .` verifies the asset still exists and still matches the
 inspected SHA-256 before any provider action. Missing or changed geometry has
@@ -193,8 +197,9 @@ agentcfd run . \
   --param turbulence_length_scale=0.01
 ```
 
-For a laminar flow-rate-controlled operating point, leave turbulence absent and
-set only the SI mass flow:
+For a laminar flow-rate-controlled operating point, either create the project
+with `--inlet-mass-flow-kg-s` or leave turbulence absent and set only the SI
+mass flow on an existing generated project:
 
 ```bash
 agentcfd run . --param mass_flow_rate=0.25

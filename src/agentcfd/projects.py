@@ -4213,10 +4213,12 @@ def _imported_internal_flow_template(
     asset: str,
     roles: Mapping[str, str],
     interior_point_m: tuple[float, float, float],
-    inlet_velocity_m_s: tuple[float, float, float],
+    inlet_velocity_m_s: tuple[float, float, float] | None,
+    inlet_mass_flow_kg_s: float | None,
     base_size_m: float,
     maximum_cells: int,
 ) -> str:
+    default_velocity = inlet_velocity_m_s or (0.0, 0.0, 0.0)
     conditions = []
     for name, role in sorted(roles.items()):
         constructor = {
@@ -4247,10 +4249,10 @@ from agentcfd import (
 
 def build(
     *,
-    velocity_x={inlet_velocity_m_s[0]!r},
-    velocity_y={inlet_velocity_m_s[1]!r},
-    velocity_z={inlet_velocity_m_s[2]!r},
-    mass_flow_rate=None,
+    velocity_x={default_velocity[0]!r},
+    velocity_y={default_velocity[1]!r},
+    velocity_z={default_velocity[2]!r},
+    mass_flow_rate={inlet_mass_flow_kg_s!r},
     density=998.2,
     dynamic_viscosity=1.002e-3,
     base_size={base_size_m!r},
@@ -4350,6 +4352,7 @@ def init_project_from_request(
         "geometry",
         "interior_point_m",
         "inlet_velocity_m_s",
+        "inlet_mass_flow_kg_s",
         "mesh",
     }
     unknown = sorted(set(payload) - allowed)
@@ -4370,6 +4373,7 @@ def init_project_from_request(
                 "geometry",
                 "interior_point_m",
                 "inlet_velocity_m_s",
+                "inlet_mass_flow_kg_s",
                 "mesh",
             )
             if key in payload
@@ -4384,7 +4388,7 @@ def init_project_from_request(
 
     missing = sorted(
         key
-        for key in ("geometry", "interior_point_m", "inlet_velocity_m_s", "mesh")
+        for key in ("geometry", "interior_point_m", "mesh")
         if key not in payload
     )
     if missing:
@@ -4392,6 +4396,15 @@ def init_project_from_request(
             "Imported project creation request is missing: "
             + ", ".join(missing)
             + "."
+        )
+    inlet_controls = sum(
+        key in payload
+        for key in ("inlet_velocity_m_s", "inlet_mass_flow_kg_s")
+    )
+    if inlet_controls != 1:
+        raise ProjectError(
+            "Imported project creation requires exactly one of "
+            "inlet_velocity_m_s or inlet_mass_flow_kg_s."
         )
     geometry_record = payload["geometry"]
     mesh_record = payload["mesh"]
@@ -4470,7 +4483,8 @@ def init_project_from_request(
         boundary_roles=boundary_roles,
         accept_name_roles=role_confirmation == "accept-name-suggestions",
         interior_point_m=payload["interior_point_m"],
-        inlet_velocity_m_s=payload["inlet_velocity_m_s"],
+        inlet_velocity_m_s=payload.get("inlet_velocity_m_s"),
+        inlet_mass_flow_kg_s=payload.get("inlet_mass_flow_kg_s"),
         base_size_m=mesh_record["base_size_m"],
         maximum_cells=mesh_record["maximum_cells"],
     )
@@ -4487,6 +4501,7 @@ def init_project(
     accept_name_roles: bool = False,
     interior_point_m: tuple[float, float, float] | None = None,
     inlet_velocity_m_s: tuple[float, float, float] | None = None,
+    inlet_mass_flow_kg_s: float | None = None,
     base_size_m: float | None = None,
     maximum_cells: int | None = None,
 ) -> Project:
@@ -4512,6 +4527,7 @@ def init_project(
         accept_name_roles,
         interior_point_m,
         inlet_velocity_m_s,
+        inlet_mass_flow_kg_s,
         base_size_m,
         maximum_cells,
     )
@@ -4541,7 +4557,6 @@ def init_project(
                 ("geometry_unit", geometry_unit),
                 ("boundary_roles or accept_name_roles", boundary_roles or accept_name_roles),
                 ("interior_point_m", interior_point_m),
-                ("inlet_velocity_m_s", inlet_velocity_m_s),
                 ("base_size_m", base_size_m),
                 ("maximum_cells", maximum_cells),
             )
@@ -4553,10 +4568,24 @@ def init_project(
                 + ", ".join(missing)
                 + "."
             )
+        if (inlet_velocity_m_s is None) == (inlet_mass_flow_kg_s is None):
+            raise ValueError(
+                "Imported internal-flow initialization requires exactly one of "
+                "inlet_velocity_m_s or inlet_mass_flow_kg_s."
+            )
+        selected_velocity = (
+            boundaries.VelocityInlet(inlet_velocity_m_s).velocity
+            if inlet_velocity_m_s is not None
+            else None
+        )
+        selected_mass_flow = (
+            boundaries.MassFlowInlet(inlet_mass_flow_kg_s).mass_flow_rate
+            if inlet_mass_flow_kg_s is not None
+            else None
+        )
         assert geometry_path is not None
         assert geometry_unit is not None
         assert interior_point_m is not None
-        assert inlet_velocity_m_s is not None
         assert base_size_m is not None
         assert maximum_cells is not None
         imported_source = Path(geometry_path).expanduser().resolve()
@@ -4614,7 +4643,6 @@ def init_project(
                 + ", ".join(invalid_names)
                 + "."
             )
-        selected_velocity = boundaries.VelocityInlet(inlet_velocity_m_s).velocity
         if (
             isinstance(base_size_m, bool)
             or not isinstance(base_size_m, (int, float))
@@ -4648,6 +4676,7 @@ def init_project(
             roles=normalized_roles,
             interior_point_m=selected_interior,
             inlet_velocity_m_s=selected_velocity,
+            inlet_mass_flow_kg_s=selected_mass_flow,
             base_size_m=float(base_size_m),
             maximum_cells=maximum_cells,
         )

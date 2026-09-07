@@ -34,6 +34,7 @@
     },
     "interior_point_m": {"$ref": "#/$defs/vector3"},
     "inlet_velocity_m_s": {"$ref": "#/$defs/vector3"},
+    "inlet_mass_flow_kg_s": {"type": "number", "exclusiveMinimum": 0},
     "mesh": {
       "type": "object",
       "additionalProperties": false,
@@ -48,14 +49,19 @@
     {
       "if": {"properties": {"template": {"const": "imported-internal-flow"}}},
       "then": {
-        "required": ["geometry", "interior_point_m", "inlet_velocity_m_s", "mesh"],
-        "properties": {"provider": {"const": "openfoam"}}
+        "required": ["geometry", "interior_point_m", "mesh"],
+        "properties": {"provider": {"const": "openfoam"}},
+        "oneOf": [
+          {"required": ["inlet_velocity_m_s"]},
+          {"required": ["inlet_mass_flow_kg_s"]}
+        ]
       },
       "else": {
         "properties": {
           "geometry": false,
           "interior_point_m": false,
           "inlet_velocity_m_s": false,
+          "inlet_mass_flow_kg_s": false,
           "mesh": false
         }
       }

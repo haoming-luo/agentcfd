@@ -224,6 +224,88 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         )
 
 
+def test_cli_initializes_imported_flow_with_mass_flow_as_primary_control(
+    tmp_path, capsys
+):
+    example = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry"
+    root = tmp_path / "mass-flow-duct"
+
+    assert (
+        entrypoint(
+            [
+                "init",
+                str(root),
+                "--template",
+                "imported-internal-flow",
+                "--geometry",
+                str(example / "fluid.stl"),
+                "--unit",
+                "m",
+                "--roles",
+                str(example / "boundary-roles.json"),
+                "--interior-point-m",
+                "0.5",
+                "0.25",
+                "0.1",
+                "--inlet-mass-flow-kg-s",
+                "49.91",
+                "--base-size-m",
+                "0.05",
+                "--maximum-cells",
+                "200000",
+                "--json",
+            ]
+        )
+        == 0
+    )
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["template"] == "imported-internal-flow"
+    step = projects.Project(root).load_step()
+    assert step.model.boundary_conditions["inlet"].to_dict() == {
+        "type": "mass-flow-inlet",
+        "mass_flow_rate": 49.91,
+    }
+    assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
+    case_source = (root / "case.py").read_text()
+    assert "mass_flow_rate=49.91" in case_source
+    assert "velocity_x=0.0" in case_source
+
+
+def test_imported_init_rejects_missing_or_conflicting_inlet_control_before_write(
+    tmp_path,
+):
+    source = (
+        Path(__file__).parents[1]
+        / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
+    common = {
+        "provider": "openfoam",
+        "template": "imported-internal-flow",
+        "geometry_path": source,
+        "geometry_unit": "m",
+        "accept_name_roles": True,
+        "interior_point_m": (0.5, 0.25, 0.1),
+        "base_size_m": 0.05,
+        "maximum_cells": 200_000,
+    }
+    missing_root = tmp_path / "missing-inlet"
+    conflicting_root = tmp_path / "conflicting-inlet"
+
+    with pytest.raises(ValueError, match="exactly one"):
+        projects.init_project(missing_root, **common)
+    with pytest.raises(ValueError, match="exactly one"):
+        projects.init_project(
+            conflicting_root,
+            inlet_velocity_m_s=(0.5, 0.0, 0.0),
+            inlet_mass_flow_kg_s=49.91,
+            **common,
+        )
+
+    assert not missing_root.exists()
+    assert not conflicting_root.exists()
+
+
 def test_cli_can_explicitly_accept_unambiguous_name_roles(tmp_path, capsys):
     example = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry"
     root = tmp_path / "accepted-name-roles"
@@ -366,6 +448,40 @@ def test_creation_request_can_confirm_unambiguous_name_roles(tmp_path):
     assert json.loads(
         (project.root / "geometry/boundary-roles.json").read_text()
     )["regions"] == {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
+
+
+def test_creation_request_accepts_mass_flow_and_rejects_ambiguous_controls(tmp_path):
+    source = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "imported-internal-flow",
+        "provider": "openfoam",
+        "geometry": {
+            "path": str(source),
+            "unit": "m",
+            "role_confirmation": "accept-name-suggestions",
+        },
+        "interior_point_m": [0.5, 0.25, 0.1],
+        "inlet_mass_flow_kg_s": 49.91,
+        "mesh": {"base_size_m": 0.05, "maximum_cells": 200_000},
+    }
+    validator = jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    )
+    validator.validate(request)
+
+    project = projects.init_project_from_request(tmp_path / "mass-request", request)
+    assert project.load_step().model.boundary_conditions["inlet"].to_dict() == {
+        "type": "mass-flow-inlet",
+        "mass_flow_rate": 49.91,
+    }
+
+    ambiguous = {**request, "inlet_velocity_m_s": [0.5, 0.0, 0.0]}
+    assert list(validator.iter_errors(ambiguous))
+    ambiguous_root = tmp_path / "ambiguous-request"
+    with pytest.raises(ProjectError, match="exactly one"):
+        projects.init_project_from_request(ambiguous_root, ambiguous)
+    assert not ambiguous_root.exists()
 
 
 def test_creation_request_rejects_unknown_automation_intent_before_writing(tmp_path):

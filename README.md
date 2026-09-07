@@ -126,6 +126,21 @@ cd my-duct
 agentcfd status .
 ```
 
+For constant-density laminar equipment specified by throughput, replace the
+velocity vector with one positive SI mass flow:
+
+```bash
+agentcfd init my-duct --template imported-internal-flow \
+  --geometry fluid.stl --unit mm --roles boundary-roles.json \
+  --interior-point-m 0.15 0.03 0.03 \
+  --inlet-mass-flow-kg-s 0.25 --base-size-m 0.005 \
+  --maximum-cells 500000
+```
+
+The two inlet controls are mutually exclusive. The generated `case.py` keeps
+the selected control as a readable default and can still be parameterized for
+screening or campaigns.
+
 When every surface carries an unambiguous name such as `inlet`, `outlet`, and
 `walls`, replace `--roles boundary-roles.json` with
 `--accept-name-roles`. That flag is the explicit confirmation gesture; it
@@ -133,8 +148,8 @@ fails before writing the project if even one region name is ambiguous.
 
 The new project owns a copy of the surface plus its content hash, normalized
 role map, and portable inspection record. The generated Python remains the
-editable source for velocity, fluid properties, mesh size, cell budget, and
-outputs; OpenFOAM files remain disposable implementation detail.
+editable source for inlet control, fluid properties, mesh size, cell budget,
+and outputs; OpenFOAM files remain disposable implementation detail.
 
 Agents and future GUIs can send the same inputs as a strict versioned creation
 request instead of constructing a long shell command:

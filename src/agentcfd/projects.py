@@ -362,6 +362,45 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
     temporary.replace(path)
 
 
+def _structured_project_action(action: Mapping[str, object]) -> dict[str, object]:
+    """Add a bounded machine operation to a human-readable next command."""
+
+    command = action.get("command")
+    reason = action.get("reason")
+    if not isinstance(command, str) or not isinstance(reason, str):
+        raise ProjectError("Project next actions require command and reason strings.")
+    try:
+        tokens = shlex.split(command)
+    except ValueError as error:
+        raise ProjectError("Project next action is not shell-tokenizable.") from error
+    operation = tokens[1] if len(tokens) >= 2 and tokens[0] == "agentcfd" else None
+    policies = {
+        "check": ("observe", False, False),
+        "clean": ("maintain", True, False),
+        "diagnose": ("observe", False, False),
+        "logs": ("observe", False, False),
+        "plan": ("observe", False, False),
+        "result": ("review", False, False),
+        "run": ("execute", True, True),
+        "view": ("review", False, False),
+        "watch": ("observe", False, False),
+    }
+    if operation not in policies:
+        raise ProjectError(
+            f"Project next action uses unsupported operation {operation!r}."
+        )
+    kind, mutates_project, starts_solver = policies[operation]
+    return {
+        "operation": operation,
+        "kind": kind,
+        "arguments": tokens[2:],
+        "mutates_project": mutates_project,
+        "starts_solver": starts_solver,
+        "command": command,
+        "reason": reason,
+    }
+
+
 def _tree_usage(path: Path) -> tuple[int, int]:
     """Return logical file bytes and count without following symlinks."""
 
@@ -3658,6 +3697,146 @@ class Project:
             "next_action": status["next_action"],
         }
 
+    def snapshot(
+        self,
+        *,
+        include_result: bool = True,
+        include_storage: bool = False,
+    ) -> dict[str, object]:
+        """Return one lightweight project surface for Python, agents, and GUIs.
+
+        The snapshot opens compact JSON metadata only. It never opens HDF5 or
+        provider-native field payloads, and it never starts a solver or viewer.
+        """
+
+        status = self.status()
+        latest = status["latest_run"]
+        run_directory = self._record_directory(latest)
+        output = None
+        compact_result = None
+        result_bytes = 0
+        if run_directory is not None:
+            run_id = latest.get("run_id") if isinstance(latest, Mapping) else None
+            candidates = (
+                ("guide", "human-start-here", run_directory / "README.md"),
+                ("plan", "resolved-analysis-plan", run_directory / "plan.json"),
+                ("run", "execution-record", run_directory / "run.json"),
+                ("result", "scientific-result", run_directory / "result.json"),
+            )
+            published_files = [
+                {"name": name, "role": role, "path": str(path)}
+                for name, role, path in candidates
+                if path.is_file()
+            ]
+            fields_directory = run_directory / "fields"
+            xdmf_path = fields_directory / "fields.xdmf"
+            h5_path = fields_directory / "fields.h5"
+            manifest_path = fields_directory / "manifest.json"
+            fields = None
+            if any(path.is_file() for path in (xdmf_path, h5_path, manifest_path)):
+                fields = {
+                    "xdmf": str(xdmf_path) if xdmf_path.is_file() else None,
+                    "h5": str(h5_path) if h5_path.is_file() else None,
+                    "manifest": (
+                        str(manifest_path) if manifest_path.is_file() else None
+                    ),
+                    "summary": status["postprocess"]["field_summary"],
+                }
+            workspace = (
+                self.root / ".agentcfd" / "work" / str(run_id) / "openfoam"
+                if isinstance(run_id, str)
+                else None
+            )
+            retained = workspace is not None and workspace.is_dir()
+            retention = (
+                latest.get("workspace_retention", {})
+                if isinstance(latest, Mapping)
+                else {}
+            )
+            output = {
+                "run_id": run_id,
+                "mode": latest.get("mode") if isinstance(latest, Mapping) else None,
+                "directory": str(run_directory),
+                "result_profile": (
+                    latest.get("result_profile")
+                    if isinstance(latest, Mapping)
+                    else None
+                ),
+                "published_files": published_files,
+                "fields": fields,
+                "expert_workspace": {
+                    "retained": retained,
+                    "path": str(workspace) if retained else None,
+                    "visibility": "hidden-provider-implementation",
+                    "reason": (
+                        retention.get("reason")
+                        if isinstance(retention, Mapping)
+                        else None
+                    ),
+                },
+            }
+            result_path = run_directory / "result.json"
+            if include_result and result_path.is_file():
+                compact_result = self.result_summary()
+                result_bytes = int(
+                    compact_result["observation_cost"]["result_json_bytes_read"]
+                )
+
+        storage = self.storage() if include_storage else None
+        run = None
+        if isinstance(latest, Mapping):
+            run = {
+                name: latest.get(name)
+                for name in (
+                    "run_id",
+                    "mode",
+                    "status",
+                    "phase",
+                    "accepted",
+                    "trust_level",
+                    "provider",
+                    "parameters",
+                    "result_profile",
+                    "started_at",
+                    "completed_at",
+                )
+            }
+        return {
+            "schema": "agentcfd.project-snapshot/0.1",
+            "project": {
+                "root": str(self.root),
+                "manifest": str(self.manifest_path),
+                "entrypoint": str(self.entrypoint),
+                "provider": self.manifest.default_provider,
+                "run_mode": self.manifest.run_mode,
+                "output_directory": str(self.run_root),
+            },
+            "state": status["state"],
+            "model": {
+                name: status["model"].get(name)
+                for name in (
+                    "name",
+                    "sha256",
+                    "analysis_sha256",
+                    "reynolds_number",
+                )
+            },
+            "parameters": status["parameters"],
+            "readiness": status["readiness"],
+            "issues": status["issues"],
+            "run": run,
+            "progress": status["progress"],
+            "output": output,
+            "result": compact_result,
+            "storage": storage,
+            "next_action": _structured_project_action(status["next_action"]),
+            "observation_cost": {
+                "field_payloads_opened": 0,
+                "compact_result_json_bytes_read": result_bytes,
+                "recursive_storage_scan": include_storage,
+            },
+        }
+
     def doctor(self) -> dict[str, object]:
         """Audit one project, runtime, and resource envelope without solving."""
 
@@ -5322,7 +5501,8 @@ timeout_seconds = 3600
         + "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
         "next action. The normal loop is `agentcfd run .` followed by "
         "`agentcfd view .`; `check`, `plan`, and `inspect` remain available for deeper "
-        "diagnosis. Use `agentcfd params . --output operating-point.json` to freeze "
+        "diagnosis. Use `agentcfd project .` for one combined project, result, output, "
+        "and safe-action view. Use `agentcfd params . --output operating-point.json` to freeze "
         "one validated set of editable inputs without changing `case.py`. "
         "Failed transient runs expose identity-gated `agentcfd resume .` "
         "when a complete checkpoint exists. Ordinary runs replace the managed "
@@ -5336,8 +5516,9 @@ timeout_seconds = 3600
     (root / "AGENTS.md").write_text(
         "# Agent instructions\n\n"
         "Treat `case.py` as the modeling source of truth. Begin with "
-        "`agentcfd status . --json`, execute only its `next_action.command`, and re-read "
-        "status after each action. Do not edit generated OpenFOAM dictionaries to "
+        "`agentcfd project . --json`, inspect its typed `next_action.operation`, execute "
+        "only the corresponding declared command when authorized, and re-read the "
+        "snapshot after each action. Do not edit generated OpenFOAM dictionaries to "
         "change scientific intent. Preserve plan, result, XDMF/H5, selected NPZ, and "
         "failed checks together. Follow `resume_after_repair` only after the diagnosed "
         "cause is fixed. Never promote a result whose `accepted` value is false.\n",
@@ -5350,6 +5531,12 @@ timeout_seconds = 3600
     return Project(root)
 
 
+def open_project(start: str | Path = ".") -> Project:
+    """Open the nearest readable AgentCFD project from any nested path."""
+
+    return Project.discover(start)
+
+
 __all__ = [
     "Project",
     "ProjectIssue",
@@ -5357,4 +5544,5 @@ __all__ = [
     "ProjectRun",
     "init_project",
     "init_project_from_request",
+    "open_project",
 ]

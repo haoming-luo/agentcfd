@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add a dependency-free `open_project()` Python entry point, `Project.snapshot()`,
+  and `agentcfd project`. The versioned read-only snapshot unifies lifecycle
+  state, compact results, published file roles, XDMF/H5 entry points, hidden
+  provider-workspace retention, optional storage accounting, and a typed safe
+  next operation without opening field payloads or starting a solver.
 - Add optional `agentcfd[interop]` installation of the Apache-2.0 AgentCAE
   contract catalog and `agentcfd contracts --check-agentcae`. The audit derives
   AgentCFD's four produced cross-product identities from its installed JSON

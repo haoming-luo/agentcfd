@@ -57,6 +57,14 @@ CLI failures requested with `--json` use `agentcfd.error/0.1` with a stable code
 plain message, repair guidance, and `safe_to_retry`; agents do not need to parse
 human stderr. Active solver workspaces are protected from cleanup.
 
+`agentcfd project PROJECT --json` is the broader one-call snapshot for an agent,
+GUI, or notebook. It adds the compact result, published-file roles, standard
+field-bundle paths, hidden provider-workspace state, and optional managed
+storage without opening a field payload. Its bounded `next_action.operation`
+separates observation, review, maintenance, and solver-starting execution; the
+snapshot itself is always read-only. Python integrations use
+`agentcfd.open_project(path).snapshot()` instead of importing CLI internals.
+
 `agentcfd result PROJECT --json` is the matching lightweight result surface.
 It validates the internal result record and returns canonical quantities,
 failed checks, history metadata, field metadata, provenance, and available

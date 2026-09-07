@@ -48,6 +48,7 @@ _SCHEMAS = (
     "project-logs.schema.json",
     "project-initialization.schema.json",
     "project-recovery.schema.json",
+    "project-snapshot.schema.json",
     "result-summary.schema.json",
     "project-status.schema.json",
     "project-storage.schema.json",

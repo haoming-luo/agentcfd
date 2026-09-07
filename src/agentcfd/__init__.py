@@ -26,6 +26,7 @@ from . import (
 )
 from ._version import __version__
 from .model import Model, Step
+from .projects import open_project
 from .results import (
     Artifact,
     Check,
@@ -59,6 +60,7 @@ __all__ = [
     "interoperability",
     "meshing",
     "outputs",
+    "open_project",
     "parameters",
     "postprocessing",
     "procedures",

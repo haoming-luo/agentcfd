@@ -1555,6 +1555,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status.add_argument("--json", action="store_true", dest="as_json")
 
+    project_snapshot = subparsers.add_parser(
+        "project",
+        help="Show one unified project, result, output, storage, and agent surface.",
+    )
+    project_snapshot.add_argument(
+        "project", nargs="?", type=Path, default=Path(".")
+    )
+    project_snapshot.add_argument(
+        "--no-result",
+        action="store_false",
+        dest="include_result",
+        help="Skip reading the compact result.json record.",
+    )
+    project_snapshot.add_argument(
+        "--storage",
+        action="store_true",
+        help="Include a recursive managed-storage inventory.",
+    )
+    project_snapshot.add_argument("--json", action="store_true", dest="as_json")
+
     params = subparsers.add_parser(
         "params",
         help="Inspect or export one validated, reusable project operating point.",
@@ -2987,6 +3007,52 @@ def main(argv: list[str] | None = None) -> int:
                     f"managed: {storage['managed_display']} | reclaimable: "
                     f"{storage['reclaimable_display']}"
                 )
+        return 0 if report["state"] not in {"blocked", "failed"} else 3
+    if args.command == "project":
+        report = projects.open_project(args.project).snapshot(
+            include_result=args.include_result,
+            include_storage=args.storage,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            model = report["model"]
+            result = report["result"]
+            decision = (
+                ""
+                if result is None
+                else f" | accepted {str(result['accepted']).lower()} | trust {result['trust_level']}"
+            )
+            print(f"{model['name']} | {str(report['state']).upper()}{decision}")
+            output = report["output"]
+            if output is None:
+                print("output: not published")
+            else:
+                print(f"output: {output['directory']}")
+                fields = output["fields"]
+                if fields is not None and fields["xdmf"] is not None:
+                    print(f"fields: {fields['xdmf']}")
+                workspace = output["expert_workspace"]
+                if report["project"]["provider"] == "openfoam":
+                    print(
+                        "OpenFOAM workspace: "
+                        + (
+                            str(workspace["path"])
+                            if workspace["retained"]
+                            else "cleaned"
+                        )
+                    )
+            if report["storage"] is not None:
+                storage = report["storage"]
+                print(
+                    f"storage: {storage['managed_display']} managed | "
+                    f"{storage['reclaimable_display']} reclaimable"
+                )
+            action = report["next_action"]
+            print(
+                f"next: {action['operation']} | {action['command']} | "
+                f"{action['reason']}"
+            )
         return 0 if report["state"] not in {"blocked", "failed"} else 3
     if args.command == "params":
         project = projects.Project(args.project)

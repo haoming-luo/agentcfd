@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-snapshot.schema.json",
+  "title": "AgentCFD unified lightweight project snapshot 0.1",
+  "type": "object",
+  "required": [
+    "schema", "project", "state", "model", "parameters", "readiness",
+    "issues", "run", "progress", "output", "result", "storage", "next_action",
+    "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-snapshot/0.1"},
+    "project": {
+      "type": "object",
+      "required": [
+        "root", "manifest", "entrypoint", "provider", "run_mode",
+        "output_directory"
+      ],
+      "properties": {
+        "root": {"type": "string", "minLength": 1},
+        "manifest": {"type": "string", "minLength": 1},
+        "entrypoint": {"type": "string", "minLength": 1},
+        "provider": {"enum": ["reference", "openfoam"]},
+        "run_mode": {"enum": ["replace", "campaign"]},
+        "output_directory": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "enum": [
+        "blocked", "ready", "running", "interrupted", "modified",
+        "complete", "review", "failed"
+      ]
+    },
+    "model": {
+      "type": "object",
+      "required": ["name", "sha256", "analysis_sha256", "reynolds_number"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "minLength": 1},
+        "analysis_sha256": {"type": "string", "minLength": 1},
+        "reynolds_number": {"type": ["number", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "parameters": {"type": "array", "items": {"type": "object"}},
+    "readiness": {"type": "object"},
+    "issues": {"type": "array", "items": {"type": "object"}},
+    "run": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "run_id", "mode", "status", "phase", "accepted", "trust_level",
+            "provider", "parameters", "result_profile", "started_at", "completed_at"
+          ],
+          "properties": {
+            "run_id": {"type": ["string", "null"]},
+            "mode": {"type": ["string", "null"]},
+            "status": {"type": ["string", "null"]},
+            "phase": {"type": ["string", "null"]},
+            "accepted": {"type": ["boolean", "null"]},
+            "trust_level": {"type": ["string", "null"]},
+            "provider": {"type": ["string", "null"]},
+            "parameters": {"type": ["object", "null"]},
+            "result_profile": {"type": ["string", "null"]},
+            "started_at": {"type": ["string", "null"]},
+            "completed_at": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "progress": {"type": ["object", "null"]},
+    "output": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": [
+            "run_id", "mode", "directory", "result_profile",
+            "published_files", "fields", "expert_workspace"
+          ],
+          "properties": {
+            "run_id": {"type": ["string", "null"]},
+            "mode": {"type": ["string", "null"]},
+            "directory": {"type": "string", "minLength": 1},
+            "result_profile": {"type": ["string", "null"]},
+            "published_files": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "role", "path"],
+                "properties": {
+                  "name": {"type": "string", "minLength": 1},
+                  "role": {"type": "string", "minLength": 1},
+                  "path": {"type": "string", "minLength": 1}
+                },
+                "additionalProperties": false
+              }
+            },
+            "fields": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "required": ["xdmf", "h5", "manifest", "summary"],
+                  "properties": {
+                    "xdmf": {"type": ["string", "null"]},
+                    "h5": {"type": ["string", "null"]},
+                    "manifest": {"type": ["string", "null"]},
+                    "summary": {"type": ["object", "null"]}
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "expert_workspace": {
+              "type": "object",
+              "required": ["retained", "path", "visibility", "reason"],
+              "properties": {
+                "retained": {"type": "boolean"},
+                "path": {"type": ["string", "null"]},
+                "visibility": {"const": "hidden-provider-implementation"},
+                "reason": {"type": ["string", "null"]}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "result": {"type": ["object", "null"]},
+    "storage": {"type": ["object", "null"]},
+    "next_action": {
+      "type": "object",
+      "required": [
+        "operation", "kind", "arguments", "mutates_project", "starts_solver",
+        "command", "reason"
+      ],
+      "properties": {
+        "operation": {
+          "enum": [
+            "check", "clean", "diagnose", "logs", "plan", "result", "run",
+            "view", "watch"
+          ]
+        },
+        "kind": {"enum": ["execute", "maintain", "observe", "review"]},
+        "arguments": {"type": "array", "items": {"type": "string"}},
+        "mutates_project": {"type": "boolean"},
+        "starts_solver": {"type": "boolean"},
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": [
+        "field_payloads_opened", "compact_result_json_bytes_read",
+        "recursive_storage_scan"
+      ],
+      "properties": {
+        "field_payloads_opened": {"const": 0},
+        "compact_result_json_bytes_read": {"type": "integer", "minimum": 0},
+        "recursive_storage_scan": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

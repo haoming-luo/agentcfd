@@ -11,6 +11,7 @@ python -m pip install -e .
 agentcfd doctor --json
 agentcfd capabilities --json
 agentcfd init --template industrial-pipe first-flow
+agentcfd project first-flow --json
 agentcfd status first-flow --json
 agentcfd run first-flow --json
 agentcfd status first-flow --storage --json
@@ -33,6 +34,9 @@ python -m pytest -q
    never infer physical time or point/cell association from shape alone.
 10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,
     and `inspect` only when the next action or an issue requires deeper detail.
+    Use `project --json` or `open_project().snapshot()` when one request needs
+    status, compact results, published paths, workspace retention, and the typed
+    `next_action.operation` together; snapshots never authorize execution.
 11. Preview `clean` before applying it. Never delete `output/`, `campaigns/`, or
     the protected workspace of a live run to save space.
 12. During execution, use `watch --json` (JSON Lines) or poll `status --json`

@@ -105,6 +105,7 @@ agentcfd init --template industrial-pipe my-flow
 cd my-flow
 agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
+agentcfd project .      # unified project/result/output view; no HDF5 read
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
 agentcfd run .          # full portable fields for spatial review
@@ -331,6 +332,15 @@ residuals, Courant number, mass imbalance, pressure drop, elapsed time, and a
 wide transient ETA range. Add `--storage` when recursive workspace size is
 worth the extra I/O. A dead process becomes `interrupted`, and the next replace
 run can recover without manual folder surgery.
+
+For Python, GUI, and agent integration, `agentcfd project . --json` combines
+that state with the compact result, published file roles, standard XDMF/H5
+entry points, hidden provider-workspace status, and an optional storage scan.
+Its `next_action.operation` is a bounded machine verb, so consumers do not need
+to infer intent by parsing a display command. The equivalent dependency-free
+Python surface is `agentcfd.open_project(path).snapshot()`. A snapshot is
+strictly observational: it never opens HDF5, launches ParaView, or starts a
+solver.
 
 `agentcfd watch .` polls this same lightweight contract every two seconds and
 stops by itself at `complete`, `review`, `failed`, or `interrupted`. Use

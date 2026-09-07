@@ -34,6 +34,22 @@ agentcfd run .
 agentcfd view .
 ```
 
+`agentcfd project . --json` is the unified integration view over the same
+lifecycle. It returns the status, compact current result, named published
+files, XDMF/H5 entry points, provider-workspace retention, and a typed
+`next_action.operation` in one bounded read. Add `--storage` only when recursive
+byte accounting is needed, or `--no-result` for the smallest control-plane
+poll. The Python equivalent is:
+
+```python
+from agentcfd import open_project
+
+snapshot = open_project(".").snapshot(include_storage=False)
+```
+
+Snapshots do not execute the returned action, open field payloads, launch a
+viewer, or expose an ordinary user to generated OpenFOAM dictionaries.
+
 Use `agentcfd doctor .` when a full project/runtime/resource audit is worth a
 recursive storage scan. It checks model/provider/runtime readiness, output
 budget, filesystem headroom, latest run health, acceptance, and recovery, then
@@ -139,7 +155,8 @@ of the volume fields is stored. For agents, CI, and remote machines,
 It never starts the desktop GUI. See
 [post-processing recipes](postprocessing-recipes.md).
 
-The CLI and `Project.discover()` resolve the nearest `agentcfd.toml` upward
+The CLI, `Project.discover()`, and public `open_project()` resolve the nearest
+`agentcfd.toml` upward
 from a file or directory. A user inspecting `output/fields/` therefore does not
 need to remember the project root before checking status, rerunning, cleaning,
 or opening the result; generated next actions remain `agentcfd … .` while the

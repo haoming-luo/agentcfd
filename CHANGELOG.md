@@ -6,6 +6,9 @@
   verification, runtime, and other engineering results, with dimensionless
   values rendered explicitly. The flat canonical JSON result contract is
   unchanged for agents and integrations.
+- Add a strict, versioned `agentcfd.parameter-set/0.1` operating-point file to
+  `check`, `plan`, `mesh`, and project `run`. Explicit `--param` values override
+  the file, while the readable `case.py` remains the only model definition.
 - Lower `boundaries.mass_flow_inlet(kg_per_s)` for steady laminar imported
   volumes through OpenFOAM `flowRateInletVelocity`. Constant density converts
   the request to volume flow, patch normals set direction, and recovered mass

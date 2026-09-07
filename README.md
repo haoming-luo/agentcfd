@@ -130,6 +130,21 @@ not a second input file: AgentCFD uses the declared scalar bounds and choices
 for immediate parameter preflight, while the engineering constructors remain
 the final source of coupled scientific validation.
 
+Store a reusable operating point without duplicating the model:
+
+```json
+{
+  "schema": "agentcfd.parameter-set/0.1",
+  "parameters": {"diameter": 0.08, "mean_velocity": 0.015}
+}
+```
+
+`agentcfd check . --param-file operating-point.json`, `plan`, `mesh`, and `run`
+consume the same file. A repeated `--param mean_velocity=0.02` deliberately
+overrides only that value for a one-off trial. The strict installed schema
+rejects duplicate keys, nested values, unknown envelope fields, and non-finite
+numbers before the project factory or provider runs.
+
 For owned STL/OBJ internal-flow geometry, initialization can perform the
 inspection-to-project handoff without asking the user to author `case.py` from
 scratch. Every ambiguous physical input stays explicit:

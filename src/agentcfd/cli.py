@@ -110,13 +110,47 @@ def _project_parameter(value: str) -> tuple[str, object]:
 
 def _project_parameters(
     assignments: list[tuple[str, object]] | None,
+    parameter_file: Path | None = None,
 ) -> dict[str, object]:
-    selected: dict[str, object] = {}
+    selected = _parameter_set(parameter_file) if parameter_file is not None else {}
+    command_line_names: set[str] = set()
     for name, value in assignments or []:
-        if name in selected:
+        if name in command_line_names:
             raise ValueError(f"Project parameter {name!r} was supplied more than once.")
+        command_line_names.add(name)
         selected[name] = value
     return selected
+
+
+def _parameter_set(path: Path) -> dict[str, object]:
+    """Read one portable operating point without importing the project model."""
+
+    try:
+        payload = strict_json_object(
+            path.read_text(encoding="utf-8"),
+            label="project parameter set",
+        )
+    except OSError as error:
+        raise ProjectError(f"Cannot read project parameter set {path}: {error}") from error
+    if payload.get("schema") != "agentcfd.parameter-set/0.1":
+        raise ProjectError(
+            "Project parameter set must declare agentcfd.parameter-set/0.1."
+        )
+    unknown = set(payload) - {"schema", "parameters"}
+    if unknown:
+        rendered = ", ".join(sorted(unknown))
+        raise ProjectError(f"Unknown project parameter set fields: {rendered}.")
+    parameters = payload.get("parameters")
+    if not isinstance(parameters, dict):
+        raise ProjectError("Project parameter set parameters must be a JSON object.")
+    for name, value in parameters.items():
+        if not name.strip():
+            raise ProjectError("Project parameter set names must not be empty.")
+        if isinstance(value, (list, dict)):
+            raise ProjectError(
+                f"Project parameter {name!r} must be a JSON scalar, not an array or object."
+            )
+    return dict(parameters)
 
 
 def _campaign_request(path: Path) -> dict[str, dict[str, object]]:
@@ -1378,6 +1412,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=_project_parameter,
         help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
     )
+    check.add_argument(
+        "--param-file",
+        type=Path,
+        help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
+    )
     check.add_argument("--json", action="store_true", dest="as_json")
 
     plan = subparsers.add_parser(
@@ -1392,6 +1431,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         type=_project_parameter,
         help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
+    plan.add_argument(
+        "--param-file",
+        type=Path,
+        help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
     )
     plan.add_argument("--output", type=Path)
     plan.add_argument("--json", action="store_true", dest="as_json")
@@ -1474,6 +1518,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         type=_project_parameter,
         help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
+    mesh.add_argument(
+        "--param-file",
+        type=Path,
+        help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
     )
     mesh.add_argument("--json", action="store_true", dest="as_json")
 
@@ -2069,6 +2118,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pass NAME=JSON_SCALAR to build(); repeat for a design point.",
     )
     project_run.add_argument(
+        "--param-file",
+        type=Path,
+        help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
+    )
+    project_run.add_argument(
         "--campaign",
         action="store_true",
         help="Preserve this run under campaigns/<run-id> instead of replacing output/.",
@@ -2473,7 +2527,7 @@ def main(argv: list[str] | None = None) -> int:
         plan = projects.Project(args.project).plan(
             provider=args.provider,
             container_image=args.container_image,
-            parameters=_project_parameters(args.param),
+            parameters=_project_parameters(args.param, args.param_file),
         )
         readiness = plan["readiness"]
         valid = readiness["model_valid"] and readiness["provider_compatible"]
@@ -2499,7 +2553,7 @@ def main(argv: list[str] | None = None) -> int:
         report = projects.Project(args.project).plan(
             provider=args.provider,
             container_image=args.container_image,
-            parameters=_project_parameters(args.param),
+            parameters=_project_parameters(args.param, args.param_file),
         )
         if args.output is not None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -2567,7 +2621,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if ready else 3
     if args.command == "mesh":
         project = projects.Project.discover(args.project)
-        step = project.load_step(_project_parameters(args.param))
+        step = project.load_step(_project_parameters(args.param, args.param_file))
         domain = step.model.domain
         if not isinstance(domain, geometry.ImportedSurface):
             raise ProjectError("The mesh command requires ImportedSurface geometry.")
@@ -3608,7 +3662,7 @@ def main(argv: list[str] | None = None) -> int:
             container_image=args.container_image,
             campaign=args.campaign,
             keep_workspace=args.keep_workspace,
-            parameters=_project_parameters(args.param),
+            parameters=_project_parameters(args.param, args.param_file),
         )
         report = completed.to_dict()
         if args.as_json:

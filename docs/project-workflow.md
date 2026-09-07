@@ -213,6 +213,21 @@ the campaign CSV. Misspelled or unsupported names fail through the factory
 signature before meshing. This keeps one language and one model source of truth;
 AgentCFD does not patch arbitrary Python source or maintain a shadow YAML model.
 
+When an operating point is worth naming or handing to another person or agent,
+put the same scalar overrides in a portable file:
+
+```json
+{
+  "schema": "agentcfd.parameter-set/0.1",
+  "parameters": {"mean_velocity": 0.8, "baffle_height": 0.1}
+}
+```
+
+Pass it to `check`, `plan`, `mesh`, or `run` with `--param-file`. Command-line
+`--param` values take precedence, so a baseline file remains reusable during a
+small trial. The selected merged values enter the same plan and run identities;
+the parameter file never becomes a second model definition.
+
 For repeatable studies, a request contains names plus only those factory
 parameters:
 

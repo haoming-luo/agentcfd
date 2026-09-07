@@ -1295,6 +1295,85 @@ def test_status_discovers_parameter_contract_without_reimporting_case(
     assert all(item["overrideable"] for item in status["parameters"])
 
 
+def test_parameter_set_is_portable_and_cli_values_take_precedence(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    parameter_file = tmp_path / "operating-point.json"
+    payload = {
+        "schema": "agentcfd.parameter-set/0.1",
+        "parameters": {"diameter": 0.08, "mean_velocity": 0.015},
+    }
+    jsonschema.Draft202012Validator(
+        contracts.load("parameter-set.schema.json")
+    ).validate(payload)
+    parameter_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert (
+        entrypoint(
+            [
+                "plan",
+                str(project.root),
+                "--param-file",
+                str(parameter_file),
+                "--param",
+                "mean_velocity=0.02",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["project"]["parameters"] == {
+        "diameter": 0.08,
+        "mean_velocity": 0.02,
+    }
+
+    assert (
+        entrypoint(
+            [
+                "run",
+                str(project.root),
+                "--param-file",
+                str(parameter_file),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    run_record = json.loads((project.root / "output" / "run.json").read_text())
+    assert run_record["parameters"] == payload["parameters"]
+
+
+def test_parameter_set_rejects_ambiguous_or_nested_json(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    duplicate = tmp_path / "duplicate.json"
+    duplicate.write_text(
+        '{"schema":"agentcfd.parameter-set/0.1","parameters":{},"parameters":{}}',
+        encoding="utf-8",
+    )
+    assert (
+        entrypoint(
+            ["plan", str(project.root), "--param-file", str(duplicate), "--json"]
+        )
+        == 2
+    )
+    error = json.loads(capsys.readouterr().out)
+    assert "duplicate key" in error["error"]["message"]
+
+    nested = tmp_path / "nested.json"
+    nested.write_text(
+        json.dumps(
+            {
+                "schema": "agentcfd.parameter-set/0.1",
+                "parameters": {"mean_velocity": [0.02, 0.03]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert entrypoint(["check", str(project.root), "--param-file", str(nested)]) == 2
+    assert "JSON scalar" in capsys.readouterr().err
+
+
 def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     tmp_path, capsys
 ):

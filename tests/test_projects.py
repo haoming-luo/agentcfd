@@ -1402,6 +1402,53 @@ def test_parameter_set_rejects_ambiguous_or_nested_json(tmp_path, capsys):
     assert "JSON scalar" in capsys.readouterr().err
 
 
+def test_params_command_exports_a_complete_validated_operating_point(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    output = tmp_path / "operating-points" / "gentle-flow.json"
+
+    assert (
+        entrypoint(
+            [
+                "params",
+                str(project.root),
+                "--param",
+                "mean_velocity=0.015",
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("parameter-set.schema.json")
+    ).validate(payload)
+    assert json.loads(output.read_text()) == payload
+    assert payload["parameters"] == {
+        "length": 10.0,
+        "diameter": 0.05,
+        "mean_velocity": 0.015,
+    }
+    assert project.plan(parameters=payload["parameters"])["readiness"][
+        "ready_to_run"
+    ] is True
+
+    assert entrypoint(["params", str(project.root)]) == 0
+    human = capsys.readouterr().out
+    assert "Validated operating point" in human
+    assert "mean_velocity=0.02 m/s" in human
+
+    assert (
+        entrypoint(
+            ["params", str(project.root), "--output", str(output), "--json"]
+        )
+        == 2
+    )
+    error = json.loads(capsys.readouterr().out)
+    assert error["error"]["type"] == "FileExistsError"
+
+
 def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     tmp_path, capsys
 ):

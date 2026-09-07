@@ -101,6 +101,7 @@ agentcfd init --template industrial-pipe my-flow
 cd my-flow
 agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
+agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
 agentcfd run .
 agentcfd watch .        # follow a long active run, then stop automatically
@@ -144,6 +145,10 @@ consume the same file. A repeated `--param mean_velocity=0.02` deliberately
 overrides only that value for a one-off trial. The strict installed schema
 rejects duplicate keys, nested values, unknown envelope fields, and non-finite
 numbers before the project factory or provider runs.
+
+`agentcfd params .` lists the complete resolved operating point with engineering
+units. Add `--param` and `--output operating-point.json` to freeze a validated
+snapshot without hand-writing JSON; an existing destination is never replaced.
 
 For owned STL/OBJ internal-flow geometry, initialization can perform the
 inspection-to-project handoff without asking the user to author `case.py` from

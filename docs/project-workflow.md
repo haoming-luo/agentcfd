@@ -228,6 +228,13 @@ Pass it to `check`, `plan`, `mesh`, or `run` with `--param-file`. Command-line
 small trial. The selected merged values enter the same plan and run identities;
 the parameter file never becomes a second model definition.
 
+To avoid authoring that envelope by hand, use
+`agentcfd params . --param mean_velocity=0.8 --output v08.json`. The command
+executes the project factory validation, fills every other editable input from
+its current Python default, validates the installed parameter-set contract, and
+refuses to overwrite an existing snapshot. `Project.parameter_set()` provides
+the same dependency-free Python API.
+
 For repeatable studies, a request contains names plus only those factory
 parameters:
 

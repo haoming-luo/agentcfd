@@ -9,6 +9,9 @@
 - Add a strict, versioned `agentcfd.parameter-set/0.1` operating-point file to
   `check`, `plan`, `mesh`, and project `run`. Explicit `--param` values override
   the file, while the readable `case.py` remains the only model definition.
+- Add `Project.parameter_set()` and `agentcfd params` to inspect or safely export
+  a complete validated operating point from current factory defaults plus
+  overrides; existing destination files are never replaced.
 - Tighten the project-status contract so every discovered factory parameter and
   its UI/agent metadata are structurally validated instead of exposed as an
   unconstrained object.

@@ -1105,6 +1105,25 @@ class Project:
             )
         return records
 
+    def parameter_set(
+        self,
+        selected: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Freeze one validated operating point as portable JSON scalars."""
+
+        selected_parameters = self._parameters(selected)
+        self.load_step(selected_parameters)
+        records = self.parameter_contract(selected_parameters)
+        resolved = {
+            str(record["name"]): record["current"]
+            for record in records
+            if record["overrideable"] is True
+        }
+        return {
+            "schema": "agentcfd.parameter-set/0.1",
+            "parameters": resolved,
+        }
+
     def load_step(self, parameters: Mapping[str, object] | None = None) -> Step:
         factory = self._factory()
         selected_parameters = self._parameters(parameters)
@@ -4997,7 +5016,9 @@ timeout_seconds = 3600
         + "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
         "next action. The normal loop is `agentcfd run .` followed by "
         "`agentcfd view .`; `check`, `plan`, and `inspect` remain available for deeper "
-        "diagnosis. Failed transient runs expose identity-gated `agentcfd resume .` "
+        "diagnosis. Use `agentcfd params . --output operating-point.json` to freeze "
+        "one validated set of editable inputs without changing `case.py`. "
+        "Failed transient runs expose identity-gated `agentcfd resume .` "
         "when a complete checkpoint exists. Ordinary runs replace the managed "
         "`output/` directory. Use "
         "`agentcfd run . --campaign` to preserve an immutable run, "

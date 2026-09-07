@@ -1538,6 +1538,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     status.add_argument("--json", action="store_true", dest="as_json")
 
+    params = subparsers.add_parser(
+        "params",
+        help="Inspect or export one validated, reusable project operating point.",
+    )
+    params.add_argument("project", nargs="?", type=Path, default=Path("."))
+    params.add_argument(
+        "--param-file",
+        type=Path,
+        help="Load an existing agentcfd.parameter-set/0.1 baseline.",
+    )
+    params.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Override NAME=JSON_SCALAR for this exported operating point.",
+    )
+    params.add_argument(
+        "--output",
+        type=Path,
+        help="Write the resolved parameter set without replacing an existing file.",
+    )
+    params.add_argument("--json", action="store_true", dest="as_json")
+
     result_command = subparsers.add_parser(
         "result",
         help="Read compact quantities, checks, and field metadata without opening HDF5.",
@@ -2917,6 +2940,35 @@ def main(argv: list[str] | None = None) -> int:
                     f"{storage['reclaimable_display']}"
                 )
         return 0 if report["state"] not in {"blocked", "failed"} else 3
+    if args.command == "params":
+        project = projects.Project(args.project)
+        selected = _project_parameters(args.param, args.param_file)
+        report = project.parameter_set(selected)
+        if args.output is not None:
+            if args.output.exists():
+                raise FileExistsError(
+                    f"Parameter-set output already exists: {args.output}"
+                )
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            _write_json_atomic(args.output, report)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print("Validated operating point")
+            contract = project.parameter_contract(selected)
+            for item in contract:
+                if item["overrideable"] is not True:
+                    continue
+                metadata = item.get("metadata")
+                unit = metadata.get("unit") if isinstance(metadata, dict) else None
+                suffix = f" {unit}" if unit not in {None, "1"} else ""
+                print(
+                    f"  {item['name']}={json.dumps(item['current'], sort_keys=True)}"
+                    f"{suffix}"
+                )
+            if args.output is not None:
+                print(args.output)
+        return 0
     if args.command == "result":
         report = projects.Project.discover(args.project).result_summary(
             run_id=args.run_id,

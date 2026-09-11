@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add atomic verified campaign datasets through `Project.export_campaign_dataset()`
+  and `agentcfd export dataset`. Accepted points become streamable independent
+  `agentcae.scientific-sample` JSON Lines under one content-hashed manifest;
+  unaccepted points and reasons remain recorded, all included runs pass full
+  project integrity, and input/output schemas must agree before publication.
+  `agentcfd verify dataset` independently checks the manifest, counts, JSONL
+  bytes/hash, every sample contract, schema consistency, and unique source IDs.
 - Add project-level `scientific_sample()` / `export_scientific_sample()` and
   `agentcfd export sample`. A readable project can now become a strict
   `agentcae.scientific-sample` without custom Python glue: numeric `case.py`

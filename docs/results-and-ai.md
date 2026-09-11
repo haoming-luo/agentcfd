@@ -277,6 +277,26 @@ or an existing target file. Summary-only campaign points are therefore the
 cheap natural source for large scalar datasets, while full-field runs remain
 available when spatial learning is actually required.
 
+An accepted campaign becomes one atomic, streamable dataset without a notebook:
+
+```bash
+agentcfd export dataset . datasets/pressure-map \
+  --input diameter \
+  --input mean_velocity \
+  --output-quantity flow.pressure_drop
+```
+
+The directory contains `manifest.json` and `samples.jsonl`. Every JSON Line is
+an independent `agentcae.scientific-sample/0.1.0`; the manifest fixes the common
+input/output schema, maps line numbers to run and result hashes, records the
+JSONL byte count and SHA-256, and preserves every excluded unaccepted point with
+its reason. Each included run passes full project verification first. Output is
+renamed into place only after every sample agrees semantically, so a failed
+campaign point or interrupted export cannot leave a plausible partial dataset.
+`agentcfd verify dataset DIRECTORY --json` reopens no solver or field payload;
+it verifies the manifest, counts, JSONL byte length and SHA-256, every sample's
+contract and shared input/output metadata, line-to-run identity, and uniqueness.
+
 The same record can be ingested by campaign managers, tabular surrogate tools,
 or user ML pipelines without importing PyTorch or JAX into the core package.
 Field-learning workflows should consume `field_records` and their artifacts;

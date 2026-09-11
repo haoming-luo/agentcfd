@@ -62,6 +62,8 @@ _SCHEMAS = (
     "project-verification.schema.json",
     "project-view.schema.json",
     "result-exchange.schema.json",
+    "scientific-dataset-verification.schema.json",
+    "scientific-dataset.schema.json",
     "scientific-sample.schema.json",
     "simulation-result.schema.json",
     "solution-plan.schema.json",

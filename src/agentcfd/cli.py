@@ -24,6 +24,7 @@ from . import (
     fluids,
     geometry,
     geometry_io,
+    interoperability,
     licensing,
     outputs,
     procedures,
@@ -2132,6 +2133,27 @@ def build_parser() -> argparse.ArgumentParser:
     scalar_sample.add_argument("--run-id", help="Select one immutable campaign run.")
     scalar_sample.add_argument("--case-id", help="Override the stable sample case id.")
     scalar_sample.add_argument("--json", action="store_true", dest="as_json")
+    scalar_dataset = export_subparsers.add_parser(
+        "dataset",
+        help="Export accepted campaign runs as a verified AgentCAE-sample dataset.",
+    )
+    scalar_dataset.add_argument("project", type=Path)
+    scalar_dataset.add_argument("output_directory", type=Path)
+    scalar_dataset.add_argument(
+        "--input",
+        action="append",
+        dest="inputs",
+        default=[],
+        help="Numeric case.py parameter; repeat or omit to use all numeric parameters.",
+    )
+    scalar_dataset.add_argument(
+        "--output-quantity",
+        action="append",
+        dest="output_quantities",
+        required=True,
+        help="Canonical scalar target; repeat as needed.",
+    )
+    scalar_dataset.add_argument("--json", action="store_true", dest="as_json")
 
     calculate = subparsers.add_parser(
         "calculate",
@@ -2698,6 +2720,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Select one immutable campaign run instead of the latest project result.",
     )
     project_check.add_argument("--json", action="store_true", dest="as_json")
+    dataset_check = verify_subparsers.add_parser(
+        "dataset",
+        help="Verify a campaign dataset manifest, JSONL hash, and every sample.",
+    )
+    dataset_check.add_argument("directory", type=Path)
+    dataset_check.add_argument("--json", action="store_true", dest="as_json")
     bundle_check = verify_subparsers.add_parser(
         "field-bundle",
         help="Verify XDMF/H5 and any selected NPZ hashes and frame identity.",
@@ -3967,6 +3995,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(output)
         return 0
+    if args.command == "export" and args.export_format == "dataset":
+        output, manifest = projects.Project.discover(
+            args.project
+        ).export_campaign_dataset(
+            args.output_directory,
+            outputs=args.output_quantities,
+            inputs=args.inputs,
+        )
+        if args.as_json:
+            print(json.dumps(manifest, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Exported verified scalar dataset | {manifest['sample_count']} samples | "
+                f"excluded {manifest['excluded_count']}"
+            )
+            print(output / "manifest.json")
+        return 0
     if args.command == "calculate" and args.calculation == "pipe-loss":
         report = engineering.pipe_pressure_loss(
             density=args.density,
@@ -4689,6 +4734,19 @@ def main(argv: list[str] | None = None) -> int:
                 state = "PASS" if check["passed"] else "FAIL"
                 print(f"{state} {check['code']}: {check['message']}")
             print(f"next: {report['next_action']['command']}")
+        return 0 if report["verified"] else 3
+    if args.command == "verify" and args.verification == "dataset":
+        report = interoperability.verify_scientific_dataset(args.directory)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Dataset verified {str(report['verified']).lower()} | "
+                f"samples {report['sample_count']}"
+            )
+            for check in report["checks"]:
+                state = "PASS" if check["passed"] else "FAIL"
+                print(f"{state} {check['code']}: {check['message']}")
         return 0 if report["verified"] else 3
     if args.command == "verify" and args.verification == "field-bundle":
         report = data_exchange.verify_field_bundle(args.directory)

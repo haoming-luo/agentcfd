@@ -2473,6 +2473,136 @@ class Project:
         _write_json_atomic(target, sample)
         return target, sample
 
+    def export_campaign_dataset(
+        self,
+        directory: str | Path,
+        *,
+        outputs: Sequence[str],
+        inputs: Sequence[str] = (),
+    ) -> tuple[Path, dict[str, object]]:
+        """Publish verified accepted campaign points as one atomic JSONL dataset."""
+
+        target = Path(directory)
+        if target.exists():
+            raise ProjectError(f"Campaign dataset output already exists: {target}")
+        campaign = self.campaign_index()
+        accepted_runs = [
+            run for run in campaign["runs"] if run.get("accepted") is True
+        ]
+        excluded = [
+            {
+                "run_id": run.get("run_id"),
+                "status": run.get("status"),
+                "accepted": run.get("accepted"),
+                "reason": "The campaign point is not accepted.",
+            }
+            for run in campaign["runs"]
+            if run.get("accepted") is not True
+        ]
+        if not accepted_runs:
+            raise ProjectError(
+                "Campaign dataset export requires at least one accepted campaign run."
+            )
+        samples: list[dict[str, object]] = []
+        sample_rows: list[dict[str, object]] = []
+        input_contract: list[dict[str, object]] | None = None
+        output_contract: list[dict[str, object]] | None = None
+        for line_number, run in enumerate(accepted_runs, start=1):
+            run_id = str(run["run_id"])
+            sample = self.scientific_sample(
+                outputs=outputs,
+                inputs=inputs,
+                run_id=run_id,
+            )
+            current_inputs = [
+                {
+                    "name": record["name"],
+                    "metadata": record["metadata"],
+                }
+                for record in sample["provenance"]["sample_export"]["input_schema"]
+            ]
+            current_outputs = [
+                {
+                    name: value
+                    for name, value in record.items()
+                    if name != "value"
+                }
+                for record in sample["quantity_schema"]
+            ]
+            if input_contract is None:
+                input_contract = current_inputs
+                output_contract = current_outputs
+            elif (
+                current_inputs != input_contract
+                or current_outputs != output_contract
+            ):
+                raise ProjectError(
+                    f"Campaign run {run_id!r} does not share the dataset input/output schema."
+                )
+            samples.append(sample)
+            sample_rows.append(
+                {
+                    "line": line_number,
+                    "run_id": run_id,
+                    "case_id": sample["case_id"],
+                    "source_result_sha256": sample["provenance"]["sample_export"][
+                        "source_result_sha256"
+                    ],
+                }
+            )
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        staging = Path(
+            tempfile.mkdtemp(prefix=f".{target.name}.tmp-", dir=target.parent)
+        )
+        try:
+            samples_path = staging / "samples.jsonl"
+            with samples_path.open("w", encoding="utf-8", newline="\n") as stream:
+                for sample in samples:
+                    stream.write(
+                        json.dumps(
+                            sample,
+                            sort_keys=True,
+                            ensure_ascii=False,
+                            allow_nan=False,
+                            separators=(",", ":"),
+                        )
+                        + "\n"
+                    )
+            manifest = {
+                "schema": "agentcfd.scientific-dataset/0.1",
+                "root": str(self.root),
+                "created_at": datetime.now(UTC).isoformat(),
+                "sample_schema": "agentcae.scientific-sample/0.1.0",
+                "sample_count": len(samples),
+                "excluded_count": len(excluded),
+                "inputs": input_contract or [],
+                "outputs": output_contract or [],
+                "samples": {
+                    "path": "samples.jsonl",
+                    "media_type": "application/x-ndjson",
+                    "bytes": samples_path.stat().st_size,
+                    "sha256": file_sha256(samples_path),
+                },
+                "runs": sample_rows,
+                "excluded": excluded,
+                "verification": {
+                    "mode": "full-project-per-sample",
+                    "all_samples_verified": True,
+                    "field_payload_policy": (
+                        "Full-field runs verify their field bundles; summary-only runs "
+                        "carry no permanent spatial payload."
+                    ),
+                },
+            }
+            _write_json_atomic(staging / "manifest.json", manifest)
+            staging.replace(target)
+        except Exception:
+            if staging.is_dir():
+                shutil.rmtree(staging)
+            raise
+        return target, manifest
+
     def export_campaign_csv(
         self,
         path: str | Path,

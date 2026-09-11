@@ -101,6 +101,10 @@ python -m pytest -q
     open full `result.json` histories and HDF5 fields only when the task needs them.
 27. Use `agentcfd export sample` for scalar learning data; it verifies the
     project and preserves numeric parameter inputs, units, trust, and source hash.
+28. Use `agentcfd export dataset` for campaigns; include only verified accepted
+    points and keep the manifest's exclusions and JSONL hash with the samples.
+29. Run `agentcfd verify dataset` after copying or before downstream admission;
+    it checks the package without opening OpenFOAM or HDF5 payloads.
     Keep byte integrity, scientific acceptance, and trust level separate; a
     verified artifact set does not repair a failed physical check.
 26. Use `performance --json` only for scheduling and ETA. Its bounded comparable

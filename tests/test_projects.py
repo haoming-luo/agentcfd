@@ -9,7 +9,15 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Artifact, Check, FieldRecord, contracts, geometry_io, projects
+from agentcfd import (
+    Artifact,
+    Check,
+    FieldRecord,
+    contracts,
+    geometry_io,
+    interoperability,
+    projects,
+)
 from agentcfd.cli import entrypoint
 from agentcfd.errors import ProjectError
 
@@ -1870,6 +1878,114 @@ def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     cli_report = json.loads(capsys.readouterr().out)
     assert cli_report["run_count"] == 3
     assert cli_report["observation_cost"]["field_payloads_opened"] == 0
+
+
+def test_campaign_dataset_is_verified_atomic_and_records_exclusions(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    case = project.entrypoint
+    case.write_text(
+        case.read_text(encoding="utf-8").replace(
+            "output=outputs.standard(),",
+            """output=outputs.standard(
+            criteria=(
+                outputs.require(
+                    "pressure-budget",
+                    quantity="flow.pressure_drop",
+                    unit="Pa",
+                    maximum=4.0,
+                ),
+            ),
+        ),""",
+        ),
+        encoding="utf-8",
+    )
+    low = project.run(campaign=True, parameters={"mean_velocity": 0.01})
+    medium = project.run(campaign=True, parameters={"mean_velocity": 0.03})
+    high = project.run(campaign=True, parameters={"mean_velocity": 0.04})
+    assert low.result.accepted is True
+    assert medium.result.accepted is True
+    assert high.result.accepted is False
+
+    target = tmp_path / "datasets" / "pressure-map"
+    output, manifest = project.export_campaign_dataset(
+        target,
+        inputs=("diameter", "mean_velocity"),
+        outputs=("flow.pressure_drop",),
+    )
+
+    assert output == target
+    jsonschema.Draft202012Validator(
+        contracts.load("scientific-dataset.schema.json")
+    ).validate(manifest)
+    assert "scientific-dataset.schema.json" in contracts.available()
+    assert json.loads((target / "manifest.json").read_text()) == manifest
+    assert manifest["sample_count"] == 2
+    assert manifest["excluded_count"] == 1
+    assert manifest["excluded"][0]["run_id"] == high.run_id
+    assert manifest["samples"]["sha256"] == hashlib.sha256(
+        (target / "samples.jsonl").read_bytes()
+    ).hexdigest()
+    samples = [
+        json.loads(line)
+        for line in (target / "samples.jsonl").read_text().splitlines()
+    ]
+    assert [sample["case_id"] for sample in samples] == [
+        f"agentcfd-{low.run_id}",
+        f"agentcfd-{medium.run_id}",
+    ]
+    assert [sample["inputs"]["mean_velocity"] for sample in samples] == [
+        0.01,
+        0.03,
+    ]
+    for sample in samples:
+        jsonschema.Draft202012Validator(
+            contracts.load("scientific-sample.schema.json")
+        ).validate(sample)
+
+    verification = interoperability.verify_scientific_dataset(target)
+    jsonschema.Draft202012Validator(
+        contracts.load("scientific-dataset-verification.schema.json")
+    ).validate(verification)
+    assert verification["verified"] is True
+    assert verification["sample_count"] == 2
+    assert "scientific-dataset-verification.schema.json" in contracts.available()
+    assert entrypoint(["verify", "dataset", str(target), "--json"]) == 0
+    cli_verification = json.loads(capsys.readouterr().out)
+    assert cli_verification["verified"] is True
+
+    with pytest.raises(ProjectError, match="already exists"):
+        project.export_campaign_dataset(
+            target,
+            outputs=("flow.pressure_drop",),
+        )
+
+    cli_target = tmp_path / "datasets" / "pressure-map-cli"
+    assert (
+        entrypoint(
+            [
+                "export",
+                "dataset",
+                str(project.root),
+                str(cli_target),
+                "--input",
+                "mean_velocity",
+                "--output-quantity",
+                "flow.pressure_drop",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_manifest = json.loads(capsys.readouterr().out)
+    assert cli_manifest["sample_count"] == 2
+    assert (cli_target / "samples.jsonl").is_file()
+
+    with (target / "samples.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write("{}\n")
+    tampered = interoperability.verify_scientific_dataset(target)
+    assert tampered["verified"] is False
+    assert tampered["checks"][1]["code"] == "SAMPLE_PAYLOAD_INTEGRITY"
+    assert tampered["checks"][1]["passed"] is False
 
 
 def test_campaign_operating_map_is_unit_aware_accepted_and_field_free(tmp_path, capsys):

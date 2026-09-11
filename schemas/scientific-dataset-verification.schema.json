@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/scientific-dataset-verification.schema.json",
+  "title": "AgentCFD scalar dataset verification 0.1",
+  "type": "object",
+  "required": ["schema", "directory", "verified", "sample_count", "checks", "observation_cost"],
+  "properties": {
+    "schema": {"const": "agentcfd.scientific-dataset-verification/0.1"},
+    "directory": {"type": "string", "minLength": 1},
+    "verified": {"type": "boolean"},
+    "sample_count": {"type": "integer", "minimum": 0},
+    "checks": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["code", "passed", "message"],
+        "properties": {
+          "code": {"enum": ["MANIFEST_INTEGRITY", "SAMPLE_PAYLOAD_INTEGRITY"]},
+          "passed": {"type": "boolean"},
+          "message": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": ["manifest_json_bytes_read", "samples_jsonl_bytes_read", "field_payloads_opened"],
+      "properties": {
+        "manifest_json_bytes_read": {"type": "integer", "minimum": 0},
+        "samples_jsonl_bytes_read": {"type": "integer", "minimum": 0},
+        "field_payloads_opened": {"const": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -378,6 +378,9 @@ agentcfd run .                      # bounded imported laminar flow + XDMF/H5
 agentcfd run . --keep-workspace  # expert backend debugging
 agentcfd export sample . pressure-loss.json \
   --input mean_velocity --output-quantity flow.pressure_drop
+agentcfd export dataset . training/pressure-map \
+  --input mean_velocity --output-quantity flow.pressure_drop
+agentcfd verify dataset training/pressure-map
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 # agentcfd clean . --include-retained --apply  # release expert copies

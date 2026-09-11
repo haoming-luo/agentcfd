@@ -53,6 +53,15 @@ the matching Python APIs. This is the preferred scalar bridge into AgentFEM or
 tabular learning because it does not require users to reconstruct inputs,
 units, acceptance, or source hashes by hand.
 
+For campaigns, `agentcfd export dataset PROJECT DIRECTORY
+--output-quantity NAME` writes a content-hashed `samples.jsonl` plus
+`manifest.json`. Included lines retain the same AgentCAE sample identity;
+unaccepted points remain explicit in the manifest, and mixed parameter or
+quantity schemas fail before the target directory appears. AgentFEM and other
+consumers can therefore stream samples without importing AgentCFD or opening
+solver fields. `agentcfd verify dataset` performs a dependency-free package
+audit before a copied dataset is admitted downstream.
+
 The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack
 behind the stable `agentcae.*` records.

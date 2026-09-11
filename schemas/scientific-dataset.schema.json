@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/scientific-dataset.schema.json",
+  "title": "AgentCFD verified scalar campaign dataset 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "created_at", "sample_schema", "sample_count",
+    "excluded_count", "inputs", "outputs", "samples", "runs", "excluded",
+    "verification"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.scientific-dataset/0.1"},
+    "root": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "minLength": 1},
+    "sample_schema": {"const": "agentcae.scientific-sample/0.1.0"},
+    "sample_count": {"type": "integer", "minimum": 1},
+    "excluded_count": {"type": "integer", "minimum": 0},
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "metadata"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "metadata": {"type": ["object", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "shape", "unit", "kind", "description"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "shape": {"const": []},
+          "unit": {"type": ["string", "null"]},
+          "kind": {"type": "string", "minLength": 1},
+          "description": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "samples": {
+      "type": "object",
+      "required": ["path", "media_type", "bytes", "sha256"],
+      "properties": {
+        "path": {"const": "samples.jsonl"},
+        "media_type": {"const": "application/x-ndjson"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "runs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["line", "run_id", "case_id", "source_result_sha256"],
+        "properties": {
+          "line": {"type": "integer", "minimum": 1},
+          "run_id": {"type": "string", "minLength": 1},
+          "case_id": {"type": "string", "minLength": 1},
+          "source_result_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "excluded": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["run_id", "status", "accepted", "reason"],
+        "properties": {
+          "run_id": {"type": ["string", "null"]},
+          "status": {"type": ["string", "null"]},
+          "accepted": {"type": ["boolean", "null"]},
+          "reason": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "verification": {
+      "type": "object",
+      "required": ["mode", "all_samples_verified", "field_payload_policy"],
+      "properties": {
+        "mode": {"const": "full-project-per-sample"},
+        "all_samples_verified": {"const": true},
+        "field_payload_policy": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

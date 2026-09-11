@@ -99,6 +99,8 @@ files stay hidden and reproducible.
 - one-command post-processing target and self-documenting output directory;
 - field-free campaign design-point index and unit-preserving CSV export, with
   recursive storage scans remaining explicit opt-in;
+- verified atomic scalar-dataset export with fixed parameter/quantity semantics,
+  streamable AgentCAE sample lines, content hashing, and explicit exclusions;
 - dependency-free, unit-labelled SVG operating maps over compact campaign
   markers, with accepted-only decision curves and explicit exclusions;
 - explicit `case.py` factory parameters shared by check/plan/run, fingerprinted

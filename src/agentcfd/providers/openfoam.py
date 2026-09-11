@@ -482,6 +482,30 @@ def _mesh_quality_quantities(log: str) -> dict[str, Quantity]:
         match = re.search(pattern, log)
         if match is not None:
             quantities[name] = Quantity(float(match.group(1)), unit)
+    policy_block = re.search(
+        r"Checking faces in error\s*:(.*?)(?:\n\s*\n|Mesh OK|Failed)",
+        log,
+        flags=re.DOTALL,
+    )
+    if policy_block is not None:
+        violation_counts = [
+            int(value)
+            for value in re.findall(
+                r":\s*(\d+)\s*$", policy_block.group(1), flags=re.MULTILINE
+            )
+        ]
+        if violation_counts:
+            quantities["mesh.policy_violation_count"] = Quantity(
+                float(sum(violation_counts)), "1"
+            )
+        concavity = re.search(
+            r"faces with concavity\s*>\s*[0-9.eE+-]+\s*degrees\s*:\s*(\d+)",
+            policy_block.group(1),
+        )
+        if concavity is not None:
+            quantities["mesh.concavity_violation_count"] = Quantity(
+                float(concavity.group(1)), "1"
+            )
     return quantities
 
 

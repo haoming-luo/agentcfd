@@ -1023,6 +1023,7 @@ authoritative.
 - [OpenFOAM v2606 imported laminar duct-flow evidence](docs/openfoam-v2606-imported-duct-flow.json)
 - [OpenFOAM v2606 imported mass-flow duct evidence](docs/openfoam-v2606-imported-duct-mass-flow.json)
 - [OpenFOAM v2606 imported k-omega SST duct-flow evidence](docs/openfoam-v2606-imported-duct-rans.json)
+- [OpenFOAM v2606 generated-elbow mesh evidence](docs/openfoam-v2606-generated-elbow-mesh.json)
 - [Guide for AI agents](AGENT_GUIDE.md)
 
 ## License

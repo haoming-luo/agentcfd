@@ -93,6 +93,24 @@ Numerical capabilities will add, as appropriate:
 - installed-runtime and parallel reproducibility evidence;
 - documented counterexamples and unsupported regimes.
 
+## Generated-elbow mesh evidence
+
+`docs/openfoam-v2606-generated-elbow-mesh.json` records the first complete
+parameter-to-volume-mesh path for the circular-elbow generator. OpenCFD v2606
+accepted the named, closed surface and generated 23,086 cells. The final gate
+used `checkMesh -allTopology -meshQuality` against the project-owned policy:
+all policy violation counts were zero, maximum non-orthogonality was 40.20
+degrees, maximum skewness was 0.783, and maximum aspect ratio was 3.76.
+
+This distinction matters. `-allGeometry` additionally flags any cell that is
+concave by face planes, including cells whose actual concavity remains below
+the declared `maxConcave` threshold. AgentCFD retains `maximum_concavity=80`
+degrees in solver-neutral mesh intent, writes the same value into both
+`snappyHexMeshDict` and `meshQualityDict`, and requires zero violations of that
+policy. It does not infer acceptance from the process return code or discard
+the concavity check. The evidence establishes meshing integration only; flow,
+loss coefficient, and mesh sensitivity remain open.
+
 ## Transient baffled-channel integration evidence
 
 The first non-pipe project integration is recorded in

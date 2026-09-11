@@ -1277,6 +1277,10 @@ def test_openfoam_checkmesh_metrics_are_structured():
     Max aspect ratio = 2.5 OK.
     Mesh non-orthogonality Max: 6.62 average: 2.95
     Max skewness = 1.047 OK.
+    Checking faces in error :
+        non-orthogonality > 65 degrees : 0
+        faces with concavity > 80 degrees : 0
+
     Mesh OK.
 """
     )
@@ -1286,6 +1290,8 @@ def test_openfoam_checkmesh_metrics_are_structured():
     assert quantities["mesh.maximum_non_orthogonality"].value == pytest.approx(6.62)
     assert quantities["mesh.average_non_orthogonality"].value == pytest.approx(2.95)
     assert quantities["mesh.maximum_skewness"].value == pytest.approx(1.047)
+    assert quantities["mesh.policy_violation_count"].value == 0.0
+    assert quantities["mesh.concavity_violation_count"].value == 0.0
 
 
 def test_openfoam_mesh_metric_policy_fails_high_or_missing_observables():

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Align imported-mesh acceptance with OpenFOAM's declared quality-policy path.
+  AgentCFD now records solver-neutral maximum concavity, writes an inspectable
+  `meshQualityDict`, executes `checkMesh -allTopology -meshQuality`, parses the
+  total and concavity-specific violation counts, and requires zero violations.
+  A real OpenCFD v2606 generated-elbow run now passes with 23,086 cells and a
+  checked-in compact evidence record; extra `-allGeometry` diagnostics are no
+  longer confused with violations of the configured finite-volume policy.
 - Make continuous integration proportional to the evidence needed. Ordinary
   code pushes now run one cached Linux gate containing lint, the full lightweight
   suite, one build, and one installed-wheel smoke; documentation-only changes

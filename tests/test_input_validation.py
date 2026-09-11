@@ -2,7 +2,17 @@ import math
 
 import pytest
 
-from agentcfd import Model, Step, boundaries, fluids, geometry, outputs, procedures, studies
+from agentcfd import (
+    Model,
+    Step,
+    boundaries,
+    fluids,
+    geometry,
+    meshing,
+    outputs,
+    procedures,
+    studies,
+)
 from agentcfd.errors import ModelValidationError
 from agentcfd.providers import OpenFOAMMeshControls, OpenFOAMProvider
 
@@ -69,6 +79,13 @@ def test_numeric_inputs_are_normalized_for_stable_serialization():
     assert pipe.to_dict()["length"] == 2.0
     assert fluid.to_dict()["density"] == 1000.0
     assert inlet.to_dict()["velocity"] == 2.0
+
+
+def test_mesh_concavity_limit_is_explicit_and_bounded():
+    quality = meshing.MeshQuality(maximum_concavity=75)
+    assert quality.to_dict()["maximum_concavity"] == 75.0
+    with pytest.raises(ValueError, match="below 180"):
+        meshing.MeshQuality(maximum_concavity=180)
 
 
 def test_turbulent_inlet_is_explicit_and_fractional():

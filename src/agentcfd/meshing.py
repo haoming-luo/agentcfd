@@ -83,12 +83,14 @@ class MeshQuality:
     maximum_non_orthogonality: float = 65.0
     maximum_skewness: float = 4.0
     maximum_aspect_ratio: float = 1000.0
+    maximum_concavity: float = 80.0
 
     def __post_init__(self) -> None:
         for attribute, label in (
             ("maximum_non_orthogonality", "Maximum mesh non-orthogonality"),
             ("maximum_skewness", "Maximum mesh skewness"),
             ("maximum_aspect_ratio", "Maximum mesh aspect ratio"),
+            ("maximum_concavity", "Maximum mesh concavity"),
         ):
             object.__setattr__(
                 self,
@@ -97,6 +99,8 @@ class MeshQuality:
             )
         if self.maximum_non_orthogonality >= 90.0:
             raise ValueError("Maximum mesh non-orthogonality must be below 90 degrees.")
+        if self.maximum_concavity >= 180.0:
+            raise ValueError("Maximum mesh concavity must be below 180 degrees.")
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

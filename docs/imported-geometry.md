@@ -48,6 +48,16 @@ inlet speed, mass flow, or pressure remains a deliberate user decision. This
 keeps geometry generation solver-neutral and prevents a shape command from
 silently inventing an operating point.
 
+The generated default 0.1 m diameter, 0.15 m bend-radius example has also
+completed the real OpenCFD v2606 mesh path. `surfaceCheck` found 2,624 legal
+triangles, one closed connected surface, and three named regions. AgentCFD then
+produced 23,086 volume cells; maximum non-orthogonality was 40.20 degrees,
+maximum skewness 0.783, maximum aspect ratio 3.76, and all declared
+`meshQualityDict` violation counts were zero. The compact record is
+[`openfoam-v2606-generated-elbow-mesh.json`](openfoam-v2606-generated-elbow-mesh.json).
+This is reproducible geometry/mesh integration evidence, not a flow solution,
+grid-independence result, or physical elbow-loss validation.
+
 ## Inspect external geometry
 
 ```bash
@@ -303,13 +313,18 @@ agentcfd mesh . --output mesh-case
 ```
 
 The execution path runs `blockMesh`, native `snappyHexMesh -checkGeometry
--dry-run`, `snappyHexMesh -overwrite`, and `checkMesh -allGeometry
--allTopology`. It accepts the mesh only when every command succeeds, checkMesh
-reports `Mesh OK`, and observed cell count, non-orthogonality, skewness, and
-aspect ratio satisfy public intent. `-overwrite` avoids retaining one full mesh
-for every snappy stage. The first slice deliberately rejects prism layers,
-non-OpenFOAM region names, unsupported boundary roles, missing interior points,
-and background grids already over budget.
+-dry-run`, `snappyHexMesh -overwrite`, and `checkMesh -allTopology
+-meshQuality`. AgentCFD writes the solver-neutral limits into both
+`snappyHexMeshDict` and an inspectable `meshQualityDict`; it accepts the mesh
+only when every command succeeds, checkMesh reports `Mesh OK`, all configured
+quality-violation counts are zero, and observed cell count,
+non-orthogonality, skewness, and aspect ratio satisfy public intent.
+`-allGeometry` remains a useful stricter diagnostic but is not substituted for
+the declared finite-volume quality policy: it can flag face-plane concavity
+that remains below the explicit `maxConcave` angle. `-overwrite` avoids
+retaining one full mesh for every snappy stage. The first slice deliberately
+rejects prism layers, non-OpenFOAM region names, unsupported boundary roles,
+missing interior points, and background grids already over budget.
 
 The checked-in `examples/imported_duct_mesh` vertical slice produced an
 accepted 6,400-cell OpenCFD v2606 mesh from a 2,688-cell background in about

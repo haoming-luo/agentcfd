@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import jsonschema
 import pytest
@@ -156,3 +157,20 @@ def test_circular_elbow_rejects_unsafe_parameters(tmp_path, updates, message):
         geometry_generation.plan_circular_elbow_stl(
             tmp_path / "elbow.stl", **options
         )
+
+
+def test_checked_in_generated_elbow_openfoam_mesh_evidence_is_valid():
+    repository = Path(__file__).resolve().parents[1]
+    record = json.loads(
+        (repository / "docs/openfoam-v2606-generated-elbow-mesh.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-imported-mesh-result.schema.json")
+    ).validate(record)
+    assert record["accepted"] is True
+    assert record["quantities"]["mesh.policy_violation_count"]["value"] == 0.0
+    assert any(
+        check["code"] == "IMPORTED_MESH_LIMIT_POLICY_VIOLATION_COUNT"
+        and check["status"] == "passed"
+        for check in record["checks"]
+    )

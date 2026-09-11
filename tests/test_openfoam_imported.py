@@ -248,6 +248,7 @@ def test_imported_mesh_plan_is_bounded_and_schema_valid():
     assert plan["surface_levels"] == {"inlet": 2, "outlet": 1, "walls": 1}
     assert plan["interior_point_m"] == [0.05, 0.025, 0.0125]
     assert plan["add_layers"] is False
+    assert plan["quality_limits"]["maximum_concavity"] == 80.0
     assert plan["plan_sha256"].startswith("sha256:")
     jsonschema.Draft202012Validator(
         contracts.load("openfoam-imported-mesh-plan.schema.json")
@@ -278,6 +279,7 @@ def test_imported_mesh_prepare_writes_scaled_surface_and_hard_budget(tmp_path):
     ).read_bytes() == payload
     block = (prepared.directory / "system" / "blockMeshDict").read_text()
     snappy = (prepared.directory / "system" / "snappyHexMeshDict").read_text()
+    quality = (prepared.directory / "system" / "meshQualityDict").read_text()
     assert "(14 9 7)" in block
     assert "scale 0.001" in snappy
     assert "maxGlobalCells 100000" in snappy
@@ -285,6 +287,8 @@ def test_imported_mesh_prepare_writes_scaled_surface_and_hard_budget(tmp_path):
     assert "inlet { name inlet; }" in snappy
     assert "patchInfo { type wall; }" in snappy
     assert "addLayers false" in snappy
+    assert "maxConcave 80;" in snappy
+    assert "maxConcave 80;" in quality
     assert (prepared.directory / "agentcfd-imported-mesh.json").is_file()
 
 
@@ -832,6 +836,8 @@ def test_imported_mesh_execution_gates_geometry_budget_and_quality(
                 "Max aspect ratio = 12.5\n"
                 "Mesh non-orthogonality Max: 42 average: 8\n"
                 "Max skewness = 1.2\n"
+                "Checking faces in error :\n"
+                "    faces with concavity > 80 degrees : 0\n\n"
                 "Mesh OK.\n"
             )
         else:
@@ -880,6 +886,8 @@ def test_imported_mesh_rejects_zero_exit_when_checkmesh_semantics_fail(
                 "Max aspect ratio = 12.5\n"
                 "Mesh non-orthogonality Max: 42 average: 8\n"
                 "Max skewness = 1.2\n"
+                "Checking faces in error :\n"
+                "    faces with concavity > 80 degrees : 1\n\n"
                 "Failed 1 mesh checks.\n"
             )
         else:
@@ -894,6 +902,7 @@ def test_imported_mesh_rejects_zero_exit_when_checkmesh_semantics_fail(
     command_checks = {check["code"]: check for check in result.checks}
     assert result.return_codes["checkMesh"] == 0
     assert command_checks["IMPORTED_MESH_CHECKMESH"]["status"] == "failed"
+    assert result.quantities["mesh.policy_violation_count"]["value"] == 1.0
     assert result.accepted is False
 
 
@@ -1186,6 +1195,8 @@ def test_imported_flow_provider_recovers_accepted_result(tmp_path, monkeypatch):
                 "Max aspect ratio = 12.5\n"
                 "Mesh non-orthogonality Max: 42 average: 8\n"
                 "Max skewness = 1.2\n"
+                "Checking faces in error :\n"
+                "    faces with concavity > 80 degrees : 0\n\n"
                 "Mesh OK.\n"
             )
         elif executable == "simpleFoam":
@@ -1378,7 +1389,10 @@ def test_imported_rans_provider_recovers_fields_and_gates_y_plus(
                 "    cells:            4200\n"
                 "Max aspect ratio = 12.5\n"
                 "Mesh non-orthogonality Max: 42 average: 8\n"
-                "Max skewness = 1.2\nMesh OK.\n"
+                "Max skewness = 1.2\n"
+                "Checking faces in error :\n"
+                "    faces with concavity > 80 degrees : 0\n\n"
+                "Mesh OK.\n"
             )
         elif executable == "simpleFoam":
             final = case / "10"

@@ -388,6 +388,7 @@ def plan_imported_mesh(step: Step) -> ImportedMeshPlan:
             ),
             ("maximum_skewness", step.mesh.quality.maximum_skewness),
             ("maximum_aspect_ratio", step.mesh.quality.maximum_aspect_ratio),
+            ("maximum_concavity", step.mesh.quality.maximum_concavity),
         ),
         add_layers=False,
     )
@@ -533,7 +534,7 @@ meshQualityControls
     maxNonOrtho {_foam_scalar(quality["maximum_non_orthogonality"])};
     maxBoundarySkewness 20;
     maxInternalSkewness {_foam_scalar(quality["maximum_skewness"])};
-    maxConcave 80;
+    maxConcave {_foam_scalar(quality["maximum_concavity"])};
     minVol 1e-13;
     minTetQuality 1e-15;
     minArea -1;
@@ -547,6 +548,26 @@ meshQualityControls
 }}
 
 mergeTolerance 1e-6;
+"""
+
+
+def _mesh_quality_dict(plan: ImportedMeshPlan) -> str:
+    """Render the same declared policy for checkMesh's ``-meshQuality`` gate."""
+
+    quality = dict(plan.quality_limits)
+    return f"""{_header(object_name="meshQualityDict", class_name="dictionary")}maxNonOrtho {_foam_scalar(quality["maximum_non_orthogonality"])};
+maxBoundarySkewness 20;
+maxInternalSkewness {_foam_scalar(quality["maximum_skewness"])};
+maxConcave {_foam_scalar(quality["maximum_concavity"])};
+minVol 1e-13;
+minTetQuality 1e-15;
+minArea -1;
+minTwist 0.02;
+minDeterminant 0.001;
+minFaceWeight 0.05;
+minVolRatio 0.01;
+minTriangleTwist -1;
+minFaceFlatness -1;
 """
 
 
@@ -619,6 +640,7 @@ def prepare_imported_mesh(
     rendered = {
         "system/blockMeshDict": _block_mesh_dict(plan),
         "system/snappyHexMeshDict": _snappy_dict(domain, plan, filename),
+        "system/meshQualityDict": _mesh_quality_dict(plan),
         "system/controlDict": _control_dict(),
         "system/fvSchemes": _fv_schemes(),
         "system/fvSolution": _fv_solution(),
@@ -683,7 +705,7 @@ def _mesh_argv(
         if name == "snappyHexMesh-check"
         else ["-overwrite"]
         if name == "snappyHexMesh"
-        else ["-allGeometry", "-allTopology"]
+        else ["-allTopology", "-meshQuality"]
         if name == "checkMesh"
         else []
     )
@@ -792,6 +814,7 @@ def execute_imported_mesh(
         ("mesh.maximum_non_orthogonality", quality["maximum_non_orthogonality"]),
         ("mesh.maximum_skewness", quality["maximum_skewness"]),
         ("mesh.maximum_aspect_ratio", quality["maximum_aspect_ratio"]),
+        ("mesh.policy_violation_count", 0.0),
     )
     for quantity_name, limit in policy_checks:
         quantity = observed.get(quantity_name)

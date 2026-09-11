@@ -1,0 +1,37 @@
+{
+  "accepted": true,
+  "checks": [
+    {"code": "IMPORTED_MESH_BLOCKMESH", "log": "log.blockMesh", "status": "passed"},
+    {"code": "IMPORTED_MESH_SNAPPYHEXMESH_CHECK", "log": "log.snappyHexMesh-check", "status": "passed"},
+    {"code": "IMPORTED_MESH_SNAPPYHEXMESH", "log": "log.snappyHexMesh", "status": "passed"},
+    {"code": "IMPORTED_MESH_CHECKMESH", "log": "log.checkMesh", "status": "passed"},
+    {"code": "IMPORTED_MESH_LIMIT_CELL_COUNT", "limit": 500000, "observed": 23086.0, "status": "passed"},
+    {"code": "IMPORTED_MESH_LIMIT_MAXIMUM_NON_ORTHOGONALITY", "limit": 65.0, "observed": 40.1989149, "status": "passed"},
+    {"code": "IMPORTED_MESH_LIMIT_MAXIMUM_SKEWNESS", "limit": 4.0, "observed": 0.7832740146, "status": "passed"},
+    {"code": "IMPORTED_MESH_LIMIT_MAXIMUM_ASPECT_RATIO", "limit": 1000.0, "observed": 3.761285524, "status": "passed"},
+    {"code": "IMPORTED_MESH_LIMIT_POLICY_VIOLATION_COUNT", "limit": 0.0, "observed": 0.0, "status": "passed"}
+  ],
+  "directory": "validation/generated-elbow/mesh-case",
+  "durations_seconds": {
+    "blockMesh": 0.3540645419852808,
+    "checkMesh": 0.4191471660742536,
+    "snappyHexMesh": 1.669186667073518,
+    "snappyHexMesh-check": 0.5177936250111088
+  },
+  "quantities": {
+    "mesh.average_non_orthogonality": {"description": "", "kind": "quantity_of_interest", "name": "mesh.average_non_orthogonality", "shape": [], "unit": "deg", "value": 8.27164919},
+    "mesh.cell_count": {"description": "", "kind": "quantity_of_interest", "name": "mesh.cell_count", "shape": [], "unit": "1", "value": 23086.0},
+    "mesh.concavity_violation_count": {"description": "", "kind": "quantity_of_interest", "name": "mesh.concavity_violation_count", "shape": [], "unit": "1", "value": 0.0},
+    "mesh.maximum_aspect_ratio": {"description": "", "kind": "quantity_of_interest", "name": "mesh.maximum_aspect_ratio", "shape": [], "unit": "1", "value": 3.761285524},
+    "mesh.maximum_non_orthogonality": {"description": "", "kind": "quantity_of_interest", "name": "mesh.maximum_non_orthogonality", "shape": [], "unit": "deg", "value": 40.1989149},
+    "mesh.maximum_skewness": {"description": "", "kind": "quantity_of_interest", "name": "mesh.maximum_skewness", "shape": [], "unit": "1", "value": 0.7832740146},
+    "mesh.policy_violation_count": {"description": "", "kind": "quantity_of_interest", "name": "mesh.policy_violation_count", "shape": [], "unit": "1", "value": 0.0}
+  },
+  "return_codes": {
+    "blockMesh": 0,
+    "checkMesh": 0,
+    "snappyHexMesh": 0,
+    "snappyHexMesh-check": 0
+  },
+  "schema": "agentcfd.openfoam-imported-mesh-result/0.1"
+}

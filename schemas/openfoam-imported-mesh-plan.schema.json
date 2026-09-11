@@ -33,11 +33,12 @@
     },
     "quality_limits": {
       "type": "object",
-      "required": ["maximum_non_orthogonality", "maximum_skewness", "maximum_aspect_ratio"],
+      "required": ["maximum_non_orthogonality", "maximum_skewness", "maximum_aspect_ratio", "maximum_concavity"],
       "properties": {
         "maximum_non_orthogonality": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 90},
         "maximum_skewness": {"type": "number", "exclusiveMinimum": 0},
-        "maximum_aspect_ratio": {"type": "number", "exclusiveMinimum": 0}
+        "maximum_aspect_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "maximum_concavity": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 180}
       },
       "additionalProperties": false
     },

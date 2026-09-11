@@ -31,6 +31,7 @@ from . import (
     data_exchange,
     diagnostics,
     engineering,
+    geometry_generation,
     geometry_io,
     outputs,
     parameters as parameter_definitions,
@@ -94,9 +95,11 @@ class ProjectIssue:
 class ProjectManifest:
     entrypoint: str
     factory: str
+    template: str | None
     default_provider: str
     run_directory: str
     run_mode: str
+    generated_geometry_spec: str | None
     openfoam: Mapping[str, object]
 
     @classmethod
@@ -111,9 +114,11 @@ class ProjectManifest:
             "schema",
             "entrypoint",
             "factory",
+            "template",
             "default_provider",
             "run_directory",
             "run_mode",
+            "generated_geometry_spec",
             "openfoam",
         }
         unknown = sorted(set(payload) - allowed)
@@ -137,18 +142,36 @@ class ProjectManifest:
             raise ProjectError(
                 "Project default_provider must be 'reference' or 'openfoam'."
             )
+        template = payload.get("template")
+        if template is not None:
+            if not isinstance(template, str):
+                raise ProjectError("Project template must be a string when present.")
+            try:
+                project_templates.get(template)
+            except ValueError as error:
+                raise ProjectError(str(error)) from error
         openfoam = payload.get("openfoam", {})
         if not isinstance(openfoam, dict):
             raise ProjectError("Project [openfoam] settings must be a table.")
         run_mode = payload.get("run_mode", "campaign")
         if run_mode not in {"replace", "campaign"}:
             raise ProjectError("Project run_mode must be 'replace' or 'campaign'.")
+        generated_geometry_spec = payload.get("generated_geometry_spec")
+        if generated_geometry_spec is not None and generated_geometry_spec != (
+            "geometry/spec.json"
+        ):
+            raise ProjectError(
+                "Project generated_geometry_spec currently supports only "
+                "'geometry/spec.json'."
+            )
         return cls(
             entrypoint=str(strings["entrypoint"]).strip(),
             factory=str(strings["factory"]).strip(),
+            template=template,
             default_provider=provider,
             run_directory=str(strings["run_directory"]).strip(),
             run_mode=str(run_mode),
+            generated_geometry_spec=generated_geometry_spec,
             openfoam=dict(openfoam),
         )
 
@@ -390,6 +413,7 @@ _PROJECT_ACTION_POLICIES = {
     "check": ("observe", False, False),
     "clean": ("maintain", False, False),
     "diagnose": ("observe", False, False),
+    "geometry-sync": ("maintain", True, False),
     "logs": ("observe", False, False),
     "observations": ("observe", False, False),
     "performance": ("observe", False, False),
@@ -403,6 +427,92 @@ _PROJECT_ACTION_POLICIES = {
     "view": ("review", False, False),
     "watch": ("observe", False, False),
 }
+
+
+_GENERATED_ELBOW_PARAMETER_NAMES = (
+    "diameter_m",
+    "bend_radius_m",
+    "inlet_length_m",
+    "outlet_length_m",
+    "cross_section_segments",
+    "bend_segments",
+    "inlet_segments",
+    "outlet_segments",
+)
+
+
+def _normalize_generated_elbow_spec(
+    payload: Mapping[str, object],
+    *,
+    target: Path,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Validate one editable geometry spec and resolve its exact artifact plan."""
+
+    allowed = {"schema", "type", "parameters"}
+    unknown = sorted(set(payload) - allowed)
+    if unknown:
+        raise ProjectError(
+            "Unknown generated geometry specification keys: "
+            + ", ".join(unknown)
+            + "."
+        )
+    if payload.get("schema") != "agentcfd.generated-geometry-spec/0.1":
+        raise ProjectError("Unsupported generated geometry specification schema.")
+    if payload.get("type") != "circular-elbow-90deg":
+        raise ProjectError("Only circular-elbow-90deg generated geometry is supported.")
+    raw_parameters = payload.get("parameters")
+    if not isinstance(raw_parameters, Mapping):
+        raise ProjectError("Generated geometry parameters must be an object.")
+    parameter_unknown = sorted(
+        set(raw_parameters) - set(_GENERATED_ELBOW_PARAMETER_NAMES)
+    )
+    parameter_missing = sorted(
+        set(_GENERATED_ELBOW_PARAMETER_NAMES) - set(raw_parameters)
+    )
+    if parameter_unknown or parameter_missing:
+        details = [
+            *(f"unknown parameters: {', '.join(parameter_unknown)}" for _ in [0] if parameter_unknown),
+            *(f"missing parameters: {', '.join(parameter_missing)}" for _ in [0] if parameter_missing),
+        ]
+        raise ProjectError("Generated geometry specification has " + "; ".join(details) + ".")
+    try:
+        plan = geometry_generation.plan_circular_elbow_stl(
+            target,
+            **{name: raw_parameters[name] for name in _GENERATED_ELBOW_PARAMETER_NAMES},
+        )
+    except (TypeError, ValueError) as error:
+        raise ProjectError(f"Generated geometry specification is invalid: {error}") from error
+    resolved = plan["geometry"]["parameters"]
+    assert isinstance(resolved, dict)
+    return (
+        {
+            "schema": "agentcfd.generated-geometry-spec/0.1",
+            "type": "circular-elbow-90deg",
+            "parameters": dict(resolved),
+        },
+        plan,
+    )
+
+
+def _portable_generated_geometry_report(
+    report: Mapping[str, object],
+    *,
+    next_command: str,
+) -> dict[str, object]:
+    """Convert an exact generator report into a movable project record."""
+
+    portable = json.loads(json.dumps(report))
+    portable["artifact"]["path"] = "geometry/fluid.stl"
+    portable["artifact"]["written"] = True
+    portable["artifact"]["already_exists"] = False
+    portable["recommendations"]["project_initialization"]["geometry_path"] = (
+        "geometry/fluid.stl"
+    )
+    portable["next_action"] = {
+        "command": next_command,
+        "reason": "Inspect project readiness before starting the solver.",
+    }
+    return portable
 
 
 def _structured_project_action(action: Mapping[str, object]) -> dict[str, object]:
@@ -1608,6 +1718,264 @@ class Project:
 
         return self.load_step(parameters).observation_catalog()
 
+    def _generated_geometry_state(self) -> dict[str, object] | None:
+        """Inspect a project-owned geometry specification without mutating it."""
+
+        if self.manifest.generated_geometry_spec is None:
+            return None
+        geometry_directory = self.root / "geometry"
+        spec_path = _safe_project_path(
+            self.root,
+            self.manifest.generated_geometry_spec,
+            label="generated geometry specification",
+        )
+        artifact_path = geometry_directory / "fluid.stl"
+        generation_path = geometry_directory / "generation.json"
+        inspection_path = geometry_directory / "inspection.json"
+        project_argument = self._cli_project_argument()
+        spec_sha256 = file_sha256(spec_path) if spec_path.is_file() else None
+        spec_error: str | None = None
+        expected: dict[str, object] | None = None
+        if not spec_path.is_file():
+            spec_error = f"Generated geometry specification is missing: {spec_path}."
+        else:
+            try:
+                raw_spec = strict_json_object(
+                    spec_path.read_text(encoding="utf-8"),
+                    label=f"generated geometry specification {spec_path}",
+                )
+                _normalized_spec, expected = _normalize_generated_elbow_spec(
+                    raw_spec,
+                    target=artifact_path,
+                )
+            except (OSError, ProjectError) as error:
+                spec_error = str(error)
+
+        expected_sha256 = (
+            None
+            if expected is None
+            else str(expected["artifact"]["sha256"])
+        )
+        artifact_exists = artifact_path.is_file()
+        current_sha256 = (
+            "sha256:" + file_sha256(artifact_path) if artifact_exists else None
+        )
+        size_bytes = artifact_path.stat().st_size if artifact_exists else None
+
+        generation_valid = False
+        generation_matches = False
+        try:
+            generation = strict_json_object(
+                generation_path.read_text(encoding="utf-8"),
+                label=f"generated geometry record {generation_path}",
+            )
+        except (OSError, ProjectError):
+            generation = None
+        if generation is not None:
+            generation_valid = generation.get("schema") == "agentcfd.generated-geometry/0.1"
+            generation_artifact = generation.get("artifact")
+            expected_portable = (
+                None
+                if expected is None
+                else _portable_generated_geometry_report(
+                    expected,
+                    next_command="agentcfd status .",
+                )
+            )
+            generation_matches = bool(
+                generation_valid
+                and expected is not None
+                and expected_portable is not None
+                and generation.get("geometry") == expected.get("geometry")
+                and generation.get("recommendations")
+                == expected_portable.get("recommendations")
+                and isinstance(generation_artifact, Mapping)
+                and generation_artifact.get("path") == "geometry/fluid.stl"
+                and generation_artifact.get("sha256") == expected_sha256
+                and generation_artifact.get("size_bytes")
+                == expected_portable["artifact"]["size_bytes"]
+                and generation_artifact.get("written") is True
+                and generation_artifact.get("already_exists") is False
+            )
+
+        inspection_valid = False
+        inspection_matches = False
+        try:
+            inspection = strict_json_object(
+                inspection_path.read_text(encoding="utf-8"),
+                label=f"generated geometry inspection {inspection_path}",
+            )
+        except (OSError, ProjectError):
+            inspection = None
+        if inspection is not None:
+            inspection_valid = inspection.get("schema") == "agentcfd.geometry-inspection/0.1"
+            inspection_source = inspection.get("source")
+            inspection_surface = inspection.get("surface")
+            inspection_roles = inspection.get("boundary_roles")
+            inspection_readiness = inspection.get("readiness")
+            expected_geometry = None if expected is None else expected.get("geometry")
+            expected_recommendations = (
+                None if expected is None else expected.get("recommendations")
+            )
+            inspection_matches = bool(
+                inspection_valid
+                and isinstance(inspection_source, Mapping)
+                and inspection_source.get("path") == "geometry/fluid.stl"
+                and inspection_source.get("sha256") == current_sha256
+                and isinstance(inspection_surface, Mapping)
+                and isinstance(expected_geometry, Mapping)
+                and inspection_surface.get("bounds_m") == expected_geometry.get("bounds_m")
+                and isinstance(inspection_roles, Mapping)
+                and isinstance(expected_recommendations, Mapping)
+                and inspection_roles.get("confirmed")
+                == expected_recommendations.get("boundary_roles")
+                and isinstance(inspection_readiness, Mapping)
+                and inspection_readiness.get("ready_for_import_setup") is True
+            )
+
+        synchronized = bool(
+            spec_error is None
+            and artifact_exists
+            and current_sha256 == expected_sha256
+            and generation_matches
+            and inspection_matches
+        )
+        if spec_error is not None:
+            next_action = {
+                "command": f"agentcfd check {project_argument}",
+                "reason": f"Repair geometry/spec.json: {spec_error}",
+            }
+        elif synchronized:
+            next_action = {
+                "command": f"agentcfd status {project_argument}",
+                "reason": "Generated geometry already matches its editable specification.",
+            }
+        else:
+            next_action = {
+                "command": f"agentcfd geometry-sync {project_argument} --apply",
+                "reason": (
+                    "Regenerate the derived STL and inspection from geometry/spec.json "
+                    "before solving."
+                ),
+            }
+        return {
+            "schema": "agentcfd.generated-geometry-sync/0.1",
+            "root": str(self.root),
+            "managed": True,
+            "synchronized": synchronized,
+            "applied": False,
+            "spec": {
+                "path": "geometry/spec.json",
+                "valid": spec_error is None,
+                "sha256": spec_sha256,
+                "error": spec_error,
+            },
+            "artifact": {
+                "path": "geometry/fluid.stl",
+                "exists": artifact_exists,
+                "current_sha256": current_sha256,
+                "expected_sha256": expected_sha256,
+                "size_bytes": size_bytes,
+            },
+            "generation_record": {
+                "path": "geometry/generation.json",
+                "valid": generation_valid,
+                "matches_expected": generation_matches,
+            },
+            "inspection_record": {
+                "path": "geometry/inspection.json",
+                "valid": inspection_valid,
+                "matches_artifact": inspection_matches,
+            },
+            "next_action": next_action,
+        }
+
+    def sync_generated_geometry(self, *, apply: bool = False) -> dict[str, object]:
+        """Preview or atomically refresh a project-owned generated fluid volume."""
+
+        if not isinstance(apply, bool):
+            raise ProjectError("Generated geometry apply must be boolean.")
+        before = self._generated_geometry_state()
+        if before is None:
+            raise ProjectError(
+                "This project has no managed geometry/spec.json. Use geometry-create "
+                "for standalone geometry or initialize template='industrial-elbow'."
+            )
+        if before["spec"]["valid"] is not True:
+            raise ProjectError(str(before["spec"]["error"]))
+        if before["synchronized"] is True or not apply:
+            return before
+
+        for record in self._run_records():
+            if record.get("status") in {"preparing", "running", "exporting"} and (
+                _process_is_alive(record.get("pid"))
+            ):
+                raise ProjectError(
+                    "Generated geometry cannot change while a project run is active."
+                )
+
+        geometry_directory = self.root / "geometry"
+        spec_path = geometry_directory / "spec.json"
+        raw_spec = strict_json_object(
+            spec_path.read_text(encoding="utf-8"),
+            label=f"generated geometry specification {spec_path}",
+        )
+        normalized_spec, _expected = _normalize_generated_elbow_spec(
+            raw_spec,
+            target=geometry_directory / "fluid.stl",
+        )
+        parameters = normalized_spec["parameters"]
+        assert isinstance(parameters, dict)
+        staging = geometry_directory / f".fluid.{os.getpid()}.stl"
+        if staging.exists():
+            raise ProjectError(f"Generated geometry staging path already exists: {staging}")
+        try:
+            _, generated = geometry_generation.write_circular_elbow_stl(
+                staging,
+                **parameters,
+            )
+            recommendations = generated["recommendations"]
+            assert isinstance(recommendations, dict)
+            roles = recommendations["boundary_roles"]
+            assert isinstance(roles, dict)
+            inspection = geometry_io.inspect_geometry(
+                staging,
+                unit="m",
+                boundary_roles=roles,
+                internal_flow=True,
+            )
+            if inspection["readiness"]["ready_for_import_setup"] is not True:
+                raise ProjectError(
+                    "Regenerated geometry failed the independent import inspection."
+                )
+            artifact_path = geometry_directory / "fluid.stl"
+            portable_inspection = json.loads(json.dumps(inspection))
+            portable_inspection["source"]["path"] = "geometry/fluid.stl"
+            portable_generation = _portable_generated_geometry_report(
+                generated,
+                next_command="agentcfd status .",
+            )
+            staging.replace(artifact_path)
+            _write_json_atomic(
+                geometry_directory / "inspection.json",
+                portable_inspection,
+            )
+            _write_json_atomic(
+                geometry_directory / "generation.json",
+                portable_generation,
+            )
+        finally:
+            if staging.exists():
+                staging.unlink()
+
+        after = self._generated_geometry_state()
+        if after is None or after["synchronized"] is not True:
+            raise ProjectError(
+                "Generated geometry refresh completed but synchronization evidence is inconsistent."
+            )
+        after["applied"] = True
+        return after
+
     def _openfoam_settings(self) -> dict[str, object]:
         settings = dict(self.manifest.openfoam)
         allowed = {
@@ -1874,6 +2242,28 @@ class Project:
                         "Reinspect the asset and explicitly update model intent.",
                     )
                 )
+        generated_geometry = self._generated_geometry_state()
+        if (
+            generated_geometry is not None
+            and generated_geometry["synchronized"] is not True
+        ):
+            input_assets_ready = False
+            spec = generated_geometry["spec"]
+            assert isinstance(spec, Mapping)
+            issue_code = (
+                "GENERATED_GEOMETRY_SPEC_INVALID"
+                if spec["valid"] is not True
+                else "GENERATED_GEOMETRY_OUT_OF_DATE"
+            )
+            issues.append(
+                ProjectIssue(
+                    issue_code,
+                    "error",
+                    str(generated_geometry["next_action"]["reason"]),
+                    "geometry/spec.json",
+                    str(generated_geometry["next_action"]["reason"]),
+                )
+            )
 
         reynolds = _inlet_reynolds(step) if model_valid else None
         if selected_name == "reference" and reynolds is not None and reynolds >= 2300:
@@ -2000,6 +2390,7 @@ class Project:
             ),
             "output_plan": output_plan,
             "imported_mesh_plan": imported_mesh_plan,
+            "generated_geometry": generated_geometry,
             "thermal_preflight": (
                 _thermal_preflight(step)
                 if model_valid
@@ -2014,6 +2405,7 @@ class Project:
             "schema": "agentcfd.solution-plan/0.1",
             "project": {
                 "root": str(self.root),
+                "template": self.manifest.template,
                 "entrypoint": self.manifest.entrypoint,
                 "entrypoint_sha256": file_sha256(self.entrypoint),
                 "factory": self.manifest.factory,
@@ -4678,16 +5070,30 @@ class Project:
         )
         recovery = self._recovery_status(step, plan, latest)
         if state == "blocked":
-            next_action = {
-                "command": f"agentcfd check {project_argument}",
-                "reason": (
-                    error_issues[0]["repair"]
-                    if error_issues
-                    else plan["issues"][0]["repair"]
-                    if plan["issues"]
-                    else "Resolve readiness issues."
+            generated_outdated = next(
+                (
+                    issue
+                    for issue in error_issues
+                    if issue.get("code") == "GENERATED_GEOMETRY_OUT_OF_DATE"
                 ),
-            }
+                None,
+            )
+            if generated_outdated is not None:
+                next_action = {
+                    "command": f"agentcfd geometry-sync {project_argument} --apply",
+                    "reason": generated_outdated["repair"],
+                }
+            else:
+                next_action = {
+                    "command": f"agentcfd check {project_argument}",
+                    "reason": (
+                        error_issues[0]["repair"]
+                        if error_issues
+                        else plan["issues"][0]["repair"]
+                        if plan["issues"]
+                        else "Resolve readiness issues."
+                    ),
+                }
         elif state in {"ready", "modified"}:
             next_action = {
                 "command": f"agentcfd run {project_argument}",
@@ -4887,6 +5293,7 @@ class Project:
                 "root": str(self.root),
                 "manifest": str(self.manifest_path),
                 "entrypoint": str(self.entrypoint),
+                "template": self.manifest.template,
                 "provider": self.manifest.default_provider,
                 "run_mode": self.manifest.run_mode,
                 "output_directory": str(self.run_root),
@@ -5000,6 +5407,24 @@ class Project:
             availability_reason="Input and provider readiness can always be checked.",
             cost="bounded-io",
         )
+        generated_geometry = self._generated_geometry_state()
+        if generated_geometry is not None:
+            synchronized = generated_geometry["synchronized"] is True
+            add(
+                "geometry-sync",
+                (
+                    f"agentcfd geometry-sync {project_argument} --json"
+                    if synchronized
+                    else f"agentcfd geometry-sync {project_argument} --apply --json"
+                ),
+                available=state != "running",
+                availability_reason=(
+                    "Generated geometry is synchronized; preview remains available."
+                    if synchronized
+                    else "Refresh the derived geometry before another solver run."
+                ),
+                cost="bounded-io",
+            )
         add(
             "plan",
             f"agentcfd plan {project_argument} --json",
@@ -6661,7 +7086,7 @@ def _imported_internal_flow_template(
         }[role]
         conditions.append(f"        {name!r}: {constructor},")
     boundary_block = "\n".join(conditions)
-    return f'''"""Imported internal flow: edit engineering intent, not OpenFOAM files."""
+    return f'''"""Industrial internal flow: edit engineering intent, not OpenFOAM files."""
 
 import json
 from pathlib import Path
@@ -6750,10 +7175,16 @@ def build(
 ):
     root = Path(__file__).parent
     inspection = json.loads((root / "geometry/inspection.json").read_text())
+    generation_path = root / "geometry/generation.json"
+    if generation_path.is_file():
+        generation = json.loads(generation_path.read_text())
+        interior_point_m = tuple(generation["recommendations"]["interior_point_m"])
+    else:
+        interior_point_m = {interior_point_m!r}
     domain = geometry.imported_surface_from_inspection(
         inspection,
         asset={asset!r},
-        interior_point_m={interior_point_m!r},
+        interior_point_m=interior_point_m,
     )
     velocity = (velocity_x, velocity_y, velocity_z)
     velocity_active = any(component != 0.0 for component in velocity)
@@ -6860,7 +7291,8 @@ def init_project_from_request(
     """Create a readable project from a versioned, ephemeral creation request.
 
     The request is an automation and GUI boundary only. The generated
-    ``case.py`` remains the project's scientific source of truth.
+    ``case.py`` remains the project's physics and operating source of truth;
+    managed generated templates keep geometry intent in ``geometry/spec.json``.
     """
 
     if not isinstance(request, Mapping):
@@ -6871,6 +7303,7 @@ def init_project_from_request(
         "template",
         "provider",
         "geometry",
+        "generated_geometry",
         "interior_point_m",
         "inlet_velocity_m_s",
         "inlet_mass_flow_kg_s",
@@ -6892,11 +7325,113 @@ def init_project_from_request(
         raise ProjectError(
             "Project creation request requires template and provider strings."
         )
+    if template == "industrial-elbow":
+        unexpected = sorted(
+            key
+            for key in ("geometry", "interior_point_m", "parameters", "flow_distribution")
+            if key in payload
+        )
+        if unexpected:
+            raise ProjectError(
+                "Template 'industrial-elbow' does not accept request sections: "
+                + ", ".join(unexpected)
+                + "."
+            )
+        missing = sorted(
+            key for key in ("generated_geometry", "mesh") if key not in payload
+        )
+        if missing:
+            raise ProjectError(
+                "Industrial-elbow project creation request is missing: "
+                + ", ".join(missing)
+                + "."
+            )
+        inlet_controls = sum(
+            key in payload
+            for key in (
+                "inlet_velocity_m_s",
+                "inlet_mass_flow_kg_s",
+                "inlet_total_gauge_pressure_pa",
+            )
+        )
+        if inlet_controls != 1:
+            raise ProjectError(
+                "Industrial-elbow project creation requires exactly one of "
+                "inlet_velocity_m_s, inlet_mass_flow_kg_s, or "
+                "inlet_total_gauge_pressure_pa."
+            )
+        generated = payload["generated_geometry"]
+        mesh_record = payload["mesh"]
+        if not isinstance(generated, Mapping):
+            raise ProjectError("Project generated_geometry must be an object.")
+        if not isinstance(mesh_record, Mapping):
+            raise ProjectError("Project creation mesh must be an object.")
+        generated_allowed = {
+            "type",
+            "diameter_m",
+            "bend_radius_m",
+            "inlet_length_m",
+            "outlet_length_m",
+            "cross_section_segments",
+            "bend_segments",
+            "inlet_segments",
+            "outlet_segments",
+        }
+        generated_unknown = sorted(set(generated) - generated_allowed)
+        generated_missing = sorted(
+            {"type", "diameter_m", "bend_radius_m", "inlet_length_m", "outlet_length_m"}
+            - set(generated)
+        )
+        mesh_unknown = sorted(set(mesh_record) - {"base_size_m", "maximum_cells"})
+        mesh_missing = sorted(
+            {"base_size_m", "maximum_cells"} - set(mesh_record)
+        )
+        if generated_unknown or generated_missing or mesh_unknown or mesh_missing:
+            details = [
+                *(f"generated_geometry.{name}" for name in generated_missing),
+                *(f"unknown generated_geometry.{name}" for name in generated_unknown),
+                *(f"mesh.{name}" for name in mesh_missing),
+                *(f"unknown mesh.{name}" for name in mesh_unknown),
+            ]
+            raise ProjectError(
+                "Industrial-elbow project creation request is invalid: "
+                + ", ".join(details)
+                + "."
+            )
+        if generated["type"] != "circular-elbow-90deg":
+            raise ProjectError(
+                "Industrial-elbow generated_geometry.type must be "
+                "'circular-elbow-90deg'."
+            )
+        try:
+            return init_project(
+                directory,
+                provider=provider,
+                template=template,
+                diameter_m=generated["diameter_m"],
+                bend_radius_m=generated["bend_radius_m"],
+                inlet_length_m=generated["inlet_length_m"],
+                outlet_length_m=generated["outlet_length_m"],
+                cross_section_segments=generated.get("cross_section_segments"),
+                bend_segments=generated.get("bend_segments"),
+                inlet_segments=generated.get("inlet_segments"),
+                outlet_segments=generated.get("outlet_segments"),
+                inlet_velocity_m_s=payload.get("inlet_velocity_m_s"),
+                inlet_mass_flow_kg_s=payload.get("inlet_mass_flow_kg_s"),
+                inlet_total_gauge_pressure_pa=payload.get(
+                    "inlet_total_gauge_pressure_pa"
+                ),
+                base_size_m=mesh_record["base_size_m"],
+                maximum_cells=mesh_record["maximum_cells"],
+            )
+        except (TypeError, ValueError) as error:
+            raise ProjectError(str(error)) from error
     if template == "heated-pipe":
         unexpected = sorted(
             key
             for key in (
                 "geometry",
+                "generated_geometry",
                 "interior_point_m",
                 "inlet_velocity_m_s",
                 "inlet_mass_flow_kg_s",
@@ -6931,6 +7466,7 @@ def init_project_from_request(
             key
             for key in (
                 "geometry",
+                "generated_geometry",
                 "interior_point_m",
                 "inlet_velocity_m_s",
                 "inlet_mass_flow_kg_s",
@@ -6949,6 +7485,10 @@ def init_project_from_request(
             )
         return init_project(directory, provider=provider, template=template)
 
+    if "generated_geometry" in payload:
+        raise ProjectError(
+            "Template 'imported-internal-flow' does not accept generated_geometry."
+        )
     missing = sorted(
         key for key in ("geometry", "interior_point_m", "mesh") if key not in payload
     )
@@ -7113,6 +7653,14 @@ def init_project(
     outlet_target_fractions: Mapping[str, float] | None = None,
     maximum_fraction_error: float | None = None,
     parameter_defaults: Mapping[str, object] | None = None,
+    diameter_m: float | None = None,
+    bend_radius_m: float | None = None,
+    inlet_length_m: float | None = None,
+    outlet_length_m: float | None = None,
+    cross_section_segments: int | None = None,
+    bend_segments: int | None = None,
+    inlet_segments: int | None = None,
+    outlet_segments: int | None = None,
 ) -> Project:
     """Create a complete editable project without overwriting user data."""
 
@@ -7128,6 +7676,178 @@ def init_project(
         raise ValueError(
             f"The {template} template supports providers "
             f"{template_spec.providers}, not {provider!r}."
+        )
+    generated_options = (
+        diameter_m,
+        bend_radius_m,
+        inlet_length_m,
+        outlet_length_m,
+        cross_section_segments,
+        bend_segments,
+        inlet_segments,
+        outlet_segments,
+    )
+    if template == "industrial-elbow":
+        forbidden_imported_options = (
+            geometry_path,
+            geometry_unit,
+            boundary_roles,
+            accept_name_roles,
+            accept_multiple_components,
+            interior_point_m,
+            outlet_target_fractions,
+            maximum_fraction_error,
+            parameter_defaults,
+        )
+        if any(
+            value is not None and value is not False
+            for value in forbidden_imported_options
+        ):
+            raise ValueError(
+                "The industrial-elbow template generates and owns its geometry; "
+                "do not pass imported geometry, roles, interior point, distribution, "
+                "or parameter-default options."
+            )
+        missing_dimensions = [
+            name
+            for name, value in (
+                ("diameter_m", diameter_m),
+                ("bend_radius_m", bend_radius_m),
+                ("inlet_length_m", inlet_length_m),
+                ("outlet_length_m", outlet_length_m),
+            )
+            if value is None
+        ]
+        if missing_dimensions:
+            raise ValueError(
+                "Industrial-elbow initialization requires: "
+                + ", ".join(missing_dimensions)
+                + "."
+            )
+        root = Path(directory)
+        if root.exists() and any(root.iterdir()):
+            raise FileExistsError(f"Project directory is not empty: {root}")
+        assert diameter_m is not None
+        assert bend_radius_m is not None
+        assert inlet_length_m is not None
+        assert outlet_length_m is not None
+        with tempfile.TemporaryDirectory(prefix="agentcfd-elbow-") as temporary:
+            generated_path = Path(temporary) / "fluid.stl"
+            _, generated_report = geometry_generation.write_circular_elbow_stl(
+                generated_path,
+                diameter_m=diameter_m,
+                bend_radius_m=bend_radius_m,
+                inlet_length_m=inlet_length_m,
+                outlet_length_m=outlet_length_m,
+                cross_section_segments=(
+                    32 if cross_section_segments is None else cross_section_segments
+                ),
+                bend_segments=bend_segments,
+                inlet_segments=inlet_segments,
+                outlet_segments=outlet_segments,
+            )
+            recommendations = generated_report["recommendations"]
+            assert isinstance(recommendations, dict)
+            mesh_start = recommendations["mesh_starting_point"]
+            assert isinstance(mesh_start, dict)
+            project = init_project(
+                directory,
+                provider="openfoam",
+                template="imported-internal-flow",
+                geometry_path=generated_path,
+                geometry_unit="m",
+                boundary_roles={"inlet": "inlet", "outlet": "outlet", "walls": "wall"},
+                interior_point_m=tuple(recommendations["interior_point_m"]),
+                inlet_velocity_m_s=inlet_velocity_m_s,
+                inlet_mass_flow_kg_s=inlet_mass_flow_kg_s,
+                inlet_total_gauge_pressure_pa=inlet_total_gauge_pressure_pa,
+                base_size_m=(
+                    mesh_start["base_size_m"] if base_size_m is None else base_size_m
+                ),
+                maximum_cells=(
+                    mesh_start["maximum_cells"]
+                    if maximum_cells is None
+                    else maximum_cells
+                ),
+            )
+        manifest_path = project.root / "agentcfd.toml"
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        marker = 'run_mode = "replace"\n'
+        imported_template_marker = 'template = "imported-internal-flow"\n'
+        if marker not in manifest_text or imported_template_marker not in manifest_text:
+            raise ProjectError(
+                "Generated geometry project requires a typed replace-mode manifest."
+            )
+        manifest_temporary = manifest_path.with_suffix(".toml.tmp")
+        manifest_temporary.write_text(
+            manifest_text.replace(
+                marker,
+                marker + 'generated_geometry_spec = "geometry/spec.json"\n',
+                1,
+            ).replace(
+                imported_template_marker,
+                'template = "industrial-elbow"\n',
+                1,
+            ),
+            encoding="utf-8",
+        )
+        manifest_temporary.replace(manifest_path)
+        project = Project(project.root)
+        resolved_parameters = generated_report["geometry"]["parameters"]
+        assert isinstance(resolved_parameters, dict)
+        geometry_directory = project.root / "geometry"
+        _write_json_atomic(
+            geometry_directory / "spec.json",
+            {
+                "schema": "agentcfd.generated-geometry-spec/0.1",
+                "type": "circular-elbow-90deg",
+                "parameters": dict(resolved_parameters),
+            },
+        )
+        _write_json_atomic(
+            geometry_directory / "generation.json",
+            _portable_generated_geometry_report(
+                generated_report,
+                next_command="agentcfd status .",
+            ),
+        )
+        existing_readme = (project.root / "README.md").read_text(encoding="utf-8")
+        workflow_start = existing_readme.index("Edit `case.py`")
+        (project.root / "README.md").write_text(
+            "# AgentCFD industrial-elbow\n\n"
+            "This project owns a parameterized circular 90-degree elbow. Edit "
+            "`geometry/spec.json`, preview the exact derived identity with "
+            "`agentcfd geometry-sync . --json`, then apply it with "
+            "`agentcfd geometry-sync . --apply`. The managed `fluid.stl`, "
+            "`generation.json`, boundary roles, and independent inspection stay in "
+            "`geometry/`; stale or inconsistent geometry blocks solver execution. "
+            "Mesh defaults are a bounded starting point, not accuracy evidence. "
+            "`case.py` owns the operating point, fluid, turbulence choice, mesh "
+            "budget, and requested results.\n\n"
+            + existing_readme[workflow_start:],
+            encoding="utf-8",
+        )
+        agent_instructions = (project.root / "AGENTS.md").read_text(encoding="utf-8")
+        (project.root / "AGENTS.md").write_text(
+            agent_instructions.replace(
+                "Treat `case.py` as the modeling source of truth.",
+                "Treat `case.py` as the physics and operating source of truth, and "
+                "`geometry/spec.json` as generated-geometry intent. Never edit "
+                "`geometry/fluid.stl`, `generation.json`, or `inspection.json` "
+                "directly; preview and apply `agentcfd geometry-sync` instead.",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        synchronized = project._generated_geometry_state()
+        if synchronized is None or synchronized["synchronized"] is not True:
+            raise ProjectError(
+                "Generated elbow project was created but its geometry evidence is inconsistent."
+            )
+        return project
+    if any(value is not None for value in generated_options):
+        raise ValueError(
+            "Elbow geometry parameters require template='industrial-elbow'."
         )
     imported_options = (
         geometry_path,
@@ -7391,6 +8111,7 @@ def init_project(
         else ""
     )
     manifest = f'''schema = "agentcfd.project/0.1"
+template = "{template}"
 entrypoint = "case.py"
 factory = "build"
 default_provider = "{provider}"

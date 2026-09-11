@@ -16,7 +16,10 @@
   "properties": {
     "schema": {"const": "agentcfd.project-initialization/0.1"},
     "template": {
-      "enum": ["industrial-pipe", "baffle-channel", "imported-internal-flow"]
+      "enum": [
+        "industrial-pipe", "heated-pipe", "baffle-channel",
+        "industrial-elbow", "imported-internal-flow"
+      ]
     },
     "root": {"type": "string", "minLength": 1},
     "entrypoint": {"type": "string", "minLength": 1},
@@ -24,6 +27,16 @@
     "request_sha256": {
       "type": ["string", "null"],
       "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "generated_geometry": {
+      "type": "object",
+      "required": ["schema", "managed", "synchronized", "artifact"],
+      "properties": {
+        "schema": {"const": "agentcfd.generated-geometry-sync/0.1"},
+        "managed": {"const": true},
+        "synchronized": {"const": true},
+        "artifact": {"type": "object"}
+      }
     },
     "next_action": {
       "type": "object",
@@ -34,5 +47,12 @@
         "reason": {"type": "string", "minLength": 1}
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"template": {"const": "industrial-elbow"}}},
+      "then": {"required": ["generated_geometry"]},
+      "else": {"properties": {"generated_geometry": false}}
+    }
+  ]
 }

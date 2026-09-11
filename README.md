@@ -102,7 +102,7 @@ agents, CI, and future GUIs:
 
 ```bash
 agentcfd templates                       # discover scope before creating files
-agentcfd templates imported-internal-flow
+agentcfd templates industrial-elbow
 agentcfd init --template industrial-pipe my-flow
 cd my-flow
 agentcfd doctor .       # project/runtime/resource audit; no solve or field read
@@ -372,9 +372,12 @@ between 30 and 300, but remains for workflow development and engineering
 review; it does not claim validated near-wall accuracy before prism-layer and
 grid evidence exist.
 
-`case.py` is the modeling source of truth. `agentcfd.toml` contains only
-operational settings such as the default provider, output directory, container,
-and mesh controls. An ordinary execution replaces the managed `output/`
+`case.py` is the physics and operating source of truth. A managed generated
+project additionally keeps geometry intent in `geometry/spec.json`; its STL and
+inspection are synchronized derivations, never a second hand-edited model.
+`agentcfd.toml` contains only operational settings and project identity such as
+the template, default provider, output directory, container, and mesh controls.
+An ordinary execution replaces the managed `output/`
 directory, so editing parameters and rerunning keeps one obvious current
 answer. Preserve an immutable run only when that is the intent:
 
@@ -388,6 +391,12 @@ agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
 agentcfd sweep . sweep.json --summary-only # metrics/evidence, no permanent H5
 agentcfd promote . <run-id>      # publish full fields for one screened point
 agentcfd compact . <run-id>      # preview full-field bulk removal; add --apply
+agentcfd init elbow-flow --template industrial-elbow \
+  --diameter-m 0.1 --bend-radius-m 0.15 \
+  --inlet-length-m 0.3 --outlet-length-m 0.4 \
+  --inlet-velocity-m-s 1 0 0
+agentcfd geometry-sync elbow-flow          # preview after editing geometry/spec.json
+agentcfd geometry-sync elbow-flow --apply  # validated refresh; no solver start
 agentcfd geometry-create elbow elbow.stl \
   --diameter-m 0.1 --bend-radius-m 0.15 \
   --inlet-length-m 0.3 --outlet-length-m 0.4 --plan-only
@@ -417,8 +426,17 @@ agentcfd clean .                 # safe preview; add --apply to reclaim workspac
 # agentcfd clean . --include-retained --apply  # release expert copies
 ```
 
-`geometry-create elbow` is the first practical parameter-to-project geometry
-path. It uses metres, has no CAD dependency, and emits a deterministic,
+`init --template industrial-elbow` is the normal parameter-to-project geometry
+path. It creates a readable project containing editable `geometry/spec.json`,
+derived `geometry/fluid.stl`, a generator record, independently inspected
+topology/roles, and `case.py` operating intent in one step. If the specification
+changes, planning fails closed and `status` recommends exactly
+`geometry-sync --apply`; previewing the sync computes the future identity but
+does not alter the project. Applying it refreshes the STL and both evidence
+records before any solver may start.
+
+The lower-level `geometry-create elbow` remains useful for standalone exchange.
+It uses metres, has no CAD dependency, and emits a deterministic,
 watertight 90-degree circular-elbow fluid volume with separate `inlet`,
 `outlet`, and `walls` STL regions. Its versioned JSON result includes the exact
 artifact hash and size, an interior point, upstream/downstream observation
@@ -427,8 +445,8 @@ and the remaining operating-condition decisions. Planning renders the exact
 future bytes but does not create a file; writing refuses to overwrite. The
 report also quantifies the polygonal cross-section area and chord errors, so
 tessellation is an inspectable accuracy decision rather than a hidden CAD
-default. The generated surface still passes through ordinary
-`geometry-check`, project initialization, mesh planning, and quality gates.
+default. The project path still passes the generated surface through ordinary
+independent geometry inspection, mesh planning, and quality gates.
 
 CAD exports often contain region names with spaces, punctuation, non-ASCII
 characters, or leading digits. Preview `geometry-normalize` before importing

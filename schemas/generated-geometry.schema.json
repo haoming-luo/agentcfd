@@ -111,7 +111,7 @@
             "required_user_decisions"
           ],
           "properties": {
-            "template": {"const": "imported-internal-flow"},
+            "template": {"const": "industrial-elbow"},
             "provider": {"const": "openfoam"},
             "geometry_unit": {"const": "m"},
             "geometry_path": {"type": ["string", "null"]},

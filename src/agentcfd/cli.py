@@ -1591,6 +1591,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument("--base-size-m", type=float)
     init.add_argument("--maximum-cells", type=int)
+    init_generated = init.add_argument_group(
+        "generated industrial-elbow geometry"
+    )
+    init_generated.add_argument(
+        "--diameter-m",
+        type=float,
+        help="Generated industrial-elbow internal diameter in metres.",
+    )
+    init_generated.add_argument(
+        "--bend-radius-m",
+        type=float,
+        help="Generated industrial-elbow centerline bend radius in metres.",
+    )
+    init_generated.add_argument(
+        "--inlet-length-m",
+        type=float,
+        help="Generated industrial-elbow upstream straight length in metres.",
+    )
+    init_generated.add_argument(
+        "--outlet-length-m",
+        type=float,
+        help="Generated industrial-elbow downstream straight length in metres.",
+    )
+    init_generated.add_argument("--cross-section-segments", type=int)
+    init_generated.add_argument("--bend-segments", type=int)
+    init_generated.add_argument("--inlet-segments", type=int)
+    init_generated.add_argument("--outlet-segments", type=int)
     init.add_argument(
         "--outlet-target",
         action="append",
@@ -1728,6 +1755,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Return exact size, identity, regions, and setup recommendations without writing.",
     )
     elbow.add_argument("--json", action="store_true", dest="as_json")
+
+    geometry_sync = subparsers.add_parser(
+        "geometry-sync",
+        help="Preview or refresh project-owned generated geometry from its editable spec.",
+    )
+    geometry_sync.add_argument("project", nargs="?", type=Path, default=Path("."))
+    geometry_sync.add_argument(
+        "--apply",
+        action="store_true",
+        help="Atomically replace derived geometry and inspection after validation.",
+    )
+    geometry_sync.add_argument("--json", action="store_true", dest="as_json")
 
     geometry_check = subparsers.add_parser(
         "geometry-check",
@@ -3038,6 +3077,14 @@ def main(argv: list[str] | None = None) -> int:
             args.inlet_total_gauge_pressure_pa,
             args.base_size_m,
             args.maximum_cells,
+            args.diameter_m,
+            args.bend_radius_m,
+            args.inlet_length_m,
+            args.outlet_length_m,
+            args.cross_section_segments,
+            args.bend_segments,
+            args.inlet_segments,
+            args.outlet_segments,
             args.outlet_target,
             args.maximum_fraction_error,
         )
@@ -3093,6 +3140,14 @@ def main(argv: list[str] | None = None) -> int:
                 inlet_total_gauge_pressure_pa=args.inlet_total_gauge_pressure_pa,
                 base_size_m=args.base_size_m,
                 maximum_cells=args.maximum_cells,
+                diameter_m=args.diameter_m,
+                bend_radius_m=args.bend_radius_m,
+                inlet_length_m=args.inlet_length_m,
+                outlet_length_m=args.outlet_length_m,
+                cross_section_segments=args.cross_section_segments,
+                bend_segments=args.bend_segments,
+                inlet_segments=args.inlet_segments,
+                outlet_segments=args.outlet_segments,
                 outlet_target_fractions=_outlet_targets(args.outlet_target),
                 maximum_fraction_error=args.maximum_fraction_error,
             )
@@ -3108,6 +3163,8 @@ def main(argv: list[str] | None = None) -> int:
                 "reason": "Inspect readiness and follow the single recommended action.",
             },
         }
+        if project.manifest.generated_geometry_spec is not None:
+            report["generated_geometry"] = project.sync_generated_geometry()
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
@@ -3246,6 +3303,19 @@ def main(argv: list[str] | None = None) -> int:
             print("interior point [m]: " + ", ".join(f"{value:.6g}" for value in point))
             print(f"next: {report['next_action']['command']}")
         return 0
+    if args.command == "geometry-sync":
+        project = projects.Project.discover(args.project)
+        report = project.sync_generated_geometry(apply=args.apply)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            action = "Synchronized" if report["applied"] else "Geometry status"
+            print(
+                f"{action} | synchronized "
+                f"{str(report['synchronized']).lower()} | {report['artifact']['path']}"
+            )
+            print(f"next: {report['next_action']['command']}")
+        return 0 if report["synchronized"] else 3
     if args.command == "geometry-check":
         report = geometry_io.inspect_geometry(
             args.path,

@@ -13,13 +13,20 @@
     "project": {
       "type": "object",
       "required": [
-        "root", "manifest", "entrypoint", "provider", "run_mode",
+        "root", "manifest", "entrypoint", "template", "provider", "run_mode",
         "output_directory"
       ],
       "properties": {
         "root": {"type": "string", "minLength": 1},
         "manifest": {"type": "string", "minLength": 1},
         "entrypoint": {"type": "string", "minLength": 1},
+        "template": {
+          "type": ["string", "null"],
+          "enum": [
+            null, "industrial-pipe", "heated-pipe", "baffle-channel",
+            "industrial-elbow", "imported-internal-flow"
+          ]
+        },
         "provider": {"enum": ["reference", "openfoam"]},
         "run_mode": {"enum": ["replace", "campaign"]},
         "output_directory": {"type": "string", "minLength": 1}

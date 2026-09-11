@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/generated-geometry-sync.schema.json",
+  "title": "AgentCFD generated geometry synchronization 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "root", "managed", "synchronized", "applied", "spec",
+    "artifact", "generation_record", "inspection_record", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.generated-geometry-sync/0.1"},
+    "root": {"type": "string", "minLength": 1},
+    "managed": {"const": true},
+    "synchronized": {"type": "boolean"},
+    "applied": {"type": "boolean"},
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "valid", "sha256", "error"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "valid": {"type": "boolean"},
+        "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "error": {"type": ["string", "null"]}
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "exists", "current_sha256", "expected_sha256", "size_bytes"],
+      "properties": {
+        "path": {"const": "geometry/fluid.stl"},
+        "exists": {"type": "boolean"},
+        "current_sha256": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "expected_sha256": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+        "size_bytes": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "generation_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "valid", "matches_expected"],
+      "properties": {
+        "path": {"const": "geometry/generation.json"},
+        "valid": {"type": "boolean"},
+        "matches_expected": {"type": "boolean"}
+      }
+    },
+    "inspection_record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "valid", "matches_artifact"],
+      "properties": {
+        "path": {"const": "geometry/inspection.json"},
+        "valid": {"type": "boolean"},
+        "matches_artifact": {"type": "boolean"}
+      }
+    },
+    "next_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

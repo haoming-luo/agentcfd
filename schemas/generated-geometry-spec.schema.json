@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/generated-geometry-spec.schema.json",
+  "title": "AgentCFD generated geometry specification 0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "parameters"],
+  "properties": {
+    "schema": {"const": "agentcfd.generated-geometry-spec/0.1"},
+    "type": {"const": "circular-elbow-90deg"},
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "diameter_m", "bend_radius_m", "inlet_length_m", "outlet_length_m",
+        "cross_section_segments", "bend_segments", "inlet_segments", "outlet_segments"
+      ],
+      "properties": {
+        "diameter_m": {"type": "number", "exclusiveMinimum": 0},
+        "bend_radius_m": {"type": "number", "exclusiveMinimum": 0},
+        "inlet_length_m": {"type": "number", "exclusiveMinimum": 0},
+        "outlet_length_m": {"type": "number", "exclusiveMinimum": 0},
+        "cross_section_segments": {"type": "integer", "minimum": 8, "maximum": 512},
+        "bend_segments": {"type": "integer", "minimum": 4, "maximum": 512},
+        "inlet_segments": {"type": "integer", "minimum": 1, "maximum": 256},
+        "outlet_segments": {"type": "integer", "minimum": 1, "maximum": 256}
+      }
+    }
+  }
+}

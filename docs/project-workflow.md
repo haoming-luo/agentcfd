@@ -9,6 +9,12 @@ my-flow/
 ├── case.py
 ├── agentcfd.toml
 ├── input/                         optional user-owned inputs
+├── geometry/                      optional imported or generated domain
+│   ├── spec.json                  editable only for managed generated geometry
+│   ├── fluid.stl                  content-addressed derived/input asset
+│   ├── generation.json            exact generator identity when managed
+│   ├── inspection.json            independent topology/unit/role evidence
+│   └── boundary-roles.json
 ├── output/                        current published run
 │   ├── plan.json
 │   ├── summary.json               small default decision/result surface
@@ -44,6 +50,14 @@ provider from that catalog rather than maintaining a second runtime list. Each
 template links the installed creation-request schema and declares its required,
 optional, and exactly-one fields; CI checks the unavoidable static JSON Schema
 enumerations against the runtime catalog.
+
+The `industrial-elbow` template closes the standard-geometry loop without
+creating a second solver path. `geometry/spec.json` is editable source intent;
+the STL and inspection are derived, content-addressed inputs to the existing
+ImportedSurface provider. `geometry-sync` previews the exact future hash and
+only mutates those managed derivations with `--apply`. Project readiness blocks
+on any mismatch and makes synchronization the single next action, so changing a
+dimension cannot silently reuse the previous mesh or interior seed.
 
 `agentcfd project . --json` is the unified integration view over the same
 lifecycle. It returns the status, compact current result, named published

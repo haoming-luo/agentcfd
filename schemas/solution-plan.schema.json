@@ -12,11 +12,18 @@
     "project": {
       "type": "object",
       "required": [
-        "root", "entrypoint", "entrypoint_sha256", "factory", "parameters",
+        "root", "template", "entrypoint", "entrypoint_sha256", "factory", "parameters",
         "factory_parameters"
       ],
       "properties": {
         "root": {"type": "string"},
+        "template": {
+          "type": ["string", "null"],
+          "enum": [
+            null, "industrial-pipe", "heated-pipe", "baffle-channel",
+            "industrial-elbow", "imported-internal-flow"
+          ]
+        },
         "entrypoint": {"type": "string"},
         "entrypoint_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "factory": {"type": "string"},
@@ -96,7 +103,8 @@
         "study", "procedure", "outputs", "initialization", "mesh_intent",
         "provider", "required_capability",
         "mesh_strategy", "solver", "result_profile", "portable_field_bundle",
-        "portable_formats", "imported_mesh_plan", "thermal_preflight"
+        "portable_formats", "imported_mesh_plan", "generated_geometry",
+        "thermal_preflight"
       ],
       "properties": {
         "study": {"type": "object"},
@@ -117,6 +125,7 @@
         },
         "output_plan": {"type": "object"},
         "imported_mesh_plan": {"type": ["object", "null"]},
+        "generated_geometry": {"type": ["object", "null"]},
         "thermal_preflight": {
           "type": "object",
           "required": ["status", "reason", "calculation"],

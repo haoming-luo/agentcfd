@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add the one-step `industrial-elbow` project template and preview-first
+  `geometry-sync`. A project now owns editable generated-geometry intent,
+  deterministic STL bytes, independent inspection, roles, and exact generation
+  provenance. Changing the spec blocks solver readiness until an explicit
+  validated refresh updates the asset, inspection hash, and dynamic interior
+  point together; project status and the AI action catalog expose that repair.
 - Align imported-mesh acceptance with OpenFOAM's declared quality-policy path.
   AgentCFD now records solver-neutral maximum concavity, writes an inspectable
   `meshQualityDict`, executes `checkMesh -allTopology -meshQuality`, parses the

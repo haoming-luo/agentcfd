@@ -33,6 +33,8 @@ def main() -> None:
     assert callable(agentcfd.open_project)
     required_contracts = {
         "generated-geometry.schema.json",
+        "generated-geometry-spec.schema.json",
+        "generated-geometry-sync.schema.json",
         "geometry-inspection.schema.json",
         "project-verification.schema.json",
         "simulation-result.schema.json",
@@ -47,7 +49,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="agentcfd-wheel-") as raw_root:
         root = Path(raw_root)
         elbow = root / "elbow.stl"
-        geometry = run(
+        run(
             "geometry-create",
             "elbow",
             str(elbow),
@@ -60,7 +62,6 @@ def main() -> None:
             "--outlet-length-m",
             "0.4",
         )
-        point = geometry["recommendations"]["interior_point_m"]
         inspection = run(
             "geometry-check",
             str(elbow),
@@ -76,30 +77,26 @@ def main() -> None:
         )
         assert inspection["readiness"]["ready_for_import_setup"] is True
 
-        imported = root / "imported"
+        imported = root / "industrial-elbow"
         run(
             "init",
             str(imported),
             "--template",
-            "imported-internal-flow",
-            "--provider",
-            "openfoam",
-            "--geometry",
-            str(elbow),
-            "--unit",
-            "m",
-            "--accept-name-roles",
-            "--interior-point-m",
-            *(str(value) for value in point),
+            "industrial-elbow",
+            "--diameter-m",
+            "0.1",
+            "--bend-radius-m",
+            "0.15",
+            "--inlet-length-m",
+            "0.3",
+            "--outlet-length-m",
+            "0.4",
             "--inlet-velocity-m-s",
             "1",
             "0",
             "0",
-            "--base-size-m",
-            "0.0125",
-            "--maximum-cells",
-            "500000",
         )
+        assert run("geometry-sync", str(imported))["synchronized"] is True
         assert run("check", str(imported))["valid"] is True
 
         reference = root / "reference"

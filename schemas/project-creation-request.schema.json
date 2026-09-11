@@ -8,7 +8,10 @@
   "properties": {
     "schema": {"const": "agentcfd.project-creation-request/0.1"},
     "template": {
-      "enum": ["industrial-pipe", "heated-pipe", "baffle-channel", "imported-internal-flow"]
+      "enum": [
+        "industrial-pipe", "heated-pipe", "baffle-channel",
+        "industrial-elbow", "imported-internal-flow"
+      ]
     },
     "provider": {"enum": ["reference", "openfoam"]},
     "geometry": {
@@ -32,6 +35,24 @@
         {"required": ["boundary_roles"]},
         {"required": ["role_confirmation"]}
       ]
+    },
+    "generated_geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type", "diameter_m", "bend_radius_m", "inlet_length_m", "outlet_length_m"
+      ],
+      "properties": {
+        "type": {"const": "circular-elbow-90deg"},
+        "diameter_m": {"type": "number", "exclusiveMinimum": 0},
+        "bend_radius_m": {"type": "number", "exclusiveMinimum": 0},
+        "inlet_length_m": {"type": "number", "exclusiveMinimum": 0},
+        "outlet_length_m": {"type": "number", "exclusiveMinimum": 0},
+        "cross_section_segments": {"type": "integer", "minimum": 8, "maximum": 512},
+        "bend_segments": {"type": "integer", "minimum": 4, "maximum": 512},
+        "inlet_segments": {"type": "integer", "minimum": 1, "maximum": 256},
+        "outlet_segments": {"type": "integer", "minimum": 1, "maximum": 256}
+      }
     },
     "interior_point_m": {"$ref": "#/$defs/vector3"},
     "inlet_velocity_m_s": {"$ref": "#/$defs/vector3"},
@@ -87,11 +108,37 @@
         "properties": {
           "geometry": false,
           "interior_point_m": false,
+          "flow_distribution": false
+        }
+      }
+    },
+    {
+      "if": {"properties": {"template": {"const": "industrial-elbow"}}},
+      "then": {
+        "required": ["generated_geometry", "mesh"],
+        "properties": {"provider": {"const": "openfoam"}},
+        "oneOf": [
+          {"required": ["inlet_velocity_m_s"]},
+          {"required": ["inlet_mass_flow_kg_s"]},
+          {"required": ["inlet_total_gauge_pressure_pa"]}
+        ]
+      },
+      "else": {"properties": {"generated_geometry": false}}
+    },
+    {
+      "if": {
+        "properties": {
+          "template": {
+            "enum": ["industrial-elbow", "imported-internal-flow"]
+          }
+        }
+      },
+      "else": {
+        "properties": {
           "inlet_velocity_m_s": false,
           "inlet_mass_flow_kg_s": false,
           "inlet_total_gauge_pressure_pa": false,
-          "mesh": false,
-          "flow_distribution": false
+          "mesh": false
         }
       }
     },

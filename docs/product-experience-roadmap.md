@@ -155,9 +155,10 @@ files stay hidden and reproducible.
 1. Extend the imported-volume slice with controlled STEP/IGES tessellation,
    prism layers, automatic y-plus correction, and thermal physics; promote
    RANS only after grid and physical evidence.
-2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
-   building on the released mass-flow-averaged total-pressure-loss report,
-   fan/pump, heated pipe, and buoyant enclosure workflows.
+2. Extend the shipped parameterized circular-elbow project pattern to tee,
+   manifold, valve/porous loss, fan/pump, heated pipe, and buoyant enclosure
+   workflows, building on the released mass-flow-averaged total-pressure-loss
+   report.
 
 ### Then: scale without scaling attention
 

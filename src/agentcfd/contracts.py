@@ -29,6 +29,8 @@ _SCHEMAS = (
     "grid-convergence.schema.json",
     "geometry-inspection.schema.json",
     "generated-geometry.schema.json",
+    "generated-geometry-spec.schema.json",
+    "generated-geometry-sync.schema.json",
     "geometry-region-normalization.schema.json",
     "inlet-direction-assessment.schema.json",
     "license-catalog.schema.json",

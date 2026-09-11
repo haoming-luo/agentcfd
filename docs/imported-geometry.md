@@ -8,8 +8,34 @@ meshing an ambiguous file.
 
 ## Start without CAD: a parameterized elbow
 
-For a standard 90-degree circular elbow, AgentCFD can create the fluid volume
-itself before entering the same imported-surface workflow:
+For a standard 90-degree circular elbow, initialize the complete project in one
+step instead of manually carrying geometry metadata between commands:
+
+```bash
+agentcfd init elbow-flow --template industrial-elbow \
+  --diameter-m 0.1 --bend-radius-m 0.15 \
+  --inlet-length-m 0.3 --outlet-length-m 0.4 \
+  --inlet-velocity-m-s 1 0 0
+```
+
+The project owns editable `geometry/spec.json`, derived `fluid.stl`, exact
+`generation.json`, confirmed roles, and independent `inspection.json`. After a
+dimension or tessellation edit, `agentcfd status elbow-flow` blocks execution
+until the derived records agree again:
+
+```bash
+agentcfd geometry-sync elbow-flow --json
+agentcfd geometry-sync elbow-flow --apply --json
+```
+
+Preview is read-only. Apply regenerates to a staging path, independently checks
+the closed named surface, and then replaces the managed derivations. A stale
+specification, STL, generation record, or inspection hash cannot reach the
+solver. `case.py` reads the synchronized interior point and continues to own
+fluid, inlet, mesh budget, turbulence choice, and output intent.
+
+For standalone exchange, AgentCFD can also create the fluid volume before a
+project exists:
 
 ```bash
 agentcfd geometry-create elbow elbow.stl \
@@ -42,11 +68,10 @@ agentcfd geometry-check elbow.stl --unit m --internal-flow \
   --role inlet=inlet --role outlet=outlet --role walls=wall
 ```
 
-Use the returned `project_initialization`, `interior_point_m`, inlet direction,
-and `mesh_starting_point` records to initialize `imported-internal-flow`; the
-inlet speed, mass flow, or pressure remains a deliberate user decision. This
-keeps geometry generation solver-neutral and prevents a shape command from
-silently inventing an operating point.
+The standalone result still exposes `project_initialization`, interior point,
+inlet direction, and mesh starting point. The inlet speed, mass flow, or
+pressure remains a deliberate user decision: a shape command never invents an
+operating point.
 
 The generated default 0.1 m diameter, 0.15 m bend-radius example has also
 completed the real OpenCFD v2606 mesh path. `surfaceCheck` found 2,624 legal

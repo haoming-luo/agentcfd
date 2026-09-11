@@ -72,6 +72,11 @@ disposable project workspace. Parametric and imported geometry both receive a
 content-addressed case and mesh manifest; imported setup can start with
 `init --template imported-internal-flow` so units, roles, interior seed,
 velocity direction, mesh size, and cell budget are explicit before execution.
+A standard circular elbow starts directly with `init --template
+industrial-elbow`: the project owns an editable generator specification and
+content-addressed STL/inspection derivations. A changed specification blocks
+execution until preview-first `geometry-sync --apply` refreshes them; it never
+changes an active run or starts a solver.
 If an ASCII STL or OBJ carries names that cannot become stable OpenFOAM region
 identifiers, `geometry-normalize` first publishes a deterministic preview and
 can then write a new name-only copy. The original is never overwritten and the

@@ -57,6 +57,7 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
     project = projects.init_project(root)
 
     assert project.manifest.default_provider == "reference"
+    assert project.manifest.template == "industrial-pipe"
     assert project.manifest.run_mode == "replace"
     assert project.run_root == root / "output"
     assert "def build" in (root / "case.py").read_text()

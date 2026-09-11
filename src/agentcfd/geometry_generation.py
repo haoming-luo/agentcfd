@@ -243,7 +243,7 @@ def _elbow_geometry(
             "status": "starting-point-not-accuracy-guarantee",
         },
         "project_initialization": {
-            "template": "imported-internal-flow",
+            "template": "industrial-elbow",
             "provider": "openfoam",
             "geometry_unit": "m",
             "geometry_path": None,

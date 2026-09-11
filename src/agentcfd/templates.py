@@ -177,6 +177,63 @@ _TEMPLATES = (
         request_required=("schema", "template", "provider"),
     ),
     ProjectTemplate(
+        id="industrial-elbow",
+        title="Generated industrial circular elbow",
+        purpose=(
+            "Create and own a parameterized 90-degree circular-elbow fluid volume "
+            "for pressure-loss, outlet-quality, campaign, and field workflows."
+        ),
+        maturity="experimental",
+        providers=("openfoam",),
+        default_provider="openfoam",
+        geometry_mode="generated",
+        physics=(
+            "steady",
+            "incompressible",
+            "laminar or k-omega SST",
+            "isothermal",
+        ),
+        outputs=(
+            "fluid.velocity",
+            "fluid.pressure",
+            "flow.pressure_loss",
+            "flow.uniformity",
+            "XDMF/HDF5 fields",
+        ),
+        requires=(
+            "diameter",
+            "bend radius",
+            "inlet and outlet straight lengths",
+            "exactly one inlet control",
+            "mesh size and hard cell budget",
+        ),
+        limitations=(
+            "The generated domain is one uniform-diameter circular 90-degree elbow.",
+            "Prism layers, roughness, thermal flow, and reacting flow are pending.",
+            "The generated mesh path is verified; elbow-loss accuracy and grid sensitivity remain open.",
+        ),
+        create_command=(
+            "agentcfd init PROJECT --template industrial-elbow "
+            "--diameter-m 0.1 --bend-radius-m 0.15 --inlet-length-m 0.3 "
+            "--outlet-length-m 0.4 --inlet-velocity-m-s 1 0 0"
+        ),
+        request_contract="project-creation-request.schema.json",
+        request_required=(
+            "schema",
+            "template",
+            "provider",
+            "generated_geometry",
+            "mesh",
+        ),
+        request_exactly_one=(
+            (
+                "inlet_velocity_m_s",
+                "inlet_mass_flow_kg_s",
+                "inlet_total_gauge_pressure_pa",
+            ),
+        ),
+    ),
+    ProjectTemplate(
         id="imported-internal-flow",
         title="Imported industrial internal flow",
         purpose=(

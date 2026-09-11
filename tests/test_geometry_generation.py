@@ -49,7 +49,16 @@ def test_circular_elbow_plan_is_exact_deterministic_and_non_mutating(tmp_path):
         "maximum_cells": 2_000_000,
         "status": "starting-point-not-accuracy-guarantee",
     }
-    assert first["recommendations"]["project_initialization"]["geometry_path"] is None
+    assert first["recommendations"]["project_initialization"] == {
+        "template": "industrial-elbow",
+        "provider": "openfoam",
+        "geometry_unit": "m",
+        "geometry_path": None,
+        "required_user_decisions": [
+            "project_directory",
+            "inlet_velocity_mass_flow_or_total_pressure",
+        ],
+    }
     assert "--diameter-m 0.10000000000000001" in first["next_action"]["command"]
     assert "generated-geometry.schema.json" in contracts.available()
 
@@ -140,6 +149,182 @@ def test_circular_elbow_cli_plans_then_writes(tmp_path, capsys):
     assert set(projects.Project(project).load_step().model.boundary_conditions) == {
         "inlet", "outlet", "walls"
     }
+
+
+def test_industrial_elbow_project_init_and_geometry_sync_are_one_workflow(
+    tmp_path, capsys
+):
+    project_path = tmp_path / "plant-elbow"
+    assert entrypoint(
+        [
+            "init",
+            str(project_path),
+            "--template",
+            "industrial-elbow",
+            "--diameter-m",
+            "0.1",
+            "--bend-radius-m",
+            "0.15",
+            "--inlet-length-m",
+            "0.3",
+            "--outlet-length-m",
+            "0.4",
+            "--inlet-velocity-m-s",
+            "1",
+            "0",
+            "0",
+            "--json",
+        ]
+    ) == 0
+    initialization = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("project-initialization.schema.json")
+    ).validate(initialization)
+    assert initialization["template"] == "industrial-elbow"
+    assert initialization["provider"] == "openfoam"
+    assert initialization["generated_geometry"]["synchronized"] is True
+    assert initialization["generated_geometry"]["artifact"]["path"] == (
+        "geometry/fluid.stl"
+    )
+
+    project = projects.Project(project_path)
+    assert project.manifest.template == "industrial-elbow"
+    assert project.manifest.generated_geometry_spec == "geometry/spec.json"
+    geometry_directory = project_path / "geometry"
+    spec_path = geometry_directory / "spec.json"
+    generation_path = geometry_directory / "generation.json"
+    inspection_path = geometry_directory / "inspection.json"
+    asset_path = geometry_directory / "fluid.stl"
+    spec = json.loads(spec_path.read_text())
+    generation = json.loads(generation_path.read_text())
+    inspection = json.loads(inspection_path.read_text())
+    jsonschema.Draft202012Validator(
+        contracts.load("generated-geometry-spec.schema.json")
+    ).validate(spec)
+    jsonschema.Draft202012Validator(
+        contracts.load("generated-geometry.schema.json")
+    ).validate(generation)
+    state = project.sync_generated_geometry()
+    jsonschema.Draft202012Validator(
+        contracts.load("generated-geometry-sync.schema.json")
+    ).validate(state)
+    assert state["synchronized"] is True
+    assert state["applied"] is False
+    assert inspection["source"]["path"] == "geometry/fluid.stl"
+    assert generation["artifact"]["path"] == "geometry/fluid.stl"
+    plan = project.plan()
+    assert plan["project"]["template"] == "industrial-elbow"
+    assert plan["decisions"]["generated_geometry"]["synchronized"] is True
+    assert project.snapshot()["project"]["template"] == "industrial-elbow"
+    assert project.load_step().mesh.base_size == pytest.approx(0.0125)
+    assert project.load_step().mesh.maximum_cells == 2_000_000
+    assert "geometry/spec.json" in (project_path / "README.md").read_text()
+    assert "Never edit `geometry/fluid.stl`" in (
+        project_path / "AGENTS.md"
+    ).read_text()
+
+    generation["recommendations"]["interior_point_m"][0] += 0.001
+    generation_path.write_text(json.dumps(generation, indent=2, sort_keys=True) + "\n")
+    tampered = project.sync_generated_geometry()
+    assert tampered["synchronized"] is False
+    assert tampered["generation_record"]["matches_expected"] is False
+    generation["recommendations"]["interior_point_m"][0] -= 0.001
+    generation_path.write_text(json.dumps(generation, indent=2, sort_keys=True) + "\n")
+    assert project.sync_generated_geometry()["synchronized"] is True
+
+    previous_bytes = asset_path.read_bytes()
+    previous_interior = project.load_step().model.domain.interior_point_m
+    spec["parameters"]["bend_radius_m"] = 0.2
+    spec_path.write_text(json.dumps(spec, indent=2, sort_keys=True) + "\n")
+    status = project.status()
+    assert status["state"] == "blocked"
+    assert status["readiness"]["input_assets_ready"] is False
+    assert status["next_action"]["command"].startswith("agentcfd geometry-sync ")
+    assert status["next_action"]["command"].endswith(" --apply")
+    assert any(
+        issue["code"] == "GENERATED_GEOMETRY_OUT_OF_DATE"
+        for issue in status["issues"]
+    )
+    actions = project.actions()
+    jsonschema.Draft202012Validator(
+        contracts.load("project-actions.schema.json")
+    ).validate(actions)
+    geometry_action = next(
+        item for item in actions["actions"] if item["operation"] == "geometry-sync"
+    )
+    assert geometry_action["recommended"] is True
+    assert geometry_action["mutates_project"] is True
+    assert geometry_action["starts_solver"] is False
+
+    assert entrypoint(["geometry-sync", str(project_path), "--json"]) == 3
+    preview = json.loads(capsys.readouterr().out)
+    assert preview["synchronized"] is False
+    assert preview["artifact"]["current_sha256"] != preview["artifact"]["expected_sha256"]
+    assert asset_path.read_bytes() == previous_bytes
+
+    assert entrypoint(
+        ["geometry-sync", str(project_path), "--apply", "--json"]
+    ) == 0
+    refreshed = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("generated-geometry-sync.schema.json")
+    ).validate(refreshed)
+    assert refreshed["applied"] is True
+    assert refreshed["synchronized"] is True
+    assert asset_path.read_bytes() != previous_bytes
+    assert project.plan()["readiness"]["input_assets_ready"] is True
+    assert project.load_step().model.domain.interior_point_m != previous_interior
+    assert json.loads(generation_path.read_text())["next_action"]["command"] == (
+        "agentcfd status ."
+    )
+    relocated = tmp_path / "relocated-elbow"
+    project_path.rename(relocated)
+    assert projects.Project(relocated).sync_generated_geometry()["synchronized"] is True
+
+
+def test_industrial_elbow_project_request_is_versioned_and_rejects_bad_geometry(
+    tmp_path,
+):
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "industrial-elbow",
+        "provider": "openfoam",
+        "generated_geometry": {
+            "type": "circular-elbow-90deg",
+            "diameter_m": 0.1,
+            "bend_radius_m": 0.15,
+            "inlet_length_m": 0.3,
+            "outlet_length_m": 0.4,
+        },
+        "inlet_velocity_m_s": [1.0, 0.0, 0.0],
+        "mesh": {"base_size_m": 0.0125, "maximum_cells": 500_000},
+    }
+    jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    ).validate(request)
+    project = projects.init_project_from_request(tmp_path / "requested", request)
+    assert project.sync_generated_geometry()["synchronized"] is True
+    assert project.load_step().mesh.maximum_cells == 500_000
+
+    bad = json.loads(json.dumps(request))
+    bad["generated_geometry"]["bend_radius_m"] = 0.05
+    root = tmp_path / "bad"
+    with pytest.raises(projects.ProjectError, match="self-intersecting"):
+        projects.init_project_from_request(root, bad)
+    assert not root.exists()
+
+
+def test_geometry_spec_filename_does_not_opt_an_unmanaged_project_into_sync(tmp_path):
+    project = projects.init_project(tmp_path / "ordinary")
+    geometry_directory = project.root / "geometry"
+    geometry_directory.mkdir()
+    (geometry_directory / "spec.json").write_text("{}\n")
+    reopened = projects.Project(project.root)
+
+    assert reopened.manifest.generated_geometry_spec is None
+    assert reopened.plan()["decisions"]["generated_geometry"] is None
+    with pytest.raises(projects.ProjectError, match="no managed geometry"):
+        reopened.sync_generated_geometry()
 
 
 @pytest.mark.parametrize(

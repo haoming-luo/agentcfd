@@ -53,6 +53,7 @@ def test_template_catalog_is_single_source_for_cli_and_project_creation(capsys):
         "industrial-pipe",
         "heated-pipe",
         "baffle-channel",
+        "industrial-elbow",
         "imported-internal-flow",
     )
     assert report["default_template"] == "industrial-pipe"
@@ -73,6 +74,11 @@ def test_template_catalog_is_single_source_for_cli_and_project_creation(capsys):
             "inlet_total_gauge_pressure_pa",
         ),
     )
+    elbow = templates.get("industrial-elbow")
+    assert elbow.geometry_mode == "generated"
+    assert elbow.providers == ("openfoam",)
+    assert "--diameter-m 0.1" in elbow.create_command
+    assert elbow.request_required[-2:] == ("generated_geometry", "mesh")
     assert "template-catalog.schema.json" in contracts.available()
     creation_contract = contracts.load("project-creation-request.schema.json")
     assert tuple(creation_contract["properties"]["template"]["enum"]) == templates.ids()

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+import json
 from pathlib import Path
 import subprocess
+import time
 import zipfile
 
 import pytest
@@ -22,6 +24,7 @@ from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
 from agentcfd.projects import Project
 from agentcfd.providers.openfoam_channel import (
     OpenFOAMChannelProvider,
+    _RollingRestartPublisher,
     _write_restart_bundle,
     materialize_interrupted_restart,
 )
@@ -247,12 +250,18 @@ def test_channel_restart_bundle_is_rolling_deterministic_and_restorable(tmp_path
     assert times == (1.5, 2.0)
     with zipfile.ZipFile(bundle) as archive:
         assert archive.namelist() == [
-            "restart.json",
             "times/1.5/U",
             "times/1.5/p",
             "times/2/U",
             "times/2/p",
+            "restart.json",
         ]
+        metadata = json.loads(archive.read("restart.json"))
+        assert metadata["atomic_publication"] is True
+        assert metadata["bounded_memory_streaming"] is True
+        assert metadata["in_run_publication_count"] == 0
+        assert metadata["first_in_run_publication_time"] is None
+        assert metadata["latest_in_run_publication_time"] is None
 
     result = SimulationResult(
         status="completed",
@@ -285,6 +294,92 @@ def test_channel_restart_bundle_is_rolling_deterministic_and_restorable(tmp_path
     assert (target / "2" / "p").read_bytes() == b"pressure-2"
     assert "startFrom latestTime;" in (target / "system" / "controlDict").read_text()
     assert "potentialFoam" not in OpenFOAMChannelProvider()._commands(resumed)
+
+
+def test_rolling_restart_publishes_stable_checkpoint_before_solver_exit(tmp_path):
+    step = Project(EXAMPLE).load_step()
+    case = tmp_path / "case"
+    prepared = OpenFOAMChannelProvider(case_directory=case).prepare(step)
+    target = tmp_path / "published" / "restart.zip"
+    publisher = _RollingRestartPublisher(
+        step,
+        prepared,
+        target,
+        poll_seconds=0.005,
+    )
+
+    publisher.start()
+    try:
+        checkpoint = case / "0.5"
+        checkpoint.mkdir()
+        (checkpoint / "U").write_text("velocity")
+        (checkpoint / "p").write_text("pressure")
+        for _ in range(100):
+            if target.is_file():
+                break
+            time.sleep(0.005)
+        assert target.is_file()
+        with zipfile.ZipFile(target) as archive:
+            metadata = json.loads(archive.read("restart.json"))
+            assert metadata["retained_times"] == [0.5]
+            assert metadata["in_run_publication_count"] == 1
+            assert metadata["first_in_run_publication_time"] == 0.5
+            assert metadata["latest_in_run_publication_time"] == 0.5
+            assert publisher.publication_summary == (1, 0.5, 0.5)
+    finally:
+        publisher.stop()
+
+
+def test_rolling_restart_publication_metadata_stays_constant_size(tmp_path):
+    step = Project(EXAMPLE).load_step()
+    case = tmp_path / "case"
+    prepared = OpenFOAMChannelProvider(case_directory=case).prepare(step)
+    target = tmp_path / "published" / "restart.zip"
+    publisher = _RollingRestartPublisher(step, prepared, target)
+
+    for time_name in ("0.5", "1", "1.5", "2"):
+        checkpoint = case / time_name
+        checkpoint.mkdir()
+        (checkpoint / "U").write_text(f"velocity-{time_name}")
+        (checkpoint / "p").write_text(f"pressure-{time_name}")
+        publisher._sample()
+        publisher._sample()
+
+    with zipfile.ZipFile(target) as archive:
+        metadata = json.loads(archive.read("restart.json"))
+    assert "in_run_publication_times" not in metadata
+    assert metadata["in_run_publication_count"] == 4
+    assert metadata["first_in_run_publication_time"] == 0.5
+    assert metadata["latest_in_run_publication_time"] == 2.0
+    assert publisher.publication_summary == (4, 0.5, 2.0)
+
+
+def test_restart_atomic_replace_preserves_previous_archive_on_failure(
+    tmp_path, monkeypatch
+):
+    step = Project(EXAMPLE).load_step()
+    case = tmp_path / "case"
+    prepared = OpenFOAMChannelProvider(case_directory=case).prepare(step)
+    checkpoint = case / "0.5"
+    checkpoint.mkdir()
+    (checkpoint / "U").write_text("velocity")
+    (checkpoint / "p").write_text("pressure")
+    target = tmp_path / "published" / "restart.zip"
+    target.parent.mkdir()
+    target.write_bytes(b"previous-good-archive")
+
+    def fail_write(*_args, **_kwargs):
+        raise OSError("synthetic storage interruption")
+
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_channel._zip_write_path",
+        fail_write,
+    )
+    with pytest.raises(OSError, match="synthetic storage interruption"):
+        _write_restart_bundle(step, prepared, target=target)
+
+    assert target.read_bytes() == b"previous-good-archive"
+    assert not list(target.parent.glob(".restart.zip.*.tmp"))
 
 
 def test_interrupted_checkpoint_requires_identity_and_complete_native_fields(tmp_path):

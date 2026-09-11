@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Publish transient baffled-channel restart state while `pimpleFoam` is still
+  running. Stable checkpoint directories are detected without reading them into
+  the status path, streamed into a bounded-memory ZIP, and atomically replace
+  the previous good archive in project `evidence/`; a torn write therefore
+  cannot destroy the last recovery point. `status` and `watch` expose retained
+  times, bytes, integrity strategy, and a constant-size publication count/first/
+  latest summary by reading only the bounded `restart.json` member.
+- Write gzip/lzf HDF5 datasets directly as each XDMF frame is published. The
+  exporter no longer creates an uncompressed HDF5 payload and a simultaneous
+  `.repack` copy, reducing remaining conversion peak storage without changing
+  the public output API. The field manifest records the single-pass strategy
+  and zero temporary-HDF5-copy bytes; compressed and explicitly uncompressed
+  paths are covered independently.
 - Isolate every managed `foamToVTK` conversion with the upstream v2606 `-name`
   option instead of sharing a case's `VTK/` directory. Old conversions can no
   longer contaminate selected times, user-owned VTK output is preserved, and

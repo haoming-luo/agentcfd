@@ -9,6 +9,8 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -101,10 +103,10 @@ def _zip_write_bytes(archive: zipfile.ZipFile, name: str, data: bytes) -> None:
     archive.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED, compresslevel=6)
 
 
-def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | None, tuple[float, ...]]:
+def _restart_candidates(step, prepared: PreparedOpenFOAMCase) -> list[tuple[float, Path]]:
     policy = step.output.checkpoints
     if not policy.enabled:
-        return None, ()
+        return []
     assert policy.every is not None
     available = [
         item
@@ -117,12 +119,72 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
         )
         and all((item[1] / field).is_file() for field in ("U", "p"))
     ]
-    retained = available[-policy.keep :]
+    return available[-policy.keep :]
+
+
+def _restart_signature(retained: list[tuple[float, Path]]) -> tuple[object, ...]:
+    """Describe complete time-directory bytes so a live writer can settle."""
+
+    signature: list[object] = []
+    for value, directory in retained:
+        signature.extend((value, directory.name))
+        for path in sorted(
+            directory.rglob("*"),
+            key=lambda item: item.relative_to(directory).as_posix(),
+        ):
+            if not path.is_file() or path.is_symlink():
+                continue
+            stat = path.stat()
+            signature.extend(
+                (
+                    path.relative_to(directory).as_posix(),
+                    stat.st_size,
+                    stat.st_mtime_ns,
+                )
+            )
+    return tuple(signature)
+
+
+def _zip_write_path(
+    archive: zipfile.ZipFile,
+    name: str,
+    source_path: Path,
+) -> tuple[str, int]:
+    """Stream one deterministic member and hash the exact archived bytes."""
+
+    info = zipfile.ZipInfo(name, date_time=_ZIP_TIMESTAMP)
+    info.compress_type = zipfile.ZIP_DEFLATED
+    info.external_attr = 0o100644 << 16
+    digest = hashlib.sha256()
+    size = 0
+    with source_path.open("rb") as source, archive.open(
+        info,
+        "w",
+        force_zip64=True,
+    ) as destination:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            destination.write(chunk)
+            digest.update(chunk)
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def _write_restart_bundle(
+    step,
+    prepared: PreparedOpenFOAMCase,
+    *,
+    target: str | Path | None = None,
+    in_run_publication_count: int = 0,
+    first_in_run_publication_time: float | None = None,
+    latest_in_run_publication_time: float | None = None,
+) -> tuple[Path | None, tuple[float, ...]]:
+    """Stream and atomically replace the latest rolling restart archive."""
+
+    retained = _restart_candidates(step, prepared)
     if not retained:
         return None, ()
 
-    members: dict[str, dict[str, object]] = {}
-    payloads: list[tuple[str, bytes]] = []
+    payloads: list[tuple[str, Path]] = []
     for _, time_directory in retained:
         for path in sorted(
             time_directory.rglob("*"),
@@ -132,12 +194,7 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
                 continue
             relative = path.relative_to(time_directory).as_posix()
             archive_name = f"times/{time_directory.name}/{relative}"
-            data = path.read_bytes()
-            members[archive_name] = {
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "size_bytes": len(data),
-            }
-            payloads.append((archive_name, data))
+            payloads.append((archive_name, path))
     postprocessing = prepared.directory / "postProcessing"
     if postprocessing.is_dir():
         for path in sorted(
@@ -148,33 +205,144 @@ def _write_restart_bundle(step, prepared: PreparedOpenFOAMCase) -> tuple[Path | 
                 continue
             relative = path.relative_to(postprocessing).as_posix()
             archive_name = f"postProcessing/{relative}"
-            data = path.read_bytes()
-            members[archive_name] = {
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "size_bytes": len(data),
-            }
-            payloads.append((archive_name, data))
+            payloads.append((archive_name, path))
     retained_times = tuple(value for value, _ in retained)
-    metadata = {
-        "schema": "agentcfd.openfoam-restart/0.1",
-        "provider_capability": _CAPABILITY,
-        "model_sha256": prepared.model_sha256,
-        "source_analysis_sha256": prepared.analysis_sha256,
-        "checkpoint_interval": policy.every,
-        "retained_times": list(retained_times),
-        "latest_time": retained_times[-1],
-        "members": members,
-    }
-    target = prepared.directory / "agentcfd-restart.zip"
-    with zipfile.ZipFile(target, "w") as archive:
-        _zip_write_bytes(
-            archive,
-            "restart.json",
-            (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+    selected_target = (
+        prepared.directory / "agentcfd-restart.zip"
+        if target is None
+        else Path(target)
+    )
+    selected_target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{selected_target.name}.",
+        suffix=".tmp",
+        dir=selected_target.parent,
+    )
+    os.close(descriptor)
+    temporary = Path(temporary_name)
+    members: dict[str, dict[str, object]] = {}
+    try:
+        with zipfile.ZipFile(
+            temporary,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            compresslevel=6,
+            allowZip64=True,
+        ) as archive:
+            for name, path in payloads:
+                digest, size = _zip_write_path(archive, name, path)
+                members[name] = {"sha256": digest, "size_bytes": size}
+            metadata = {
+                "schema": "agentcfd.openfoam-restart/0.1",
+                "provider_capability": _CAPABILITY,
+                "model_sha256": prepared.model_sha256,
+                "source_analysis_sha256": prepared.analysis_sha256,
+                "checkpoint_interval": step.output.checkpoints.every,
+                "retained_times": list(retained_times),
+                "latest_time": retained_times[-1],
+                "atomic_publication": True,
+                "bounded_memory_streaming": True,
+                "in_run_publication_count": in_run_publication_count,
+                "first_in_run_publication_time": first_in_run_publication_time,
+                "latest_in_run_publication_time": latest_in_run_publication_time,
+                "members": members,
+            }
+            _zip_write_bytes(
+                archive,
+                "restart.json",
+                (json.dumps(metadata, indent=2, sort_keys=True) + "\n").encode(
+                    "utf-8"
+                ),
+            )
+        temporary.replace(selected_target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    return selected_target, retained_times
+
+
+class _RollingRestartPublisher:
+    """Publish stable checkpoints while a transient solver is still running."""
+
+    def __init__(
+        self,
+        step,
+        prepared: PreparedOpenFOAMCase,
+        target: Path,
+        *,
+        poll_seconds: float = 0.25,
+    ) -> None:
+        self._step = step
+        self._prepared = prepared
+        self._target = target
+        self._poll_seconds = poll_seconds
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._previous_signature: tuple[object, ...] = ()
+        self._published_times: tuple[float, ...] = ()
+        self._publication_count = 0
+        self._first_publication_time: float | None = None
+        self._latest_publication_time: float | None = None
+
+    def _sample(self) -> None:
+        retained = _restart_candidates(self._step, self._prepared)
+        signature = _restart_signature(retained)
+        times = tuple(value for value, _ in retained)
+        if (
+            signature
+            and signature == self._previous_signature
+            and times != self._published_times
+        ):
+            publication_time = times[-1]
+            publication_count = self._publication_count + 1
+            first_publication_time = (
+                publication_time
+                if self._first_publication_time is None
+                else self._first_publication_time
+            )
+            _bundle, self._published_times = _write_restart_bundle(
+                self._step,
+                self._prepared,
+                target=self._target,
+                in_run_publication_count=publication_count,
+                first_in_run_publication_time=first_publication_time,
+                latest_in_run_publication_time=publication_time,
+            )
+            self._publication_count = publication_count
+            self._first_publication_time = first_publication_time
+            self._latest_publication_time = publication_time
+        self._previous_signature = signature
+
+    def _watch(self) -> None:
+        while not self._stop.wait(self._poll_seconds):
+            try:
+                self._sample()
+            except OSError:
+                # A time directory can legitimately change between discovery
+                # and reading. The next stable poll retries without disturbing
+                # the last atomically published archive.
+                self._previous_signature = ()
+
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._watch,
+            name="agentcfd-restart-publisher",
+            daemon=True,
         )
-        for name, data in payloads:
-            _zip_write_bytes(archive, name, data)
-    return target, retained_times
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join()
+
+    @property
+    def publication_summary(self) -> tuple[int, float | None, float | None]:
+        return (
+            self._publication_count,
+            self._first_publication_time,
+            self._latest_publication_time,
+        )
 
 
 def _restore_restart_archive(
@@ -1134,9 +1302,15 @@ class OpenFOAMChannelProvider:
         restart_archive: str | Path | None = None,
         source_run_id: str | None = None,
         expected_analysis_sha256: str | None = None,
+        checkpoint_archive: str | Path | None = None,
     ) -> SimulationResult:
         prepared = self.prepare(step)
         commands = self._commands(step)
+        checkpoint_target = (
+            Path(checkpoint_archive)
+            if checkpoint_archive is not None
+            else prepared.directory / "agentcfd-restart.zip"
+        )
         resumed_from: float | None = None
         resume_manifest: Path | None = None
         if restart_archive is not None:
@@ -1189,12 +1363,22 @@ class OpenFOAMChannelProvider:
         logs: dict[str, str] = {}
         return_codes: dict[str, int] = {}
         durations: dict[str, float] = {}
+        in_run_publication_count = 0
+        first_in_run_publication_time: float | None = None
+        latest_in_run_publication_time: float | None = None
         for name, command in commands.items():
             assert command is not None
             log_path = prepared.directory / f"log.{name}"
             cidfile = prepared.directory / f".agentcfd-{name}.cid" if self.container_image else None
+            publisher = (
+                _RollingRestartPublisher(step, prepared, checkpoint_target)
+                if name == "pimpleFoam" and step.output.checkpoints.enabled
+                else None
+            )
             started = time.monotonic()
             try:
+                if publisher is not None:
+                    publisher.start()
                 with log_path.open("w", encoding="utf-8") as log_stream:
                     completed = subprocess.run(
                         self._argv(name, command, prepared.directory, cidfile),
@@ -1218,6 +1402,13 @@ class OpenFOAMChannelProvider:
                     log_stream.write(timeout_note)
                 return_codes[name] = -124
             finally:
+                if publisher is not None:
+                    publisher.stop()
+                    (
+                        in_run_publication_count,
+                        first_in_run_publication_time,
+                        latest_in_run_publication_time,
+                    ) = publisher.publication_summary
                 durations[name] = time.monotonic() - started
                 if cidfile is not None:
                     cidfile.unlink(missing_ok=True)
@@ -1235,6 +1426,10 @@ class OpenFOAMChannelProvider:
             return_codes,
             durations,
             resumed_from=resumed_from,
+            restart_target=checkpoint_target,
+            in_run_publication_count=in_run_publication_count,
+            first_in_run_publication_time=first_in_run_publication_time,
+            latest_in_run_publication_time=latest_in_run_publication_time,
         )
         if resumed_from is not None and resume_manifest is not None:
             result.quantities["restart.resumed_from_time"] = Quantity(
@@ -1260,6 +1455,10 @@ class OpenFOAMChannelProvider:
         durations,
         *,
         resumed_from: float | None = None,
+        restart_target: Path | None = None,
+        in_run_publication_count: int = 0,
+        first_in_run_publication_time: float | None = None,
+        latest_in_run_publication_time: float | None = None,
     ) -> SimulationResult:
         required_commands = {"blockMesh", "checkMesh", "pimpleFoam"}
         process_ok = required_commands <= set(return_codes) and all(
@@ -1356,7 +1555,14 @@ class OpenFOAMChannelProvider:
         }
         if mesh_manifest is not None:
             artifacts["mesh_manifest"] = Artifact.from_path(mesh_manifest, role="mesh-manifest", media_type="application/json")
-        restart_bundle, checkpoint_times = _write_restart_bundle(step, prepared)
+        restart_bundle, checkpoint_times = _write_restart_bundle(
+            step,
+            prepared,
+            target=restart_target,
+            in_run_publication_count=in_run_publication_count,
+            first_in_run_publication_time=first_in_run_publication_time,
+            latest_in_run_publication_time=latest_in_run_publication_time,
+        )
         if restart_bundle is not None:
             artifacts["restart_bundle"] = Artifact.from_path(
                 restart_bundle,
@@ -1368,6 +1574,9 @@ class OpenFOAMChannelProvider:
             )
             quantities["restart.latest_time"] = Quantity(
                 checkpoint_times[-1], "s", kind="runtime_metric"
+            )
+            quantities["restart.in_run_publication_count"] = Quantity(
+                in_run_publication_count, "1", kind="runtime_metric"
             )
         fields: dict[str, FieldRecord] = {}
         latest = _latest_time_directory(prepared.directory)

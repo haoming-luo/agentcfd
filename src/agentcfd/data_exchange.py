@@ -405,53 +405,33 @@ def _field_storage_bytes(point_data: Mapping[str, Any], cell_data: Mapping[str, 
     )
 
 
-def _repack_hdf5(path: Path, *, compression: str) -> None:
-    """Repack meshio HDF5 datasets with bounded-memory transparent compression."""
+class _DirectHdf5DatasetWriter:
+    """Inject transparent compression into meshio's one-dataset-at-a-time writer."""
 
-    if compression == "none":
-        return
-    import h5py
+    def __init__(self, h5_file: Any, *, compression: str) -> None:
+        self._h5_file = h5_file
+        self._compression = compression
 
-    temporary = path.with_suffix(path.suffix + ".repack")
-    if temporary.exists():
-        raise FileExistsError(temporary)
-
-    def copy_group(source, target) -> None:
-        for key, value in source.attrs.items():
-            target.attrs[key] = value
-        for name, value in source.items():
-            if isinstance(value, h5py.Group):
-                copy_group(value, target.create_group(name))
-                continue
-            compressible = (
-                value.ndim > 0
-                and value.size > 0
-                and value.dtype.kind in {"b", "i", "u", "f", "c"}
+    def create_dataset(self, name: str, *, data: Any) -> Any:
+        compressible = (
+            self._compression != "none"
+            and data.ndim > 0
+            and data.size > 0
+            and data.dtype.kind in {"b", "i", "u", "f", "c"}
+        )
+        options: dict[str, object] = {}
+        if compressible:
+            options.update(
+                compression=self._compression,
+                chunks=True,
+                shuffle=True,
             )
-            options: dict[str, object] = {}
-            if compressible:
-                options.update(compression=compression, chunks=True, shuffle=True)
-                if compression == "gzip":
-                    options["compression_opts"] = 4
-            created = target.create_dataset(name, shape=value.shape, dtype=value.dtype, **options)
-            for key, attribute in value.attrs.items():
-                created.attrs[key] = attribute
-            if value.ndim == 0:
-                created[()] = value[()]
-            elif value.shape[0] > 0:
-                bytes_per_row = max(1, value.dtype.itemsize * math.prod(value.shape[1:]))
-                rows = max(1, (4 * 1024**2) // bytes_per_row)
-                for start in range(0, value.shape[0], rows):
-                    stop = min(value.shape[0], start + rows)
-                    created[start:stop] = value[start:stop]
+            if self._compression == "gzip":
+                options["compression_opts"] = 4
+        return self._h5_file.create_dataset(name, data=data, **options)
 
-    try:
-        with h5py.File(path, "r") as source, h5py.File(temporary, "w") as target:
-            copy_group(source, target)
-        temporary.replace(path)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
+    def close(self) -> None:
+        self._h5_file.close()
 
 
 def _canonical_data(
@@ -760,7 +740,10 @@ def export_vtu_series(
 
     writer = meshio.xdmf.TimeSeriesWriter(xdmf_path)
     writer.h5_filename = str(hdf5_path)
-    writer.h5_file = h5py.File(hdf5_path, "w")
+    writer.h5_file = _DirectHdf5DatasetWriter(
+        h5py.File(hdf5_path, "w"),
+        compression=compression,
+    )
     try:
         writer.write_points_cells(points, cells)
         for index, (time, path) in enumerate(zip(times, files)):
@@ -829,8 +812,6 @@ def export_vtu_series(
         raise
     else:
         writer.__exit__(None, None, None)
-
-    _repack_hdf5(hdf5_path, compression=compression)
 
     with h5py.File(hdf5_path, "a") as h5:
         h5.attrs["agentcae_schema"] = "agentcae.field-bundle"
@@ -919,6 +900,8 @@ def export_vtu_series(
             "uncompressed_field_bytes_per_frame": field_bytes_per_frame,
             "geometry_and_topology_bytes": geometry_bytes,
             "compression": compression,
+            "hdf5_write_strategy": "single-pass-direct",
+            "temporary_hdf5_copy_bytes": 0,
             "source_vtu_policy": (
                 "delete-after-frame" if _consume_source_files else "preserve"
             ),

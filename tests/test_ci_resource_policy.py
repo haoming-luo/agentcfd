@@ -38,6 +38,7 @@ def test_fast_gate_skips_docs_and_reuses_one_local_quality_gate() -> None:
 def test_fast_gate_has_no_scheduled_or_cross_platform_trigger() -> None:
     workflow = _workflow("test.yml")
 
+    assert "\n  workflow_dispatch:" not in workflow
     assert "\n  schedule:" not in workflow
     assert "\n  release:" not in workflow
     assert "macos-" not in workflow

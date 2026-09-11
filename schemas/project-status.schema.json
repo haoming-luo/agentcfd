@@ -82,7 +82,8 @@
             "schema", "run_id", "status", "phase", "current_command",
             "observed_at", "updated_at", "elapsed_seconds", "elapsed_display",
             "coordinate", "latest_residuals", "courant_number",
-            "monitors", "estimated_remaining", "workspace", "observation_cost"
+            "monitors", "estimated_remaining", "checkpoint", "workspace",
+            "observation_cost"
           ],
           "properties": {
             "schema": {"const": "agentcfd.run-progress/0.1"},
@@ -172,6 +173,29 @@
                 }
               ]
             },
+            "checkpoint": {
+              "type": "object",
+              "required": [
+                "status", "path", "retained_times", "in_run_publication_count",
+                "first_in_run_publication_time", "latest_in_run_publication_time",
+                "latest_time", "unit", "size_bytes", "atomic_publication",
+                "bounded_memory_streaming"
+              ],
+              "properties": {
+                "status": {"enum": ["disabled", "awaiting-first-checkpoint", "available", "invalid"]},
+                "path": {"type": ["string", "null"]},
+                "retained_times": {"type": "array", "items": {"type": "number"}},
+                "in_run_publication_count": {"type": "integer", "minimum": 0},
+                "first_in_run_publication_time": {"type": ["number", "null"]},
+                "latest_in_run_publication_time": {"type": ["number", "null"]},
+                "latest_time": {"type": ["number", "null"]},
+                "unit": {"const": "s"},
+                "size_bytes": {"type": ["integer", "null"], "minimum": 0},
+                "atomic_publication": {"type": ["boolean", "null"]},
+                "bounded_memory_streaming": {"type": ["boolean", "null"]}
+              },
+              "additionalProperties": false
+            },
             "workspace": {
               "type": "object",
               "required": [
@@ -192,12 +216,13 @@
               "type": "object",
               "required": [
                 "field_payloads_opened", "log_tail_bytes_read", "monitor_bytes_read",
-                "recursive_storage_scan"
+                "checkpoint_metadata_bytes_read", "recursive_storage_scan"
               ],
               "properties": {
                 "field_payloads_opened": {"const": 0},
                 "log_tail_bytes_read": {"type": "integer", "minimum": 0},
                 "monitor_bytes_read": {"type": "integer", "minimum": 0},
+                "checkpoint_metadata_bytes_read": {"type": "integer", "minimum": 0},
                 "recursive_storage_scan": {"type": "boolean"}
               },
               "additionalProperties": false

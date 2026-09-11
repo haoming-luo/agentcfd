@@ -195,6 +195,17 @@ without re-reading discarded native field frames. An exact end-time checkpoint
 is valid for termination/publication recovery even when the interrupted log
 did not have time to print its final `End` marker.
 
+For project runs, the latest stable checkpoint is published directly below
+`output/evidence/` while `pimpleFoam` is active. AgentCFD requires two identical
+time-directory signatures before accepting a new state, streams files into a
+same-directory temporary ZIP with exact hashes, and atomically replaces the
+previous good archive only after the index is complete. `status`/`watch` reads
+only the bounded `restart.json` member and reports `awaiting-first-checkpoint`,
+`available`, or `invalid`, together with retained times and archive bytes. It
+does not open native U/p fields during observation. The in-run publication
+record is a count plus first/latest times rather than an ever-growing event
+list, keeping observation metadata constant-size over long integrations.
+
 Execution timeout, workspace retention, and portable-export enablement are
 publication/operational controls, not solver state. They may change before
 resume (for example, increasing `timeout_seconds` after a diagnosed timeout);

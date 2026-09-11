@@ -88,6 +88,9 @@ files stay hidden and reproducible.
 - identity-gated transient checkpoint recovery with explicit `resume`, source
   provenance, automatic initialization skipping, and cleanup protection for the
   sole recoverable workspace;
+- in-run rolling checkpoint publication using stable-directory detection,
+  bounded-memory ZIP streaming, atomic replacement, and low-cost progress
+  visibility with constant-size publication telemetry before solver completion;
 - persistent cleanup protection for workspaces deliberately retained by CLI or
   project policy, with a separate previewable release scope;
 - preview-first decision/portable project archives that exclude native solver
@@ -169,8 +172,9 @@ files stay hidden and reproducible.
 ### Then: scale without scaling attention
 
 1. Remote/container/HPC executor protocol with the same run state contract.
-2. Direct compressed HDF5 publication without a repack copy, followed by
-   Catalyst extraction where native full-field retention dominates I/O.
+2. Catalyst extraction where native full-field retention dominates I/O. Direct
+   compressed HDF5 and atomic in-run rolling checkpoint publication are already
+   shipped.
 3. Heat/steam and conjugate-transfer workflows, then reacting flow only after
    evidence gates are satisfied.
 4. Agent policy layer that may propose edits but cannot conceal assumptions,

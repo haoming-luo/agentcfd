@@ -1,0 +1,46 @@
+{
+  "schema": "agentcfd.integration-evidence/0.1",
+  "capability": "openfoam.transient-laminar-baffled-channel.live-restart",
+  "evidence_kind": "in-run-atomic-checkpoint-publication",
+  "runtime": "OpenCFD 2606",
+  "validation_claim": false,
+  "model_sha256": "49423e2221d1e846a85789aca07e9da7c44459cd52ad044755375cf97b9f9887",
+  "analysis_sha256": "ef65b51388142e59ca96e1a5c54ae5f64a78822079280aec4e8b98d21175b560",
+  "case": {
+    "cell_count": 3020,
+    "end_time_seconds": 2.0,
+    "checkpoint_interval_seconds": 0.5,
+    "retained_checkpoint_limit": 2,
+    "portable_field_export": false
+  },
+  "live_observation": {
+    "new_run_identity_confirmed": true,
+    "agentcfd_run_process_alive": true,
+    "first_observed_retained_times_seconds": [0.5],
+    "first_observed_in_run_publication_count": 1,
+    "first_observed_first_publication_time_seconds": 0.5,
+    "first_observed_latest_publication_time_seconds": 0.5,
+    "atomic_publication": true,
+    "bounded_memory_streaming": true
+  },
+  "completed_result": {
+    "status": "completed",
+    "accepted": true,
+    "pimple_foam_wall_seconds": 3.5147104169009253,
+    "final_time_seconds": 2.0,
+    "relative_mass_imbalance": 3.59999997265511e-09,
+    "in_run_publication_count": 3,
+    "first_in_run_publication_time_seconds": 0.5,
+    "latest_in_run_publication_time_seconds": 1.5,
+    "final_retained_times_seconds": [1.5, 2.0],
+    "result_sha256": "4614d01b88d100aa54ce5470d21ed8ba6b1116629bec4afea56e4c695f4e661b"
+  },
+  "restart_archive": {
+    "bytes": 697567,
+    "sha256": "b6278034b94eba01deaf3b85f952066482f74e460aa5d2a04d3b0e7cc3a143ba",
+    "zip_integrity_error": null,
+    "member_hashes_recorded": true,
+    "atomic_same_directory_replace": true
+  },
+  "interpretation": "A fresh run marker was observed before accepting the archive, excluding a stale-output race. A complete checkpoint ZIP containing time 0.5 and an in-run publication summary was readable while the project run was active; the final accepted result records three pre-completion publications with constant-size first/latest telemetry and retains only the declared final two states. Atomic-failure tests independently show that an interrupted replacement preserves the previous archive. This is execution, recovery, and storage evidence, not physical validation of the flow solution or proof against loss of the underlying storage device."
+}

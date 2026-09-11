@@ -65,9 +65,9 @@ latency, signal quality, and maintainer attention remain finite.
     the external state is known to have changed.
 13. Hosted CI is an acceptance signal, not an interactive debugger. During an
     ordinary feature increment, perform one coherent push, allow one automatic
-    fast-gate run, and do not manually dispatch the fast workflow. Inspect its
-    status at most once during routine development; repeated polling does not
-    improve evidence and must not stall useful local work.
+    fast-gate run; the workflow deliberately has no manual dispatch trigger.
+    Inspect its status at most once during routine development; repeated polling
+    does not improve evidence and must not stall useful local work.
 14. Cross-platform acceptance and release workflows require an actual stage
     boundary, a platform/dependency/packaging risk, or an explicit human request.
     A coding agent may not invoke them merely because they are available or free.

@@ -310,7 +310,7 @@ _CAPABILITIES = (
         ),
         limitations=(
             "The first exporter consumes foamToVTK fixed-mesh volume fields.",
-            "Compressed HDF5 publication still uses one bounded-memory repack copy.",
+            "foamToVTK still creates all selected VTU frames before HDF5 consumption.",
             "Moving meshes, decomposed parallel fields, and conservative CFD-to-FEM mapping remain open.",
         ),
     ),
@@ -413,7 +413,7 @@ _CAPABILITIES = (
             "23,880-cell Mesh OK OpenCFD v2606 integration run",
             "potentialFoam and pimpleFoam process completion",
             "mass-balance, pressure-drop, probe, surface-report, force, and field recovery",
-            "separated XDMF field-frame cadence and verified rolling restart archive",
+            "separated XDMF field-frame cadence and atomic in-run rolling restart publication",
             "adaptive time-step bound and Courant-control evidence",
             "accepted 0.002/0.001-second pairwise time-step sensitivity at a matched 0.5-second startup state",
         ),
@@ -421,7 +421,7 @@ _CAPABILITIES = (
             "Hydraulic inlet Reynolds number must be below 2300.",
             "Only one bottom-attached baffle, structured uniform sizing, and constant Newtonian properties are supported.",
             "The two-level startup sensitivity screen cannot establish temporal order, uncertainty, wake stationarity, or physical validation.",
-            "Restart archives are published after successful completion and are not yet crash-safe during a running solve.",
+            "Hard process/host-loss recovery depends on the latest fully published checkpoint and durable local storage.",
         ),
     ),
     Capability(

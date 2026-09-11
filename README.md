@@ -595,6 +595,13 @@ published checkpoint exists or a resumed run succeeds.
 Operational limits such as `timeout_seconds` may be relaxed before resume;
 solver-affecting model, mesh, and runtime identity must remain unchanged.
 
+For the baffled-channel project, stable checkpoints are also streamed and
+atomically published to `output/evidence/restart.zip` while the solver is still
+running. `status` and `watch` report the latest published time without opening
+native fields; a partial replacement never supersedes the previous good
+archive. The publication record stores only a count plus first/latest times, so
+its metadata remains bounded even for long runs.
+
 An expert workspace retained by `--keep-workspace` or project policy is also
 protected from ordinary cleanup. Releasing that deliberate copy requires the
 separate, previewable `agentcfd clean . --include-retained` scope; add `--apply`

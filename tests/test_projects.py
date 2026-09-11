@@ -6,6 +6,7 @@ import shlex
 import shutil
 import threading
 import time
+import zipfile
 from pathlib import Path
 
 import jsonschema
@@ -1200,7 +1201,10 @@ def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
 
-    def fail(provider, _step):
+    observed = {}
+
+    def fail(provider, _step, **kwargs):
+        observed["checkpoint_archive"] = kwargs["checkpoint_archive"]
         provider.case_directory.mkdir(parents=True)
         (provider.case_directory / "log.pimpleFoam").write_text(
             "Time = 0.1\nFOAM FATAL ERROR: synthetic failure\n"
@@ -1220,6 +1224,7 @@ def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
 
     assert completed.solver_workspace is not None
     assert completed.solver_workspace.is_dir()
+    assert observed["checkpoint_archive"] == project.run_root / "evidence" / "restart.zip"
     assert status["state"] == "failed"
     assert status["next_action"]["command"].startswith("agentcfd diagnose ")
 
@@ -1246,7 +1251,7 @@ def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
     )
     project = projects.Project(project.root)
 
-    def complete(provider, _step):
+    def complete(provider, _step, **_kwargs):
         provider.case_directory.mkdir(parents=True)
         (provider.case_directory / "native-field").write_bytes(b"retained")
         return projects.SimulationResult(
@@ -1284,7 +1289,7 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
 
-    def complete(provider, _step):
+    def complete(provider, _step, **_kwargs):
         provider.case_directory.mkdir(parents=True)
         native = provider.case_directory / "native-fields.bin"
         native.write_bytes(b"large-provider-native-payload")
@@ -3380,6 +3385,24 @@ GAMG: Solving for p, Initial residual = 8e-4, Final residual = 9e-7, No Iteratio
         (monitor / "surfaceFieldValue.dat").write_text(
             f"# Time value\n0.5 {value}\n0.75 {value}\n"
         )
+    checkpoint = project.run_root / "evidence" / "restart.zip"
+    checkpoint.parent.mkdir()
+    with zipfile.ZipFile(checkpoint, "w") as bundle:
+        bundle.writestr(
+            "restart.json",
+            json.dumps(
+                {
+                    "schema": "agentcfd.openfoam-restart/0.1",
+                    "retained_times": [0.5],
+                    "in_run_publication_count": 1,
+                    "first_in_run_publication_time": 0.5,
+                    "latest_in_run_publication_time": 0.5,
+                    "latest_time": 0.5,
+                    "atomic_publication": True,
+                    "bounded_memory_streaming": True,
+                }
+            ),
+        )
 
     report = project.status(include_storage=True)
 
@@ -3403,8 +3426,22 @@ GAMG: Solving for p, Initial residual = 8e-4, Final residual = 9e-7, No Iteratio
     assert progress["monitors"]["pressure_drop"] == pytest.approx(200.0)
     assert progress["workspace"]["native_time_directory_count"] == 1
     assert progress["workspace"]["bytes"] > 0
+    assert progress["checkpoint"] == {
+        "status": "available",
+        "path": str(checkpoint),
+        "retained_times": [0.5],
+        "in_run_publication_count": 1,
+        "first_in_run_publication_time": 0.5,
+        "latest_in_run_publication_time": 0.5,
+        "latest_time": 0.5,
+        "unit": "s",
+        "size_bytes": checkpoint.stat().st_size,
+        "atomic_publication": True,
+        "bounded_memory_streaming": True,
+    }
     assert progress["observation_cost"]["field_payloads_opened"] == 0
     assert progress["observation_cost"]["monitor_bytes_read"] > 0
+    assert progress["observation_cost"]["checkpoint_metadata_bytes_read"] > 0
     assert progress["estimated_remaining"]["minimum_seconds"] >= 0
 
 

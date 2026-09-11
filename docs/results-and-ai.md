@@ -414,10 +414,14 @@ presenting cell and point copies as peers to every user:
 The CLI defaults to `visualization`. A project takes its canonical field list
 and profile from `OutputRequest`; `outputs.standard()` therefore publishes only
 point velocity and physical pressure when density is known. For the baffled
-channel workflow, native solver restart state is repacked into the
+channel workflow, native solver restart state is streamed into the
 content-addressed `evidence/restart.zip` independently of the portable profile.
-The disposable OpenFOAM workspace can therefore be removed without discarding
-the declared rolling continuation state.
+During a project run, each stable rolling update atomically replaces the prior
+good archive; `status` exposes its retained times and size from bounded metadata
+without opening native fields. It records only publication count and first/latest
+time, so monitoring cost does not grow with solver steps. The disposable
+OpenFOAM workspace can therefore be removed without discarding the declared
+continuation state.
 
 Use repeated canonical selectors when a workflow needs a smaller set:
 
@@ -461,7 +465,10 @@ unaccepted comparison. The evidence file includes both source paths and hashes.
 
 Numeric HDF5 datasets use chunked gzip compression by default. The field-bundle
 manifest records the conservative preflight estimate, uncompressed bytes per
-frame, selected compression, budget, and actual portable bytes. See
+frame, selected compression, budget, actual portable bytes, the
+`single-pass-direct` HDF5 write strategy, and zero temporary-HDF5-copy bytes.
+Compression is applied when each dataset is created rather than by retaining
+and repacking a second complete HDF5 payload. See
 [output architecture](output-architecture.md) for the complete contract.
 
 The authoritative machine schemas live in `schemas/simulation-result.schema.json`,

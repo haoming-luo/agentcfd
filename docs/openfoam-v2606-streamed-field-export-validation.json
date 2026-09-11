@@ -22,8 +22,8 @@
       "fluid.q_criterion"
     ],
     "formats": ["XDMF", "HDF5"],
-    "actual_bytes": 774805,
-    "hdf5_sha256": "d6bdeba1803a40189f5060dcd6602fd1e6b0c3a0c91393cb5a3ec4ff3b9a7c61",
+    "actual_bytes": 773845,
+    "hdf5_sha256": "b3b711050d11c4a5950f2ec5db17e12f40ef67e5e855245ee7165328e2f2f915",
     "xdmf_sha256": "893b424bdacd4a3bab6d4bb330eb8a7b64ace4994e33968a421e908192d3f970",
     "verified": true
   },
@@ -31,8 +31,12 @@
     "staging": "isolated-streamed-vtu",
     "source_vtu_policy": "delete-after-frame",
     "consumed_source_vtu_bytes": 2441378,
+    "hdf5_write_strategy": "single-pass-direct",
+    "temporary_hdf5_copy_bytes": 0,
+    "hdf5_dataset_compression": "gzip",
+    "repack_file_created": false,
     "preexisting_vtk_directory_preserved": true,
     "temporary_directories_remaining": 0
   },
-  "interpretation": "A real two-frame OpenFOAM field set was converted without rerunning the solver. AgentCFD isolated foamToVTK output from the user's VTK directory, consumed each generated VTU after writing it into the portable time series, removed staging, and verified the resulting XDMF/HDF5 bundle. This is data-pipeline and storage evidence, not physical or numerical validation of the flow solution."
+  "interpretation": "A real two-frame OpenFOAM field set was converted without rerunning the solver. AgentCFD isolated foamToVTK output from the user's VTK directory, consumed each generated VTU after writing it into the portable time series, compressed every HDF5 dataset on its first write without a repack file, removed staging, and verified the resulting XDMF/HDF5 bundle. This is data-pipeline and storage evidence, not physical or numerical validation of the flow solution."
 }

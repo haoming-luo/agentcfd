@@ -913,6 +913,118 @@ def _latest_numeric_row(path: Path) -> tuple[list[float] | None, int]:
     return None, bytes_read
 
 
+def _valid_optional_number(value: object) -> bool:
+    return value is None or (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(float(value))
+    )
+
+
+def _checkpoint_progress(
+    root: Path,
+    record: Mapping[str, object],
+    plan: Mapping[str, object],
+) -> tuple[dict[str, object], int]:
+    """Read only the small manifest of an atomically published restart ZIP."""
+
+    decisions = plan.get("decisions", {})
+    output_plan = decisions.get("output_plan", {}) if isinstance(decisions, dict) else {}
+    channels = output_plan.get("channels", {}) if isinstance(output_plan, dict) else {}
+    policy = channels.get("checkpoints", {}) if isinstance(channels, dict) else {}
+    enabled = policy.get("enabled") is True if isinstance(policy, dict) else False
+    directory = Path(str(record.get("directory", "")))
+    if not directory.is_absolute():
+        directory = root / directory
+    archive = directory / "evidence" / "restart.zip"
+    report: dict[str, object] = {
+        "status": "awaiting-first-checkpoint" if enabled else "disabled",
+        "path": str(archive) if enabled else None,
+        "retained_times": [],
+        "in_run_publication_count": 0,
+        "first_in_run_publication_time": None,
+        "latest_in_run_publication_time": None,
+        "latest_time": None,
+        "unit": "s",
+        "size_bytes": None,
+        "atomic_publication": None,
+        "bounded_memory_streaming": None,
+    }
+    if not enabled or not archive.is_file():
+        return report, 0
+    metadata_bytes = 0
+    try:
+        size = archive.stat().st_size
+        report["size_bytes"] = size
+        with zipfile.ZipFile(archive) as bundle:
+            info = bundle.getinfo("restart.json")
+            if info.file_size > 256 * 1024:
+                raise ValueError("Restart metadata exceeds the observation bound.")
+            payload = bundle.read(info)
+        metadata_bytes = len(payload)
+        metadata = strict_json_object(
+            payload.decode("utf-8"),
+            label="AgentCFD rolling checkpoint metadata",
+        )
+        retained = metadata.get("retained_times")
+        publication_count = metadata.get("in_run_publication_count", 0)
+        first_publication = metadata.get("first_in_run_publication_time")
+        latest_publication = metadata.get("latest_in_run_publication_time")
+        latest = metadata.get("latest_time")
+        if (
+            metadata.get("schema") != "agentcfd.openfoam-restart/0.1"
+            or not isinstance(retained, list)
+            or not retained
+            or isinstance(publication_count, bool)
+            or not isinstance(publication_count, int)
+            or publication_count < 0
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+                for value in retained
+            )
+            or not _valid_optional_number(first_publication)
+            or not _valid_optional_number(latest_publication)
+            or (publication_count == 0 and first_publication is not None)
+            or (publication_count == 0 and latest_publication is not None)
+            or (publication_count > 0 and first_publication is None)
+            or (publication_count > 0 and latest_publication is None)
+            or (
+                publication_count > 0
+                and float(first_publication) > float(latest_publication)
+            )
+            or isinstance(latest, bool)
+            or not isinstance(latest, (int, float))
+            or not math.isfinite(float(latest))
+            or not math.isclose(float(latest), float(retained[-1]))
+        ):
+            raise ValueError("Restart metadata is malformed.")
+    except (KeyError, OSError, UnicodeDecodeError, ValueError, zipfile.BadZipFile):
+        report["status"] = "invalid"
+        return report, metadata_bytes
+    report.update(
+        {
+            "status": "available",
+            "retained_times": [float(value) for value in retained],
+            "in_run_publication_count": publication_count,
+            "first_in_run_publication_time": (
+                float(first_publication) if first_publication is not None else None
+            ),
+            "latest_in_run_publication_time": (
+                float(latest_publication) if latest_publication is not None else None
+            ),
+            "latest_time": float(latest),
+            "size_bytes": size,
+            "atomic_publication": metadata.get("atomic_publication") is True,
+            "bounded_memory_streaming": (
+                metadata.get("bounded_memory_streaming") is True
+            ),
+        }
+    )
+    return report, metadata_bytes
+
+
 def _run_progress_snapshot(
     root: Path,
     record: Mapping[str, object] | None,
@@ -1116,6 +1228,8 @@ def _run_progress_snapshot(
         if calibrated is not None:
             remaining_range = calibrated
 
+    checkpoint, checkpoint_bytes = _checkpoint_progress(root, record, plan)
+
     workspace_bytes = None
     workspace_files = None
     if include_storage and workspace is not None:
@@ -1161,6 +1275,7 @@ def _run_progress_snapshot(
             },
         },
         "estimated_remaining": remaining_range,
+        "checkpoint": checkpoint,
         "workspace": {
             "path": None if workspace is None else str(workspace),
             "exists": workspace is not None and workspace.exists(),
@@ -1175,6 +1290,7 @@ def _run_progress_snapshot(
             "field_payloads_opened": 0,
             "log_tail_bytes_read": tail_bytes,
             "monitor_bytes_read": monitor_bytes,
+            "checkpoint_metadata_bytes_read": checkpoint_bytes,
             "recursive_storage_scan": include_storage,
         },
     }
@@ -1414,9 +1530,10 @@ def _resolved_output_plan(
         )
         if export_fields and "npz" in step.output.portable_formats:
             estimated_portable_bytes += field_bytes + mesh_bytes
-        # Full export now consumes isolated VTK frames while publishing HDF5.
-        # Keep the previously calibrated native+VTK+portable upper bound until
-        # the streamed path has measured evidence across representative meshes.
+        # Full export consumes isolated VTK frames while writing compressed HDF5
+        # directly, with no repack copy. Keep the previously calibrated
+        # native+VTK+portable upper bound until the path has measured evidence
+        # across representative meshes.
         # Summary-only still needs native solver frames during execution, but
         # neither VTK conversion nor a permanent portable field copy.
         raw_staging_bytes = (
@@ -6602,6 +6719,12 @@ class Project:
             case_directory=case_directory if selected_name == "openfoam" else None,
             container_image=container_image,
         )
+        checkpoint_archive = (
+            run_directory / "evidence" / "restart.zip"
+            if isinstance(selected, OpenFOAMChannelProvider)
+            and step.output.checkpoints.enabled
+            else None
+        )
         write_marker(status="running", phase="solver")
         try:
             if _resume_archive is not None:
@@ -6615,6 +6738,12 @@ class Project:
                     restart_archive=_resume_archive,
                     source_run_id=_resume_source_run_id,
                     expected_analysis_sha256=str(plan["model"]["analysis_sha256"]),
+                    checkpoint_archive=checkpoint_archive,
+                )
+            elif isinstance(selected, OpenFOAMChannelProvider):
+                result = selected.run(
+                    step,
+                    checkpoint_archive=checkpoint_archive,
                 )
             else:
                 result = selected.run(step)

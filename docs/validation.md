@@ -144,13 +144,26 @@ uncertainty, and the formal run's latest-window near-wake velocity still drifts
 strongly. The 2.0-second field bundle is suitable for inspecting the developing
 wake animation; it is not evidence of a statistically stationary wake.
 
+Live recovery publication is recorded separately in
+`docs/openfoam-v2606-live-restart-validation.json`. A fresh 3,020-cell OpenCFD
+v2606 run exposed a complete 0.5-second restart archive while the project run
+was still active. The completed result recorded three in-run publications at
+the declared 0.5-second cadence, summarized by first/latest times 0.5/1.5
+seconds without an unbounded event list, then atomically finalized the declared
+1.5/2.0-second rolling pair. The ZIP passed its integrity scan, every member has
+an exact hash, and a synthetic interrupted-replacement test proves the previous
+archive is not overwritten on write failure. This is operational recovery
+evidence, not a claim against loss of the storage device or physical validation
+of the flow.
+
 The low-storage conversion path is separately exercised in
 `docs/openfoam-v2606-streamed-field-export-validation.json`. Without rerunning
 the solver, OpenCFD v2606 converted two existing baffled-flow frames containing
 U, p, vorticity, and Q into a verified 0.74 MiB XDMF/HDF5 bundle. AgentCFD used
 an isolated `foamToVTK -name` directory, consumed 2.33 MiB of intermediate VTU
-files frame by frame, preserved a pre-existing user-owned `VTK/` directory, and
-left no staging directory. This is integration and storage evidence only; it
+files frame by frame, wrote the final gzip datasets directly with zero temporary
+HDF5-copy bytes, preserved a pre-existing user-owned `VTK/` directory, and left
+no staging or repack file. This is integration and storage evidence only; it
 does not upgrade the physical-validation status of the source solution.
 
 ## Grid convergence

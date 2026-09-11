@@ -14,8 +14,6 @@ on:
       - "docs/**/*.md"
       - "LICENSE"
       - "NOTICE"
-  workflow_dispatch:
-
 permissions:
   contents: read
 

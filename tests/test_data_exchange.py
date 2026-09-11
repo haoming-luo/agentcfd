@@ -291,7 +291,10 @@ def test_xdmf_only_bundle_omits_npz_without_losing_verification(tmp_path):
         "hdf5": "fields.h5",
     }
     assert manifest["storage"]["compression"] == "gzip"
+    assert manifest["storage"]["hdf5_write_strategy"] == "single-pass-direct"
+    assert manifest["storage"]["temporary_hdf5_copy_bytes"] == 0
     assert manifest["storage"]["actual_portable_bytes"] > 0
+    assert not bundle.hdf5.with_suffix(".h5.repack").exists()
 
     import h5py
 
@@ -314,6 +317,30 @@ def test_xdmf_only_bundle_omits_npz_without_losing_verification(tmp_path):
             tmp_path / "sample.npz",
             field="fluid.velocity",
         )
+
+
+def test_uncompressed_hdf5_is_written_directly_without_chunk_filters(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        convert=False,
+        fields=("fluid.velocity",),
+        compression="none",
+    )
+
+    import h5py
+
+    with h5py.File(bundle.hdf5, "r") as h5:
+        datasets = [item for item in h5.values() if isinstance(item, h5py.Dataset)]
+        assert datasets
+        assert all(item.compression is None for item in datasets)
+        assert all(item.chunks is None for item in datasets)
+    manifest = json.loads(bundle.manifest.read_text())
+    assert manifest["storage"]["hdf5_write_strategy"] == "single-pass-direct"
+    assert manifest["storage"]["temporary_hdf5_copy_bytes"] == 0
 
 
 def test_portable_export_fails_before_writing_when_budget_is_too_small(tmp_path):

@@ -2413,6 +2413,49 @@ def test_result_summary_is_lightweight_filterable_and_cli_visible(
         project.result_summary(quantities=("flow.misspelled",))
 
 
+def test_result_summary_and_human_cli_distinguish_design_requirements(
+    tmp_path, capsys
+):
+    project = projects.init_project(tmp_path / "constrained-pipe")
+    case = project.entrypoint
+    source = case.read_text()
+    case.write_text(
+        source.replace(
+            "output=outputs.standard(),",
+            '''output=outputs.standard(
+            criteria=(
+                outputs.require(
+                    "pressure-budget",
+                    quantity="flow.pressure_drop",
+                    unit="Pa",
+                    maximum=0.0,
+                ),
+            ),
+        ),''',
+        )
+    )
+
+    completed = project.run()
+    report = project.result_summary()
+
+    assert completed.result.converged is True
+    assert completed.result.trust_level == "verified"
+    assert completed.result.accepted is False
+    assert len(report["requirements"]) == 1
+    assert report["requirements"][0]["name"] == "requirement.pressure-budget"
+    assert report["requirements"][0]["passed"] is False
+    assert "unmet design requirements" in report["next_action"]["reason"]
+    jsonschema.Draft202012Validator(
+        contracts.load("result-summary.schema.json")
+    ).validate(report)
+
+    assert entrypoint(["result", str(project.root)]) == 3
+    human = capsys.readouterr().out
+    assert "Design requirements:\n" in human
+    assert "[FAIL] requirement.pressure-budget:" in human
+    assert "target <= 0.0 Pa" in human
+
+
 def test_project_doctor_combines_health_resource_and_energy_truthfulness(
     tmp_path, capsys
 ):

@@ -47,6 +47,7 @@
       "additionalProperties": false
     },
     "failed_checks": {"type": "array", "items": {"type": "object"}},
+    "requirements": {"type": "array", "items": {"type": "object"}},
     "provenance": {"type": "object"},
     "artifact_integrity": {
       "type": "object",

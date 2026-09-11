@@ -293,10 +293,15 @@ def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
 
     payload = result.summary()
     failed = [check.as_dict() for check in result.checks if not check.passed]
+    requirements = [
+        check.as_dict() for check in result.checks if check.kind == "requirement"
+    ]
     payload["decision"] = {
         "accepted": result.accepted,
         "failed_check_count": len(failed),
         "failed_checks": failed,
+        "requirement_count": len(requirements),
+        "requirements": requirements,
         "guidance": (
             "Result is accepted for its declared capability and policy."
             if result.accepted
@@ -3233,6 +3238,20 @@ def main(argv: list[str] | None = None) -> int:
                 f"data: {len(available['histories'])} histories | "
                 f"{len(available['fields'])} fields | HDF5 not opened"
             )
+            if report.get("requirements"):
+                print("Design requirements:")
+                for requirement in report["requirements"]:
+                    status = "PASS" if requirement["passed"] else "FAIL"
+                    value = requirement.get("value")
+                    display_value = (
+                        f"{float(value):.8g}"
+                        if isinstance(value, (int, float)) and not isinstance(value, bool)
+                        else str(value)
+                    )
+                    print(
+                        f"  [{status}] {requirement['name']}: {display_value}; "
+                        f"target {requirement.get('limit')}"
+                    )
             if report["failed_checks"]:
                 print(
                     "failed checks: "

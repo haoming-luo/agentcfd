@@ -53,6 +53,8 @@ def test_cli_result_payload_exposes_failed_decision_gates_to_agents():
     assert decision["accepted"] is False
     assert decision["failed_check_count"] == 1
     assert decision["failed_checks"][0]["name"] == "reference-applicability"
+    assert decision["requirement_count"] == 0
+    assert decision["requirements"] == []
     assert "do not promote" in decision["guidance"]
 
 

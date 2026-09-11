@@ -2216,6 +2216,13 @@ class Project:
         fields = record.get("fields", {})
         histories = record.get("histories", {})
         checks = record.get("checks", [])
+        requirements = [
+            check for check in checks if check.get("kind") == "requirement"
+        ]
+        failed_checks = [check for check in checks if not check["passed"]]
+        failed_scientific_checks = [
+            check for check in failed_checks if check.get("kind") != "requirement"
+        ]
         project_argument = self._cli_project_argument()
         verification_command = (
             f"agentcfd verify result {shlex.quote(str(result_path))}"
@@ -2239,7 +2246,8 @@ class Project:
                 "histories": sorted(histories),
                 "fields": sorted(fields),
             },
-            "failed_checks": [check for check in checks if not check["passed"]],
+            "requirements": requirements,
+            "failed_checks": failed_checks,
             "provenance": record.get("provenance", {}),
             "artifact_integrity": {
                 "verified": False,
@@ -2260,6 +2268,8 @@ class Project:
                 "reason": (
                     "Open the accepted result for spatial review."
                     if record["accepted"]
+                    else "Review the unmet design requirements before selecting or changing the design."
+                    if requirements and not failed_scientific_checks
                     else "Review the failed checks before using this result."
                 ),
             },
@@ -4893,7 +4903,7 @@ class Project:
             "RESULT_ACCEPTANCE",
             accepted_or_not_run,
             "No completed result is awaiting failed-check review.",
-            "Review failed scientific checks before design or training use.",
+            "Review failed scientific checks or unmet design requirements before design or training use.",
             severity="warning",
         )
 

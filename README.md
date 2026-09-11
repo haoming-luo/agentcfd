@@ -391,6 +391,9 @@ agentcfd geometry-normalize equipment.stl  # preview region-name mapping only
 agentcfd geometry-normalize equipment.stl fluid.stl  # write a new safe copy
 agentcfd geometry-check fluid.stl --unit mm --roles roles.json \
   --internal-flow --output geometry/inspection.json
+# Or confirm a short list without authoring an intermediate JSON file:
+agentcfd geometry-check fluid.stl --unit mm --internal-flow \
+  --role inlet=inlet --role outlet=outlet --role walls=wall
 # Add --accept-multiple-components only after reviewing all reported shells.
 agentcfd mesh . --plan-only     # imported-surface cell/refinement/quality budget
 agentcfd mesh . --output mesh-case # native dry-run + snappy + checkMesh gates
@@ -422,6 +425,10 @@ Disconnected surface components fail closed by default. Review their area
 fractions and region membership, remove accidental debris, or make the
 intentional-shell decision explicit with `--accept-multiple-components`; the
 flag records acceptance and never edits the surface.
+Repeated `--role REGION=ROLE` values are the concise human CLI equivalent of
+the versioned `--roles` file. They are mutually exclusive, reject duplicate
+regions, pass through the same exact-coverage validation, and project creation
+still stores the normalized versioned map under `geometry/`.
 
 This boundary follows OpenFOAM's own surface model: a triangulated surface may
 contain several regions that become separate patches, and per-region patch

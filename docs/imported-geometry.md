@@ -34,6 +34,20 @@ agentcfd geometry-check duct.obj --unit mm --roles boundary-roles.json \
   --internal-flow --output geometry/inspection.json
 ```
 
+For a short region list, the same confirmation can be written directly without
+creating an intermediate file:
+
+```bash
+agentcfd geometry-check duct.obj --unit mm --internal-flow \
+  --role inlet_main=inlet --role outlet_main=outlet --role housing=wall
+```
+
+`--roles` and repeated `--role` are mutually exclusive. Inline assignments
+reject duplicate regions and enter the same exact-name, complete-coverage, and
+allowed-role validation. `agentcfd init` accepts the same repeated option and
+still materializes `geometry/boundary-roles.json`, so convenience does not
+remove provenance or create a second boundary model.
+
 The map must cover the exact discovered names with no stale extras. Supported
 roles are inlet, outlet, wall, symmetry, periodic, interface, farfield,
 opening, and empty. AgentCFD will suggest roles from recognizable tokens but
@@ -142,8 +156,8 @@ that bridge and create the complete owned project in one command:
 
 ```bash
 agentcfd init my-duct --template imported-internal-flow \
-  --geometry duct.obj --unit mm --roles boundary-roles.json \
-  --accept-multiple-components \
+  --geometry duct.obj --unit mm \
+  --role inlet_main=inlet --role outlet_main=outlet --role housing=wall \
   --interior-point-m 0.15 0.03 0.03 \
   --inlet-velocity-m-s 1 0 0 --base-size-m 0.005 \
   --maximum-cells 500000

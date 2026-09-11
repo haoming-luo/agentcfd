@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Accept repeated `--role REGION=ROLE` confirmations in `geometry-check` and
+  imported project creation. This removes a needless hand-written intermediate
+  file for small models while preserving mutual exclusion, duplicate
+  detection, exact-region validation, and the same project-owned versioned
+  role map used by JSON automation.
 - Quantify edge-connected surface components during bounded STL/OBJ preflight.
   Each component exposes size, area fraction, region membership, and signed
   volume in native and SI units. Multiple shells now block imported setup until

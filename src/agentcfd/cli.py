@@ -140,6 +140,28 @@ def _outlet_targets(
     return selected
 
 
+def _boundary_role(value: str) -> tuple[str, str]:
+    name, separator, role = value.partition("=")
+    if not separator or not name.strip() or not role.strip():
+        raise argparse.ArgumentTypeError(
+            "Boundary roles must use REGION=ROLE, for example inlet_main=inlet."
+        )
+    return name.strip(), role.strip().lower()
+
+
+def _boundary_roles(
+    assignments: list[tuple[str, str]] | None,
+) -> dict[str, str] | None:
+    if assignments is None:
+        return None
+    selected: dict[str, str] = {}
+    for name, role in assignments:
+        if name in selected:
+            raise ProjectError(f"Boundary role {name!r} was supplied more than once.")
+        selected[name] = role
+    return selected
+
+
 def _project_parameters(
     assignments: list[tuple[str, object]] | None,
     parameter_file: Path | None = None,
@@ -1521,6 +1543,13 @@ def build_parser() -> argparse.ArgumentParser:
     init_roles = init.add_mutually_exclusive_group()
     init_roles.add_argument("--roles", type=Path)
     init_roles.add_argument(
+        "--role",
+        action="append",
+        type=_boundary_role,
+        metavar="REGION=ROLE",
+        help="Confirm one exact boundary role; repeat for every surface region.",
+    )
+    init_roles.add_argument(
         "--accept-name-roles",
         action="store_true",
         help=(
@@ -1669,10 +1698,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.0,
         help="Explicit vertex merge tolerance in source units (default: exact).",
     )
-    geometry_check.add_argument(
+    geometry_roles = geometry_check.add_mutually_exclusive_group()
+    geometry_roles.add_argument(
         "--roles",
         type=Path,
         help="Versioned JSON map from exact surface region names to CFD roles.",
+    )
+    geometry_roles.add_argument(
+        "--role",
+        action="append",
+        type=_boundary_role,
+        metavar="REGION=ROLE",
+        help="Confirm one exact boundary role; repeat for every surface region.",
     )
     geometry_check.add_argument(
         "--internal-flow",
@@ -2934,6 +2971,7 @@ def main(argv: list[str] | None = None) -> int:
             args.geometry,
             args.unit,
             args.roles,
+            args.role,
             True if args.accept_name_roles else None,
             True if args.accept_multiple_components else None,
             args.interior_point_m,
@@ -2976,7 +3014,11 @@ def main(argv: list[str] | None = None) -> int:
                 template=selected_template,
                 geometry_path=args.geometry,
                 geometry_unit=args.unit,
-                boundary_roles=_boundary_role_map(args.roles),
+                boundary_roles=(
+                    _boundary_role_map(args.roles)
+                    if args.roles is not None
+                    else _boundary_roles(args.role)
+                ),
                 accept_name_roles=args.accept_name_roles,
                 accept_multiple_components=args.accept_multiple_components,
                 interior_point_m=(
@@ -3087,7 +3129,11 @@ def main(argv: list[str] | None = None) -> int:
             require_watertight=not args.allow_open,
             topology_triangle_limit=args.max_topology_triangles,
             merge_tolerance=args.merge_tolerance,
-            boundary_roles=_boundary_role_map(args.roles),
+            boundary_roles=(
+                _boundary_role_map(args.roles)
+                if args.roles is not None
+                else _boundary_roles(args.role)
+            ),
             internal_flow=args.internal_flow,
             accept_multiple_components=args.accept_multiple_components,
         )
@@ -3153,7 +3199,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{issue['severity']}: {issue['code']} | {issue['repair']}")
             print(f"next: {report['next_action']['message']}")
         ready = report["readiness"]["geometry_ready"] and (
-            args.roles is None or report["readiness"]["boundary_roles_ready"]
+            (args.roles is None and args.role is None)
+            or report["readiness"]["boundary_roles_ready"]
         )
         return 0 if ready else 3
     if args.command == "geometry-normalize":

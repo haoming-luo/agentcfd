@@ -414,6 +414,45 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
     assert "watertight true" in human
     assert "inlet inlet: area 5e-07 m^2 | mean normal (0, 0, -1)" in human
     assert json.loads(output.read_text())["source"]["sha256"] == domain.source_sha256
+    assert (
+        entrypoint(
+            [
+                "geometry-check",
+                str(surface),
+                "--unit",
+                "mm",
+                "--role",
+                "inlet=inlet",
+                "--role",
+                "outlet=outlet",
+                "--role",
+                "walls=wall",
+                "--internal-flow",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    inline_roles = json.loads(capsys.readouterr().out)
+    assert inline_roles["boundary_roles"]["confirmed"] == roles
+    assert (
+        entrypoint(
+            [
+                "geometry-check",
+                str(surface),
+                "--unit",
+                "mm",
+                "--role",
+                "inlet=inlet",
+                "--role",
+                "inlet=outlet",
+                "--json",
+            ]
+        )
+        == 2
+    )
+    duplicate = json.loads(capsys.readouterr().out)
+    assert "supplied more than once" in duplicate["error"]["message"]
 
 
 def test_imported_volume_intent_rejects_open_surface_report(tmp_path):

@@ -46,6 +46,9 @@ python -m pytest -q
    intentional internal shells or baffles. Use
    `--accept-multiple-components` only after that review; the explicit decision
    is retained in inspection and model identity.
+   Humans may use repeated `--role REGION=ROLE` values for a short surface
+   list; automation should prefer the versioned role map or project-creation
+   request. Both paths must cover exact names and produce the same stored map.
 9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
    never infer physical time or point/cell association from shape alone.
 10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,

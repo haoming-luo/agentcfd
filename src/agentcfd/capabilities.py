@@ -305,10 +305,12 @@ _CAPABILITIES = (
         evidence=(
             "XDMF/HDF5 and NPZ cross-format round-trip tests",
             "field-unit, association, axis, and artifact-hash contract tests",
+            "isolated foamToVTK staging with per-frame source consumption",
             "16-frame OpenCFD v2606 turbulent-pipe export",
         ),
         limitations=(
             "The first exporter consumes foamToVTK fixed-mesh volume fields.",
+            "Compressed HDF5 publication still uses one bounded-memory repack copy.",
             "Moving meshes, decomposed parallel fields, and conservative CFD-to-FEM mapping remain open.",
         ),
     ),

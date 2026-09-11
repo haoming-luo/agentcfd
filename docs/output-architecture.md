@@ -92,13 +92,18 @@ factor and evidence are visible in `estimate_calibration`, rather than hidden
 as an unexplained constant.
 
 The adapter passes requested time directories and native field names directly
-to `foamToVTK`, avoiding VTK copies for unused checkpoints and variables. It
-still stages the selected native, VTK, and HDF5 representations; future
-streaming and in-situ adapters can lower that remaining amplification without
-changing the public output contract. Generated channel cases use binary native
-fields. OpenCFD v2606 explicitly disables `writeCompression` for non-ASCII
-format, so requesting compression there only adds a warning and no savings;
-compression is applied to the durable HDF5 product instead.
+to `foamToVTK`, avoiding VTK copies for unused checkpoints and variables. Each
+managed conversion uses a unique `-name` directory inside the disposable case,
+so an old or user-owned `VTK/` tree cannot enter a new bundle. The exporter reads
+one frame, writes it to HDF5, then removes that VTU before reading the next; its
+manifest records the reclaimed byte count. Preconverted VTU inputs remain
+untouched. Native OpenFOAM data still coexist with HDF5, and compressed HDF5
+currently needs one bounded-memory repack copy; direct compressed dataset
+writing and later in-situ adapters can lower that remaining amplification
+without changing the public output contract. Generated channel cases use binary
+native fields. OpenCFD v2606 explicitly disables `writeCompression` for
+non-ASCII format, so requesting compression there only adds a warning and no
+savings; compression is applied to the durable HDF5 product instead.
 
 ## Portable storage
 
@@ -132,6 +137,8 @@ Implemented now:
 - chunked HDF5 compression and storage provenance;
 - binary OpenFOAM native output for generated cases;
 - selected-time and selected-field conversion before temporary VTK creation;
+- isolated `foamToVTK` output with per-frame VTU consumption and failure-safe
+  staging cleanup, preserving any user-owned `VTK/` tree;
 - multi-view ParaView overview scripts and derived slice-vector projections
   that continue to reference one portable XDMF/H5 field payload;
 - project storage inventory plus preview-first cleanup that protects active
@@ -144,8 +151,9 @@ Implemented now:
 The current restart ZIP is published after a successful solve and retains only
 the declared final `keep` checkpoints. It supports controlled continuation but
 does not claim crash-safe mid-run archival. Next provider milestones are
-streaming frame conversion, crash-safe checkpoint publication, and then an
-in-situ extraction adapter. Those are execution optimizations, not new user
+direct compressed HDF5 publication without a repack copy, crash-safe checkpoint
+publication, and then an in-situ extraction adapter. Those are execution
+optimizations, not new user
 concepts; existing `case.py` files keep the same API.
 
 The compact-monitoring direction follows OpenFOAM's function-object model,

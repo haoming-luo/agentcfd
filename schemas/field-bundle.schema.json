@@ -135,6 +135,8 @@
         "uncompressed_field_bytes_per_frame": {"type": "integer", "minimum": 1},
         "geometry_and_topology_bytes": {"type": "integer", "minimum": 1},
         "compression": {"enum": ["none", "gzip", "lzf"]},
+        "source_vtu_policy": {"enum": ["preserve", "delete-after-frame"]},
+        "consumed_source_vtu_bytes": {"type": "integer", "minimum": 0},
         "actual_portable_bytes": {"type": "integer", "minimum": 1}
       },
       "additionalProperties": false

@@ -167,19 +167,31 @@ def _time_from_vtu(path: Path) -> float:
     return value
 
 
-def openfoam_vtu_series(case_directory: str | Path) -> tuple[Path, ...]:
+def openfoam_vtu_series(
+    case_directory: str | Path,
+    *,
+    directory: str = "VTK",
+) -> tuple[Path, ...]:
     """Discover an ordered internal-field VTU series produced by foamToVTK."""
 
     root = Path(case_directory)
+    selected_directory = Path(directory)
+    if (
+        selected_directory.is_absolute()
+        or len(selected_directory.parts) != 1
+        or directory in {"", ".", ".."}
+    ):
+        raise ValueError("OpenFOAM VTK directory must be one relative path component.")
+    vtk_root = root / selected_directory
     records = [
         (_time_from_vtu(path), path)
-        for path in (root / "VTK").glob("case_*/internal.vtu")
+        for path in vtk_root.glob("case_*/internal.vtu")
         if path.is_file()
     ]
     records.sort(key=lambda item: item[0])
     if not records:
         raise FileNotFoundError(
-            f"No foamToVTK internal-field series found below {root / 'VTK'}."
+            f"No foamToVTK internal-field series found below {vtk_root}."
         )
     times = [time for time, _ in records]
     if len(set(times)) != len(times):
@@ -256,6 +268,7 @@ def convert_openfoam_fields(
     include_initial: bool = True,
     times: Iterable[str] | None = None,
     fields: Iterable[str] | None = None,
+    output_name: str | None = None,
 ) -> tuple[Path, ...]:
     """Run foamToVTK for only the requested times/fields and return its series."""
 
@@ -264,6 +277,29 @@ def convert_openfoam_fields(
         raise FileNotFoundError(root)
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("Field-export timeout must be a positive finite number.")
+    if output_name is not None:
+        selected_output = Path(output_name)
+        if (
+            selected_output.is_absolute()
+            or len(selected_output.parts) != 1
+            or output_name in {"", ".", ".."}
+        ):
+            raise ValueError(
+                "foamToVTK output_name must be one relative path component."
+            )
+        if not output_name.startswith(".agentcfd-vtk-"):
+            raise ValueError(
+                "foamToVTK managed output_name must start with '.agentcfd-vtk-'."
+            )
+        output_root = root / selected_output
+        if output_root.is_symlink():
+            raise ValueError("foamToVTK managed output directory must not be a symlink.")
+        if output_root.exists() and (
+            not output_root.is_dir() or any(output_root.iterdir())
+        ):
+            raise FileExistsError(
+                f"foamToVTK managed output directory is not empty: {output_root}"
+            )
     if container_image:
         docker = shutil.which("docker")
         if docker is None:
@@ -298,6 +334,8 @@ def convert_openfoam_fields(
                 "Field export requires foamToVTK on PATH or --container-image."
             )
         argv = [converter, "-case", str(root), "-no-boundary"]
+    if output_name is not None:
+        argv.extend(("-name", output_name, "-overwrite"))
     selected_times = None if times is None else tuple(str(value) for value in times)
     if selected_times:
         argv.extend(("-time", ",".join(selected_times)))
@@ -341,7 +379,7 @@ def convert_openfoam_fields(
         raise AgentCFDError(
             f"foamToVTK failed with exit code {completed.returncode}; see {log}."
         )
-    return openfoam_vtu_series(root)
+    return openfoam_vtu_series(root, directory=output_name or "VTK")
 
 
 def _semantic(source_name: str) -> FieldSemantic:
@@ -597,6 +635,7 @@ def export_vtu_series(
     formats: Iterable[str] = ("xdmf",),
     compression: str = "gzip",
     maximum_bytes: int | None = None,
+    _consume_source_files: bool = False,
 ) -> FieldBundle:
     """Write a canonical XDMF/HDF5 bundle and, when selected, an NPZ mirror."""
 
@@ -715,6 +754,7 @@ def export_vtu_series(
     point_frames: dict[str, list[Any]] = {}
     cell_frames: dict[str, list[list[Any]]] = {}
     field_records: list[dict[str, object]] | None = None
+    consumed_source_vtu_bytes = 0
 
     import h5py
 
@@ -774,6 +814,16 @@ def export_vtu_series(
                     cell_frames.setdefault(name, []).append(
                         [np.asarray(block) for block in blocks]
                     )
+            if _consume_source_files:
+                try:
+                    consumed_source_vtu_bytes += path.stat().st_size
+                except OSError:
+                    pass
+                path.unlink(missing_ok=True)
+                try:
+                    path.parent.rmdir()
+                except OSError:
+                    pass
     except BaseException:
         writer.h5_file.close()
         raise
@@ -869,6 +919,10 @@ def export_vtu_series(
             "uncompressed_field_bytes_per_frame": field_bytes_per_frame,
             "geometry_and_topology_bytes": geometry_bytes,
             "compression": compression,
+            "source_vtu_policy": (
+                "delete-after-frame" if _consume_source_files else "preserve"
+            ),
+            "consumed_source_vtu_bytes": consumed_source_vtu_bytes,
         },
     }
     if write_npz:
@@ -951,64 +1005,88 @@ def export_openfoam_case(
         if convert and (time_interval is not None or latest_only or not include_initial)
         else None
     )
-    files = (
-        convert_openfoam_fields(
-            case,
-            container_image=container_image,
-            timeout_seconds=timeout_seconds,
-            include_initial=include_initial,
-            times=selected_time_names,
-            fields=_openfoam_native_fields(fields),
-        )
-        if convert
-        else openfoam_vtu_series(case)
-    )
-    if not include_initial:
-        files = tuple(path for path in files if not math.isclose(_time_from_vtu(path), 0.0))
-        if not files:
-            raise ValueError("No non-initial OpenFOAM field frames are available for export.")
-    if time_interval is not None:
-        files = tuple(
-            path
-            for path in files
-            if math.isclose(_time_from_vtu(path), 0.0, rel_tol=0.0, abs_tol=1.0e-12)
-            or math.isclose(
-                _time_from_vtu(path) / time_interval,
-                round(_time_from_vtu(path) / time_interval),
-                rel_tol=0.0,
-                abs_tol=1.0e-8,
+    staging: tempfile.TemporaryDirectory[str] | None = None
+    try:
+        if convert:
+            staging = tempfile.TemporaryDirectory(
+                prefix=".agentcfd-vtk-",
+                dir=case,
             )
+            output_name = Path(staging.name).name
+            files = convert_openfoam_fields(
+                case,
+                container_image=container_image,
+                timeout_seconds=timeout_seconds,
+                include_initial=include_initial,
+                times=selected_time_names,
+                fields=_openfoam_native_fields(fields),
+                output_name=output_name,
+            )
+        else:
+            files = openfoam_vtu_series(case)
+        if not include_initial:
+            files = tuple(
+                path
+                for path in files
+                if not math.isclose(_time_from_vtu(path), 0.0)
+            )
+            if not files:
+                raise ValueError(
+                    "No non-initial OpenFOAM field frames are available for export."
+                )
+        if time_interval is not None:
+            files = tuple(
+                path
+                for path in files
+                if math.isclose(
+                    _time_from_vtu(path), 0.0, rel_tol=0.0, abs_tol=1.0e-12
+                )
+                or math.isclose(
+                    _time_from_vtu(path) / time_interval,
+                    round(_time_from_vtu(path) / time_interval),
+                    rel_tol=0.0,
+                    abs_tol=1.0e-8,
+                )
+            )
+            if not files:
+                raise ValueError(
+                    "No OpenFOAM times match the requested field-frame interval."
+                )
+        if latest_only:
+            files = (max(files, key=_time_from_vtu),)
+        selected_density = density if density is not None else _density_from_result(case)
+        conversion_record = {
+            "staging": "isolated-streamed-vtu" if convert else "preconverted-vtu",
+            "native_times": (
+                "all" if selected_time_names is None else list(selected_time_names)
+            ),
+            "native_fields": (
+                "all"
+                if _openfoam_native_fields(fields) is None
+                else list(_openfoam_native_fields(fields) or ())
+            ),
+            "boundary_fields_included": False,
+            "temporary_vtk_policy": (
+                "delete-after-frame" if convert else "preserve-preconverted"
+            ),
+        }
+        return export_vtu_series(
+            files,
+            output_directory,
+            case_directory=case,
+            density=selected_density,
+            axis=axis,
+            source={**dict(source or {}), "field_conversion": conversion_record},
+            profile=profile,
+            fields=fields,
+            formats=formats,
+            compression=compression,
+            maximum_bytes=maximum_bytes,
+            _consume_source_files=convert,
         )
-        if not files:
-            raise ValueError("No OpenFOAM times match the requested field-frame interval.")
-    if latest_only:
-        files = (max(files, key=_time_from_vtu),)
-    selected_density = density if density is not None else _density_from_result(case)
-    conversion_record = {
-        "staging": "selected-before-foamToVTK" if convert else "preconverted-vtu",
-        "native_times": (
-            "all" if selected_time_names is None else list(selected_time_names)
-        ),
-        "native_fields": (
-            "all"
-            if _openfoam_native_fields(fields) is None
-            else list(_openfoam_native_fields(fields) or ())
-        ),
-        "boundary_fields_included": False,
-    }
-    return export_vtu_series(
-        files,
-        output_directory,
-        case_directory=case,
-        density=selected_density,
-        axis=axis,
-        source={**dict(source or {}), "field_conversion": conversion_record},
-        profile=profile,
-        fields=fields,
-        formats=formats,
-        compression=compression,
-        maximum_bytes=maximum_bytes,
-    )
+    finally:
+        if staging is not None:
+            staging.cleanup()
 
 
 def export_agentfem_field_sample(

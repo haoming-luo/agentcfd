@@ -144,6 +144,15 @@ uncertainty, and the formal run's latest-window near-wake velocity still drifts
 strongly. The 2.0-second field bundle is suitable for inspecting the developing
 wake animation; it is not evidence of a statistically stationary wake.
 
+The low-storage conversion path is separately exercised in
+`docs/openfoam-v2606-streamed-field-export-validation.json`. Without rerunning
+the solver, OpenCFD v2606 converted two existing baffled-flow frames containing
+U, p, vorticity, and Q into a verified 0.74 MiB XDMF/HDF5 bundle. AgentCFD used
+an isolated `foamToVTK -name` directory, consumed 2.33 MiB of intermediate VTU
+files frame by frame, preserved a pre-existing user-owned `VTK/` directory, and
+left no staging directory. This is integration and storage evidence only; it
+does not upgrade the physical-validation status of the source solution.
+
 ## Grid convergence
 
 `agentcfd.verification.grid_convergence_index` implements a solver-neutral

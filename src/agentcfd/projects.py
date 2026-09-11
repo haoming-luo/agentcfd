@@ -1414,7 +1414,9 @@ def _resolved_output_plan(
         )
         if export_fields and "npz" in step.output.portable_formats:
             estimated_portable_bytes += field_bytes + mesh_bytes
-        # Full export stages solver-native and VTK data before publishing HDF5.
+        # Full export now consumes isolated VTK frames while publishing HDF5.
+        # Keep the previously calibrated native+VTK+portable upper bound until
+        # the streamed path has measured evidence across representative meshes.
         # Summary-only still needs native solver frames during execution, but
         # neither VTK conversion nor a permanent portable field copy.
         raw_staging_bytes = (
@@ -1433,7 +1435,7 @@ def _resolved_output_plan(
                 if imported_bound and export_fields
                 else "snappy-hard-cell-bound-native-only"
                 if imported_bound
-                else "native-plus-vtk-plus-portable-with-measured-headroom"
+                else "native-plus-streamed-vtk-conservative-measured-headroom"
                 if export_fields
                 else "native-solver-only-summary-with-conservative-headroom"
             ),

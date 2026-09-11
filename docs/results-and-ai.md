@@ -176,6 +176,13 @@ one by name, and call `agentcfd view . --recipe NAME --batch` or
 `--launch` remains the interactive GUI path. It never needs to synthesize a
 ParaView trace or duplicate the HDF5 payload.
 
+Managed OpenFOAM conversion never reuses the case's generic `VTK/` directory.
+AgentCFD requests an isolated temporary output from `foamToVTK`, consumes each
+selected frame into the standard HDF5 series, and deletes that temporary VTU
+immediately. The manifest reports `source_vtu_policy` and
+`consumed_source_vtu_bytes`; an explicit preconverted-VTU export preserves every
+source file instead.
+
 Campaign runs copy their compact scalar quantity map into `run.json`.
 `agentcfd campaigns . --json` can therefore compare accepted design points,
 input fingerprints, providers, duration, and quantities without parsing solver

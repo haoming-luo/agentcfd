@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Isolate every managed `foamToVTK` conversion with the upstream v2606 `-name`
+  option instead of sharing a case's `VTK/` directory. Old conversions can no
+  longer contaminate selected times, user-owned VTK output is preserved, and
+  each generated VTU is removed immediately after its HDF5 frame is written.
+  The field manifest records reclaimed source bytes and retention policy; all
+  staging is cleaned on success or failure while preconverted export remains
+  non-destructive.
 - Add opt-in `sweep --max-parallel N` with CPU capping and aggregate storage
   admission covering concurrent temporary peaks plus final field growth. Serial
   remains the default; reports keep
@@ -31,7 +38,10 @@
   built wheel over the complete 3 OS × 3 Python matrix before PyPI publication.
   Jobs have time bounds, transient artifacts expire after three days, and the
   mandatory repository policy forbids quota-error retries or relabeling local
-  evidence as remote success.
+  evidence as remote success. The 2026-09-11 incident baseline and hard
+  per-increment execution budget are now part of the coding-agent contract:
+  hosted CI verifies one locally complete batch, never acts as an interactive
+  debugger, and public-runner pricing does not relax the resource discipline.
 - Treat the semantic `checkMesh` verdict as authoritative for imported mesh
   acceptance. OpenFOAM may return process code zero after reporting failed
   all-geometry/all-topology checks; AgentCFD now marks the command check failed

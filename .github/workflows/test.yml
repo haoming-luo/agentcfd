@@ -5,13 +5,13 @@ on:
     branches: [main]
     paths-ignore:
       - "**/*.md"
-      - "docs/**"
+      - "docs/**/*.md"
       - "LICENSE"
       - "NOTICE"
   pull_request:
     paths-ignore:
       - "**/*.md"
-      - "docs/**"
+      - "docs/**/*.md"
       - "LICENSE"
       - "NOTICE"
   workflow_dispatch:

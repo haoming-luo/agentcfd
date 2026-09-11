@@ -68,6 +68,8 @@ files stay hidden and reproducible.
 - active-run collision protection and atomic phase records;
 - interrupted/failed run detection with retained diagnostic workspace;
 - XDMF/H5 default, optional NPZ, canonical units and associations;
+- isolated selected-field/time VTK conversion consumed one frame at a time into
+  HDF5, with no reuse or deletion of a user's existing `VTK/` tree;
 - scalar histories/reports separated from field frames and restart checkpoints;
 - budget estimation, actual portable bytes, compression, storage inventory, and
   preview-first temporary cleanup;
@@ -167,8 +169,8 @@ files stay hidden and reproducible.
 ### Then: scale without scaling attention
 
 1. Remote/container/HPC executor protocol with the same run state contract.
-2. Streaming XDMF/HDF5 publication, followed by Catalyst extraction for cases
-   where intermediate VTK and native full-field retention dominate I/O.
+2. Direct compressed HDF5 publication without a repack copy, followed by
+   Catalyst extraction where native full-field retention dominates I/O.
 3. Heat/steam and conjugate-transfer workflows, then reacting flow only after
    evidence gates are satisfied.
 4. Agent policy layer that may propose edits but cannot conceal assumptions,

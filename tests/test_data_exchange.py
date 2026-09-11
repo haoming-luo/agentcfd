@@ -14,7 +14,13 @@ np = pytest.importorskip("numpy")
 pytest.importorskip("h5py")
 
 
-def _write_frame(root: Path, time: int, scale: float) -> Path:
+def _write_frame(
+    root: Path,
+    time: float,
+    scale: float,
+    *,
+    vtk_directory: str = "VTK",
+) -> Path:
     points = np.asarray(
         [
             [0.0, 0.0, 0.0],
@@ -28,7 +34,7 @@ def _write_frame(root: Path, time: int, scale: float) -> Path:
         ]
     )
     cells = [("hexahedron", np.asarray([[0, 1, 2, 3, 4, 5, 6, 7]]))]
-    frame = root / "VTK" / f"case_{time}" / "internal.vtu"
+    frame = root / vtk_directory / f"case_{time}" / "internal.vtu"
     frame.parent.mkdir(parents=True)
     meshio.write(
         frame,
@@ -77,6 +83,10 @@ def test_xdmf_h5_npz_bundle_round_trip_and_schema(tmp_path):
         "fluid.kinematic_pressure",
         "fluid.pressure",
     }
+    assert manifest["storage"]["source_vtu_policy"] == "preserve"
+    assert manifest["storage"]["consumed_source_vtu_bytes"] == 0
+    assert (case / "VTK" / "case_0" / "internal.vtu").is_file()
+    assert (case / "VTK" / "case_10" / "internal.vtu").is_file()
 
     with np.load(bundle.npz, allow_pickle=False) as arrays:
         assert arrays["axis"].tolist() == [0.0, 10.0]
@@ -416,6 +426,80 @@ def test_conversion_limits_temporary_vtk_to_requested_times_and_fields(
     assert "shell" not in argv
 
 
+def test_named_conversion_isolates_output_from_existing_vtk(tmp_path, monkeypatch):
+    case = tmp_path / "case"
+    case.mkdir()
+    existing = _write_frame(case, 99, 9.0)
+    calls = []
+
+    def fake_run(argv, **_kwargs):
+        calls.append(argv)
+        output_name = argv[argv.index("-name") + 1]
+        _write_frame(case, 1, 1.0, vtk_directory=output_name)
+        return subprocess.CompletedProcess(argv, 0, stdout="converted\n", stderr="")
+
+    monkeypatch.setattr("agentcfd.data_exchange.shutil.which", lambda name: "/docker")
+    monkeypatch.setattr("agentcfd.data_exchange.subprocess.run", fake_run)
+
+    frames = data_exchange.convert_openfoam_fields(
+        case,
+        container_image="opencfd/openfoam-run:2606",
+        output_name=".agentcfd-vtk-test",
+    )
+
+    argv = calls[0]
+    assert argv[argv.index("-name") + 1] == ".agentcfd-vtk-test"
+    assert "-overwrite" in argv
+    assert frames[0].is_relative_to(case / ".agentcfd-vtk-test")
+    assert existing.is_file()
+    with pytest.raises(ValueError, match="one relative path component"):
+        data_exchange.convert_openfoam_fields(case, output_name="../outside")
+    with pytest.raises(ValueError, match="must start with '.agentcfd-vtk-'"):
+        data_exchange.convert_openfoam_fields(case, output_name="VTK")
+
+    occupied = case / ".agentcfd-vtk-occupied"
+    occupied.mkdir()
+    (occupied / "user-owned.keep").touch()
+    with pytest.raises(FileExistsError, match="is not empty"):
+        data_exchange.convert_openfoam_fields(
+            case,
+            container_image="opencfd/openfoam-run:2606",
+            output_name=occupied.name,
+        )
+
+
+def test_isolated_conversion_staging_is_removed_when_bundle_export_fails(
+    tmp_path, monkeypatch
+):
+    case = tmp_path / "case"
+    case.mkdir()
+    existing = _write_frame(case, 99, 9.0)
+    staged_roots = []
+
+    def fake_convert(case_directory, **kwargs):
+        output_name = kwargs["output_name"]
+        staged_roots.append(Path(case_directory) / output_name)
+        frame = _write_frame(
+            Path(case_directory), 1, 1.0, vtk_directory=output_name
+        )
+        return (frame,)
+
+    def fail_export(*_args, **_kwargs):
+        raise RuntimeError("synthetic portable publication failure")
+
+    monkeypatch.setattr(
+        "agentcfd.data_exchange.convert_openfoam_fields", fake_convert
+    )
+    monkeypatch.setattr("agentcfd.data_exchange.export_vtu_series", fail_export)
+
+    with pytest.raises(RuntimeError, match="synthetic portable publication failure"):
+        data_exchange.export_openfoam_case(case, tmp_path / "bundle")
+
+    assert len(staged_roots) == 1
+    assert not staged_roots[0].exists()
+    assert existing.is_file()
+
+
 def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monkeypatch):
     case = tmp_path / "case"
     case.mkdir()
@@ -427,7 +511,10 @@ def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monk
 
     def fake_convert(*args, **kwargs):
         calls.append(kwargs)
-        return data_exchange.openfoam_vtu_series(case)
+        output_name = kwargs["output_name"]
+        _write_frame(case, 0, 1.0, vtk_directory=output_name)
+        _write_frame(case, 0.2, 2.0, vtk_directory=output_name)
+        return data_exchange.openfoam_vtu_series(case, directory=output_name)
 
     monkeypatch.setattr("agentcfd.data_exchange.convert_openfoam_fields", fake_convert)
 
@@ -444,11 +531,17 @@ def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monk
     assert calls[0]["fields"] == ("U", "p")
     manifest = json.loads(bundle.manifest.read_text())
     assert manifest["source"]["field_conversion"] == {
-        "staging": "selected-before-foamToVTK",
+        "staging": "isolated-streamed-vtu",
         "native_times": ["0.2"],
         "native_fields": ["U", "p"],
         "boundary_fields_included": False,
+        "temporary_vtk_policy": "delete-after-frame",
     }
+    assert manifest["storage"]["source_vtu_policy"] == "delete-after-frame"
+    assert manifest["storage"]["consumed_source_vtu_bytes"] > 0
+    assert not list(case.glob(".agentcfd-vtk-*"))
+    assert (case / "VTK" / "case_0" / "internal.vtu").is_file()
+    assert (case / "VTK" / "case_0.2" / "internal.vtu").is_file()
 
 
 def test_field_export_honors_excluded_initial_frame(tmp_path):

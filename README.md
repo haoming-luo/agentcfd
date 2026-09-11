@@ -388,6 +388,7 @@ agentcfd run . --campaign --param mean_velocity=0.03
 agentcfd sweep . sweep.json       # preflight all, execute/reuse design points
 agentcfd sweep . sweep.json --plan-only  # zero-solve cost/reuse preview
 agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
+agentcfd sweep . sweep.json --max-parallel 2 # opt-in bounded local concurrency
 agentcfd sweep . sweep.json --summary-only # metrics/evidence, no permanent H5
 agentcfd promote . <run-id>      # publish full fields for one screened point
 agentcfd compact . <run-id>      # preview full-field bulk removal; add --apply

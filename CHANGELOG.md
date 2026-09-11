@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add opt-in `sweep --max-parallel N` with CPU capping and aggregate storage
+  admission covering concurrent temporary peaks plus final field growth. Serial
+  remains the default; reports keep
+  deterministic request order while independent identities finish concurrently,
+  record one attempt and zero automatic retries, and reject ambiguous parallel
+  `--fail-fast`. Run allocation, performance history, and imported-mesh cache
+  publication are synchronized so wall-time savings do not corrupt evidence or
+  duplicate shared meshing work.
 - Add the one-step `industrial-elbow` project template and preview-first
   `geometry-sync`. A project now owns editable generated-geometry intent,
   deterministic STL bytes, independent inspection, roles, and exact generation

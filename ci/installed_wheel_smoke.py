@@ -104,6 +104,39 @@ def main() -> None:
         result = run("run", str(reference))
         assert result["accepted"] is True
         assert run("verify", "project", str(reference))["verified"] is True
+        request = root / "sweep.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "schema": "agentcfd.campaign-request/0.1",
+                    "points": [
+                        {"name": "v021", "parameters": {"mean_velocity": 0.021}},
+                        {"name": "v022", "parameters": {"mean_velocity": 0.022}},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        campaign_plan = run(
+            "sweep",
+            str(reference),
+            str(request),
+            "--plan-only",
+            "--max-parallel",
+            "2",
+        )
+        assert campaign_plan["would_execute_count"] == 2
+        assert campaign_plan["execution_policy"]["automatic_retries"] == 0
+        campaign = run(
+            "sweep",
+            str(reference),
+            str(request),
+            "--max-parallel",
+            "2",
+        )
+        assert campaign["successful"] is True
+        assert campaign["executed_count"] == 2
+        assert campaign["execution_policy"]["effective_parallel_runs"] in {1, 2}
 
 
 if __name__ == "__main__":

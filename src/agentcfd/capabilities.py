@@ -114,9 +114,11 @@ _CAPABILITIES = (
             "content-addressed plan and run lifecycle tests",
             "reference-provider end-to-end project execution",
             "OpenFOAM project execution with automatic portable fields",
+            "CPU/storage-admitted campaign concurrency with synchronized shared records",
         ),
         limitations=(
-            "Templates currently cover pipe, one bottom-baffle channel, and the bounded imported internal-flow slice.",
+            "Templates currently cover pipe, one bottom-baffle channel, a generated circular elbow, and the bounded imported internal-flow slice.",
+            "Campaign concurrency is local and process-level; remote scheduler execution remains pending.",
             "Project creation requests do not replace case.py as the continuing scientific source.",
         ),
     ),

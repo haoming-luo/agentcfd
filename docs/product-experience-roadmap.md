@@ -114,13 +114,17 @@ files stay hidden and reproducible.
 - explicit `case.py` factory parameters shared by check/plan/run, fingerprinted
   into every design point and rejected on unknown names before execution;
 - all-points-first sweep preflight, accepted-identity reuse, atomic progress,
-  serial execution, and continue/fail-fast runtime policy;
+  serial-default execution, and unambiguous continue/fail-fast runtime policy;
 - zero-solve sweep preview with request-level deduplication and stale-result
   rejection before accepted markers may suppress computation;
 - immutable run-scoped campaign logs and diagnosis, with failed-vs-review
   semantics and copyable recovery commands in the sweep report;
 - hard pre-execution solver-count budgets and request-level deduplication even
   for failed or review outcomes, preventing agents from repeating wasted work;
+- opt-in, CPU-capped campaign concurrency with aggregate temporary-storage
+  admission, deterministic request-order reports, collision-free run
+  allocation, synchronized shared cache/history writes, and zero automatic
+  retries; serial execution remains the default;
 - summary-only campaign screening with distinct full-field identity, compact
   evidence retention, lower temporary-storage estimates, and no permanent H5;
 - one-command, identity-gated promotion of accepted lightweight points into
@@ -162,14 +166,12 @@ files stay hidden and reproducible.
 
 ### Then: scale without scaling attention
 
-1. Add bounded resource-aware concurrency and explicit retry limits to the
-   shipped serial/deduplicated campaign sweep.
-2. Remote/container/HPC executor protocol with the same run state contract.
-3. Streaming XDMF/HDF5 publication, followed by Catalyst extraction for cases
+1. Remote/container/HPC executor protocol with the same run state contract.
+2. Streaming XDMF/HDF5 publication, followed by Catalyst extraction for cases
    where intermediate VTK and native full-field retention dominate I/O.
-4. Heat/steam and conjugate-transfer workflows, then reacting flow only after
+3. Heat/steam and conjugate-transfer workflows, then reacting flow only after
    evidence gates are satisfied.
-5. Agent policy layer that may propose edits but cannot conceal assumptions,
+4. Agent policy layer that may propose edits but cannot conceal assumptions,
    bypass readiness gates, or promote an unaccepted result.
 
 ## Product gates

@@ -106,19 +106,24 @@ python -m pytest -q
     accepted-only curve is the decision surface; unaccepted points may be shown
     only with `--include-unaccepted` and remain visually separate.
 20. Use a versioned `campaign-request` plus `sweep` for multiple named points.
-    Preserve all-points preflight, reuse accepted matching identities, and keep
-    serial execution until a bounded resource scheduler explicitly authorizes
-    concurrency; do not parallelize OpenFOAM cases merely because CPUs exist.
+    Preserve all-points preflight and reuse accepted matching identities. Keep
+    the default `--max-parallel 1`; request a higher bound only after inspecting
+    the campaign plan's CPU and concurrent temporary-storage admission record.
+    Peak memory is explicitly not estimated, so choose the bound from known case
+    memory evidence. Never parallelize OpenFOAM cases merely because CPUs exist.
 21. Run `sweep --plan-only --json` before authorizing a campaign. Treat
     `would_execute_count` as the actual proposed solver-start count after
-    request deduplication; never trust an accepted marker whose `result.json`
-    is missing.
+    request deduplication; require `execution_policy.parallel_ready=true`, and
+    never trust an accepted marker whose `result.json` is missing. A sweep makes
+    one attempt per unique identity and performs zero automatic retries.
 22. Put an explicit `--max-runs` boundary on unattended sweeps. Use
     `--summary-only` when the decision needs quantities and checks rather than
     fields, then call `promote <run-id>` only for accepted candidates that need
     animation, spatial review, AgentFEM exchange, or learned field data.
 23. Diagnose campaign failures by immutable `--run-id`; never assume the latest
-    run is the failed point after a continue-on-error sweep.
+    run is the failed point after a continue-on-error sweep. `--fail-fast` is
+    intentionally incompatible with effective parallelism above one because
+    already-started solver processes cannot be truthfully cancelled.
 24. Treat `compact <run-id>` as destructive despite its safe default. Inspect
     the preview first and use `--apply` only when full fields are reproducible
     and no downstream consumer still needs that exact stored field payload.

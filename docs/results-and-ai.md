@@ -223,6 +223,16 @@ distinguishes reuse from an existing campaign versus an identical point later
 in the same request, so estimated solver starts are not inflated by duplicate
 inputs.
 
+Local concurrency is explicit rather than inferred. `--max-parallel N` is an
+upper bound that the plan caps by logical CPUs and unique pending identities;
+for OpenFOAM it also admits the batch only when the concurrent conservative
+temporary-output estimate plus all pending permanent field growth fits current
+free space. The machine response records
+requested/effective parallelism, the storage evidence, one maximum attempt per
+identity, zero automatic retries, and the truthful absence of a peak-memory
+estimate. Results remain in request order, so an AI
+consumer never mistakes completion order for design order.
+
 For exploration, `sweep --summary-only` keeps the same quantities, checks,
 histories, logs, and provenance while omitting permanent field payloads. Its
 distinct result fingerprint prevents downstream agents from assuming that a

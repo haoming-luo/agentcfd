@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import importlib.util
 import inspect
 import errno
@@ -16,6 +17,7 @@ import shutil
 import statistics
 import sys
 import tempfile
+import threading
 import tomllib
 import zipfile
 from dataclasses import asdict, dataclass, replace
@@ -58,6 +60,11 @@ from .providers import (
 )
 from .providers.openfoam_channel import materialize_interrupted_restart
 from .results import Artifact, FieldRecord, SimulationResult, read_result_record
+
+
+_RUN_ALLOCATION_LOCK = threading.Lock()
+_PERFORMANCE_HISTORY_LOCK = threading.Lock()
+_MAX_CAMPAIGN_PARALLELISM = 32
 
 
 def _project_record_path_matches(
@@ -3428,6 +3435,125 @@ class Project:
                 reusable[identity] = record
         return reusable
 
+    def _campaign_execution_policy(
+        self,
+        prepared: Sequence[
+            tuple[str, Mapping[str, object], Mapping[str, object], str]
+        ],
+        reusable: Mapping[str, Mapping[str, object]],
+        *,
+        provider: str,
+        maximum_parallel_runs: int,
+    ) -> dict[str, object]:
+        """Resolve bounded local concurrency without starting solver processes."""
+
+        if (
+            isinstance(maximum_parallel_runs, bool)
+            or not isinstance(maximum_parallel_runs, int)
+            or maximum_parallel_runs < 1
+            or maximum_parallel_runs > _MAX_CAMPAIGN_PARALLELISM
+        ):
+            raise ProjectError(
+                "Maximum parallel runs must be an integer from 1 through "
+                f"{_MAX_CAMPAIGN_PARALLELISM}."
+            )
+        unique_plans: dict[str, Mapping[str, object]] = {}
+        for _name, _parameters, plan, identity in prepared:
+            if identity not in reusable:
+                unique_plans.setdefault(identity, plan)
+        logical_cpus = max(1, os.cpu_count() or 1)
+        planned_new_runs = len(unique_plans)
+        effective_parallel_runs = min(
+            maximum_parallel_runs,
+            logical_cpus,
+            planned_new_runs,
+        )
+        estimates: list[int] = []
+        final_field_estimates: list[int] = []
+        estimates_complete = True
+        for plan in unique_plans.values():
+            decisions = plan.get("decisions", {})
+            output_plan = (
+                decisions.get("output_plan", {})
+                if isinstance(decisions, Mapping)
+                else {}
+            )
+            estimated = (
+                output_plan.get("estimated_temporary_peak_bytes")
+                if isinstance(output_plan, Mapping)
+                else None
+            )
+            estimated_final = (
+                output_plan.get("estimated_portable_bytes")
+                if isinstance(output_plan, Mapping)
+                else None
+            )
+            if provider != "openfoam":
+                estimates.append(0)
+                final_field_estimates.append(0)
+            elif (
+                isinstance(estimated, int)
+                and not isinstance(estimated, bool)
+                and isinstance(estimated_final, int)
+                and not isinstance(estimated_final, bool)
+            ):
+                estimates.append(estimated)
+                final_field_estimates.append(estimated_final)
+            else:
+                estimates_complete = False
+        concurrent_peak = (
+            sum(sorted(estimates, reverse=True)[:effective_parallel_runs])
+            if estimates_complete
+            else None
+        )
+        estimated_final_field_growth = (
+            sum(final_field_estimates) if estimates_complete else None
+        )
+        storage_admission_bytes = (
+            concurrent_peak + estimated_final_field_growth
+            if concurrent_peak is not None
+            and estimated_final_field_growth is not None
+            else None
+        )
+        available_bytes = shutil.disk_usage(self.root).free
+        storage_within_budget = (
+            concurrent_peak <= available_bytes
+            if concurrent_peak is not None
+            else None
+        )
+        storage_admission_within_budget = (
+            storage_admission_bytes <= available_bytes
+            if storage_admission_bytes is not None
+            else None
+        )
+        parallel_ready = (
+            effective_parallel_runs <= 1
+            if not estimates_complete
+            else storage_admission_within_budget is True
+        )
+        return {
+            "requested_parallel_runs": maximum_parallel_runs,
+            "effective_parallel_runs": effective_parallel_runs,
+            "maximum_supported_parallel_runs": _MAX_CAMPAIGN_PARALLELISM,
+            "logical_cpu_count": logical_cpus,
+            "cpu_limited": effective_parallel_runs < min(
+                maximum_parallel_runs,
+                planned_new_runs,
+            ),
+            "automatic_retries": 0,
+            "maximum_attempts_per_identity": 1,
+            "memory_estimate_available": False,
+            "memory_admission": "explicit-parallel-bound-not-estimated",
+            "temporary_storage_estimates_complete": estimates_complete,
+            "concurrent_temporary_peak_bytes": concurrent_peak,
+            "estimated_final_field_growth_bytes": estimated_final_field_growth,
+            "storage_admission_bytes": storage_admission_bytes,
+            "available_temporary_bytes": available_bytes,
+            "temporary_storage_within_budget": storage_within_budget,
+            "storage_admission_within_budget": storage_admission_within_budget,
+            "parallel_ready": parallel_ready,
+        }
+
     def plan_campaign(
         self,
         points: Mapping[str, Mapping[str, object]],
@@ -3435,6 +3561,7 @@ class Project:
         provider: str | None = None,
         container_image: str | None = None,
         summary_only: bool = False,
+        maximum_parallel_runs: int = 1,
     ) -> dict[str, object]:
         """Preview campaign readiness and reuse without starting a solver."""
 
@@ -3443,6 +3570,9 @@ class Project:
         selected_provider = provider or self.manifest.default_provider
         reusable = self._reusable_campaign_records()
         rows = []
+        prepared_for_policy: list[
+            tuple[str, Mapping[str, object], Mapping[str, object], str]
+        ] = []
         planned_identities: set[str] = set()
         for name, raw_parameters in points.items():
             parameters: dict[str, object] = {}
@@ -3456,11 +3586,13 @@ class Project:
                         "numbers, underscores, or hyphens."
                     )
                 parameters = self._parameters(raw_parameters)
+                step = self.load_step(parameters)
                 plan = self.plan(
                     provider=selected_provider,
                     container_image=container_image,
                     parameters=parameters,
                     portable_fields=False if summary_only else None,
+                    _step=step,
                 )
             except ProjectError as error:
                 rows.append(
@@ -3509,9 +3641,16 @@ class Project:
                 }
             )
             if ready:
+                prepared_for_policy.append((name, parameters, plan, identity))
                 planned_identities.add(identity)
         all_ready = all(row["ready"] is True for row in rows)
         reusable_count = sum(row["reusable"] is True for row in rows)
+        execution_policy = self._campaign_execution_policy(
+            prepared_for_policy,
+            reusable,
+            provider=selected_provider,
+            maximum_parallel_runs=maximum_parallel_runs,
+        )
         return {
             "schema": "agentcfd.campaign-plan/0.1",
             "root": str(self.root),
@@ -3527,6 +3666,7 @@ class Project:
             "would_execute_count": len(rows) - reusable_count if all_ready else 0,
             "all_ready": all_ready,
             "points": rows,
+            "execution_policy": execution_policy,
             "observation_cost": {
                 "result_manifests_opened": 0,
                 "field_payloads_opened": 0,
@@ -3543,8 +3683,9 @@ class Project:
         fail_fast: bool = False,
         maximum_solver_runs: int | None = None,
         summary_only: bool = False,
+        maximum_parallel_runs: int = 1,
     ) -> dict[str, object]:
-        """Preflight and execute named design points, reusing accepted identities."""
+        """Preflight and execute named points with bounded, opt-in concurrency."""
 
         if not isinstance(points, Mapping) or not points:
             raise ProjectError("A campaign sweep requires at least one named point.")
@@ -3555,7 +3696,9 @@ class Project:
         ):
             raise ProjectError("Maximum solver runs must be a non-negative integer.")
         selected_provider = provider or self.manifest.default_provider
-        prepared = []
+        prepared: list[
+            tuple[str, dict[str, object], dict[str, object], str, Step]
+        ] = []
         for name, raw_parameters in points.items():
             if (
                 not isinstance(name, str)
@@ -3566,11 +3709,13 @@ class Project:
                     "letters, numbers, underscores, or hyphens."
                 )
             parameters = self._parameters(raw_parameters)
+            step = self.load_step(parameters)
             plan = self.plan(
                 provider=selected_provider,
                 container_image=container_image,
                 parameters=parameters,
                 portable_fields=False if summary_only else None,
+                _step=step,
             )
             if plan["readiness"]["ready_to_run"] is not True:
                 codes = ", ".join(issue["code"] for issue in plan["issues"])
@@ -3584,13 +3729,13 @@ class Project:
                 container_image=container_image,
                 portable_fields=False if summary_only else None,
             )
-            prepared.append((name, parameters, plan, identity))
+            prepared.append((name, parameters, plan, identity, step))
 
         reusable = self._reusable_campaign_records()
         planned_new_runs = len(
             {
                 identity
-                for _name, _parameters, _plan, identity in prepared
+                for _name, _parameters, _plan, identity, _step in prepared
                 if identity not in reusable
             }
         )
@@ -3600,9 +3745,44 @@ class Project:
                 f"the explicit --max-runs {maximum_solver_runs} budget. No design "
                 "point was executed; inspect `agentcfd sweep . REQUEST --plan-only`."
             )
+        execution_policy = self._campaign_execution_policy(
+            [
+                (name, parameters, plan, identity)
+                for name, parameters, plan, identity, _step in prepared
+            ],
+            reusable,
+            provider=selected_provider,
+            maximum_parallel_runs=maximum_parallel_runs,
+        )
+        effective_parallel_runs = int(
+            execution_policy["effective_parallel_runs"]
+        )
+        if fail_fast and effective_parallel_runs > 1:
+            raise ProjectError(
+                "--fail-fast cannot be combined with more than one effective parallel "
+                "run because already-started solver processes cannot be truthfully "
+                "cancelled. Use --max-parallel 1 or omit --fail-fast."
+            )
+        if execution_policy["parallel_ready"] is not True:
+            if execution_policy["temporary_storage_estimates_complete"] is not True:
+                reason = "one or more temporary-storage estimates are unavailable"
+            else:
+                reason = (
+                    "the campaign storage admission (concurrent temporary peak plus "
+                    "final field growth) exceeds currently available disk space"
+                )
+            raise ProjectError(
+                f"Parallel campaign execution is not ready because {reason}. "
+                "Use --max-parallel 1 or reduce output and mesh demand. No design "
+                "point was executed."
+            )
         progress_path = self.root / "campaigns" / "last-sweep.json"
         rows: list[dict[str, object]] = []
         request_results: dict[str, dict[str, object]] = {}
+        initial_reusable = dict(reusable)
+        first_request_index: dict[str, int] = {}
+        for index, (_name, _parameters, _plan, identity, _step) in enumerate(prepared):
+            first_request_index.setdefault(identity, index)
 
         def report() -> dict[str, object]:
             processed = len(rows)
@@ -3632,6 +3812,7 @@ class Project:
                 "successful": processed == len(prepared) and accepted == len(prepared),
                 "progress": str(progress_path),
                 "points": rows,
+                "execution_policy": execution_policy,
                 "solver_budget": {
                     "maximum_runs": maximum_solver_runs,
                     "planned_new_runs": planned_new_runs,
@@ -3654,136 +3835,166 @@ class Project:
             )
             temporary.replace(progress_path)
 
-        write_progress()
-        for name, parameters, plan, identity in prepared:
-            cached = reusable.get(identity)
-            if cached is not None:
-                rows.append(
-                    {
-                        "name": name,
-                        "parameters": parameters,
-                        "plan_sha256": plan["plan_sha256"],
-                        "result_execution_sha256": identity,
-                        "execution": "reused",
-                        "outcome": "accepted",
-                        "run_id": cached.get("run_id"),
-                        "directory": cached.get("directory"),
-                        "accepted": True,
-                        "diagnose_command": None,
-                        "error": None,
-                    }
+        def execute_point(
+            name: str,
+            parameters: Mapping[str, object],
+            plan: Mapping[str, object],
+            identity: str,
+            step: Step,
+        ) -> dict[str, object]:
+            try:
+                completed = self.run(
+                    provider=selected_provider,
+                    container_image=container_image,
+                    campaign=True,
+                    parameters=parameters,
+                    design_point_name=name,
+                    portable_fields=False if summary_only else None,
+                    _step=step,
                 )
-            elif identity in request_results:
-                source = request_results[identity]
-                rows.append(
-                    {
-                        "name": name,
-                        "parameters": parameters,
-                        "plan_sha256": plan["plan_sha256"],
-                        "result_execution_sha256": identity,
-                        "execution": "deduplicated",
-                        "outcome": source["outcome"],
-                        "run_id": source["run_id"],
-                        "directory": source["directory"],
-                        "accepted": source["accepted"],
-                        "diagnose_command": source["diagnose_command"],
-                        "error": source["error"],
-                    }
+            except Exception as error:
+                failed_record = next(
+                    (
+                        record
+                        for record in self._run_records()
+                        if record.get("design_point_name") == name
+                        and record.get("parameters") == parameters
+                        and record.get("result_execution_sha256") == identity
+                        and record.get("status") == "failed"
+                    ),
+                    None,
                 )
-            else:
-                try:
-                    completed = self.run(
-                        provider=selected_provider,
-                        container_image=container_image,
-                        campaign=True,
-                        parameters=parameters,
-                        design_point_name=name,
-                        portable_fields=False if summary_only else None,
-                    )
-                except Exception as error:
-                    failed_record = next(
-                        (
-                            record
-                            for record in self._run_records()
-                            if record.get("design_point_name") == name
-                            and record.get("parameters") == parameters
-                            and record.get("result_execution_sha256") == identity
-                            and record.get("status") == "failed"
-                        ),
-                        None,
-                    )
-                    failed_run_id = (
-                        failed_record.get("run_id")
-                        if failed_record is not None
-                        else None
-                    )
-                    failed_directory = self._record_directory(failed_record)
-                    project_argument = self._cli_project_argument()
-                    row = {
-                        "name": name,
-                        "parameters": parameters,
-                        "plan_sha256": plan["plan_sha256"],
-                        "result_execution_sha256": identity,
-                        "execution": "executed",
-                        "outcome": "failed",
-                        "run_id": failed_run_id,
-                        "directory": (
-                            None if failed_directory is None else str(failed_directory)
-                        ),
-                        "accepted": False,
-                        "diagnose_command": (
-                            None
-                            if not isinstance(failed_run_id, str)
-                            else "agentcfd diagnose "
-                            f"{project_argument} --run-id "
-                            f"{shlex.quote(failed_run_id)}"
-                        ),
-                        "error": {
-                            "type": type(error).__name__,
-                            "message": str(error),
-                        },
-                    }
-                    rows.append(row)
-                    request_results[identity] = row
-                    write_progress()
-                    if fail_fast:
-                        break
-                    continue
-                accepted = completed.result.accepted
-                outcome = (
-                    "accepted"
-                    if accepted
-                    else "failed"
-                    if completed.result.status != "completed"
-                    else "review"
+                failed_run_id = (
+                    failed_record.get("run_id")
+                    if failed_record is not None
+                    else None
                 )
+                failed_directory = self._record_directory(failed_record)
                 project_argument = self._cli_project_argument()
-                row = {
+                return {
                     "name": name,
                     "parameters": parameters,
                     "plan_sha256": plan["plan_sha256"],
                     "result_execution_sha256": identity,
                     "execution": "executed",
-                    "outcome": outcome,
-                    "run_id": completed.run_id,
-                    "directory": str(completed.directory),
-                    "accepted": accepted,
-                    "diagnose_command": (
-                        "agentcfd diagnose "
-                        f"{project_argument} --run-id {shlex.quote(completed.run_id)}"
-                        if outcome == "failed"
-                        else None
+                    "outcome": "failed",
+                    "run_id": failed_run_id,
+                    "directory": (
+                        None if failed_directory is None else str(failed_directory)
                     ),
-                    "error": None,
+                    "accepted": False,
+                    "diagnose_command": (
+                        None
+                        if not isinstance(failed_run_id, str)
+                        else "agentcfd diagnose "
+                        f"{project_argument} --run-id "
+                        f"{shlex.quote(failed_run_id)}"
+                    ),
+                    "error": {
+                        "type": type(error).__name__,
+                        "message": str(error),
+                    },
                 }
-                rows.append(row)
-                request_results[identity] = row
-                if accepted:
-                    reusable[identity] = {
-                        "run_id": completed.run_id,
-                        "directory": str(completed.directory),
+            accepted = completed.result.accepted
+            outcome = (
+                "accepted"
+                if accepted
+                else "failed"
+                if completed.result.status != "completed"
+                else "review"
+            )
+            project_argument = self._cli_project_argument()
+            return {
+                "name": name,
+                "parameters": parameters,
+                "plan_sha256": plan["plan_sha256"],
+                "result_execution_sha256": identity,
+                "execution": "executed",
+                "outcome": outcome,
+                "run_id": completed.run_id,
+                "directory": str(completed.directory),
+                "accepted": accepted,
+                "diagnose_command": (
+                    "agentcfd diagnose "
+                    f"{project_argument} --run-id {shlex.quote(completed.run_id)}"
+                    if outcome == "failed"
+                    else None
+                ),
+                "error": None,
+            }
+
+        def refresh_rows() -> None:
+            refreshed: list[dict[str, object]] = []
+            for index, (name, parameters, plan, identity, _step) in enumerate(prepared):
+                cached = initial_reusable.get(identity)
+                if cached is not None:
+                    refreshed.append(
+                        {
+                            "name": name,
+                            "parameters": parameters,
+                            "plan_sha256": plan["plan_sha256"],
+                            "result_execution_sha256": identity,
+                            "execution": "reused",
+                            "outcome": "accepted",
+                            "run_id": cached.get("run_id"),
+                            "directory": cached.get("directory"),
+                            "accepted": True,
+                            "diagnose_command": None,
+                            "error": None,
+                        }
+                    )
+                    continue
+                source = request_results.get(identity)
+                if source is None:
+                    continue
+                if first_request_index[identity] == index:
+                    refreshed.append(source)
+                    continue
+                duplicate = dict(source)
+                duplicate.update(
+                    {
+                        "name": name,
+                        "parameters": parameters,
+                        "plan_sha256": plan["plan_sha256"],
+                        "result_execution_sha256": identity,
+                        "execution": (
+                            "reused" if source["accepted"] is True else "deduplicated"
+                        ),
                     }
-            write_progress()
+                )
+                refreshed.append(duplicate)
+            rows[:] = refreshed
+
+        unique_new = [
+            item
+            for index, item in enumerate(prepared)
+            if item[3] not in initial_reusable
+            and first_request_index[item[3]] == index
+        ]
+        refresh_rows()
+        write_progress()
+        if effective_parallel_runs <= 1:
+            for name, parameters, plan, identity, step in unique_new:
+                row = execute_point(name, parameters, plan, identity, step)
+                request_results[identity] = row
+                refresh_rows()
+                write_progress()
+                if fail_fast and row["outcome"] == "failed":
+                    break
+        else:
+            with ThreadPoolExecutor(
+                max_workers=effective_parallel_runs,
+                thread_name_prefix="agentcfd-campaign",
+            ) as executor:
+                futures = {
+                    executor.submit(execute_point, *item): item[3]
+                    for item in unique_new
+                }
+                for future in as_completed(futures):
+                    identity = futures[future]
+                    request_results[identity] = future.result()
+                    refresh_rows()
+                    write_progress()
         return report()
 
     def promote_campaign_run(
@@ -4609,52 +4820,57 @@ class Project:
         )
         if total_seconds is None:
             return
-        samples, history_status = _read_performance_history(self.root)
-        if history_status == "invalid":
-            # Runtime calibration is advisory. Never overwrite an unrecognized
-            # record or turn a successful simulation into a failed run.
-            return
-        decisions = plan.get("decisions", {})
-        output_plan = (
-            decisions.get("output_plan", {}) if isinstance(decisions, Mapping) else {}
-        )
-        samples.append(
-            {
-                "run_id": run_record.get("run_id"),
-                "recorded_at": run_record.get("completed_at"),
-                "status": run_record.get("status"),
-                "accepted": run_record.get("accepted"),
-                "provider": execution_provider,
-                "performance_key": performance_key,
-                "analysis_sha256": run_record.get("analysis_sha256"),
-                "result_profile": run_record.get("result_profile"),
-                "model_name": run_record.get("model_name"),
-                "solver": (
-                    decisions.get("solver") if isinstance(decisions, Mapping) else None
-                ),
-                "estimated_mesh_cells": (
-                    output_plan.get("estimated_mesh_cells")
-                    if isinstance(output_plan, Mapping)
-                    else None
-                ),
-                "total_seconds": round(total_seconds, 6),
-            }
-        )
-        samples = samples[-_PERFORMANCE_HISTORY_LIMIT:]
-        path = self.root / ".agentcfd" / "performance.json"
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            _write_json_atomic(
-                path,
-                {
-                    "schema": "agentcfd.performance-history/0.1",
-                    "updated_at": run_record.get("completed_at"),
-                    "maximum_samples": _PERFORMANCE_HISTORY_LIMIT,
-                    "samples": samples,
-                },
+        with _PERFORMANCE_HISTORY_LOCK:
+            samples, history_status = _read_performance_history(self.root)
+            if history_status == "invalid":
+                # Runtime calibration is advisory. Never overwrite an unrecognized
+                # record or turn a successful simulation into a failed run.
+                return
+            decisions = plan.get("decisions", {})
+            output_plan = (
+                decisions.get("output_plan", {})
+                if isinstance(decisions, Mapping)
+                else {}
             )
-        except (OSError, TypeError, ValueError):
-            return
+            samples.append(
+                {
+                    "run_id": run_record.get("run_id"),
+                    "recorded_at": run_record.get("completed_at"),
+                    "status": run_record.get("status"),
+                    "accepted": run_record.get("accepted"),
+                    "provider": execution_provider,
+                    "performance_key": performance_key,
+                    "analysis_sha256": run_record.get("analysis_sha256"),
+                    "result_profile": run_record.get("result_profile"),
+                    "model_name": run_record.get("model_name"),
+                    "solver": (
+                        decisions.get("solver")
+                        if isinstance(decisions, Mapping)
+                        else None
+                    ),
+                    "estimated_mesh_cells": (
+                        output_plan.get("estimated_mesh_cells")
+                        if isinstance(output_plan, Mapping)
+                        else None
+                    ),
+                    "total_seconds": round(total_seconds, 6),
+                }
+            )
+            samples = samples[-_PERFORMANCE_HISTORY_LIMIT:]
+            path = self.root / ".agentcfd" / "performance.json"
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                _write_json_atomic(
+                    path,
+                    {
+                        "schema": "agentcfd.performance-history/0.1",
+                        "updated_at": run_record.get("completed_at"),
+                        "maximum_samples": _PERFORMANCE_HISTORY_LIMIT,
+                        "samples": samples,
+                    },
+                )
+            except (OSError, TypeError, ValueError):
+                return
 
     def performance(self) -> dict[str, object]:
         """Return bounded runtime evidence and current-project ETA calibration."""
@@ -6189,6 +6405,7 @@ class Project:
         _resume_archive: Path | None = None,
         _resume_source_run_id: str | None = None,
         _promotion_source_run_id: str | None = None,
+        _step: Step | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
         if (
@@ -6197,7 +6414,7 @@ class Project:
         ):
             raise ProjectError("Invalid campaign design-point name.")
         selected_parameters = self._parameters(parameters)
-        step = self.load_step(selected_parameters)
+        step = _step if _step is not None else self.load_step(selected_parameters)
         plan = self.plan(
             provider=selected_name,
             container_image=container_image,
@@ -6226,10 +6443,20 @@ class Project:
             )
         now = datetime.now(UTC)
         model_sha = step.model.fingerprint()
-        run_id = f"{now.strftime('%Y%m%dT%H%M%S%fZ')}-{model_sha[:8]}"
-        run_directory = (
-            self.root / "campaigns" / run_id if campaign_mode else self.run_root
-        )
+        base_run_id = f"{now.strftime('%Y%m%dT%H%M%S%fZ')}-{model_sha[:8]}"
+        if campaign_mode:
+            with _RUN_ALLOCATION_LOCK:
+                run_id = base_run_id
+                run_directory = self.root / "campaigns" / run_id
+                collision = 1
+                while run_directory.exists():
+                    collision += 1
+                    run_id = f"{base_run_id}-{collision}"
+                    run_directory = self.root / "campaigns" / run_id
+                run_directory.mkdir(parents=True)
+        else:
+            run_id = base_run_id
+            run_directory = self.run_root
         if (
             not campaign_mode
             and run_directory.exists()
@@ -6257,7 +6484,8 @@ class Project:
                     "to inspect its current phase."
                 )
             shutil.rmtree(run_directory)
-        run_directory.mkdir(parents=True, exist_ok=not campaign_mode)
+        if not campaign_mode:
+            run_directory.mkdir(parents=True, exist_ok=True)
         plan_path = run_directory / "plan.json"
         plan_path.write_text(
             json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8"

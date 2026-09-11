@@ -356,8 +356,19 @@ an already accepted identical result fingerprint is reused, including duplicate
 points inside one request. Runtime failures are recorded and later points
 continue by default; `--fail-fast` changes only that execution policy. The
 small atomic `campaigns/last-sweep.json` makes interruption and automation
-observable. Version 0.1 executes serially so a campaign cannot oversubscribe
-memory or temporary storage before a bounded resource scheduler exists.
+observable. Execution remains serial by default. Explicit `--max-parallel N`
+enables bounded local concurrency only after AgentCFD caps it to the logical CPU
+count and verifies the largest concurrent temporary-output estimates plus every
+pending point's permanent field growth against current free space. Missing
+OpenFOAM storage estimates fail closed for
+parallel execution. The execution policy records requested and effective
+parallelism, admission evidence, one attempt per unique identity, and zero
+automatic retries. It also states that peak memory is not estimated: explicit
+parallelism is the operator's memory bound, while serial remains the default.
+Deterministic final rows remain in request order even when
+solvers finish out of order. `--fail-fast` requires effective parallelism one,
+because processes already started by a concurrent batch cannot be recalled
+honestly.
 Solver-level failed results count as `failed`; a completed result that did not
 meet acceptance checks counts as `review`, so automation does not confuse a
 runtime failure with an engineering decision gate.

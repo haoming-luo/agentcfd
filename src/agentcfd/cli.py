@@ -2101,6 +2101,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fail before execution if more than this many new solver runs are needed.",
     )
     sweep.add_argument(
+        "--max-parallel",
+        type=int,
+        default=1,
+        help=(
+            "Maximum simultaneous local solver runs (default: 1; CPU and temporary "
+            "storage admission may reduce it)."
+        ),
+    )
+    sweep.add_argument(
         "--summary-only",
         action="store_true",
         help="Keep quantities and evidence but skip permanent XDMF/HDF5 fields.",
@@ -3984,6 +3993,7 @@ def main(argv: list[str] | None = None) -> int:
                 provider=args.provider,
                 container_image=args.container_image,
                 summary_only=args.summary_only,
+                maximum_parallel_runs=args.max_parallel,
             )
         else:
             report = project.run_campaign(
@@ -3993,6 +4003,7 @@ def main(argv: list[str] | None = None) -> int:
                 fail_fast=args.fail_fast,
                 maximum_solver_runs=args.max_runs,
                 summary_only=args.summary_only,
+                maximum_parallel_runs=args.max_parallel,
             )
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
@@ -4003,6 +4014,14 @@ def main(argv: list[str] | None = None) -> int:
                 f"{report['reusable_count']}"
             )
             print(f"result profile: {report['result_profile']}")
+            policy = report["execution_policy"]
+            print(
+                "parallel: requested "
+                f"{policy['requested_parallel_runs']} | effective "
+                f"{policy['effective_parallel_runs']} | automatic retries 0"
+            )
+            if policy["requested_parallel_runs"] > 1:
+                print("memory: not estimated; --max-parallel is the operator bound")
             for point in report["points"]:
                 print(
                     f"{point['name']} | ready {str(point['ready']).lower()} | "
@@ -4017,6 +4036,14 @@ def main(argv: list[str] | None = None) -> int:
                 f"{report['accepted_count']}"
             )
             print(f"result profile: {report['result_profile']}")
+            policy = report["execution_policy"]
+            print(
+                "parallel: requested "
+                f"{policy['requested_parallel_runs']} | effective "
+                f"{policy['effective_parallel_runs']} | automatic retries 0"
+            )
+            if policy["requested_parallel_runs"] > 1:
+                print("memory: not estimated; --max-parallel is the operator bound")
             for point in report["points"]:
                 print(
                     f"{point['name']} | {point['execution']} | {point['outcome']}"

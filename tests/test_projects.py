@@ -4,6 +4,8 @@ import math
 import os
 import shlex
 import shutil
+import threading
+import time
 from pathlib import Path
 
 import jsonschema
@@ -2397,6 +2399,8 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
                 str(project.root),
                 str(request),
                 "--plan-only",
+                "--max-parallel",
+                "2",
                 "--json",
             ]
         )
@@ -2405,6 +2409,8 @@ def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     cli_preview = json.loads(capsys.readouterr().out)
     assert cli_preview["would_execute_count"] == 0
     assert cli_preview["observation_cost"]["solver_processes_started"] == 0
+    assert cli_preview["execution_policy"]["requested_parallel_runs"] == 2
+    assert cli_preview["execution_policy"]["effective_parallel_runs"] == 0
     assert (
         entrypoint(
             [
@@ -2468,6 +2474,132 @@ def test_campaign_sweep_records_runtime_failure_and_continues(tmp_path, monkeypa
         report["points"][0]["run_id"],
     ]
     assert report["points"][2]["outcome"] == "accepted"
+
+
+def test_campaign_sweep_runs_with_bounded_parallelism_and_preserves_records(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(tmp_path / "pipe")
+    original = projects.ReferencePipeProvider.run
+    active = 0
+    maximum_active = 0
+    guard = threading.Lock()
+
+    def observed_run(provider, step):
+        nonlocal active, maximum_active
+        with guard:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        try:
+            time.sleep(0.03)
+            return original(provider, step)
+        finally:
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(projects.os, "cpu_count", lambda: 4)
+    monkeypatch.setattr(projects.ReferencePipeProvider, "run", observed_run)
+    points = {
+        "slow": {"mean_velocity": 0.01},
+        "base": {"mean_velocity": 0.02},
+        "fast": {"mean_velocity": 0.03},
+        "faster": {"mean_velocity": 0.04},
+        "base-copy": {"mean_velocity": 0.02},
+    }
+
+    preview = project.plan_campaign(points, maximum_parallel_runs=3)
+    assert preview["execution_policy"]["requested_parallel_runs"] == 3
+    assert preview["execution_policy"]["effective_parallel_runs"] == 3
+    assert preview["execution_policy"]["automatic_retries"] == 0
+    assert preview["execution_policy"]["maximum_attempts_per_identity"] == 1
+    assert preview["execution_policy"]["memory_estimate_available"] is False
+    assert preview["execution_policy"]["parallel_ready"] is True
+
+    report = project.run_campaign(points, maximum_parallel_runs=3)
+
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-sweep.schema.json")
+    ).validate(report)
+    assert maximum_active == 3
+    assert report["complete"] is True
+    assert report["successful"] is True
+    assert report["executed_count"] == 4
+    assert report["reused_count"] == 1
+    assert report["execution_policy"]["requested_parallel_runs"] == 3
+    assert report["execution_policy"]["effective_parallel_runs"] == 3
+    assert report["execution_policy"]["automatic_retries"] == 0
+    assert [row["name"] for row in report["points"]] == list(points)
+    assert report["points"][-1]["run_id"] == report["points"][1]["run_id"]
+    run_ids = {
+        row["run_id"] for row in report["points"] if row["execution"] == "executed"
+    }
+    assert len(run_ids) == 4
+    performance = json.loads(
+        (project.root / ".agentcfd" / "performance.json").read_text()
+    )
+    assert len(performance["samples"]) == 4
+
+
+def test_campaign_parallelism_rejects_ambiguous_fail_fast_and_invalid_limits(
+    tmp_path, monkeypatch
+):
+    project = projects.init_project(tmp_path / "pipe")
+    points = {
+        "base": {"mean_velocity": 0.02},
+        "fast": {"mean_velocity": 0.03},
+    }
+    monkeypatch.setattr(projects.os, "cpu_count", lambda: 4)
+
+    with pytest.raises(ProjectError, match="integer from 1 through 32"):
+        project.plan_campaign(points, maximum_parallel_runs=0)
+    with pytest.raises(ProjectError, match="cannot be combined"):
+        project.run_campaign(
+            points,
+            maximum_parallel_runs=2,
+            fail_fast=True,
+        )
+    assert project.campaign_index()["run_count"] == 0
+
+
+def test_openfoam_campaign_parallelism_fails_closed_on_aggregate_storage(
+    tmp_path, monkeypatch
+):
+    _mock_openfoam_runtime(monkeypatch)
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    points = {
+        "base": {"mean_velocity": 0.5, "baffle_height": 0.12},
+        "faster": {"mean_velocity": 0.6, "baffle_height": 0.12},
+    }
+    monkeypatch.setattr(projects.os, "cpu_count", lambda: 4)
+
+    preview = project.plan_campaign(
+        points,
+        summary_only=True,
+        maximum_parallel_runs=2,
+    )
+    policy = preview["execution_policy"]
+    assert policy["temporary_storage_estimates_complete"] is True
+    assert policy["concurrent_temporary_peak_bytes"] > 0
+    assert policy["storage_admission_bytes"] >= policy[
+        "concurrent_temporary_peak_bytes"
+    ]
+    assert policy["temporary_storage_within_budget"] is True
+
+    disk = projects.shutil.disk_usage(project.root)
+    monkeypatch.setattr(
+        projects.shutil,
+        "disk_usage",
+        lambda _path: disk._replace(free=1),
+    )
+    with pytest.raises(ProjectError, match="exceeds currently available disk"):
+        project.run_campaign(
+            points,
+            summary_only=True,
+            maximum_parallel_runs=2,
+        )
+    assert project.campaign_index()["run_count"] == 0
 
 
 def test_historical_campaign_failure_remains_diagnosable_by_run_id(tmp_path, capsys):

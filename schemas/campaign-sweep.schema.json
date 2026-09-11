@@ -73,6 +73,40 @@
       },
       "additionalProperties": false
     },
+    "execution_policy": {
+      "type": "object",
+      "required": [
+        "requested_parallel_runs", "effective_parallel_runs",
+        "maximum_supported_parallel_runs", "logical_cpu_count", "cpu_limited",
+        "automatic_retries", "maximum_attempts_per_identity",
+        "memory_estimate_available", "memory_admission",
+        "temporary_storage_estimates_complete",
+        "concurrent_temporary_peak_bytes", "estimated_final_field_growth_bytes",
+        "storage_admission_bytes", "available_temporary_bytes",
+        "temporary_storage_within_budget", "storage_admission_within_budget",
+        "parallel_ready"
+      ],
+      "properties": {
+        "requested_parallel_runs": {"type": "integer", "minimum": 1, "maximum": 32},
+        "effective_parallel_runs": {"type": "integer", "minimum": 0, "maximum": 32},
+        "maximum_supported_parallel_runs": {"const": 32},
+        "logical_cpu_count": {"type": "integer", "minimum": 1},
+        "cpu_limited": {"type": "boolean"},
+        "automatic_retries": {"const": 0},
+        "maximum_attempts_per_identity": {"const": 1},
+        "memory_estimate_available": {"const": false},
+        "memory_admission": {"const": "explicit-parallel-bound-not-estimated"},
+        "temporary_storage_estimates_complete": {"type": "boolean"},
+        "concurrent_temporary_peak_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "estimated_final_field_growth_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "storage_admission_bytes": {"type": ["integer", "null"], "minimum": 0},
+        "available_temporary_bytes": {"type": "integer", "minimum": 0},
+        "temporary_storage_within_budget": {"type": ["boolean", "null"]},
+        "storage_admission_within_budget": {"type": ["boolean", "null"]},
+        "parallel_ready": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
     "observation_cost": {
       "type": "object",
       "required": ["result_manifests_opened", "field_payloads_opened"],

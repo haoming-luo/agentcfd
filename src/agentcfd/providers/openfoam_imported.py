@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,6 +70,8 @@ _MESH_COMMAND_NAMES = (
     "snappyHexMesh",
     "checkMesh",
 )
+_MESH_CACHE_LOCKS_GUARD = threading.Lock()
+_MESH_CACHE_LOCKS: dict[str, threading.Lock] = {}
 
 
 def _foam_scalar(value: float) -> str:
@@ -168,6 +171,23 @@ def _mesh_cache_key(prepared: PreparedImportedMesh, runtime_identity: str) -> st
             "runtime_identity": runtime_identity,
         }
     ).removeprefix("sha256:")
+
+
+def _mesh_cache_lock(
+    prepared: PreparedImportedMesh,
+    cache_root: Path | None,
+    runtime_identity: str,
+) -> threading.Lock:
+    """Return one in-process lock for an exact project mesh-cache entry."""
+
+    cache_identity = content_fingerprint(
+        {
+            "cache_root": None if cache_root is None else str(cache_root.resolve()),
+            "cache_key": _mesh_cache_key(prepared, runtime_identity),
+        }
+    )
+    with _MESH_CACHE_LOCKS_GUARD:
+        return _MESH_CACHE_LOCKS.setdefault(cache_identity, threading.Lock())
 
 
 def _mesh_file_hashes(root: Path) -> dict[str, str]:
@@ -1504,24 +1524,27 @@ class OpenFOAMImportedProvider:
         turbulent = not step.model.study.laminar
         flow_capability = _RANS_FLOW_CAPABILITY if turbulent else _FLOW_CAPABILITY
         runtime_identity = self.container_image or "externally-managed-openfoam"
-        mesh_result = _restore_cached_mesh(
-            prepared,
-            self.mesh_cache_directory,
-            runtime_identity,
-        )
-        mesh_reuse = mesh_result is not None
-        if mesh_result is None:
-            mesh_result = execute_imported_mesh(
+        with _mesh_cache_lock(
+            prepared, self.mesh_cache_directory, runtime_identity
+        ):
+            mesh_result = _restore_cached_mesh(
                 prepared,
-                container_image=self.container_image,
-                timeout_seconds=self.timeout_seconds,
-            )
-            _store_cached_mesh(
-                prepared,
-                mesh_result,
                 self.mesh_cache_directory,
                 runtime_identity,
             )
+            mesh_reuse = mesh_result is not None
+            if mesh_result is None:
+                mesh_result = execute_imported_mesh(
+                    prepared,
+                    container_image=self.container_image,
+                    timeout_seconds=self.timeout_seconds,
+                )
+                _store_cached_mesh(
+                    prepared,
+                    mesh_result,
+                    self.mesh_cache_directory,
+                    runtime_identity,
+                )
         solver_code = None
         solver_duration = 0.0
         solver_log = ""

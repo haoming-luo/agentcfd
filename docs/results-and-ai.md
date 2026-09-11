@@ -256,6 +256,27 @@ sample = result.to_sample(
 )
 ```
 
+The project-level path removes the remaining integration glue and enforces the
+trust boundary before writing:
+
+```bash
+agentcfd export sample . dataset/pipe-water-001.json \
+  --input diameter \
+  --input mean_velocity \
+  --output-quantity flow.pressure_drop \
+  --output-quantity flow.mass_flow_rate \
+  --case-id pipe-water-001
+```
+
+`Project.scientific_sample()` provides the same record in Python. Inputs are
+numeric parameters declared by the readable `case.py` factory; if `--input` is
+omitted, all numeric parameters are included. Outputs must be explicit stable
+quantity names. The export runs full project verification first and refuses an
+unaccepted result, integrity drift, unknown/non-numeric input, unknown output,
+or an existing target file. Summary-only campaign points are therefore the
+cheap natural source for large scalar datasets, while full-field runs remain
+available when spatial learning is actually required.
+
 The same record can be ingested by campaign managers, tabular surrogate tools,
 or user ML pipelines without importing PyTorch or JAX into the core package.
 Field-learning workflows should consume `field_records` and their artifacts;

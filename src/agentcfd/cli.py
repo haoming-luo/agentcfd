@@ -2106,6 +2106,32 @@ def build_parser() -> argparse.ArgumentParser:
     field_sample.add_argument("--frame", type=int, default=-1)
     field_sample.add_argument("--cell-block", type=int, default=0)
     field_sample.add_argument("--json", action="store_true", dest="as_json")
+    scalar_sample = export_subparsers.add_parser(
+        "sample",
+        help="Verify and export one project result as an AgentCAE scalar sample.",
+    )
+    scalar_sample.add_argument("project", type=Path)
+    scalar_sample.add_argument("output", type=Path)
+    scalar_sample.add_argument(
+        "--input",
+        action="append",
+        dest="inputs",
+        default=[],
+        help=(
+            "Numeric case.py parameter to use as an input; repeat as needed. "
+            "Defaults to all numeric factory parameters."
+        ),
+    )
+    scalar_sample.add_argument(
+        "--output-quantity",
+        action="append",
+        dest="output_quantities",
+        required=True,
+        help="Canonical scalar result to export; repeat as needed.",
+    )
+    scalar_sample.add_argument("--run-id", help="Select one immutable campaign run.")
+    scalar_sample.add_argument("--case-id", help="Override the stable sample case id.")
+    scalar_sample.add_argument("--json", action="store_true", dest="as_json")
 
     calculate = subparsers.add_parser(
         "calculate",
@@ -3919,6 +3945,25 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(
                 f"Exported tensor-ready field sample | {args.field}:{args.association}"
+            )
+            print(output)
+        return 0
+    if args.command == "export" and args.export_format == "sample":
+        output, sample = projects.Project.discover(
+            args.project
+        ).export_scientific_sample(
+            args.output,
+            outputs=args.output_quantities,
+            inputs=args.inputs,
+            run_id=args.run_id,
+            case_id=args.case_id,
+        )
+        if args.as_json:
+            print(json.dumps(sample, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Exported verified scalar sample | {len(sample['inputs'])} inputs | "
+                f"{len(sample['outputs'])} outputs"
             )
             print(output)
         return 0

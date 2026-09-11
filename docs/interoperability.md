@@ -45,6 +45,14 @@ heat flux.
 shapes, and semantic kinds. `SimulationResult.to_exchange()` preserves the
 larger result as `agentcae.simulation-result` for coupling and audit tools.
 
+For normal project workflows, `agentcfd export sample PROJECT OUTPUT.json
+--output-quantity NAME` resolves numeric `case.py` parameters, verifies the
+published project, and writes that same solver-neutral sample atomically.
+`Project.scientific_sample()` and `Project.export_scientific_sample()` expose
+the matching Python APIs. This is the preferred scalar bridge into AgentFEM or
+tabular learning because it does not require users to reconstruct inputs,
+units, acceptance, or source hashes by hand.
+
 The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack
 behind the stable `agentcae.*` records.

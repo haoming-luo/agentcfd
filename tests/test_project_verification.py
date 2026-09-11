@@ -172,6 +172,25 @@ def test_project_verification_fails_closed_on_summary_drift(tmp_path) -> None:
     assert "quantities" in integrity["message"]
 
 
+def test_project_verification_accepts_and_upgrades_legacy_summary_view(tmp_path) -> None:
+    project = projects.init_project(tmp_path / "pipe")
+    completed = project.run()
+    summary_path = completed.directory / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["schema"] = "agentcfd.result-summary/0.2"
+    summary.pop("scientific_inputs")
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+
+    report = project.verify()
+    lightweight = project.result_summary()
+
+    _validate(report)
+    assert report["verified"] is True
+    assert lightweight["schema"] == "agentcfd.result-summary/0.3"
+    assert lightweight["scientific_inputs"]
+    assert lightweight["observation_cost"]["result_json_bytes_read"] > 0
+
+
 def test_project_verification_delegates_complete_portable_bundle(
     tmp_path, monkeypatch
 ) -> None:

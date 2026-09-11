@@ -1,16 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/result-summary.schema.json",
-  "title": "AgentCFD materialized lightweight project result summary 0.2",
+  "title": "AgentCFD materialized lightweight project result summary 0.3",
   "type": "object",
   "required": [
     "schema", "root", "run_id", "summary", "result", "source_result", "status", "converged",
     "accepted", "trust_level", "provider", "parameters", "quantities",
-    "histories", "fields", "available", "check_count", "failed_checks", "provenance",
+    "histories", "fields", "available", "check_count", "failed_checks",
+    "scientific_inputs", "provenance",
     "artifact_integrity", "observation_cost", "next_action"
   ],
   "properties": {
-    "schema": {"const": "agentcfd.result-summary/0.2"},
+    "schema": {"const": "agentcfd.result-summary/0.3"},
     "root": {"type": "string"},
     "run_id": {"type": ["string", "null"]},
     "summary": {"type": "string"},
@@ -60,6 +61,7 @@
     },
     "failed_checks": {"type": "array", "items": {"type": "object"}},
     "requirements": {"type": "array", "items": {"type": "object"}},
+    "scientific_inputs": {"type": "object"},
     "provenance": {"type": "object"},
     "artifact_integrity": {
       "type": "object",

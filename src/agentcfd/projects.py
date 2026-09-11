@@ -2198,7 +2198,7 @@ class Project:
             source = candidate.get("source_result")
             recorded_result_sha256 = selected_run.get("result_sha256")
             if (
-                candidate.get("schema") == "agentcfd.result-summary/0.2"
+                candidate.get("schema") == "agentcfd.result-summary/0.3"
                 and candidate.get("root") == str(self.root)
                 and candidate.get("run_id") == selected_run.get("run_id")
                 and candidate.get("result") == str(result_path)
@@ -2290,7 +2290,7 @@ class Project:
         verification_command = f"agentcfd verify result {shlex.quote(str(result_path))}"
         accepted = record.get("accepted") is True
         return {
-            "schema": "agentcfd.result-summary/0.2",
+            "schema": "agentcfd.result-summary/0.3",
             "root": str(self.root),
             "run_id": selected_run.get("run_id"),
             "summary": str(result_path.with_name("summary.json")),
@@ -2317,6 +2317,7 @@ class Project:
             "check_count": len(checks),
             "requirements": requirements,
             "failed_checks": failed_checks,
+            "scientific_inputs": record.get("scientific_inputs", {}),
             "provenance": record.get("provenance", {}),
             "artifact_integrity": {
                 "verified": False,
@@ -2340,6 +2341,137 @@ class Project:
                 ),
             },
         }
+
+    def scientific_sample(
+        self,
+        *,
+        outputs: Sequence[str],
+        inputs: Sequence[str] = (),
+        run_id: str | None = None,
+        case_id: str | None = None,
+    ) -> dict[str, object]:
+        """Create one verified scalar sample from a published project run."""
+
+        output_names = tuple(dict.fromkeys(str(name).strip() for name in outputs))
+        if not output_names or any(not name for name in output_names):
+            raise ProjectError("Scientific-sample outputs require explicit names.")
+        input_names = tuple(dict.fromkeys(str(name).strip() for name in inputs))
+        if any(not name for name in input_names):
+            raise ProjectError("Scientific-sample input names must not be empty.")
+        summary = self.result_summary(run_id=run_id, quantities=output_names)
+        if summary["accepted"] is not True:
+            raise ProjectError(
+                "Scientific samples require an accepted result; review failed checks first."
+            )
+        verification = self.verify(run_id=run_id)
+        if verification["verified"] is not True:
+            failed = ", ".join(
+                str(check["code"])
+                for check in verification["checks"]
+                if check["passed"] is False
+            )
+            raise ProjectError(
+                "Scientific-sample source verification failed: "
+                + (failed or "unknown integrity failure")
+                + "."
+            )
+        selected_run = self._select_run_record(run_id)
+        assert selected_run is not None
+        selected_parameters = selected_run.get("parameters", {})
+        if not isinstance(selected_parameters, Mapping):
+            raise ProjectError("Selected run parameters are malformed.")
+        parameter_records = self.parameter_contract(selected_parameters)
+        numeric_parameters = {
+            str(record["name"]): float(record["current"])
+            for record in parameter_records
+            if isinstance(record.get("current"), (int, float))
+            and not isinstance(record.get("current"), bool)
+            and math.isfinite(float(record["current"]))
+        }
+        if not input_names:
+            input_names = tuple(sorted(numeric_parameters))
+        unknown_inputs = sorted(set(input_names) - set(numeric_parameters))
+        if unknown_inputs:
+            available = ", ".join(sorted(numeric_parameters)) or "none"
+            raise ProjectError(
+                "Unknown or non-numeric sample inputs: "
+                + ", ".join(unknown_inputs)
+                + f". Available numeric project parameters: {available}."
+            )
+        if not input_names:
+            raise ProjectError(
+                "Scientific samples require at least one numeric case.py parameter."
+            )
+        if case_id is not None and (
+            not isinstance(case_id, str) or not case_id.strip()
+        ):
+            raise ProjectError("Scientific-sample case id must be non-empty.")
+        quantities = summary["quantities"]
+        provenance = dict(summary["provenance"])
+        provenance["sample_export"] = {
+            "project_verified": True,
+            "run_id": summary["run_id"],
+            "source_result_sha256": summary["source_result"]["sha256"],
+            "input_schema": [
+                {
+                    "name": record["name"],
+                    "value": numeric_parameters[str(record["name"])],
+                    "metadata": record["metadata"],
+                }
+                for record in parameter_records
+                if record["name"] in input_names
+            ],
+        }
+        return {
+            "schema": "agentcae.scientific-sample",
+            "schema_version": "0.1.0",
+            "case_id": (
+                case_id.strip()
+                if case_id is not None
+                else f"agentcfd-{summary['run_id']}"
+            ),
+            "source": {"product": "agentcfd", "provider": summary["provider"]},
+            "inputs": {name: numeric_parameters[name] for name in input_names},
+            "outputs": {name: float(quantities[name]["value"]) for name in output_names},
+            "quantity_schema": [
+                {"name": name, "shape": [], **dict(quantities[name])}
+                for name in output_names
+            ],
+            "trust_level": summary["trust_level"],
+            "accepted": True,
+            "scientific_inputs": summary["scientific_inputs"],
+            "provenance": provenance,
+            "artifacts": {
+                "summary": summary["summary"],
+                "result": summary["result"],
+            },
+        }
+
+    def export_scientific_sample(
+        self,
+        path: str | Path,
+        *,
+        outputs: Sequence[str],
+        inputs: Sequence[str] = (),
+        run_id: str | None = None,
+        case_id: str | None = None,
+    ) -> tuple[Path, dict[str, object]]:
+        """Verify and atomically publish one solver-neutral scalar sample."""
+
+        target = Path(path)
+        if target.suffix.lower() != ".json":
+            raise ProjectError("Scientific-sample output must use the .json suffix.")
+        if target.exists():
+            raise ProjectError(f"Scientific-sample output already exists: {target}")
+        sample = self.scientific_sample(
+            outputs=outputs,
+            inputs=inputs,
+            run_id=run_id,
+            case_id=case_id,
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _write_json_atomic(target, sample)
+        return target, sample
 
     def export_campaign_csv(
         self,
@@ -4761,7 +4893,11 @@ class Project:
                     summary_path.read_text(encoding="utf-8"),
                     label=f"AgentCFD result summary {summary_path}",
                 )
-                if summary_record.get("schema") != "agentcfd.result-summary/0.2":
+                summary_schema = summary_record.get("schema")
+                if summary_schema not in {
+                    "agentcfd.result-summary/0.2",
+                    "agentcfd.result-summary/0.3",
+                }:
                     raise ValueError("Unsupported AgentCFD result-summary schema.")
                 if result_record is None or run_record is None:
                     raise ValueError("Summary source records are unavailable.")
@@ -4796,6 +4932,10 @@ class Project:
                     "requirements": expected_requirements,
                     "provenance": result_record.get("provenance"),
                 }
+                if summary_schema == "agentcfd.result-summary/0.3":
+                    comparisons["scientific_inputs"] = result_record.get(
+                        "scientific_inputs"
+                    )
                 disagreements = [
                     name
                     for name, expected in comparisons.items()
@@ -5606,6 +5746,7 @@ class Project:
             run_record["promotion"] = marker_record["promotion"]
         result_record = result.summary()
         result_record["checks"] = [check.as_dict() for check in result.checks]
+        result_record["scientific_inputs"] = result.scientific_input_manifest()
         result_summary = self._result_summary_payload(
             run_record,
             result_path=result_path,

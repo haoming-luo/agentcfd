@@ -376,6 +376,8 @@ agentcfd mesh . --plan-only     # imported-surface cell/refinement/quality budge
 agentcfd mesh . --output mesh-case # native dry-run + snappy + checkMesh gates
 agentcfd run .                      # bounded imported laminar flow + XDMF/H5
 agentcfd run . --keep-workspace  # expert backend debugging
+agentcfd export sample . pressure-loss.json \
+  --input mean_velocity --output-quantity flow.pressure_drop
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 # agentcfd clean . --include-retained --apply  # release expert copies

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add project-level `scientific_sample()` / `export_scientific_sample()` and
+  `agentcfd export sample`. A readable project can now become a strict
+  `agentcae.scientific-sample` without custom Python glue: numeric `case.py`
+  parameters are inputs, explicitly selected canonical quantities are outputs,
+  units and provenance remain attached, and full project/summary/result
+  integrity must pass before the sample is written.
 - Materialize every completed run's bounded decision view as `summary.json`.
   Normal `result` and unified `project` reads now consume this small artifact
   instead of reparsing complete scalar histories, while `result.json` remains

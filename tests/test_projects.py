@@ -2556,7 +2556,7 @@ def test_result_summary_is_lightweight_filterable_and_cli_visible(tmp_path, caps
     jsonschema.Draft202012Validator(
         contracts.load("result-summary.schema.json")
     ).validate(report)
-    assert report["schema"] == "agentcfd.result-summary/0.2"
+    assert report["schema"] == "agentcfd.result-summary/0.3"
     assert report["summary"] == str(summary_path)
     assert report["source_result"]["bytes"] == completed.result_path.stat().st_size
     assert report["run_id"] == completed.run_id
@@ -2634,6 +2634,67 @@ def test_result_summary_and_human_cli_distinguish_design_requirements(tmp_path, 
     assert "Design requirements:\n" in human
     assert "[FAIL] requirement.pressure-budget:" in human
     assert "target <= 0.0 Pa" in human
+
+
+def test_project_exports_verified_agentcae_scalar_sample(tmp_path, capsys):
+    project = projects.init_project(tmp_path / "pipe")
+    completed = project.run(parameters={"mean_velocity": 0.03})
+
+    sample = project.scientific_sample(
+        inputs=("diameter", "mean_velocity"),
+        outputs=("flow.pressure_drop", "flow.mass_flow_rate"),
+    )
+
+    jsonschema.Draft202012Validator(
+        contracts.load("scientific-sample.schema.json")
+    ).validate(sample)
+    assert sample["case_id"] == f"agentcfd-{completed.run_id}"
+    assert sample["inputs"] == {"diameter": 0.05, "mean_velocity": 0.03}
+    assert set(sample["outputs"]) == {
+        "flow.mass_flow_rate",
+        "flow.pressure_drop",
+    }
+    sample_export = sample["provenance"]["sample_export"]
+    assert sample_export["project_verified"] is True
+    assert sample_export["run_id"] == completed.run_id
+    assert sample_export["source_result_sha256"] == hashlib.sha256(
+        completed.result_path.read_bytes()
+    ).hexdigest()
+    assert [record["name"] for record in sample_export["input_schema"]] == [
+        "diameter",
+        "mean_velocity",
+    ]
+    assert sample_export["input_schema"][0]["metadata"]["unit"] == "m"
+    assert set(sample["artifacts"]) == {"result", "summary"}
+
+    target = tmp_path / "datasets" / "pipe-001.json"
+    assert (
+        entrypoint(
+            [
+                "export",
+                "sample",
+                str(project.root),
+                str(target),
+                "--input",
+                "length",
+                "--output-quantity",
+                "flow.pressure_drop",
+                "--case-id",
+                "pipe-001",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_sample = json.loads(capsys.readouterr().out)
+    assert cli_sample["case_id"] == "pipe-001"
+    assert cli_sample["inputs"] == {"length": 10.0}
+    assert json.loads(target.read_text(encoding="utf-8")) == cli_sample
+
+    with pytest.raises(ProjectError, match="Unknown or non-numeric sample inputs"):
+        project.scientific_sample(
+            inputs=("missing",), outputs=("flow.pressure_drop",)
+        )
 
 
 def test_project_doctor_combines_health_resource_and_energy_truthfulness(

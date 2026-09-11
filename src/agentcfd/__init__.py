@@ -2,6 +2,7 @@
 
 from . import (
     benchmarks,
+    archives,
     boundaries,
     capabilities,
     contracts,
@@ -51,6 +52,7 @@ __all__ = [
     "Step",
     "__version__",
     "benchmarks",
+    "archives",
     "boundaries",
     "capabilities",
     "contracts",

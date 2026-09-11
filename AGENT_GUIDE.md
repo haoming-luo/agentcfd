@@ -100,6 +100,10 @@ python -m pytest -q
     the preview first and use `--apply` only when full fields are reproducible
     and no downstream consumer still needs that exact stored field payload.
 25. Use `verify project --json` before archive, coupling, or dataset admission.
+    Preview `archive --plan-only --json` before creating a handoff. Prefer the
+    `decision` profile unless the recipient explicitly needs spatial fields;
+    verify the completed ZIP before transfer and never infer acceptance from
+    archive integrity.
 26. Read `output/summary.json` or `agentcfd result --json` for routine decisions;
     open full `result.json` histories and HDF5 fields only when the task needs them.
 27. Use `agentcfd export sample` for scalar learning data; it verifies the

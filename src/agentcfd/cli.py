@@ -15,6 +15,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from . import (
+    archives,
     benchmarks,
     boundaries,
     capabilities,
@@ -1959,6 +1960,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     compact.add_argument("--json", action="store_true", dest="as_json")
 
+    archive = subparsers.add_parser(
+        "archive",
+        help="Preview or create a verified compact project handoff archive.",
+    )
+    archive.add_argument("project", nargs="?", type=Path, default=Path("."))
+    archive.add_argument("output", nargs="?", type=Path)
+    archive.add_argument(
+        "--profile",
+        choices=("decision", "portable"),
+        default="decision",
+        help="decision omits fields; portable includes XDMF/H5 and post-processing.",
+    )
+    archive.add_argument("--run-id")
+    archive.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Verify and list exact source bytes without creating an archive.",
+    )
+    archive.add_argument("--json", action="store_true", dest="as_json")
+
     clean = subparsers.add_parser(
         "clean",
         help="Preview removal of temporary solver workspaces while preserving results.",
@@ -2765,6 +2786,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dataset_check.add_argument("directory", type=Path)
     dataset_check.add_argument("--json", action="store_true", dest="as_json")
+    archive_check = verify_subparsers.add_parser(
+        "archive",
+        help="Verify a compact project archive without extracting it.",
+    )
+    archive_check.add_argument("path", type=Path)
+    archive_check.add_argument("--json", action="store_true", dest="as_json")
     bundle_check = verify_subparsers.add_parser(
         "field-bundle",
         help="Verify XDMF/H5 and any selected NPZ hashes and frame identity.",
@@ -3680,6 +3707,42 @@ def main(argv: list[str] | None = None) -> int:
             )
             if not report["applied"]:
                 print("preview only; add --apply to compact this accepted run")
+        return 0
+    if args.command == "archive":
+        project = projects.Project.discover(args.project)
+        if args.plan_only:
+            report = project.archive_plan(profile=args.profile, run_id=args.run_id)
+            if args.as_json:
+                print(json.dumps(report, indent=2, sort_keys=True))
+            else:
+                print(
+                    f"Archive plan | {report['profile']} | {report['file_count']} files | "
+                    f"{report['source_bytes']} source bytes"
+                )
+                print(
+                    "fields: "
+                    + (
+                        f"included ({report['field_payload_bytes']} bytes)"
+                        if report["field_payloads_included"]
+                        else "not included"
+                    )
+                )
+            return 0
+        if args.output is None:
+            raise ValueError("Archive creation requires OUTPUT or --plan-only.")
+        output, manifest = project.export_archive(
+            args.output,
+            profile=args.profile,
+            run_id=args.run_id,
+        )
+        if args.as_json:
+            print(json.dumps(manifest, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Created verified {manifest['profile']} archive | "
+                f"{len(manifest['files'])} files | {output.stat().st_size} bytes"
+            )
+            print(output)
         return 0
     if args.command == "clean":
         report = projects.Project(args.project).clean(
@@ -4861,6 +4924,19 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Dataset verified {str(report['verified']).lower()} | "
                 f"samples {report['sample_count']}"
+            )
+            for check in report["checks"]:
+                state = "PASS" if check["passed"] else "FAIL"
+                print(f"{state} {check['code']}: {check['message']}")
+        return 0 if report["verified"] else 3
+    if args.command == "verify" and args.verification == "archive":
+        report = archives.verify_project_archive(args.path)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Archive verified {str(report['verified']).lower()} | "
+                f"{report['file_count']} files | {report['profile']}"
             )
             for check in report["checks"]:
                 state = "PASS" if check["passed"] else "FAIL"

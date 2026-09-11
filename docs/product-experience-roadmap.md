@@ -88,6 +88,8 @@ files stay hidden and reproducible.
   sole recoverable workspace;
 - persistent cleanup protection for workspaces deliberately retained by CLI or
   project policy, with a separate previewable release scope;
+- preview-first decision/portable project archives that exclude native solver
+  state by default, stream large fields, and verify every member independently;
 - one-command project doctor covering readiness, runtime, storage headroom,
   recovery and comparable cell-update work without fabricated energy claims;
 - declarative plane slices, scalar contours, and line-seeded streamlines that

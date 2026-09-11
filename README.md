@@ -111,6 +111,10 @@ agentcfd project .      # unified project/result/output view; no HDF5 read
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
 agentcfd verify project . # hash result artifacts and verify XDMF/H5 consistency
+agentcfd archive . --plan-only             # preview exact compact handoff bytes
+agentcfd archive . result-decision.zip     # evidence without field payload
+agentcfd archive . result-portable.zip --profile portable # include XDMF/H5
+agentcfd verify archive result-decision.zip
 agentcfd run .          # full portable fields for spatial review
 agentcfd run . --summary-only  # compact evidence, no permanent field bundle
 agentcfd watch .        # follow a long active run, then stop automatically

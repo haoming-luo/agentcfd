@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add preview-first verified project archives. The default `decision` profile
+  carries readable intent, owned inputs, results, and evidence without native
+  solver state or field payloads; `portable` explicitly adds XDMF/H5 and
+  post-processing. Creation is streamed and atomic, while `verify archive`
+  checks safe member paths, the exact manifest index, and every payload hash
+  without extraction.
 - Add the versioned `agentcfd templates` catalog. Every built-in starting point
   now publishes provider compatibility, geometry mode, physics, default
   outputs, required decisions, limitations, and a copyable creation command;

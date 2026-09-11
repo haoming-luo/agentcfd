@@ -25,6 +25,7 @@ from types import ModuleType
 from typing import Mapping, Sequence
 
 from . import (
+    archives,
     boundaries,
     campaign_plotting,
     data_exchange,
@@ -4864,13 +4865,20 @@ class Project:
             },
         }
 
-    def verify(self, *, run_id: str | None = None) -> dict[str, object]:
+    def verify(
+        self,
+        *,
+        run_id: str | None = None,
+        verify_fields: bool = True,
+    ) -> dict[str, object]:
         """Verify one published project result and its portable field bundle.
 
         Unlike :meth:`snapshot`, this explicit integrity operation hashes every
         result artifact and opens the standard XDMF/H5 bundle when present.
         """
 
+        if not isinstance(verify_fields, bool):
+            raise ValueError("verify_fields must be a boolean.")
         selected = self._select_run_record(run_id)
         if selected is None:
             raise ProjectError("No project result exists; run the project first.")
@@ -5163,7 +5171,19 @@ class Project:
         present_fields = {name for name, path in field_paths.items() if path.is_file()}
         field_bundle = None
         field_payloads_opened = False
-        if present_fields:
+        if present_fields and not verify_fields:
+            add_check(
+                "FIELD_BUNDLE_NOT_SELECTED",
+                True,
+                (
+                    "Portable field structure was not opened because this trust "
+                    "operation explicitly excludes field payloads. Registered "
+                    "artifact bytes remain covered by result integrity."
+                ),
+                fields_directory,
+                "",
+            )
+        elif present_fields:
             missing = sorted(set(field_paths) - present_fields)
             if missing:
                 add_check(
@@ -5265,6 +5285,32 @@ class Project:
             },
             "next_action": next_action,
         }
+
+    def archive_plan(
+        self,
+        *,
+        profile: str = "decision",
+        run_id: str | None = None,
+    ) -> dict[str, object]:
+        """Preview a verified compact handoff without creating another file."""
+
+        return archives.plan_project_archive(self, profile=profile, run_id=run_id)
+
+    def export_archive(
+        self,
+        destination: str | Path,
+        *,
+        profile: str = "decision",
+        run_id: str | None = None,
+    ) -> tuple[Path, dict[str, object]]:
+        """Atomically export one verified decision or portable project archive."""
+
+        return archives.export_project_archive(
+            self,
+            destination,
+            profile=profile,
+            run_id=run_id,
+        )
 
     def doctor(self) -> dict[str, object]:
         """Audit one project, runtime, and resource envelope without solving."""

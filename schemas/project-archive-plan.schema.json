@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-archive-plan.schema.json",
+  "title": "AgentCFD project archive plan 0.1",
+  "type": "object",
+  "required": [
+    "schema", "project", "profile", "run_id", "accepted", "trust_level",
+    "file_count", "source_bytes", "field_payload_bytes",
+    "field_payloads_included", "files", "excluded", "verification"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-archive-plan/0.1"},
+    "project": {"type": "string", "minLength": 1},
+    "profile": {"enum": ["decision", "portable"]},
+    "run_id": {"type": "string", "minLength": 1},
+    "accepted": {"type": "boolean"},
+    "trust_level": {"type": "string", "minLength": 1},
+    "file_count": {"type": "integer", "minimum": 1},
+    "source_bytes": {"type": "integer", "minimum": 1},
+    "field_payload_bytes": {"type": "integer", "minimum": 0},
+    "field_payloads_included": {"type": "boolean"},
+    "files": {"$ref": "#/$defs/files"},
+    "excluded": {"$ref": "#/$defs/strings"},
+    "verification": {"$ref": "#/$defs/sourceVerification"}
+  },
+  "$defs": {
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/file"}
+    },
+    "file": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256", "role"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "bytes": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "role": {"enum": ["project-input", "published-result"]}
+      },
+      "additionalProperties": false
+    },
+    "strings": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "sourceVerification": {
+      "type": "object",
+      "required": ["schema", "verified", "checks", "field_payloads_opened"],
+      "properties": {
+        "schema": {"const": "agentcfd.project-verification/0.1"},
+        "verified": {"const": true},
+        "checks": {"type": "integer", "minimum": 1},
+        "field_payloads_opened": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

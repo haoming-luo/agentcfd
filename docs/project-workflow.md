@@ -79,6 +79,28 @@ analysis identity is accepted only when it can be recomputed from that verified
 plan. Verification reports integrity separately from `accepted` and
 `trust_level`; it never upgrades the scientific evidence.
 
+## Compact verified handoff
+
+`agentcfd archive . --plan-only` lists every source path, byte count, hash, and
+the field payload total before creating a duplicate. The default `decision`
+profile retains readable project intent, owned input/geometry, result records,
+and compact evidence while excluding fields, post-processing products,
+`.agentcfd`, native OpenFOAM times, recovery checkpoints, repository metadata,
+and unrelated campaign runs. Because fields are excluded, this profile verifies
+registered artifact bytes but does not structurally open XDMF/H5.
+
+Use `--profile portable` only when the recipient needs spatial post-processing;
+it adds the published XDMF/H5 and post-processing directory and performs full
+field-bundle verification first. Archive creation streams large payloads into a
+same-filesystem temporary ZIP, checks every byte against the plan, verifies the
+new ZIP itself, and only then renames it into place. Already-compressed HDF5,
+NPZ, images, and video are stored without wasteful recompression.
+
+`agentcfd verify archive FILE.zip` audits member paths, the exact manifest
+index, and every payload hash without extracting. An archive may truthfully
+contain an unaccepted result; byte integrity never changes scientific
+acceptance or trust.
+
 Use `agentcfd doctor .` when a full project/runtime/resource audit is worth a
 recursive storage scan. It checks model/provider/runtime readiness, output
 budget, filesystem headroom, latest run health, acceptance, and recovery, then

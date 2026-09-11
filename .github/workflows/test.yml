@@ -40,7 +40,7 @@ jobs:
       - run: wheel-test/bin/agentcfd templates --json
       - run: wheel-test/bin/agentcfd templates imported-internal-flow --json
       - run: wheel-test/bin/python -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file(); assert contracts.path('project-verification.schema.json').is_file(); assert contracts.path('project-performance.schema.json').is_file(); assert contracts.path('performance-history.schema.json').is_file()"
-      - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file(); assert contracts.path('scientific-dataset.schema.json').is_file(); assert contracts.path('scientific-dataset-verification.schema.json').is_file(); assert contracts.path('scientific-dataset-inspection.schema.json').is_file(); assert contracts.path('training-plan.schema.json').is_file(); assert contracts.path('template-catalog.schema.json').is_file()"
+      - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file(); assert contracts.path('scientific-dataset.schema.json').is_file(); assert contracts.path('scientific-dataset-verification.schema.json').is_file(); assert contracts.path('scientific-dataset-inspection.schema.json').is_file(); assert contracts.path('training-plan.schema.json').is_file(); assert contracts.path('template-catalog.schema.json').is_file(); assert contracts.path('project-archive.schema.json').is_file(); assert contracts.path('project-archive-verification.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-precursor-map.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-precursor-grid-study.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-function-study.schema.json').is_file(); assert contracts.path('turbulent-wall-function-study.schema.json').is_file()"
@@ -54,6 +54,9 @@ jobs:
       - run: wheel-test/bin/agentcfd run operating-point-project --json
       - run: wheel-test/bin/agentcfd performance operating-point-project --json
       - run: wheel-test/bin/agentcfd verify project operating-point-project --json
+      - run: wheel-test/bin/agentcfd archive operating-point-project --plan-only --json
+      - run: wheel-test/bin/agentcfd archive operating-point-project operating-point.zip --json
+      - run: wheel-test/bin/agentcfd verify archive operating-point.zip --json
       - run: wheel-test/bin/agentcfd export sample operating-point-project operating-point-sample.json --input mean_velocity --output-quantity flow.pressure_drop --json
       - run: wheel-test/bin/agentcfd run operating-point-project --campaign --param mean_velocity=0.01 --json
       - run: wheel-test/bin/agentcfd run operating-point-project --campaign --param mean_velocity=0.02 --json

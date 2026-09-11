@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-archive-verification.schema.json",
+  "title": "AgentCFD project archive verification 0.1",
+  "type": "object",
+  "required": [
+    "schema", "archive", "verified", "profile", "run_id", "accepted",
+    "file_count", "uncompressed_bytes_verified", "archive_bytes", "checks"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-archive-verification/0.1"},
+    "archive": {"type": "string", "minLength": 1},
+    "verified": {"type": "boolean"},
+    "profile": {"type": ["string", "null"]},
+    "run_id": {"type": ["string", "null"]},
+    "accepted": {"type": ["boolean", "null"]},
+    "file_count": {"type": "integer", "minimum": 0},
+    "uncompressed_bytes_verified": {"type": "integer", "minimum": 0},
+    "archive_bytes": {"type": "integer", "minimum": 0},
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["code", "passed", "message"],
+        "properties": {
+          "code": {"enum": ["ARCHIVE_MANIFEST", "ARCHIVE_PAYLOADS"]},
+          "passed": {"type": "boolean"},
+          "message": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

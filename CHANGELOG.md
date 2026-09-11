@@ -2,13 +2,15 @@
 
 ## Unreleased
 
-- Make continuous integration proportional to the evidence needed: main/PR
-  triggers no longer duplicate arbitrary branch pushes, superseded runs are
-  cancelled, lint/build happens once, the compatibility matrix is reduced from
-  nine redundant full pipelines to four representative test jobs, pip caches
-  are enabled, artifacts expire after three days, and test/release workflows
-  share one short dependency-free installed-wheel smoke instead of duplicating
-  a long command list.
+- Make continuous integration proportional to the evidence needed. Ordinary
+  code pushes now run one cached Linux gate containing lint, the full lightweight
+  suite, one build, and one installed-wheel smoke; documentation-only changes
+  skip code CI and superseded runs are cancelled. A manual five-combination
+  workflow serves deliberate stage acceptance. Releases alone test the exact
+  built wheel over the complete 3 OS × 3 Python matrix before PyPI publication.
+  Jobs have time bounds, transient artifacts expire after three days, and the
+  mandatory repository policy forbids quota-error retries or relabeling local
+  evidence as remote success.
 - Treat the semantic `checkMesh` verdict as authoritative for imported mesh
   acceptance. OpenFOAM may return process code zero after reporting failed
   all-geometry/all-topology checks; AgentCFD now marks the command check failed

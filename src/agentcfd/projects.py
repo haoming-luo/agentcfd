@@ -8308,7 +8308,7 @@ def init_project(
             ),
         )
         existing_readme = (project.root / "README.md").read_text(encoding="utf-8")
-        workflow_start = existing_readme.index("Edit `case.py`")
+        workflow_start = existing_readme.index("## Start here")
         (project.root / "README.md").write_text(
             "# AgentCFD industrial-elbow\n\n"
             "This project owns a parameterized circular 90-degree elbow. Edit "
@@ -8658,19 +8658,39 @@ timeout_seconds = 3600
                 else ""
             )
         )
-        + "Edit `case.py`, then run `agentcfd status .` and follow its one recommended "
-        "next action. The normal loop is `agentcfd run .` followed by "
-        "`agentcfd view .`; `check`, `plan`, and `inspect` remain available for deeper "
-        "diagnosis. Use `agentcfd project .` for one combined project, result, output, "
-        "and safe-action view. Use `agentcfd params . --output operating-point.json` to freeze "
-        "one validated set of editable inputs without changing `case.py`. "
-        "Failed transient runs expose identity-gated `agentcfd resume .` "
-        "when a complete checkpoint exists. Ordinary runs replace the managed "
-        "`output/` directory. Add `--summary-only` for compact OpenFOAM evidence "
-        "without permanent fields. Use "
-        "`agentcfd run . --campaign` to preserve an immutable run, "
-        "`agentcfd storage .` to audit space, or `--keep-workspace` only for expert "
-        "solver debugging.\n",
+        + "## Start here\n\n"
+        "`case.py` is the readable scientific input. Generated OpenFOAM files are "
+        "disposable implementation details.\n\n"
+        "```bash\n"
+        "agentcfd status .\n"
+        "agentcfd run .\n"
+        "agentcfd view .\n"
+        "```\n\n"
+        "Follow the single `next` action printed by `status`. Use `agentcfd project "
+        ".` when one combined project, result, output, and safe-action view is more "
+        "convenient.\n\n"
+        "## Change an operating point\n\n"
+        "List typed parameters with `agentcfd status .`, then trial one value without "
+        "editing the source:\n\n"
+        "```bash\n"
+        "agentcfd run . --param NAME=JSON\n"
+        "agentcfd params . --output operating-point.json\n"
+        "```\n\n"
+        "The parameter file freezes a validated operating point that can be reused by "
+        "`check`, `plan`, `mesh`, and `run`.\n\n"
+        "## Results, history, and storage\n\n"
+        "Ordinary runs replace only managed `output/`. Use `--summary-only` for compact "
+        "OpenFOAM evidence without permanent fields, or `--campaign` for immutable "
+        "design history. Inspect space before deleting anything:\n\n"
+        "```bash\n"
+        "agentcfd storage .\n"
+        "agentcfd clean .\n"
+        "```\n\n"
+        "## Failure recovery and expert tools\n\n"
+        "`agentcfd diagnose .` classifies bounded log evidence. Failed transient runs "
+        "expose identity-gated `agentcfd resume .` when a complete checkpoint exists. "
+        "Use `--keep-workspace` only for expert solver debugging; normal users never "
+        "need to maintain an OpenFOAM case tree.\n",
         encoding="utf-8",
     )
     (root / "AGENTS.md").write_text(

@@ -23,6 +23,9 @@
 - Make the human status parameter hint target the resolved selected project,
   including shell-safe paths with spaces, instead of incorrectly assuming the
   caller is already inside that project directory.
+- Replace dense generated-project README prose with a scannable four-part guide
+  for first run, typed operating points, bounded storage/history, and recovery;
+  `case.py` remains the single scientific source and OpenFOAM stays hidden.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

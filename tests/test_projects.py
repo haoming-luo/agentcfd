@@ -3071,6 +3071,12 @@ def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, ca
         item["name"]
         for item in plan["decisions"]["output_plan"]["channels"]["views"]["definitions"]
     ] == ["midplane-vorticity", "wake-streamlines", "centerline-pressure"]
+    guide = (root / "README.md").read_text()
+    assert "## Start here" in guide
+    assert "## Change an operating point" in guide
+    assert "## Results, history, and storage" in guide
+    assert "## Failure recovery and expert tools" in guide
+    assert "agentcfd run . --param NAME=JSON" in guide
 
 
 def test_baffle_channel_template_rejects_reference_provider(tmp_path):

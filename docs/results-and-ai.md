@@ -370,6 +370,9 @@ Without `--json`, the direct exporter emits one stderr milestone per bounded
 conversion/write phase, including completed frames and batch position. JSON
 stdout remains a single document for agents; managed projects expose identical
 progress through `status` and `watch` without opening XDMF/H5.
+Direct exports can also select `--time-interval`, `--latest-only`, and
+`--exclude-initial`; filtering occurs before `foamToVTK`, so omitted times do
+not consume temporary conversion space.
 
 The NPZ layout does not require object deserialization:
 

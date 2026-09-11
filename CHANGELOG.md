@@ -12,6 +12,9 @@
   partially written record during the result handoff.
 - Show bounded phase/frame/batch milestones for interactive direct OpenFOAM
   exports on stderr, while keeping `--json` output silent and machine-stable.
+- Expose pre-conversion `--time-interval`, `--latest-only`, and
+  `--exclude-initial` filters on direct OpenFOAM field export, preventing
+  unrequested native times from entering temporary VTU or portable HDF5 output.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

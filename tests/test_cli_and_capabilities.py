@@ -1374,10 +1374,12 @@ def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
     tmp_path, capsys, monkeypatch
 ):
     callbacks = []
+    requests = []
 
     def export(_case, output, **kwargs):
         callback = kwargs["_progress_callback"]
         callbacks.append(callback)
+        requests.append(kwargs)
         if callback is not None:
             callback(
                 {
@@ -1409,6 +1411,10 @@ def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
                 "openfoam",
                 str(tmp_path / "case"),
                 str(tmp_path / "human"),
+                "--time-interval",
+                "2",
+                "--latest-only",
+                "--exclude-initial",
             ]
         )
         == 0
@@ -1434,6 +1440,12 @@ def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
     assert captured.err == ""
     assert callbacks[0] is not None
     assert callbacks[1] is None
+    assert requests[0]["time_interval"] == 2.0
+    assert requests[0]["latest_only"] is True
+    assert requests[0]["include_initial"] is False
+    assert requests[1]["time_interval"] is None
+    assert requests[1]["latest_only"] is False
+    assert requests[1]["include_initial"] is True
 
 
 def test_grid_study_cli_rejects_ambiguous_json_plan(tmp_path, capsys):

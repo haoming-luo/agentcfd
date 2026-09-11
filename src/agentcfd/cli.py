@@ -2349,6 +2349,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Canonical or OpenFOAM field name; repeat to select multiple fields.",
     )
     field_bundle.add_argument(
+        "--time-interval",
+        type=float,
+        help=(
+            "Export native times on this physical interval instead of every saved "
+            "time directory."
+        ),
+    )
+    field_bundle.add_argument(
+        "--latest-only",
+        action="store_true",
+        help="Export only the latest time remaining after other time filters.",
+    )
+    field_bundle.add_argument(
+        "--exclude-initial",
+        action="store_true",
+        help="Do not include the OpenFOAM initial time in the portable series.",
+    )
+    field_bundle.add_argument(
         "--with-npz",
         action="store_true",
         help="Also write a pickle-free NPZ mirror for NumPy and ML workflows.",
@@ -4564,6 +4582,9 @@ def main(argv: list[str] | None = None) -> int:
             formats=("xdmf", "npz") if args.with_npz else ("xdmf",),
             compression=args.compression,
             maximum_bytes=args.storage_budget,
+            include_initial=not args.exclude_initial,
+            time_interval=args.time_interval,
+            latest_only=args.latest_only,
             _progress_callback=None if args.as_json else direct_export_progress,
         )
         report = bundle.to_dict()

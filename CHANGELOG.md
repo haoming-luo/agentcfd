@@ -4,6 +4,8 @@
 
 ## 0.1.0a5 — 2026-09-11
 
+- Keep bounded STL topology inspection compatible with Python 3.11 by clearing
+  compact numeric buffers through slice deletion rather than `array.clear()`.
 - Enforce agreement among package, runtime, citation, installation, and
   changelog versions in the lightweight release gate.
 - End human project runs with a bounded four-quantity engineering summary and

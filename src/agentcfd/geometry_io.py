@@ -719,11 +719,11 @@ def _surface_metrics(
             topology_complete = False
             unique_vertices.clear()
             edge_counts.clear()
-            component_parents.clear()
+            del component_parents[:]
             component_ranks.clear()
             component_regions.clear()
-            component_areas.clear()
-            component_signed_volumes.clear()
+            del component_areas[:]
+            del component_signed_volumes[:]
     if triangle_count == 0:
         bounds = None
         dimensions = None

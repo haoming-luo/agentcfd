@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: Luo
     given-names: Haoming
-date-released: 2026-09-07
-version: 0.1.0a4
+date-released: 2026-09-11
+version: 0.1.0a5
 license: Apache-2.0
 repository-code: "https://github.com/haoming-luo/agentcfd"
 url: "https://github.com/haoming-luo/agentcfd"

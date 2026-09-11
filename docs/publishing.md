@@ -2,16 +2,17 @@
 
 ## Published status
 
-`agentcfd` 0.1.0a3 was published on 2026-09-04 from GitHub commit `6b5952f`
-through PyPI Trusted Publishing after the Linux, macOS, Windows, Python
-3.11--3.13, offline-wheel, and installed turbulent-case-generation gates
-passed. A second clean environment then installed 0.1.0a3 from the public PyPI
-index and reproduced its version, capability catalog, and k-omega SST case
-manifest. The distribution name is occupied by the project, and
+`agentcfd` 0.1.0a4 was published on 2026-09-07 from GitHub commit
+`bca67c2` through PyPI Trusted Publishing. Its GitHub prerelease and PyPI wheel
+and source distribution are public. The a5 source tree is a release candidate
+until the `v0.1.0a5` GitHub Release workflow has tested and published its exact
+artifacts; a version bump or local wheel alone is not publication evidence.
+
+The distribution name is occupied by the project, and
 `haoming-luo/agentcfd` remains the canonical source repository. Release
-artifacts are rebuilt by GitHub Actions, receive PyPI digital attestations, and
-are therefore expected to have different hashes from any local pre-release
-build.
+artifacts are built once by GitHub Actions, receive PyPI digital attestations,
+and are therefore expected to have different hashes from any local
+pre-release build.
 
 The pending publisher converted to an active publisher after the first OIDC
 upload. Its identity is GitHub owner `haoming-luo`, repository `agentcfd`,
@@ -47,7 +48,7 @@ publisher uses these exact values:
 | Workflow filename | `release.yml` |
 | Environment | `pypi` |
 
-For future versions, publish a GitHub release for the matching version. The
+For each version, publish a GitHub release for the matching version. The
 workflow builds in a separate job, tests the exact wheel, passes only the
 distributions to the minimal OIDC publish job, and publishes with attestations.
 The `pypi` environment can add required-reviewer protection as the maintainer

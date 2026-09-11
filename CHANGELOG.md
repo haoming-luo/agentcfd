@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.1.0a5 — 2026-09-11
+
+- Enforce agreement among package, runtime, citation, installation, and
+  changelog versions in the lightweight release gate.
 - End human project runs with a bounded four-quantity engineering summary and
   one state-appropriate next command, while leaving machine JSON unchanged.
 - Stream changed, bounded project status in the same terminal during human

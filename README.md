@@ -87,10 +87,10 @@ Darcy–Weisbach identity check.
 
 ## Install
 
-Install the published alpha from PyPI with Python 3.11 or newer:
+Install this versioned alpha from PyPI with Python 3.11 or newer:
 
 ```bash
-python -m pip install agentcfd==0.1.0a4
+python -m pip install agentcfd==0.1.0a5
 agentcfd doctor
 agentcfd demo pipe
 ```

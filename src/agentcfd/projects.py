@@ -5741,6 +5741,7 @@ def build(*, mean_velocity=0.5, baffle_height=0.12):
                 outputs.surface_report(
                     "outlet-pressure", region="outlet", field="fluid.pressure"
                 ),
+                outputs.flow_uniformity("outlet-quality", region="outlet"),
                 outputs.force_report("baffle-drag", regions=("baffle",)),
             ),
             views=(
@@ -5932,6 +5933,9 @@ def build(
                 outputs.pressure_loss(
                     "system-loss", inlet={inlet_name!r}, outlet={outlet_name!r}
                 ),
+                outputs.flow_uniformity(
+                    "outlet-quality", region={outlet_name!r}
+                ),
             ),
         )
     else:
@@ -5966,6 +5970,9 @@ def build(
             reports=(
                 outputs.pressure_loss(
                     "system-loss", inlet={inlet_name!r}, outlet={outlet_name!r}
+                ),
+                outputs.flow_uniformity(
+                    "outlet-quality", region={outlet_name!r}
                 ),
             ),
         )

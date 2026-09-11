@@ -261,18 +261,22 @@ provide an exact `boundary_roles` object or explicitly set
 fallback wall.
 
 Imported projects use the same compact decision-output API as parametric
-channels. Their generated `case.py` includes an `outputs.pressure_loss(...)`
-report by default. It publishes mass-flow-averaged inlet/outlet total pressure,
+channels. Their generated `case.py` includes `outputs.pressure_loss(...)` and
+`outputs.flow_uniformity(...)` reports by default. The first publishes
+mass-flow-averaged inlet/outlet total pressure,
 total-pressure loss, inlet-bulk reference velocity and dynamic pressure, and a
 dimensionless system-loss coefficient. The inlet area is recovered from the
 post-mesh OpenFOAM patch unless `reference_area` is explicit. Add
 `outputs.probe(...)`, a scalar-pressure `outputs.surface_report(...)`, or
 `outputs.force_report(...)` for further engineering decisions. These reports
 are compact histories and do not increase XDMF/H5 frame count or retain the
-derived total-pressure field.
+derived total-pressure field. The second publishes outlet velocity-vector
+uniformity, signed mean normal velocity, and patch area under stable
+`report.outlet-quality.*` names, also without adding a field frame.
 
 ```python
 outputs.pressure_loss("valve-loss", inlet="inlet", outlet="outlet")
+outputs.flow_uniformity("outlet-quality", region="outlet")
 ```
 
 The final coefficient is available as

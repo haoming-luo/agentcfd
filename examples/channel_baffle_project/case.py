@@ -66,6 +66,7 @@ def build(*, mean_velocity=0.5, baffle_height=0.12):
                     field="fluid.pressure",
                     operation="area-average",
                 ),
+                outputs.flow_uniformity("outlet-quality", region="outlet"),
                 outputs.force_report(
                     "baffle-drag",
                     regions=("baffle",),

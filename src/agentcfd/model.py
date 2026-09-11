@@ -365,7 +365,10 @@ class Step:
                 continue
             names = (
                 (report.region,)
-                if isinstance(report, output_types.SurfaceReport)
+                if isinstance(
+                    report,
+                    (output_types.SurfaceReport, output_types.FlowUniformityReport),
+                )
                 else (report.inlet, report.outlet)
                 if isinstance(report, output_types.PressureLossReport)
                 else report.regions

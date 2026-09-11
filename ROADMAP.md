@@ -31,6 +31,8 @@ are the product backbone; numerical benchmarks remain evidence underneath it.
 The common-workflow contract now represents named domain regions, rectangular
 channels and attached baffles, role-checked boundaries, initialization, mesh
 intent, probes, surface reports, force reports, and typed result discovery.
+Compact outlet velocity-uniformity, signed-normal-velocity, and surface-area
+histories now support flow-distribution screening without another field frame.
 Provider lowering remains capability-gated: the next product slice is the
 transient bottom-baffle channel, not another round of smooth-pipe tuning.
 

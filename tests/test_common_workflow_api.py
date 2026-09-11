@@ -94,6 +94,7 @@ def test_transient_step_serializes_mesh_initialization_and_reports():
                 field="fluid.pressure",
                 operation="area-average",
             ),
+            outputs.flow_uniformity("outlet-quality", region="outlet", every=2),
             outputs.force_report(
                 "baffle-drag",
                 regions=("baffle",),

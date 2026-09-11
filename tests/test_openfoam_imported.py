@@ -273,6 +273,36 @@ def test_imported_flow_lowers_total_pressure_loss_report_without_field_frames(tm
     assert "writeControl none;" in control
 
 
+def test_imported_flow_lowers_velocity_uniformity_without_field_frames(tmp_path):
+    payload = b"solid placeholder\nendsolid placeholder\n"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    base = _step(payload)
+    report = outputs.flow_uniformity(
+        "outlet quality",
+        region="outlet",
+        every=5,
+    )
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=(report,)),
+    )
+
+    prepared = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    ).prepare(step)
+    control = (prepared.directory / "system/controlDict").read_text()
+
+    assert "agentcfd_uniformity_outlet_quality" in control
+    assert "agentcfd_uniformity_outlet_quality_normal" in control
+    assert control.count("name outlet;") >= 2
+    assert "operation uniformity;" in control
+    assert "operation areaNormalAverage;" in control
+    assert control.count("fields (U);") >= 2
+    assert control.count("writeArea true;") >= 2
+
+
 def test_pressure_loss_report_recovers_compact_engineering_quantities(tmp_path):
     payload = b"surface"
     base = _step(payload)
@@ -319,6 +349,75 @@ def test_pressure_loss_report_recovers_compact_engineering_quantities(tmp_path):
     ].description
     assert histories[f"{prefix}.loss_coefficient"].unit == "1"
     assert report_recovered(report, histories) is True
+    assert len(artifacts) == 2
+
+
+def test_flow_uniformity_recovers_compact_si_history_and_area(tmp_path):
+    payload = b"surface"
+    base = _step(payload)
+    report = outputs.flow_uniformity("outlet-quality", region="outlet")
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=(report,)),
+    )
+    files = {
+        "agentcfd_uniformity_outlet_quality/0/surfaceFieldValue.dat": (
+            "# Area : 0.00125\n# Time Area uniformity(U)\n"
+            "10 0.00125 (0.82 0 0)\n20 0.00125 (0.91 0 0)\n"
+        ),
+        "agentcfd_uniformity_outlet_quality_normal/0/surfaceFieldValue.dat": (
+            "# Area : 0.00125\n# Time Area areaNormalAverage(U)\n"
+            "10 0.00125 (1.8 0 0)\n20 0.00125 (2.0 0 0)\n"
+        ),
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    quantities, histories, artifacts = {}, {}, {}
+
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    prefix = "report.outlet-quality"
+    assert quantities[f"{prefix}.velocity_uniformity_index"].value == pytest.approx(
+        0.91
+    )
+    assert quantities[f"{prefix}.velocity_uniformity_index"].unit == "1"
+    assert quantities[f"{prefix}.area_normal_velocity"].value == pytest.approx(2.0)
+    assert quantities[f"{prefix}.area_normal_velocity"].unit == "m/s"
+    assert quantities[f"{prefix}.area"].value == pytest.approx(0.00125)
+    assert quantities[f"{prefix}.area"].unit == "m^2"
+    assert histories[f"{prefix}.velocity_uniformity_index"].values == (0.82, 0.91)
+    assert report_recovered(report, histories) is True
+    assert len(artifacts) == 2
+
+
+def test_flow_uniformity_fails_closed_on_invalid_index_or_area_mismatch(tmp_path):
+    base = _step(b"surface")
+    report = outputs.flow_uniformity("outlet-quality", region="outlet")
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=(report,)),
+    )
+    files = {
+        "agentcfd_uniformity_outlet_quality/0/surfaceFieldValue.dat": (
+            "# Area : 0.00125\n1 0.00125 (1.2 0 0)\n"
+        ),
+        "agentcfd_uniformity_outlet_quality_normal/0/surfaceFieldValue.dat": (
+            "# Area : 0.002\n1 0.002 (2 0 0)\n"
+        ),
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    quantities, histories, artifacts = {}, {}, {}
+
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    assert not quantities
+    assert not histories
+    assert report_recovered(report, histories) is False
     assert len(artifacts) == 2
 
 
@@ -422,6 +521,12 @@ def test_imported_flow_rejects_unsafe_or_unsupported_report_intent(tmp_path):
             )
         ),
     )
+    wall_uniformity = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(
+            reports=(outputs.flow_uniformity("wall-flow", region="walls"),)
+        ),
+    )
     provider = OpenFOAMImportedProvider(source=source)
 
     with pytest.raises(UnsupportedCaseError, match="strictly inside"):
@@ -432,6 +537,8 @@ def test_imported_flow_rejects_unsafe_or_unsupported_report_intent(tmp_path):
         provider.validate(reversed_loss)
     with pytest.raises(UnsupportedCaseError, match="names collide"):
         provider.validate(internal_name_collision)
+    with pytest.raises(UnsupportedCaseError, match="inlet- or outlet-role"):
+        provider.validate(wall_uniformity)
 
 
 def test_imported_mesh_fails_closed_on_unsupported_or_unsafe_intent(tmp_path):
@@ -579,6 +686,14 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid(monkeypatch):
     ).validate(pressure_loss_record)
     assert pressure_loss_record["pressure_loss_report"]["loss_coefficient"] > 0.0
     assert pressure_loss_record["portable_fields"]["frames"] == 1
+    uniformity_record = json.loads(
+        (repository / "docs" / "openfoam-v2606-flow-uniformity.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-flow-uniformity-evidence.schema.json")
+    ).validate(uniformity_record)
+    assert uniformity_record["report"]["velocity_uniformity_index"] > 0.0
+    assert uniformity_record["storage"]["field_bundle_retained"] is False
     rans_record = json.loads(
         (repository / "docs" / "openfoam-v2606-imported-duct-rans.json").read_text()
     )

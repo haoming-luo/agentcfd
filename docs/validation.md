@@ -52,6 +52,18 @@ This validates the bounded integration and conservation path on one grid; it is
 not a thermal grid-convergence, variable-property, buoyancy, conjugate-wall,
 phase-change, or steam claim.
 
+## Compact flow-uniformity runtime evidence
+
+`docs/openfoam-v2606-flow-uniformity.json` records one accepted 6,400-cell
+imported-duct OpenCFD v2606 run using the `summary-only` result profile. The
+solver converged in 344 iterations. The outlet report recovered a velocity-
+vector uniformity index of 0.9759995, signed normal mean velocity of
+0.4989570 m/s, and patch area of 0.10000000149 m² from 344 compact samples.
+The two raw report histories occupied 36,805 bytes and no XDMF/H5 field bundle
+was retained. This proves runtime lowering, parsing, SI publication, and the
+low-storage path; the index is not experimental validation or a universal
+quality threshold.
+
 Numerical capabilities will add, as appropriate:
 
 - method of manufactured solutions;

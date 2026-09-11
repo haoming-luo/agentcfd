@@ -909,6 +909,12 @@ class OpenFOAMChannelProvider:
                         f"Pressure-loss report {report.name!r} must use the channel "
                         "inlet and outlet surfaces."
                     )
+            elif isinstance(report, outputs.FlowUniformityReport):
+                if report.region not in {"inlet", "outlet"}:
+                    raise UnsupportedCaseError(
+                        f"Flow-uniformity report {report.name!r} must use the channel "
+                        "inlet or outlet surface."
+                    )
             elif not isinstance(report, outputs.ForceReport):
                 raise UnsupportedCaseError("The channel provider received an unknown report type.")
             elif set(report.regions) - set(model.domain.surface_names):

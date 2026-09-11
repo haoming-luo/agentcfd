@@ -325,6 +325,12 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         "averaging": "mass-flow",
         "every": 1,
     }
+    assert project.load_step().output.reports[1].to_dict() == {
+        "type": "flow-uniformity-report",
+        "name": "outlet-quality",
+        "region": "outlet",
+        "every": 1,
+    }
     mass_flow_plan = project.plan(
         parameters={"mass_flow_rate": 49.91}
     )

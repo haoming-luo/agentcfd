@@ -1,0 +1,29 @@
+{
+  "accepted": true,
+  "analysis_sha256": "ac976909ef5a0714007e78dfd905a453b78c9fd615657f310be536aaef139914",
+  "case": "examples/imported_duct_mesh with default outlet-quality report",
+  "cell_count": 6400,
+  "claim": "workflow-and-runtime-evidence-not-physical-validation",
+  "converged": true,
+  "mesh_sha256": "95c46972dfb7d9c00b1fcd44bdd9b5a9b594a1fe2d6b01ce5ae94d4dcadfd0bb",
+  "model_sha256": "ddb7e815dfe6af17345972a031023c12eec7e3ead837ba22dbe5e5de90f5158f",
+  "report": {
+    "area_m2": 0.10000000149,
+    "area_normal_velocity_m_s": 0.49895704883,
+    "definition": "openfoam-vector-uniformity",
+    "name": "outlet-quality",
+    "region": "outlet",
+    "sample_count": 344,
+    "velocity_uniformity_index": 0.97599951349
+  },
+  "runtime": "OpenCFD v2606",
+  "schema": "agentcfd.openfoam-flow-uniformity-evidence/0.1",
+  "solver_iterations": 344,
+  "source_sha256": "sha256:010c8a05cc5d0c16910ea12ef87add15cc81362790a31599411e596aff31c537",
+  "storage": {
+    "field_bundle_retained": false,
+    "report_bytes": 36805,
+    "result_profile": "summary-only"
+  },
+  "trust_level": "verified"
+}

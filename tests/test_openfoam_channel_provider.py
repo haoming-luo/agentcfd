@@ -119,6 +119,17 @@ def test_channel_accepts_shared_pressure_loss_report(tmp_path):
     assert "agentcfd_loss_channel_loss_outlet" in control
 
 
+def test_channel_accepts_shared_flow_uniformity_report(tmp_path):
+    step = Project(EXAMPLE).load_step()
+
+    OpenFOAMChannelProvider(case_directory=tmp_path).prepare(step)
+    control = (tmp_path / "system/controlDict").read_text()
+
+    assert "agentcfd_uniformity_outlet_quality" in control
+    assert "operation uniformity;" in control
+    assert "operation areaNormalAverage;" in control
+
+
 def test_channel_provider_recovers_compact_reports_with_si_units(tmp_path):
     step = Project(EXAMPLE).load_step()
     files = {

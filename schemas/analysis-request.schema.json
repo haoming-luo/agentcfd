@@ -143,6 +143,17 @@
               },
               {
                 "type": "object",
+                "required": ["type", "name", "region", "every"],
+                "properties": {
+                  "type": {"const": "flow-uniformity-report"},
+                  "name": {"type": "string", "minLength": 1},
+                  "region": {"type": "string", "minLength": 1},
+                  "every": {"type": "integer", "minimum": 1}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
                 "required": [
                   "type", "name", "regions", "direction", "center", "every"
                 ],

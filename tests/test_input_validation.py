@@ -189,6 +189,21 @@ def test_pressure_loss_report_is_explicit_and_runtime_validated():
         )
 
 
+def test_flow_uniformity_report_has_one_unambiguous_surface_contract():
+    report = outputs.flow_uniformity("outlet-quality", region="outlet", every=4)
+
+    assert report.to_dict() == {
+        "type": "flow-uniformity-report",
+        "name": "outlet-quality",
+        "region": "outlet",
+        "every": 4,
+    }
+    with pytest.raises(ValueError, match="region"):
+        outputs.flow_uniformity("bad", region="")
+    with pytest.raises(ValueError, match="interval"):
+        outputs.flow_uniformity("bad", region="outlet", every=0)
+
+
 def test_energy_intent_requires_complete_properties_boundaries_and_output():
     domain = geometry.circular_pipe(length=1.0, diameter=0.1)
     incomplete_fluid = fluids.newtonian(

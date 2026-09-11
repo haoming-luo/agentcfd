@@ -32,5 +32,7 @@ an OpenFOAM-native geometry dry-run plus a budget- and quality-compliant
 `checkMesh`. A normal run also gates SIMPLE convergence and conservation, then
 publishes standard XDMF/H5 fields plus the compact
 `report.system-loss.loss_coefficient` and its dimensional total-pressure-loss
-evidence. The generated `mesh-case/` is disposable provider detail and is
-ignored by Git.
+evidence. It also publishes `report.outlet-quality.velocity_uniformity_index`,
+signed area-normal velocity, and outlet area. Use `agentcfd run . --summary-only`
+to retain these decision histories without a permanent field bundle. The
+generated `mesh-case/` is disposable provider detail and is ignored by Git.

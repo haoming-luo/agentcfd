@@ -162,6 +162,34 @@ class PressureLossReport:
 
 
 @dataclass(frozen=True, slots=True)
+class FlowUniformityReport:
+    """Report velocity uniformity and signed mean normal speed on a surface."""
+
+    name: str
+    region: str
+    every: int = 1
+
+    def __post_init__(self) -> None:
+        for attribute, label in (
+            ("name", "Flow-uniformity report name"),
+            ("region", "Flow-uniformity report region"),
+        ):
+            value = getattr(self, attribute)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{label} must be a non-empty string.")
+        object.__setattr__(
+            self,
+            "every",
+            integer_at_least(
+                self.every, name="Flow-uniformity report interval", minimum=1
+            ),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "flow-uniformity-report", **asdict(self)}
+
+
+@dataclass(frozen=True, slots=True)
 class ForceReport:
     """Integrate pressure and viscous force over named wall surfaces."""
 
@@ -219,7 +247,9 @@ class ForceReport:
         }
 
 
-Report = PointProbe | SurfaceReport | PressureLossReport | ForceReport
+Report = (
+    PointProbe | SurfaceReport | PressureLossReport | FlowUniformityReport | ForceReport
+)
 
 
 def _view_name(value: str) -> str:
@@ -738,7 +768,14 @@ class OutputRequest:
         selected_reports = tuple(self.reports)
         if any(
             not isinstance(
-                item, (PointProbe, SurfaceReport, PressureLossReport, ForceReport)
+                item,
+                (
+                    PointProbe,
+                    SurfaceReport,
+                    PressureLossReport,
+                    FlowUniformityReport,
+                    ForceReport,
+                ),
             )
             for item in selected_reports
         ):
@@ -849,6 +886,17 @@ def pressure_loss(
         reference_area=reference_area,
         every=every,
     )
+
+
+def flow_uniformity(
+    name: str,
+    *,
+    region: str,
+    every: int = 1,
+) -> FlowUniformityReport:
+    """Request compact outlet/section velocity distribution metrics."""
+
+    return FlowUniformityReport(name=name, region=region, every=every)
 
 
 def force_report(
@@ -1176,6 +1224,7 @@ __all__ = [
     "Checkpoints",
     "ContourView",
     "FieldFrames",
+    "FlowUniformityReport",
     "ForceReport",
     "LineProfile",
     "OutputRequest",
@@ -1195,6 +1244,7 @@ __all__ = [
     "checkpoints",
     "contour_view",
     "force_report",
+    "flow_uniformity",
     "parse_storage_size",
     "probe",
     "pressure_loss",

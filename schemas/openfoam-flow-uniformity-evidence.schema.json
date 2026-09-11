@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-flow-uniformity-evidence.schema.json",
+  "title": "AgentCFD OpenFOAM flow-uniformity evidence 0.1",
+  "type": "object",
+  "required": [
+    "schema", "runtime", "case", "source_sha256", "model_sha256",
+    "analysis_sha256", "mesh_sha256", "solver_iterations", "cell_count",
+    "report", "storage", "accepted", "converged", "trust_level", "claim"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-flow-uniformity-evidence/0.1"},
+    "runtime": {"const": "OpenCFD v2606"},
+    "case": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "solver_iterations": {"type": "integer", "minimum": 1},
+    "cell_count": {"type": "integer", "minimum": 1},
+    "report": {
+      "type": "object",
+      "required": [
+        "name", "region", "definition", "velocity_uniformity_index",
+        "area_normal_velocity_m_s", "area_m2", "sample_count"
+      ],
+      "properties": {
+        "name": {"const": "outlet-quality"},
+        "region": {"const": "outlet"},
+        "definition": {"const": "openfoam-vector-uniformity"},
+        "velocity_uniformity_index": {
+          "type": "number", "minimum": 0, "maximum": 1
+        },
+        "area_normal_velocity_m_s": {"type": "number"},
+        "area_m2": {"type": "number", "exclusiveMinimum": 0},
+        "sample_count": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "object",
+      "required": ["result_profile", "field_bundle_retained", "report_bytes"],
+      "properties": {
+        "result_profile": {"const": "summary-only"},
+        "field_bundle_retained": {"const": false},
+        "report_bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "accepted": {"const": true},
+    "converged": {"const": true},
+    "trust_level": {"const": "verified"},
+    "claim": {"const": "workflow-and-runtime-evidence-not-physical-validation"}
+  },
+  "additionalProperties": false
+}

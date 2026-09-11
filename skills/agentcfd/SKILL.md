@@ -47,6 +47,11 @@ model.
     confirming equivalent distributed length, section/measurement planes,
     walls/roughness, fluid, and operating point. Provider/runtime/physics or
     reference mismatches and negative local K remain unaccepted evidence.
+17. Keep `outputs.flow_uniformity("outlet-quality", region="outlet")` for
+    distribution-sensitive internal-flow studies. Rank or screen from the
+    compact uniformity index and signed normal velocity; open XDMF/H5 only when
+    spatial diagnosis is needed, and never treat a high score alone as model
+    validation.
 
 ## Current capability boundary
 

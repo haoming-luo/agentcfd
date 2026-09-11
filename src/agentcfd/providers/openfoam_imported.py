@@ -1326,6 +1326,17 @@ class OpenFOAMImportedProvider:
                         f"Pressure-loss report {report.name!r} requires inlet-role and "
                         "outlet-role surfaces."
                     )
+            elif isinstance(report, outputs.FlowUniformityReport):
+                if report.region not in domain.surface_names:
+                    raise UnsupportedCaseError(
+                        f"Flow-uniformity report {report.name!r} references unknown "
+                        f"region {report.region!r}."
+                    )
+                if roles.get(report.region) not in {"inlet", "outlet"}:
+                    raise UnsupportedCaseError(
+                        f"Flow-uniformity report {report.name!r} requires an inlet- "
+                        "or outlet-role surface."
+                    )
             elif isinstance(report, outputs.ForceReport):
                 unknown = set(report.regions) - set(domain.surface_names)
                 nonwalls = {

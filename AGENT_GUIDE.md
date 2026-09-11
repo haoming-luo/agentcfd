@@ -115,6 +115,10 @@ python -m pytest -q
     `--confirm-equivalent-baseline` only after checking that study design. Treat
     provider/runtime/reference mismatches, inconsistent reported coefficients,
     negative local K, or unaccepted sources as an unaccepted comparison.
+29. Preserve `outputs.flow_uniformity("outlet-quality", region="outlet")` in
+    distribution-sensitive projects. Use its compact uniformity index and
+    signed normal velocity for screening; promote XDMF/H5 only for spatial
+    diagnosis, and never infer a universal pass threshold from the score.
 
 ## Current boundary
 

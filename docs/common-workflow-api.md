@@ -36,7 +36,8 @@ This follows mature CFD workflow boundaries without copying a backend API:
   trusted previous result;
 - mesh intent separates global size, local refinement, wall layers, and quality
   gates;
-- probes, surface/force reports, and total-pressure-loss reports are compact
+- probes, surface/force reports, total-pressure-loss reports, and
+  flow-uniformity reports are compact
   histories, independent from the much more expensive full-field frame cadence;
 - `outputs.line_profile(...)` samples one declared field on the final portable
   frame and publishes only distance plus that value to CSV; vector fields
@@ -81,6 +82,7 @@ reports = (
         inlet="inlet",
         outlet="outlet",
     ),
+    outputs.flow_uniformity("outlet-quality", region="outlet"),
 )
 ```
 
@@ -93,6 +95,21 @@ actual inlet bulk velocity:
 It is the complete loss between the selected planes, including distributed
 wall loss. A fitting-only K value requires a declared straight-run baseline
 rather than a hidden correction.
+
+`flow_uniformity` publishes three directly usable quantities without adding a
+field frame:
+
+- `report.outlet-quality.velocity_uniformity_index` in `[0, 1]`, where one is
+  perfectly uniform;
+- `report.outlet-quality.area_normal_velocity` in m/s, signed along the
+  surface outward normal;
+- `report.outlet-quality.area` in m².
+
+The uniformity definition is
+`1 - integral(|U - mean(U)| dA) / (2 |mean(U)| A)`, clamped to `[0, 1]`.
+It deliberately evaluates the complete velocity vector, so swirl and
+cross-flow reduce the score rather than disappearing behind an axial-only
+average. The normal velocity provides the accompanying direction and scale.
 
 After a run, inspect names without loading heavy files, then request a typed
 record:
@@ -117,7 +134,8 @@ The API object is not a capability claim. At this checkpoint:
   incompressible, constant-property flow with hydraulic Re below 2300;
 - arbitrary channels, thermal imported geometry, vector surface reductions,
   crash-safe in-run checkpoint publication, prism-layer automation, and
-  turbulent baffle flow remain pending and fail closed. Imported k-omega SST is
+  arbitrary vector surface reductions and turbulent baffle flow remain pending
+  and fail closed. Imported k-omega SST is
   an experimental workflow slice with y-plus evidence, not a physical-validation
   claim. Completed baffled-channel runs publish a verified rolling ZIP
   and can resume from `initialization.previous_result(...)`.
@@ -146,8 +164,9 @@ solver's file syntax:
   for the volume-flow inlet and static-pressure outlet pairing;
 - [OpenFOAM pressure](https://doc.openfoam.com/2306/tools/post-processing/function-objects/field/pressure/)
   and [surfaceFieldValue](https://doc.openfoam.com/2312/tools/post-processing/function-objects/field/surfaceFieldValue/)
-  for physical total pressure, mass-flow weighting, area recovery, and compact
-  component-loss reports; [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
+  for physical total pressure, mass-flow weighting, area recovery, velocity
+  uniformity, normal velocity, and compact component-loss reports;
+  [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
   informed the solver-neutral report vocabulary;
 - [PyFluent solver settings](https://fluent.docs.pyansys.com/version/stable/user_guide/solver_settings/solver_settings_contents.html)
   for discoverable group and named-object behavior.

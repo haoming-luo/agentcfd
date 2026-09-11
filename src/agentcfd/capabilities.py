@@ -45,7 +45,25 @@ _CAPABILITIES = (
         ),
         limitations=(
             "The first channel slice is limited to one bottom-attached baffle and low-Re laminar flow.",
-            "Turbulent channel flow and vector surface reductions are pending.",
+            "Turbulent channel flow and arbitrary vector surface reductions are pending.",
+        ),
+    ),
+    Capability(
+        name="output.flow-uniformity",
+        maturity="experimental",
+        scope=(
+            "Solver-neutral velocity-vector uniformity index, signed area-normal "
+            "mean velocity, and surface area as compact histories."
+        ),
+        evidence=(
+            "analysis-request schema and public API tests",
+            "deterministic OpenCFD function-object lowering tests",
+            "segmented vector-history, SI-unit, and inconsistent-area recovery tests",
+            "accepted 6,400-cell summary-only OpenCFD v2606 runtime evidence",
+        ),
+        limitations=(
+            "Current lowering is limited to inlet- and outlet-role patches on supported OpenFOAM internal-flow providers.",
+            "The index is an observable and has no universal automatic acceptance threshold.",
         ),
     ),
     Capability(
@@ -132,7 +150,7 @@ _CAPABILITIES = (
             "Steady incompressible isothermal laminar simpleFoam solution on a "
             "content-addressed, role-confirmed imported fluid volume with compact "
             "point, pressure-surface, wall-force, total-pressure-loss coefficient, "
-            "and bidirectional flow reports."
+            "outlet flow-uniformity, and bidirectional flow reports."
         ),
         evidence=(
             "explicit Cartesian velocity, constant-density mass flow, or total-pressure inlet lowering tests",
@@ -147,7 +165,7 @@ _CAPABILITIES = (
         ),
         limitations=(
             "Exactly one velocity, mass-flow, or total-pressure inlet and one static-pressure outlet are supported.",
-            "No turbulence, heat, compressibility, reactions, prism layers, or vector surface reductions yet.",
+            "No turbulence, heat, compressibility, reactions, prism layers, or arbitrary vector surface reductions yet.",
             "Acceptance is workflow/numerical evidence and does not claim physical validation.",
         ),
     ),

@@ -56,6 +56,12 @@ def report_function_names(report: outputs.Report) -> tuple[str, ...]:
             f"agentcfd_loss_{stem}_inlet",
             f"agentcfd_loss_{stem}_outlet",
         )
+    if isinstance(report, outputs.FlowUniformityReport):
+        stem = foam_name(report.name)
+        return (
+            f"agentcfd_uniformity_{stem}",
+            f"agentcfd_uniformity_{stem}_normal",
+        )
     return (foam_name(report.name),)
 
 
@@ -150,6 +156,29 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
         operation weightedAverage;
         weightField phi;
         fields (agentcfd_total_pressure);
+        writeArea true;
+        writeFields false;
+        executeControl timeStep;
+        executeInterval {report.every};
+        writeControl timeStep;
+        writeInterval {report.every};
+    }}
+""")
+        elif isinstance(report, outputs.FlowUniformityReport):
+            uniformity_function, normal_function = report_function_names(report)
+            for function_name, operation in (
+                (uniformity_function, "uniformity"),
+                (normal_function, "areaNormalAverage"),
+            ):
+                definitions.append(f"""
+    {function_name}
+    {{
+        type surfaceFieldValue;
+        libs (fieldFunctionObjects);
+        regionType patch;
+        name {report.region};
+        operation {operation};
+        fields (U);
         writeArea true;
         writeFields false;
         executeControl timeStep;
@@ -420,6 +449,87 @@ def recover_reports(
                         else "Inlet patch area recovered from the OpenFOAM report."
                     ),
                 )
+        elif isinstance(report, outputs.FlowUniformityReport):
+            uniformity_function, normal_function = report_function_names(report)
+            uniformity_root = case / "postProcessing" / uniformity_function
+            normal_root = case / "postProcessing" / normal_function
+            artifact_roots = (uniformity_root, normal_root)
+            uniformity_rows = read_segmented_rows(
+                uniformity_root, "surfaceFieldValue.dat"
+            )
+            normal_rows = read_segmented_rows(normal_root, "surfaceFieldValue.dat")
+
+            # Vector reductions are emitted as ``(x y z)`` while scalar
+            # reductions use one value. ``writeArea true`` inserts area after
+            # time; the first vector component owns these scalar semantics.
+            def reduced_value(row: tuple[float, ...]) -> float | None:
+                if len(row) >= 5:
+                    return row[-3]
+                if len(row) >= 3:
+                    return row[-1]
+                return None
+
+            uniformity_values = {
+                row[0]: value
+                for row in uniformity_rows
+                if (value := reduced_value(row)) is not None
+                and -1.0e-12 <= value <= 1.0 + 1.0e-12
+            }
+            normal_values = {
+                row[0]: value
+                for row in normal_rows
+                if (value := reduced_value(row)) is not None
+            }
+            shared = sorted(set(uniformity_values) & set(normal_values))
+            uniformity_area = read_surface_area(uniformity_root)
+            normal_area = read_surface_area(normal_root)
+            areas_match = (
+                uniformity_area is not None
+                and normal_area is not None
+                and math.isclose(
+                    uniformity_area,
+                    normal_area,
+                    rel_tol=1.0e-9,
+                    abs_tol=1.0e-15,
+                )
+            )
+            if shared and areas_match:
+                prefix = f"report.{report.name}"
+                uniformity = [
+                    (time, min(1.0, max(0.0, uniformity_values[time])))
+                    for time in shared
+                ]
+                normal_velocity = [(time, normal_values[time]) for time in shared]
+                _store_scalar_history(
+                    f"{prefix}.velocity_uniformity_index",
+                    uniformity,
+                    unit="1",
+                    quantities=quantities,
+                    histories=histories,
+                    coordinate=coordinate,
+                    description=(
+                        "Area-weighted velocity-vector uniformity index; one is "
+                        "perfectly uniform and zero is maximally nonuniform."
+                    ),
+                )
+                _store_scalar_history(
+                    f"{prefix}.area_normal_velocity",
+                    normal_velocity,
+                    unit="m/s",
+                    quantities=quantities,
+                    histories=histories,
+                    coordinate=coordinate,
+                    description=(
+                        "Area-average velocity normal to the surface; positive follows "
+                        "the surface outward normal."
+                    ),
+                )
+                quantities[f"{prefix}.area"] = Quantity(
+                    uniformity_area,
+                    "m^2",
+                    kind="diagnostic",
+                    description="Surface area used by the flow-uniformity reductions.",
+                )
         elif isinstance(report, outputs.PointProbe):
             for field_name in report.fields:
                 rows = read_segmented_rows(root, FIELD_NAMES[field_name])
@@ -505,6 +615,12 @@ def report_recovered(report, histories: dict[str, History]) -> bool:
         )
     if isinstance(report, outputs.PressureLossReport):
         return f"report.{report.name}.loss_coefficient" in histories
+    if isinstance(report, outputs.FlowUniformityReport):
+        prefix = f"report.{report.name}"
+        return all(
+            f"{prefix}.{suffix}" in histories
+            for suffix in ("velocity_uniformity_index", "area_normal_velocity")
+        )
     return f"report.{report.name}" in histories
 
 

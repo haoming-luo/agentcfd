@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add solver-neutral `outputs.flow_uniformity()` with compact velocity-vector
+  uniformity, signed area-normal velocity, and patch-area results. Imported and
+  baffled OpenFOAM providers lower it to two field-free surface reductions,
+  validate flow-surface roles, preserve histories, and fail closed on invalid
+  index or inconsistent-area output. New projects request outlet quality by
+  default without increasing XDMF/H5 frame cadence.
 - Add solver-neutral `assess_component_loss()` and `agentcfd verify
   component-loss` for explicit straight-run baseline subtraction. The
   content-addressed assessment checks accepted source results, provider/runtime,

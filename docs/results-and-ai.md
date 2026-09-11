@@ -98,6 +98,16 @@ can rank valve, elbow, or manifold variants through `result` or campaign tables
 without loading XDMF/H5. The value covers the declared inlet-to-outlet system;
 AgentCFD does not silently subtract distributed straight-run friction.
 
+Flow-distribution decisions use the same compact path. An
+`outputs.flow_uniformity("outlet-quality", region="outlet")` report publishes
+the vector-velocity uniformity index, signed area-normal mean velocity, and
+actual surface area under stable `report.outlet-quality.*` names. It stores
+the complete report cadence as small scalar histories but no additional volume
+field or XDMF/H5 frame. AI workflows can therefore screen manifold branches,
+heat-exchanger inlets, or combustor-entry distributions before promoting only
+selected runs for spatial inspection. A high uniformity index is an observable,
+not an automatic scientific acceptance claim.
+
 When a fitting-only value is required, solve a second straight-run baseline
 whose distributed path length, section and measurement planes, wall treatment,
 roughness, fluid, and operating point are genuinely equivalent, then make that

@@ -39,6 +39,7 @@ def build(*, base_size=0.05):
                 outputs.pressure_loss(
                     "system-loss", inlet="inlet", outlet="outlet"
                 ),
+                outputs.flow_uniformity("outlet-quality", region="outlet"),
             )
         ),
     )

@@ -143,7 +143,8 @@ constant-density laminar flow. SI mesh size, interior point, and the hard cell
 limit are also required rather than guessed.
 
 The generated output request includes `outputs.pressure_loss("system-loss",
-...)`. During the solve, AgentCFD derives physical total pressure, mass-flow
+...)` and `outputs.flow_uniformity("outlet-quality", region=...)`. During the
+solve, AgentCFD derives physical total pressure, mass-flow
 averages it at the declared inlet and outlet, recovers the post-mesh inlet area,
 and combines it with actual inlet flow. The compact result therefore contains
 `report.system-loss.total_pressure_loss`,
@@ -152,6 +153,11 @@ and combines it with actual inlet flow. The compact result therefore contains
 adding XDMF/H5 frames. The coefficient covers the full distance between the two
 patches; it must not be presented as a fitting-only K value unless a matching
 straight-run loss has been removed explicitly.
+
+The outlet report adds a vector-velocity uniformity index, signed normal mean
+velocity, and actual patch area as compact scalar histories. This makes flow
+distribution available to campaign and AI decisions by default without making
+every candidate retain a heavy field bundle.
 
 The checked-in [OpenCFD v2606 integration record](openfoam-v2606-pressure-loss-report.json)
 keeps the static-pressure drop and total-pressure loss side by side. It proves

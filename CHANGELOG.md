@@ -7,6 +7,9 @@
   once per micro-batch without opening field payloads. Human watch lines and the
   versioned status schema expose the same contract; solver ETA is deliberately
   suppressed during export because it cannot predict conversion throughput.
+- Publish the terminal `run.json` through the same atomic replacement contract
+  as live progress, so concurrent CLIs, GUIs, and agents cannot observe a
+  partially written record during the result handoff.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

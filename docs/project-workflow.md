@@ -291,6 +291,8 @@ The accumulated per-batch converter log is retained as
 While this phase is active, `status` and `watch` read only the atomic `run.json`
 marker and report completed/total frames, batch position, and fraction. They do
 not scan VTU or HDF5 payloads, and they do not reuse solver ETA for export.
+The final completed record uses the same atomic replacement path, so result
+publication never creates a transient half-written lifecycle state.
 
 ## Campaign mode
 

@@ -1123,6 +1123,25 @@ def test_project_replace_mode_overwrites_only_managed_output(tmp_path):
     assert inspection["latest_run"]["run_id"] == second.run_id
 
 
+def test_project_publishes_final_run_record_atomically(tmp_path, monkeypatch):
+    project = projects.init_project(tmp_path / "pipe")
+    original = projects._write_json_atomic
+    atomic_paths = []
+
+    def observe(path, payload):
+        atomic_paths.append(Path(path))
+        original(path, payload)
+
+    monkeypatch.setattr(projects, "_write_json_atomic", observe)
+
+    completed = project.run()
+
+    run_path = completed.directory / "run.json"
+    assert run_path in atomic_paths
+    assert not run_path.with_suffix(".json.tmp").exists()
+    assert json.loads(run_path.read_text())["status"] == "completed"
+
+
 def test_project_replace_mode_recovers_interrupted_owned_output(tmp_path):
     project = projects.init_project(tmp_path / "pipe")
     project.run_root.mkdir()

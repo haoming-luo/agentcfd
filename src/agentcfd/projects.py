@@ -7153,10 +7153,7 @@ class Project:
         _write_json_atomic(run_directory / "summary.json", result_summary)
         run_record["result_sha256"] = result_summary["source_result"]["sha256"]
         _write_output_guide(completed, model_name=step.model.name)
-        (run_directory / "run.json").write_text(
-            json.dumps(run_record, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        _write_json_atomic(run_directory / "run.json", run_record)
         self._record_performance(
             run_record=run_record,
             plan=plan,

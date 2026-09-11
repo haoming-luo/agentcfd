@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add provider-neutral `outputs.require()` design criteria over canonical
+  scalar results. Inclusive bounds, missing values, and exact-unit mismatches
+  become explicit `requirement.*` checks across every numerical provider;
+  requirements affect acceptance while scientific trust remains independently
+  derived from runtime, verification, and validation evidence.
 - Add solver-neutral `outputs.flow_uniformity()` with compact velocity-vector
   uniformity, signed area-normal velocity, and patch-area results. Imported and
   baffled OpenFOAM providers lower it to two field-free surface reductions,

@@ -69,7 +69,7 @@
         "name": {"type": "string"},
         "passed": {"type": "boolean"},
         "status": {"enum": ["passed", "failed"]},
-        "kind": {"enum": ["runtime", "verification", "validation"]},
+        "kind": {"enum": ["runtime", "verification", "validation", "requirement"]},
         "value": {"type": ["number", "string", "null"]},
         "limit": {"type": ["number", "string", "null"]},
         "message": {"type": "string"},

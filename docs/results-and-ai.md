@@ -108,6 +108,16 @@ heat-exchanger inlets, or combustor-entry distributions before promoting only
 selected runs for spatial inspection. A high uniformity index is an observable,
 not an automatic scientific acceptance claim.
 
+`outputs.require(...)` turns canonical quantities into explicit, versioned
+design gates. Each criterion carries its own name, exact unit, and inclusive
+minimum and/or maximum. All providers evaluate the same post-recovery logic;
+missing values and unit mismatches fail closed. Criteria appear as
+`kind="requirement"` checks: they participate in `accepted` but are excluded
+from scientific trust classification. Consequently, a well-converged verified
+run that exceeds a pressure-loss budget is `accepted=false` and still
+`trust_level=verified`, accurately separating model credibility from product
+fitness.
+
 When a fitting-only value is required, solve a second straight-run baseline
 whose distributed path length, section and measurement planes, wall treatment,
 roughness, fluid, and operating point are genuinely equivalent, then make that

@@ -111,6 +111,38 @@ It deliberately evaluates the complete velocity vector, so swirl and
 cross-flow reduce the score rather than disappearing behind an axial-only
 average. The normal velocity provides the accompanying direction and scale.
 
+Design limits belong in the same readable request rather than in a hidden
+spreadsheet or agent prompt:
+
+```python
+output = outputs.standard(
+    reports=(
+        outputs.pressure_loss("system-loss", inlet="inlet", outlet="outlet"),
+        outputs.flow_uniformity("outlet-quality", region="outlet"),
+    ),
+    criteria=(
+        outputs.require(
+            "loss-budget",
+            quantity="report.system-loss.loss_coefficient",
+            unit="1",
+            maximum=0.20,
+        ),
+        outputs.require(
+            "uniform-enough",
+            quantity="report.outlet-quality.velocity_uniformity_index",
+            unit="1",
+            minimum=0.95,
+        ),
+    ),
+)
+```
+
+Bounds are inclusive and evaluated only after canonical scalar recovery. A
+missing quantity, exact-unit mismatch, or violated bound becomes a visible
+`requirement.*` check and makes the run unaccepted. Requirement failure does
+not rewrite numerical trust: a verified calculation can be trustworthy while
+still missing its design target.
+
 After a run, inspect names without loading heavy files, then request a typed
 record:
 

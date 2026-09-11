@@ -26,6 +26,7 @@ from ..results import (
     History,
     Quantity,
     SimulationResult,
+    evaluate_quantity_criteria,
 )
 from .base import ProviderDescriptor
 from .openfoam import (
@@ -1900,6 +1901,7 @@ class OpenFOAMImportedProvider:
                 limit="all requested fields and histories recovered",
                 kind="runtime",
             ),
+            *evaluate_quantity_criteria(step.output.criteria, quantities),
         )
         return SimulationResult(
             status="completed" if process_ok else "failed",

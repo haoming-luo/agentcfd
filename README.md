@@ -286,6 +286,22 @@ declared measurement surfaces. Subtracting a separate straight-run friction
 baseline to claim a fitting-only minor-loss coefficient remains an explicit
 engineering decision.
 
+Declare design gates beside those reports so batch runs and AI agents reach the
+same decision without hidden thresholds:
+
+```python
+outputs.require(
+    "outlet-uniform-enough",
+    quantity="report.outlet-quality.velocity_uniformity_index",
+    unit="1",
+    minimum=0.95,
+)
+```
+
+Missing quantities, unit mismatches, and bound violations fail acceptance. A
+design miss remains distinct from numerical trust, so a verified result is not
+mislabelled as untrustworthy merely because it exceeds an engineering budget.
+
 The same generated project can move from laminar screening to explicit
 k-omega SST without editing provider files. Supply all three RANS assumptions
 as project parameters; omitting any one fails before meshing:

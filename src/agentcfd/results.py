@@ -6,13 +6,13 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from ._validation import finite_float
 from .jsonio import strict_json_object
 
 
-_CLAIM_KINDS = {"runtime", "verification", "validation"}
+_CLAIM_KINDS = {"runtime", "verification", "validation", "requirement"}
 _FIELD_LOCATIONS = {"point", "cell", "facet", "global"}
 _TRUST_ORDER = {
     "not_computed": 0,
@@ -48,7 +48,7 @@ class Quantity:
 
 @dataclass(frozen=True, slots=True)
 class Check:
-    """One runtime, verification, or validation claim."""
+    """One runtime, scientific, or user-declared requirement check."""
 
     name: str
     passed: bool
@@ -84,6 +84,62 @@ class Check:
 
     def as_dict(self) -> dict[str, object]:
         return {**asdict(self), "status": self.status}
+
+
+def evaluate_quantity_criteria(
+    criteria: Iterable[object],
+    quantities: Mapping[str, Quantity],
+) -> tuple[Check, ...]:
+    """Evaluate typed output criteria without changing scientific trust claims."""
+
+    checks: list[Check] = []
+    for criterion in criteria:
+        name = str(getattr(criterion, "name"))
+        quantity_name = str(getattr(criterion, "quantity"))
+        expected_unit = str(getattr(criterion, "unit"))
+        minimum = getattr(criterion, "minimum")
+        maximum = getattr(criterion, "maximum")
+        quantity = quantities.get(quantity_name)
+        if minimum is not None and maximum is not None:
+            limit = f"{minimum} <= value <= {maximum} {expected_unit}"
+        elif minimum is not None:
+            limit = f">= {minimum} {expected_unit}"
+        else:
+            limit = f"<= {maximum} {expected_unit}"
+
+        if quantity is None:
+            passed = False
+            value: float | str = "missing"
+            message = "The canonical result required by this design criterion is missing."
+        elif quantity.unit != expected_unit:
+            passed = False
+            value = f"unit={quantity.unit!r}"
+            message = (
+                "The result unit does not exactly match the criterion unit; "
+                "implicit conversion is not permitted."
+            )
+        else:
+            value = quantity.value
+            passed = (minimum is None or value >= minimum) and (
+                maximum is None or value <= maximum
+            )
+            message = (
+                "The recovered scalar satisfies the declared inclusive design bound."
+                if passed
+                else "The recovered scalar violates the declared inclusive design bound."
+            )
+        checks.append(
+            Check(
+                name=f"requirement.{name}",
+                passed=passed,
+                value=value,
+                limit=limit,
+                message=message,
+                kind="requirement",
+                observable=quantity_name,
+            )
+        )
+    return tuple(checks)
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,9 +334,14 @@ class SimulationResult:
             return "not_computed"
         if not self.converged:
             return "computed"
-        if not self.checks or any(not check.passed for check in self.checks):
+        scientific_checks = tuple(
+            check for check in self.checks if check.kind != "requirement"
+        )
+        if not scientific_checks or any(
+            not check.passed for check in scientific_checks
+        ):
             return "converged"
-        kinds = {check.kind for check in self.checks}
+        kinds = {check.kind for check in scientific_checks}
         if "validation" in kinds:
             return "validated"
         if "verification" in kinds:
@@ -583,17 +644,23 @@ def read_result_record(
         expected_trust = "not_computed"
     elif not converged:
         expected_trust = "computed"
-    elif not checks or any(not check["passed"] for check in checks):
-        expected_trust = "converged"
     else:
-        kinds = {check.get("kind") for check in checks}
-        expected_trust = (
-            "validated"
-            if "validation" in kinds
-            else "verified"
-            if "verification" in kinds
-            else "converged"
-        )
+        scientific_checks = [
+            check for check in checks if check.get("kind") != "requirement"
+        ]
+        if not scientific_checks or any(
+            not check["passed"] for check in scientific_checks
+        ):
+            expected_trust = "converged"
+        else:
+            kinds = {check.get("kind") for check in scientific_checks}
+            expected_trust = (
+                "validated"
+                if "validation" in kinds
+                else "verified"
+                if "verification" in kinds
+                else "converged"
+            )
     if trust_level != expected_trust:
         raise ValueError("AgentCFD result trust level is inconsistent with its checks.")
 
@@ -651,5 +718,6 @@ __all__ = [
     "History",
     "Quantity",
     "SimulationResult",
+    "evaluate_quantity_criteria",
     "read_result_record",
 ]

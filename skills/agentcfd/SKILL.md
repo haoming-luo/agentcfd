@@ -52,6 +52,10 @@ model.
     compact uniformity index and signed normal velocity; open XDMF/H5 only when
     spatial diagnosis is needed, and never treat a high score alone as model
     validation.
+18. Put confirmed design bounds in `outputs.require(...)` with an exact
+    canonical quantity name and unit. Treat missing quantities and unit
+    mismatches as failures. Keep `accepted` (all design and scientific gates)
+    distinct from `trust_level` (scientific evidence only).
 
 ## Current capability boundary
 

@@ -67,6 +67,23 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="workflow.quantity-criteria",
+        maturity="experimental",
+        scope=(
+            "Typed inclusive minimum/maximum design requirements on canonical "
+            "scalar results with exact-unit enforcement."
+        ),
+        evidence=(
+            "analysis-request serialization and JSON Schema tests",
+            "all-provider post-recovery evaluation",
+            "missing-result, unit-mismatch, inclusive-bound, and trust-separation tests",
+        ),
+        limitations=(
+            "Criteria evaluate final scalar quantities; temporal predicates and field-region expressions are pending.",
+            "Threshold selection remains an explicit user engineering decision.",
+        ),
+    ),
+    Capability(
         name="workflow.project-lifecycle",
         maturity="experimental",
         scope=(

@@ -32,6 +32,7 @@ from ..results import (
     History,
     Quantity,
     SimulationResult,
+    evaluate_quantity_criteria,
     read_result_record,
 )
 from .base import ProviderDescriptor
@@ -2571,6 +2572,7 @@ class OpenFOAMProvider:
                 *recovery_checks,
                 *turbulence_checks,
                 *thermal_checks,
+                *evaluate_quantity_criteria(step.output.criteria, quantities),
             ),
             artifacts={
                 name: Artifact.from_path(

@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from agentcfd import Model, boundaries, fluids, geometry, studies
+from agentcfd import Model, boundaries, fluids, geometry, outputs, studies
 from agentcfd.errors import ModelValidationError, UnsupportedCaseError
 
 
@@ -32,6 +32,29 @@ def test_laminar_pipe_is_accepted_and_matches_closed_form():
     assert max(result.arrays["profile.axial_velocity"]) == pytest.approx(0.04)
     assert result.arrays["profile.axial_velocity"][-1] == pytest.approx(0.0)
     assert len(result.provenance["model_sha256"]) == 64
+
+
+def test_reference_result_enforces_explicit_design_criterion():
+    criterion = outputs.require(
+        "pressure-budget",
+        quantity="flow.pressure_drop",
+        unit="Pa",
+        maximum=2.0,
+    )
+    step = pipe_model().step(
+        output=outputs.standard(criteria=(criterion,)),
+    )
+
+    result = step.run()
+
+    requirement = next(
+        check for check in result.checks if check.name == "requirement.pressure-budget"
+    )
+    assert requirement.passed is False
+    assert requirement.kind == "requirement"
+    assert requirement.observable == "flow.pressure_drop"
+    assert result.accepted is False
+    assert result.trust_level == "verified"
 
 
 def test_mass_flow_and_velocity_inlets_are_equivalent():

@@ -204,6 +204,35 @@ def test_flow_uniformity_report_has_one_unambiguous_surface_contract():
         outputs.flow_uniformity("bad", region="outlet", every=0)
 
 
+def test_quantity_criterion_is_typed_bounded_and_report_aware():
+    criterion = outputs.require(
+        "uniform-enough",
+        quantity="report.outlet-quality.velocity_uniformity_index",
+        unit="1",
+        minimum=0.95,
+    )
+    assert criterion.to_dict() == {
+        "type": "quantity-criterion",
+        "name": "uniform-enough",
+        "quantity": "report.outlet-quality.velocity_uniformity_index",
+        "unit": "1",
+        "minimum": 0.95,
+        "maximum": None,
+    }
+    with pytest.raises(ValueError, match="minimum and/or maximum"):
+        outputs.require("unbounded", quantity="flow.pressure_drop", unit="Pa")
+    with pytest.raises(ValueError, match="cannot exceed"):
+        outputs.require(
+            "reversed",
+            quantity="flow.pressure_drop",
+            unit="Pa",
+            minimum=2.0,
+            maximum=1.0,
+        )
+    with pytest.raises(ValueError, match="unknown report"):
+        outputs.standard(criteria=(criterion,))
+
+
 def test_energy_intent_requires_complete_properties_boundaries_and_output():
     domain = geometry.circular_pipe(length=1.0, diameter=0.1)
     incomplete_fluid = fluids.newtonian(

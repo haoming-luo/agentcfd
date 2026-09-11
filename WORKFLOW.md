@@ -44,7 +44,8 @@ commands remain available through progressive disclosure.
 16. Recover canonical fields and quantities without leaking backend names into
     public output.
 17. Evaluate numerical convergence, mass/momentum/energy/species conservation,
-    applicability, required outputs, and reference or benchmark claims.
+    applicability, required outputs, reference or benchmark claims, and
+    explicitly declared quantity requirements.
 18. Return one SimulationResult whose acceptance state and provenance travel
     with every artifact.
 19. Publish volumetric results through the standard XDMF/H5/NPZ field bundle;

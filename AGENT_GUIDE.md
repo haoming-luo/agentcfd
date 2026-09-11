@@ -119,6 +119,10 @@ python -m pytest -q
     distribution-sensitive projects. Use its compact uniformity index and
     signed normal velocity for screening; promote XDMF/H5 only for spatial
     diagnosis, and never infer a universal pass threshold from the score.
+30. Encode user-confirmed engineering limits with `outputs.require(...)`, an
+    exact canonical quantity, unit, and inclusive bound. Never invent a design
+    threshold. A failed requirement blocks acceptance but does not erase the
+    result's independently established convergence or scientific trust.
 
 ## Current boundary
 

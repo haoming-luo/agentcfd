@@ -101,6 +101,14 @@ def test_transient_step_serializes_mesh_initialization_and_reports():
                 direction=(1.0, 0.0, 0.0),
             ),
         ),
+        criteria=(
+            outputs.require(
+                "outlet-uniform-enough",
+                quantity="report.outlet-quality.velocity_uniformity_index",
+                unit="1",
+                minimum=0.9,
+            ),
+        ),
     )
     mesh = meshing.automatic(
         base_size=0.02,
@@ -128,6 +136,7 @@ def test_transient_step_serializes_mesh_initialization_and_reports():
     assert record["mesh"]["maximum_cells"] == 750_000
     assert record["initialization"]["type"] == "potential-flow"
     assert record["output"]["reports"][0]["name"] == "wake-probe"
+    assert record["output"]["criteria"][0]["minimum"] == 0.9
     assert mesh.boundary_layers[0].total_thickness == pytest.approx(0.005368)
     assert len(step.fingerprint()) == 64
     assert step.fingerprint() == step.fingerprint()
@@ -233,3 +242,6 @@ def test_baffle_example_produces_executable_inspectable_plan():
         plan["decisions"]["output_plan"]["channels"]["reports"]["retention"]
         == "all compact samples"
     )
+    assert plan["decisions"]["output_plan"]["channels"]["criteria"][
+        "evaluation"
+    ].startswith("inclusive bounds")

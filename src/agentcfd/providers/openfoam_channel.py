@@ -26,6 +26,7 @@ from ..results import (
     History,
     Quantity,
     SimulationResult,
+    evaluate_quantity_criteria,
     read_result_record,
 )
 from .openfoam import (
@@ -1432,6 +1433,7 @@ class OpenFOAMChannelProvider:
                 limit=(f"1..{step.output.checkpoints.keep}, latest=end_time" if step.output.checkpoints.enabled else "disabled"),
                 kind="runtime",
             ),
+            *evaluate_quantity_criteria(step.output.criteria, quantities),
         )
         return SimulationResult(
             status="completed" if process_ok else "failed",

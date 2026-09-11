@@ -5,8 +5,9 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from agentcfd import Artifact, Check, Model, Quantity, SimulationResult, benchmarks, boundaries, contracts, fluids, geometry, interoperability, licensing, read_result_record, studies, verification
+from agentcfd import Artifact, Check, Model, Quantity, SimulationResult, benchmarks, boundaries, contracts, fluids, geometry, interoperability, licensing, outputs, read_result_record, studies, verification
 from agentcfd.provenance import content_fingerprint
+from agentcfd.results import evaluate_quantity_criteria
 
 
 def test_all_published_json_schemas_are_valid():
@@ -102,7 +103,7 @@ def test_result_round_trip_and_learning_sample(tmp_path):
     ).validate(exchange)
 
 
-def test_execution_acceptance_and_trust_are_separate():
+def test_execution_acceptance_and_trust_are_separate(tmp_path):
     result = SimulationResult(
         status="completed",
         converged=True,
@@ -114,6 +115,57 @@ def test_execution_acceptance_and_trust_are_separate():
     assert result.trust_level == "converged"
     with pytest.raises(RuntimeError, match="verified"):
         result.require_trust("verified")
+
+    design_miss = SimulationResult(
+        status="completed",
+        converged=True,
+        provider="test",
+        quantities={"flow.pressure_drop": Quantity(2.0, "Pa")},
+        checks=(
+            Check("numerics", True, kind="verification"),
+            Check("requirement.pressure-budget", False, kind="requirement"),
+        ),
+    )
+    assert design_miss.accepted is False
+    assert design_miss.trust_level == "verified"
+    path = design_miss.write(tmp_path / "design-miss.json")
+    record = read_result_record(path)
+    assert record["accepted"] is False
+    assert record["trust_level"] == "verified"
+
+
+def test_quantity_criteria_fail_closed_on_missing_or_wrong_unit():
+    criteria = (
+        outputs.require(
+            "missing",
+            quantity="report.unknown.value",
+            unit="1",
+            minimum=0.9,
+        ),
+        outputs.require(
+            "wrong-unit",
+            quantity="flow.pressure_drop",
+            unit="kPa",
+            maximum=1.0,
+        ),
+        outputs.require(
+            "inclusive",
+            quantity="flow.pressure_drop",
+            unit="Pa",
+            minimum=2.0,
+            maximum=2.0,
+        ),
+    )
+
+    checks = evaluate_quantity_criteria(
+        criteria,
+        {"flow.pressure_drop": Quantity(2.0, "Pa")},
+    )
+
+    assert [check.passed for check in checks] == [False, False, True]
+    assert checks[0].value == "missing"
+    assert checks[1].value == "unit='Pa'"
+    assert all(check.kind == "requirement" for check in checks)
 
 
 def test_result_claims_reject_boolean_numeric_and_truthy_state_inputs():

@@ -1317,6 +1317,10 @@ def _resolved_output_plan(
                 "definitions": [item.to_dict() for item in step.output.reports],
                 "retention": "all compact samples",
             },
+            "criteria": {
+                "definitions": [item.to_dict() for item in step.output.criteria],
+                "evaluation": "inclusive bounds after canonical scalar recovery",
+            },
             "views": {
                 "definitions": [item.to_dict() for item in step.output.views],
                 "retention": (

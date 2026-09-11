@@ -252,6 +252,50 @@ Report = (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class QuantityCriterion:
+    """A user-declared inclusive design bound on one canonical scalar result."""
+
+    name: str
+    quantity: str
+    unit: str
+    minimum: float | None = None
+    maximum: float | None = None
+
+    def __post_init__(self) -> None:
+        for attribute, label in (
+            ("name", "Quantity criterion name"),
+            ("quantity", "Quantity criterion result"),
+            ("unit", "Quantity criterion unit"),
+        ):
+            value = getattr(self, attribute)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{label} must be a non-empty string.")
+        if self.minimum is None and self.maximum is None:
+            raise ValueError("Quantity criterion requires minimum and/or maximum.")
+        if self.minimum is not None:
+            object.__setattr__(
+                self,
+                "minimum",
+                finite_float(self.minimum, name="Quantity criterion minimum"),
+            )
+        if self.maximum is not None:
+            object.__setattr__(
+                self,
+                "maximum",
+                finite_float(self.maximum, name="Quantity criterion maximum"),
+            )
+        if (
+            self.minimum is not None
+            and self.maximum is not None
+            and self.minimum > self.maximum
+        ):
+            raise ValueError("Quantity criterion minimum cannot exceed maximum.")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "quantity-criterion", **asdict(self)}
+
+
 def _view_name(value: str) -> str:
     if (
         not isinstance(value, str)
@@ -731,6 +775,7 @@ class OutputRequest:
     checkpoints: Checkpoints = field(default_factory=Checkpoints)
     storage: StoragePolicy = field(default_factory=StoragePolicy)
     reports: tuple[Report, ...] = ()
+    criteria: tuple[QuantityCriterion, ...] = ()
     views: tuple[ViewRecipe, ...] = ()
     layouts: tuple[RenderLayout, ...] = ()
 
@@ -783,6 +828,20 @@ class OutputRequest:
         if len({item.name for item in selected_reports}) != len(selected_reports):
             raise ValueError("Output report names must be unique.")
         object.__setattr__(self, "reports", selected_reports)
+        selected_criteria = tuple(self.criteria)
+        if any(not isinstance(item, QuantityCriterion) for item in selected_criteria):
+            raise TypeError("Output criteria must be AgentCFD quantity criteria.")
+        if len({item.name for item in selected_criteria}) != len(selected_criteria):
+            raise ValueError("Output criterion names must be unique.")
+        report_names = {item.name for item in selected_reports}
+        for criterion in selected_criteria:
+            parts = criterion.quantity.split(".")
+            if len(parts) >= 3 and parts[0] == "report" and parts[1] not in report_names:
+                raise ValueError(
+                    f"Output criterion {criterion.name!r} references unknown report "
+                    f"{parts[1]!r}."
+                )
+        object.__setattr__(self, "criteria", selected_criteria)
         selected_views = tuple(self.views)
         if any(
             not isinstance(item, (SliceView, ContourView, StreamlineView, LineProfile))
@@ -828,7 +887,7 @@ class OutputRequest:
         object.__setattr__(self, "layouts", selected_layouts)
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        record: dict[str, object] = {
             "fields": list(self.fields),
             "histories": list(self.histories),
             "portable_profile": self.portable_profile,
@@ -840,6 +899,9 @@ class OutputRequest:
             "views": [item.to_dict() for item in self.views],
             "layouts": [item.to_dict() for item in self.layouts],
         }
+        if self.criteria:
+            record["criteria"] = [item.to_dict() for item in self.criteria]
+        return record
 
 
 def probe(
@@ -897,6 +959,25 @@ def flow_uniformity(
     """Request compact outlet/section velocity distribution metrics."""
 
     return FlowUniformityReport(name=name, region=region, every=every)
+
+
+def require(
+    name: str,
+    *,
+    quantity: str,
+    unit: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+) -> QuantityCriterion:
+    """Declare an explicit design requirement on a canonical scalar result."""
+
+    return QuantityCriterion(
+        name=name,
+        quantity=quantity,
+        unit=unit,
+        minimum=minimum,
+        maximum=maximum,
+    )
 
 
 def force_report(
@@ -1071,6 +1152,7 @@ def standard(
     portable_formats: tuple[str, ...] = ("xdmf",),
     storage_policy: StoragePolicy | None = None,
     reports: tuple[Report, ...] = (),
+    criteria: tuple[QuantityCriterion, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
     layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
@@ -1085,6 +1167,7 @@ def standard(
         checkpoints=Checkpoints(coordinate="solver-iteration"),
         storage=storage_policy or storage(),
         reports=reports,
+        criteria=criteria,
         views=views,
         layouts=layouts,
     )
@@ -1106,6 +1189,7 @@ def animation(
     portable_profile: str = "visualization",
     portable_formats: tuple[str, ...] = ("xdmf",),
     reports: tuple[Report, ...] = (),
+    criteria: tuple[QuantityCriterion, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
     layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
@@ -1125,6 +1209,7 @@ def animation(
         checkpoints=restart or Checkpoints(),
         storage=storage(storage_budget, compression=compression),
         reports=reports,
+        criteria=criteria,
         views=views,
         layouts=layouts,
     )
@@ -1136,6 +1221,7 @@ def turbulent_internal_flow(
     portable_profile: str = "visualization",
     portable_formats: tuple[str, ...] = ("xdmf",),
     reports: tuple[Report, ...] = (),
+    criteria: tuple[QuantityCriterion, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
     layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
@@ -1170,6 +1256,7 @@ def turbulent_internal_flow(
         frames=FieldFrames(coordinate="solver-iteration"),
         checkpoints=Checkpoints(coordinate="solver-iteration"),
         reports=reports,
+        criteria=criteria,
         views=views,
         layouts=layouts,
     )
@@ -1182,6 +1269,7 @@ def thermal_internal_flow(
     portable_formats: tuple[str, ...] = ("xdmf",),
     storage_policy: StoragePolicy | None = None,
     reports: tuple[Report, ...] = (),
+    criteria: tuple[QuantityCriterion, ...] = (),
     views: tuple[ViewRecipe, ...] = (),
     layouts: tuple[RenderLayout, ...] = (),
 ) -> OutputRequest:
@@ -1193,6 +1281,7 @@ def thermal_internal_flow(
             portable_formats=portable_formats,
             storage_policy=storage_policy,
             reports=reports,
+            criteria=criteria,
             views=views,
             layouts=layouts,
         )
@@ -1202,6 +1291,7 @@ def thermal_internal_flow(
             portable_profile=portable_profile,
             portable_formats=portable_formats,
             reports=reports,
+            criteria=criteria,
             views=views,
             layouts=layouts,
         )
@@ -1215,6 +1305,7 @@ def thermal_internal_flow(
         checkpoints=base.checkpoints,
         storage=storage_policy or base.storage,
         reports=base.reports,
+        criteria=base.criteria,
         views=base.views,
         layouts=base.layouts,
     )
@@ -1230,6 +1321,7 @@ __all__ = [
     "OutputRequest",
     "PointProbe",
     "PressureLossReport",
+    "QuantityCriterion",
     "RenderLayout",
     "Report",
     "StoragePolicy",
@@ -1248,6 +1340,7 @@ __all__ = [
     "parse_storage_size",
     "probe",
     "pressure_loss",
+    "require",
     "render",
     "render_layout",
     "slice_view",

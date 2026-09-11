@@ -81,7 +81,7 @@ These are distinct states:
 - completion means the provider returned;
 - convergence means the declared numerical criteria were met;
 - acceptance additionally requires every mandatory applicability,
-  conservation, output, and validation check.
+  conservation, output, validation, and user-declared design-requirement check.
 
 A zero process exit code is not scientific acceptance. A converged result can
 remain unaccepted when field recovery, conservation, or applicability evidence
@@ -95,6 +95,8 @@ that a solver ran and converged; verification checks test numerical or analytica
 consistency; validation checks compare against trusted physical evidence. AI and
 release automation must request an explicit minimum level instead of inferring
 trust from a process exit code.
+Requirement checks deliberately do not raise or lower this evidence ladder: a
+verified calculation can credibly demonstrate that a design misses its target.
 
 ## Capability and Evidence Maturity
 

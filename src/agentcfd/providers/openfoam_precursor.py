@@ -26,7 +26,15 @@ from .._validation import integer_at_least, positive_float
 from ..errors import CaseIntegrityError, ProviderUnavailableError, UnsupportedCaseError
 from ..geometry import CircularPipe
 from ..jsonio import strict_json_object
-from ..results import Artifact, Check, FieldRecord, History, Quantity, SimulationResult
+from ..results import (
+    Artifact,
+    Check,
+    FieldRecord,
+    History,
+    Quantity,
+    SimulationResult,
+    evaluate_quantity_criteria,
+)
 from .base import ProviderDescriptor
 from .openfoam import (
     OpenFOAMValidationPolicy,
@@ -1440,6 +1448,7 @@ class OpenFOAMTurbulentPrecursorProvider:
             y_check,
             friction_check,
             *container_checks,
+            *evaluate_quantity_criteria(step.output.criteria, quantities),
         )
         return SimulationResult(
             name="turbulent-circular-pipe-precursor",

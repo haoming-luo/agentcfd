@@ -33,6 +33,8 @@ channels and attached baffles, role-checked boundaries, initialization, mesh
 intent, probes, surface reports, force reports, and typed result discovery.
 Compact outlet velocity-uniformity, signed-normal-velocity, and surface-area
 histories now support flow-distribution screening without another field frame.
+Typed quantity criteria now keep user-confirmed design bounds inside the same
+analysis request while separating product fitness from scientific trust.
 Provider lowering remains capability-gated: the next product slice is the
 transient bottom-baffle channel, not another round of smooth-pipe tuning.
 

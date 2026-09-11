@@ -180,6 +180,28 @@
             ]
           }
         },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "type", "name", "quantity", "unit", "minimum", "maximum"
+            ],
+            "properties": {
+              "type": {"const": "quantity-criterion"},
+              "name": {"type": "string", "minLength": 1},
+              "quantity": {"type": "string", "minLength": 1},
+              "unit": {"type": "string", "minLength": 1},
+              "minimum": {"type": ["number", "null"]},
+              "maximum": {"type": ["number", "null"]}
+            },
+            "additionalProperties": false,
+            "anyOf": [
+              {"properties": {"minimum": {"type": "number"}}},
+              {"properties": {"maximum": {"type": "number"}}}
+            ]
+          }
+        },
         "views": {
           "type": "array",
           "items": {

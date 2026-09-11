@@ -6,7 +6,13 @@ from .. import boundaries, engineering
 from .._version import __version__
 from ..errors import UnsupportedCaseError
 from ..geometry import CircularPipe
-from ..results import Check, History, Quantity, SimulationResult
+from ..results import (
+    Check,
+    History,
+    Quantity,
+    SimulationResult,
+    evaluate_quantity_criteria,
+)
 from .base import ProviderDescriptor
 
 
@@ -121,20 +127,21 @@ class ReferencePipeProvider:
         reconstructed = pressure_drop / (0.5 * rho * mean_velocity**2)
         expected = darcy_friction * length / diameter
         identity_error = abs(reconstructed - expected) / max(abs(expected), 1.0e-30)
+        quantities = {
+            "flow.reynolds_number": Quantity(reynolds, "1"),
+            "flow.mean_velocity": Quantity(mean_velocity, "m/s"),
+            "flow.mass_flow_rate": Quantity(mass_flow, "kg/s"),
+            "flow.volumetric_flow_rate": Quantity(volume_flow, "m^3/s"),
+            "flow.pressure_drop": Quantity(pressure_drop, "Pa"),
+            "flow.darcy_friction_factor": Quantity(darcy_friction, "1"),
+            "wall.shear_stress": Quantity(wall_shear, "Pa"),
+        }
 
         return SimulationResult(
             status="completed",
             converged=True,
             provider="reference-pipe",
-            quantities={
-                "flow.reynolds_number": Quantity(reynolds, "1"),
-                "flow.mean_velocity": Quantity(mean_velocity, "m/s"),
-                "flow.mass_flow_rate": Quantity(mass_flow, "kg/s"),
-                "flow.volumetric_flow_rate": Quantity(volume_flow, "m^3/s"),
-                "flow.pressure_drop": Quantity(pressure_drop, "Pa"),
-                "flow.darcy_friction_factor": Quantity(darcy_friction, "1"),
-                "wall.shear_stress": Quantity(wall_shear, "Pa"),
-            },
+            quantities=quantities,
             checks=(
                 Check(
                     name="laminar-applicability",
@@ -161,6 +168,7 @@ class ReferencePipeProvider:
                     kind="verification",
                     observable="flow.mass_balance",
                 ),
+                *evaluate_quantity_criteria(step.output.criteria, quantities),
             ),
             arrays={
                 "profile.radius": list(radius),

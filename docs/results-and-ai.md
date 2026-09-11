@@ -377,6 +377,10 @@ explicit fail-closed ceiling; exceeding it never triggers silent subsampling.
 The bundle manifest records the complete selection policy and exact selected
 native times, including for preconverted VTK input, so downstream automation
 does not need to infer sampling intent from filenames.
+Python applications can pass `progress_callback=` to `export_openfoam_case`.
+Each bounded milestone validates against the installed
+`field-export-progress.schema.json`; project status adds only its atomic
+`updated_at` observation time.
 
 The NPZ layout does not require object deserialization:
 

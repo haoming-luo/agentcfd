@@ -1289,7 +1289,7 @@ def test_successful_project_preserves_bounded_field_conversion_log(
         (case_directory / "log.foamToVTK").write_text(
             "=== native times 0.5,1 ===\nconverted\n"
         )
-        _kwargs["_progress_callback"](
+        _kwargs["progress_callback"](
             {
                 "schema": "agentcfd.field-export-progress/0.1",
                 "phase": "writing",

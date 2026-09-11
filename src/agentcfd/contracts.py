@@ -26,6 +26,7 @@ _SCHEMAS = (
     "coupling-manifest.schema.json",
     "error.schema.json",
     "field-bundle.schema.json",
+    "field-export-progress.schema.json",
     "grid-convergence.schema.json",
     "geometry-inspection.schema.json",
     "generated-geometry.schema.json",

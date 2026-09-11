@@ -1136,6 +1136,7 @@ def export_openfoam_case(
     time_interval: float | None = None,
     latest_only: bool = False,
     maximum_frames: int | None = None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     _progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> FieldBundle:
     """Export selected OpenFOAM times to the standard field bundle.
@@ -1144,7 +1145,20 @@ def export_openfoam_case(
     directories written for restart. ``latest_only`` implements final-state
     output without retaining every native checkpoint in XDMF/HDF5.
     ``maximum_frames`` is a fail-closed output guard, never an implicit sampler.
+    ``progress_callback`` receives bounded records conforming to the installed
+    ``field-export-progress.schema.json`` contract.
     """
+
+    if progress_callback is not None and not callable(progress_callback):
+        raise TypeError("OpenFOAM export progress_callback must be callable.")
+    if _progress_callback is not None and not callable(_progress_callback):
+        raise TypeError("OpenFOAM export _progress_callback must be callable.")
+    if progress_callback is not None and _progress_callback is not None:
+        raise ValueError(
+            "Use progress_callback; the compatibility _progress_callback alias "
+            "cannot be supplied at the same time."
+        )
+    emit_progress = progress_callback or _progress_callback
 
     if time_interval is not None:
         time_interval = float(time_interval)
@@ -1200,7 +1214,7 @@ def export_openfoam_case(
                 include_initial=include_initial,
                 time_names=selected_time_names,
                 fields=native_fields,
-                progress_callback=_progress_callback,
+                progress_callback=emit_progress,
             )
         else:
             files = openfoam_vtu_series(case)
@@ -1256,8 +1270,8 @@ def export_openfoam_case(
             if selected_time_names is not None
             else [f"{_time_from_vtu(path):g}" for path in tuple(files or ())]
         )
-        if _progress_callback is not None:
-            _progress_callback(
+        if emit_progress is not None:
+            emit_progress(
                 _field_export_progress(
                     phase="preparing",
                     completed_frames=0,
@@ -1341,8 +1355,8 @@ def export_openfoam_case(
             ),
             _bundle_publication_strategy="same-parent-atomic-rename",
         )
-        if _progress_callback is not None:
-            _progress_callback(
+        if emit_progress is not None:
+            emit_progress(
                 _field_export_progress(
                     phase="publishing",
                     completed_frames=total_frames,
@@ -1355,8 +1369,8 @@ def export_openfoam_case(
         if target.exists():
             target.rmdir()
         publication_directory.replace(target)
-        if _progress_callback is not None:
-            _progress_callback(
+        if emit_progress is not None:
+            emit_progress(
                 _field_export_progress(
                     phase="complete",
                     completed_frames=total_frames,

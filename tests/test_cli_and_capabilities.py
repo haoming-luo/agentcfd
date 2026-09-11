@@ -1377,7 +1377,7 @@ def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
     requests = []
 
     def export(_case, output, **kwargs):
-        callback = kwargs["_progress_callback"]
+        callback = kwargs["progress_callback"]
         callbacks.append(callback)
         requests.append(kwargs)
         if callback is not None:

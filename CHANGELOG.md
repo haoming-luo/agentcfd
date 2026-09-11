@@ -26,6 +26,9 @@
 - Replace dense generated-project README prose with a scannable four-part guide
   for first run, typed operating points, bounded storage/history, and recovery;
   `case.py` remains the single scientific source and OpenFOAM stays hidden.
+- Promote field-export observation to the public `progress_callback=` Python
+  API and ship its standalone versioned JSON Schema for GUIs and agents; the
+  former private keyword remains a compatibility alias only.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

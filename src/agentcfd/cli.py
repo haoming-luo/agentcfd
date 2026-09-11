@@ -4598,7 +4598,7 @@ def main(argv: list[str] | None = None) -> int:
             time_interval=args.time_interval,
             latest_only=args.latest_only,
             maximum_frames=args.maximum_frames,
-            _progress_callback=None if args.as_json else direct_export_progress,
+            progress_callback=None if args.as_json else direct_export_progress,
         )
         report = bundle.to_dict()
         if args.as_json:

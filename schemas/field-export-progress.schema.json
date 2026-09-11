@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/field-export-progress.schema.json",
+  "title": "AgentCFD bounded field export progress 0.1",
+  "type": "object",
+  "required": [
+    "schema", "phase", "completed_frames", "total_frames", "fraction",
+    "batch_index", "batch_count", "current_batch_frames",
+    "maximum_batch_frames"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.field-export-progress/0.1"},
+    "phase": {
+      "enum": ["preparing", "converting", "writing", "publishing", "complete"]
+    },
+    "completed_frames": {"type": "integer", "minimum": 0},
+    "total_frames": {"type": "integer", "minimum": 1},
+    "fraction": {"type": "number", "minimum": 0, "maximum": 1},
+    "batch_index": {"type": ["integer", "null"], "minimum": 1},
+    "batch_count": {"type": "integer", "minimum": 0},
+    "current_batch_frames": {
+      "type": ["integer", "null"],
+      "minimum": 1,
+      "maximum": 4
+    },
+    "maximum_batch_frames": {"const": 4},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

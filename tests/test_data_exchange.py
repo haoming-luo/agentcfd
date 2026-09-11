@@ -723,7 +723,7 @@ def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatc
         tmp_path / "bundle",
         density=1000.0,
         include_initial=False,
-        _progress_callback=lambda record: progress.append(dict(record)),
+        progress_callback=lambda record: progress.append(dict(record)),
     )
 
     assert calls == [
@@ -757,6 +757,24 @@ def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatc
         6,
     ]
     assert all(record["total_frames"] == 6 for record in progress)
+    validator = jsonschema.Draft202012Validator(
+        contracts.load("field-export-progress.schema.json")
+    )
+    assert all(not list(validator.iter_errors(record)) for record in progress)
+
+
+def test_openfoam_export_progress_public_api_rejects_ambiguous_callbacks(tmp_path):
+    case = tmp_path / "case"
+    _write_frame(case, 0, 1.0)
+
+    with pytest.raises(ValueError, match="cannot be supplied at the same time"):
+        data_exchange.export_openfoam_case(
+            case,
+            tmp_path / "bundle",
+            convert=False,
+            progress_callback=lambda _record: None,
+            _progress_callback=lambda _record: None,
+        )
 
 
 def test_openfoam_frame_pipeline_uses_one_total_conversion_timeout(

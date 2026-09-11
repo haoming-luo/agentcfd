@@ -24,6 +24,7 @@ from . import (
     engineering,
     fluids,
     geometry,
+    geometry_generation,
     geometry_io,
     interoperability,
     licensing,
@@ -1689,6 +1690,45 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("project", nargs="?", type=Path, default=Path("."))
     inspect.add_argument("--json", action="store_true", dest="as_json")
 
+    geometry_create = subparsers.add_parser(
+        "geometry-create",
+        help="Create deterministic named-region fluid domains from engineering parameters.",
+    )
+    geometry_create_subparsers = geometry_create.add_subparsers(
+        dest="geometry_shape", required=True
+    )
+    elbow = geometry_create_subparsers.add_parser(
+        "elbow",
+        help="Create a watertight 90-degree circular elbow fluid-volume STL.",
+    )
+    elbow.add_argument("output", type=Path)
+    elbow.add_argument("--diameter-m", type=float, required=True)
+    elbow.add_argument("--bend-radius-m", type=float, required=True)
+    elbow.add_argument("--inlet-length-m", type=float, required=True)
+    elbow.add_argument("--outlet-length-m", type=float, required=True)
+    elbow.add_argument("--cross-section-segments", type=int, default=32)
+    elbow.add_argument(
+        "--bend-segments",
+        type=int,
+        help="Elbow centerline segments (default: derive from diameter and radius).",
+    )
+    elbow.add_argument(
+        "--inlet-segments",
+        type=int,
+        help="Straight inlet segments (default: derive from diameter and length).",
+    )
+    elbow.add_argument(
+        "--outlet-segments",
+        type=int,
+        help="Straight outlet segments (default: derive from diameter and length).",
+    )
+    elbow.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Return exact size, identity, regions, and setup recommendations without writing.",
+    )
+    elbow.add_argument("--json", action="store_true", dest="as_json")
+
     geometry_check = subparsers.add_parser(
         "geometry-check",
         help="Inspect imported STL/OBJ units, bounds, regions, and topology read-only.",
@@ -3165,6 +3205,46 @@ def main(argv: list[str] | None = None) -> int:
                     f"latest {report['latest_run']['run_id']} | "
                     f"trust {report['latest_run']['trust_level']}"
                 )
+        return 0
+    if args.command == "geometry-create" and args.geometry_shape == "elbow":
+        options = {
+            "diameter_m": args.diameter_m,
+            "bend_radius_m": args.bend_radius_m,
+            "inlet_length_m": args.inlet_length_m,
+            "outlet_length_m": args.outlet_length_m,
+            "cross_section_segments": args.cross_section_segments,
+            "bend_segments": args.bend_segments,
+            "inlet_segments": args.inlet_segments,
+            "outlet_segments": args.outlet_segments,
+        }
+        if args.plan_only:
+            report = geometry_generation.plan_circular_elbow_stl(
+                args.output, **options
+            )
+        else:
+            _, report = geometry_generation.write_circular_elbow_stl(
+                args.output, **options
+            )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            action = "Circular elbow plan" if args.plan_only else "Created circular elbow"
+            geometry_record = report["geometry"]
+            artifact = report["artifact"]
+            print(
+                f"{action} | {geometry_record['triangle_count']} triangles | "
+                f"{artifact['size_bytes']} bytes"
+            )
+            accuracy = geometry_record["tessellation_accuracy"]
+            print(
+                "section tessellation: "
+                f"{accuracy['cross_section_area_error_percent']:.4g}% area error | "
+                f"{accuracy['maximum_radial_chord_error_m']:.6g} m max chord error"
+            )
+            print(artifact["path"])
+            point = report["recommendations"]["interior_point_m"]
+            print("interior point [m]: " + ", ".join(f"{value:.6g}" for value in point))
+            print(f"next: {report['next_action']['command']}")
         return 0
     if args.command == "geometry-check":
         report = geometry_io.inspect_geometry(

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Make continuous integration proportional to the evidence needed: main/PR
+  triggers no longer duplicate arbitrary branch pushes, superseded runs are
+  cancelled, lint/build happens once, the compatibility matrix is reduced from
+  nine redundant full pipelines to four representative test jobs, pip caches
+  are enabled, artifacts expire after three days, and test/release workflows
+  share one short dependency-free installed-wheel smoke instead of duplicating
+  a long command list.
+- Treat the semantic `checkMesh` verdict as authoritative for imported mesh
+  acceptance. OpenFOAM may return process code zero after reporting failed
+  all-geometry/all-topology checks; AgentCFD now marks the command check failed
+  instead of publishing contradictory all-passed evidence with `accepted=false`.
+- Add preview-first `geometry-create elbow` and the public
+  `plan_circular_elbow_stl()` / `write_circular_elbow_stl()` APIs. The
+  dependency-free generator creates a deterministic watertight 90-degree
+  circular-elbow fluid volume with named inlet, outlet, and wall regions;
+  refuses overwrite; and publishes exact bytes/hash, tessellation error,
+  interior point, reusable observation planes, roles, inlet direction, and a
+  mesh/project starting point through an installed versioned contract. The
+  generated result passes the existing imported-project compatibility path.
 - Add `Step.observation_catalog()` and embed its versioned, installed-schema
   contract in every project output plan. Agents and GUIs can now join compact
   reports to physical surfaces, internal sections, or inline probe points;

@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/generated-geometry.schema.json",
+  "title": "AgentCFD generated geometry 0.1",
+  "type": "object",
+  "required": ["schema", "geometry", "recommendations", "artifact", "next_action"],
+  "properties": {
+    "schema": {"const": "agentcfd.generated-geometry/0.1"},
+    "geometry": {
+      "type": "object",
+      "required": [
+        "type", "unit", "parameters", "bounds_m", "triangle_count", "tessellation_accuracy",
+        "region_triangle_counts", "watertight_by_construction",
+        "outward_oriented_by_construction"
+      ],
+      "properties": {
+        "type": {"const": "circular-elbow-90deg"},
+        "unit": {"const": "m"},
+        "parameters": {
+          "type": "object",
+          "required": [
+            "diameter_m", "bend_radius_m", "inlet_length_m", "outlet_length_m",
+            "cross_section_segments", "bend_segments", "inlet_segments", "outlet_segments"
+          ],
+          "properties": {
+            "diameter_m": {"type": "number", "exclusiveMinimum": 0},
+            "bend_radius_m": {"type": "number", "exclusiveMinimum": 0},
+            "inlet_length_m": {"type": "number", "exclusiveMinimum": 0},
+            "outlet_length_m": {"type": "number", "exclusiveMinimum": 0},
+            "cross_section_segments": {"type": "integer", "minimum": 8, "maximum": 512},
+            "bend_segments": {"type": "integer", "minimum": 4, "maximum": 512},
+            "inlet_segments": {"type": "integer", "minimum": 1, "maximum": 256},
+            "outlet_segments": {"type": "integer", "minimum": 1, "maximum": 256}
+          },
+          "additionalProperties": false
+        },
+        "bounds_m": {"$ref": "#/$defs/bounds"},
+        "triangle_count": {"type": "integer", "minimum": 1, "maximum": 2000000},
+        "tessellation_accuracy": {
+          "type": "object",
+          "required": [
+            "nominal_cross_section_area_m2", "tessellated_cross_section_area_m2",
+            "cross_section_area_error_percent", "maximum_radial_chord_error_m"
+          ],
+          "properties": {
+            "nominal_cross_section_area_m2": {"type": "number", "exclusiveMinimum": 0},
+            "tessellated_cross_section_area_m2": {"type": "number", "exclusiveMinimum": 0},
+            "cross_section_area_error_percent": {"type": "number", "minimum": 0},
+            "maximum_radial_chord_error_m": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "region_triangle_counts": {
+          "type": "object",
+          "required": ["inlet", "walls", "outlet"],
+          "properties": {
+            "inlet": {"type": "integer", "minimum": 1},
+            "walls": {"type": "integer", "minimum": 1},
+            "outlet": {"type": "integer", "minimum": 1}
+          },
+          "additionalProperties": false
+        },
+        "watertight_by_construction": {"const": true},
+        "outward_oriented_by_construction": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "recommendations": {
+      "type": "object",
+      "required": [
+        "interior_point_m", "boundary_roles", "inlet_velocity_direction",
+        "measurement_sections", "mesh_starting_point", "project_initialization"
+      ],
+      "properties": {
+        "interior_point_m": {"$ref": "#/$defs/vector3"},
+        "boundary_roles": {
+          "const": {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
+        },
+        "inlet_velocity_direction": {"$ref": "#/$defs/vector3"},
+        "measurement_sections": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["name", "kind", "role", "origin_m", "normal"],
+            "properties": {
+              "name": {"enum": ["upstream", "downstream"]},
+              "kind": {"const": "plane"},
+              "role": {"const": "observation"},
+              "origin_m": {"$ref": "#/$defs/vector3"},
+              "normal": {"$ref": "#/$defs/vector3"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "mesh_starting_point": {
+          "type": "object",
+          "required": ["base_size_m", "maximum_cells", "status"],
+          "properties": {
+            "base_size_m": {"type": "number", "exclusiveMinimum": 0},
+            "maximum_cells": {"type": "integer", "minimum": 1},
+            "status": {"const": "starting-point-not-accuracy-guarantee"}
+          },
+          "additionalProperties": false
+        },
+        "project_initialization": {
+          "type": "object",
+          "required": [
+            "template", "provider", "geometry_unit", "geometry_path",
+            "required_user_decisions"
+          ],
+          "properties": {
+            "template": {"const": "imported-internal-flow"},
+            "provider": {"const": "openfoam"},
+            "geometry_unit": {"const": "m"},
+            "geometry_path": {"type": ["string", "null"]},
+            "required_user_decisions": {
+              "const": ["project_directory", "inlet_velocity_mass_flow_or_total_pressure"]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["path", "size_bytes", "sha256", "written", "already_exists"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "size_bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "written": {"type": "boolean"},
+        "already_exists": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["command", "reason"],
+      "properties": {
+        "command": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "bounds": {
+      "type": "object",
+      "required": ["minimum", "maximum"],
+      "properties": {
+        "minimum": {"$ref": "#/$defs/vector3"},
+        "maximum": {"$ref": "#/$defs/vector3"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

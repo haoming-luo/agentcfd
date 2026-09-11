@@ -49,6 +49,12 @@ python -m pytest -q
    Humans may use repeated `--role REGION=ROLE` values for a short surface
    list; automation should prefer the versioned role map or project-creation
    request. Both paths must cover exact names and produce the same stored map.
+   If the requested geometry is a standard circular 90-degree elbow, prefer
+   `geometry-create elbow --plan-only --json` before requesting CAD. Review its
+   tessellation errors and exact future artifact identity, then write to a new
+   path. Consume the returned interior point, role map, observation planes,
+   inlet direction, and mesh starting point; do not invent the remaining inlet
+   operating condition or treat the starting mesh size as accuracy evidence.
 9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
    never infer physical time or point/cell association from shape alone.
 10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,

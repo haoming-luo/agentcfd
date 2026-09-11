@@ -766,7 +766,12 @@ def execute_imported_mesh(
 
     checks: list[dict[str, object]] = []
     for name in commands:
-        status = "passed" if return_codes.get(name) == 0 else "failed"
+        command_passed = return_codes.get(name) == 0
+        if name == "checkMesh" and command_passed:
+            # OpenFOAM can return zero even when -allGeometry/-allTopology ends
+            # with "Failed N mesh checks". The semantic verdict is authoritative.
+            command_passed = "Mesh OK" in logs.get(name, "")
+        status = "passed" if command_passed else "failed"
         if name not in return_codes:
             status = "not-run"
         checks.append(

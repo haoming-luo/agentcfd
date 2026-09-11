@@ -4,78 +4,40 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
-      - run: python -m pip install --upgrade build twine
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - run: |
-          python -m venv wheel-test
-          wheel-test/bin/python -m pip install --no-index dist/*.whl
-          wheel-test/bin/python -c "import importlib.util; assert importlib.util.find_spec('numpy') is None"
-          cd /tmp
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" doctor --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" capabilities --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" templates --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" templates imported-internal-flow --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file(); assert contracts.path('project-verification.schema.json').is_file(); assert contracts.path('project-performance.schema.json').is_file(); assert contracts.path('performance-history.schema.json').is_file()"
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file(); assert contracts.path('geometry-region-normalization.schema.json').is_file(); assert contracts.path('template-catalog.schema.json').is_file(); assert contracts.path('project-actions.schema.json').is_file(); assert contracts.path('project-archive.schema.json').is_file(); assert contracts.path('project-archive-verification.schema.json').is_file(); assert contracts.path('project-archive-restoration.schema.json').is_file()"
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "import agentcfd; assert callable(agentcfd.plan_region_normalization); assert callable(agentcfd.normalize_geometry_regions)"
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" geometry-normalize --help
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" calculate compressibility --velocity 100 --speed-of-sound 400 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" calculate thermal-flow --density 998.2 --viscosity 0.001002 --specific-heat 4180 --thermal-conductivity 0.6 --velocity 0.01 --diameter 0.1 --flow-area 0.007853981633974483 --inlet-temperature 300 --heat-rate 62.83185307179586 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" demo pipe --output pipe-result.json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init operating-point-project --template industrial-pipe
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" project operating-point-project --no-result --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" actions operating-point-project --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" run operating-point-project --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" performance operating-point-project --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" verify project operating-point-project --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" archive operating-point-project --plan-only --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" archive operating-point-project operating-point.zip --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" verify archive operating-point.zip --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" restore operating-point.zip restored-operating-point --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" verify project restored-operating-point --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" export sample operating-point-project operating-point-sample.json --input mean_velocity --output-quantity flow.pressure_drop --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" run operating-point-project --campaign --param mean_velocity=0.01 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" run operating-point-project --campaign --param mean_velocity=0.02 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" export dataset operating-point-project operating-point-dataset --input mean_velocity --output-quantity flow.pressure_drop --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" verify dataset operating-point-dataset --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" dataset inspect operating-point-dataset --preview 1 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" dataset plan operating-point-dataset --validation-fraction 0.5 --seed 17 --output operating-point-training.json --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" plan operating-point-project --param-file operating-point.json --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init overview-project --template baffle-channel --provider openfoam
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import open_project; o=open_project('overview-project').load_step().output; assert o.views[0].component == 'normal'; assert o.layouts[0].name == 'wake-overview'"
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init heated-pipe-project --template heated-pipe
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" plan heated-pipe-project --summary-only --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import projects; from agentcfd.providers import OpenFOAMProvider; p=projects.Project('heated-pipe-project'); c=OpenFOAMProvider().prepare(p.load_step(), 'heated-pipe-case'); assert (c.directory/'0/T').is_file(); assert c.capability == 'openfoam.steady-laminar-heated-circular-pipe'"
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init heated-request-project --request "$GITHUB_WORKSPACE/examples/heated_pipe_project/project-request.json" --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import projects; p=projects.Project('heated-request-project'); assert p.load_step().model.boundary_conditions['wall'].thermal.heat_flux_into_fluid == 100.0"
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init imported-pressure --template imported-internal-flow --geometry "$GITHUB_WORKSPACE/examples/imported_duct_mesh/geometry/fluid.stl" --unit m --roles "$GITHUB_WORKSPACE/examples/imported_duct_mesh/geometry/boundary-roles.json" --interior-point-m 0.5 0.25 0.1 --inlet-total-gauge-pressure-pa 0.001 --base-size-m 0.05 --maximum-cells 200000
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import projects; p=projects.Project('imported-pressure'); assert p.load_step().model.boundary_conditions['inlet'].total_gauge_pressure == 0.001; assert len(p.parameter_contract()) == 12"
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init imported-velocity --template imported-internal-flow --geometry "$GITHUB_WORKSPACE/examples/imported_duct_mesh/geometry/fluid.stl" --unit m --roles "$GITHUB_WORKSPACE/examples/imported_duct_mesh/geometry/boundary-roles.json" --interior-point-m 0.5 0.25 0.1 --inlet-velocity-m-s 0.5 0 0 --base-size-m 0.05 --maximum-cells 200000
-          "$GITHUB_WORKSPACE/wheel-test/bin/python" -c "from agentcfd import projects; assert projects.Project('imported-velocity').load_step().model.metadata['inlet_velocity_direction']['status'] == 'passed'"
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-pipe openfoam-pipe --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-pipe openfoam-turbulent-pipe --cross-section-cells 4 --axial-cells 20 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-wall-study openfoam-turbulent-wall-study --cross-section-cells 4 8 16 --maximum-iterations 20 20 20 --json
-          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" prepare openfoam-turbulent-wall-function-study openfoam-turbulent-wall-functions --cross-section-cells 4 --maximum-iterations 20 --json
+      - run: python -m venv wheel-test
+      - run: wheel-test/bin/python -m pip install --no-index dist/*.whl
+      - run: wheel-test/bin/python ci/installed_wheel_smoke.py
       - uses: actions/upload-artifact@v7
         with:
           name: python-package-distributions
           path: dist/
+          retention-days: 3
 
   publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: pypi
       url: https://pypi.org/p/agentcfd

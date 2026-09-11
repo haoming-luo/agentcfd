@@ -130,6 +130,12 @@ is still required before M1 numerical promotion.
 Promotion gate: three real geometry classes import reproducibly, preserve named
 regions, pass quality policy, and survive rerun/cache/cleanup workflows.
 
+The circular 90-degree elbow asset is now released as the first generator. It
+is dependency-free, deterministic, preview-first, named by boundary role, and
+publishes both tessellation error and project setup recommendations. Reducer,
+tee, and manifold generators remain outstanding; the M2 promotion gate is not
+yet met by one geometry class.
+
 ### M3 — dependable turbulent industrial internal flow
 
 - steady and transient k-omega SST and k-epsilon workflow selection;

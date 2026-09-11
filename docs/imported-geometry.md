@@ -6,6 +6,50 @@ and one open or non-manifold edge can change what “inside” means. AgentCFD
 therefore begins with a read-only contract instead of silently repairing or
 meshing an ambiguous file.
 
+## Start without CAD: a parameterized elbow
+
+For a standard 90-degree circular elbow, AgentCFD can create the fluid volume
+itself before entering the same imported-surface workflow:
+
+```bash
+agentcfd geometry-create elbow elbow.stl \
+  --diameter-m 0.1 --bend-radius-m 0.15 \
+  --inlet-length-m 0.3 --outlet-length-m 0.4 --plan-only --json
+agentcfd geometry-create elbow elbow.stl \
+  --diameter-m 0.1 --bend-radius-m 0.15 \
+  --inlet-length-m 0.3 --outlet-length-m 0.4 --json
+```
+
+The preview and write result share
+`agentcfd.generated-geometry/0.1`. It records the exact future/current bytes,
+SHA-256, triangle and per-region counts, SI bounds, cross-section area error,
+maximum chord error, interior point, inlet direction, role map, reusable
+upstream/downstream planes, and mesh starting point. The defaults use 32 points
+around the section and derive centerline stations from the diameter and
+lengths; all resolved counts are recorded. Increase
+`--cross-section-segments` when the reported area or chord error is too large,
+or explicitly override the station counts when exchange requirements demand a
+fixed tessellation. This only controls surface tessellation—it is not a
+mesh-independence claim.
+
+Writing is atomic and refuses an existing target. It creates one connected,
+watertight, outward-oriented ASCII STL with `inlet`, `outlet`, and `walls`
+regions. Those construction claims are still independently checked rather
+than trusted:
+
+```bash
+agentcfd geometry-check elbow.stl --unit m --internal-flow \
+  --role inlet=inlet --role outlet=outlet --role walls=wall
+```
+
+Use the returned `project_initialization`, `interior_point_m`, inlet direction,
+and `mesh_starting_point` records to initialize `imported-internal-flow`; the
+inlet speed, mass flow, or pressure remains a deliberate user decision. This
+keeps geometry generation solver-neutral and prevents a shape command from
+silently inventing an operating point.
+
+## Inspect external geometry
+
 ```bash
 agentcfd geometry-check valve-fluid.stl --unit mm
 agentcfd geometry-check intentional-open-plate.obj --unit m --allow-open

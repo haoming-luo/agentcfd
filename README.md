@@ -388,6 +388,10 @@ agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
 agentcfd sweep . sweep.json --summary-only # metrics/evidence, no permanent H5
 agentcfd promote . <run-id>      # publish full fields for one screened point
 agentcfd compact . <run-id>      # preview full-field bulk removal; add --apply
+agentcfd geometry-create elbow elbow.stl \
+  --diameter-m 0.1 --bend-radius-m 0.15 \
+  --inlet-length-m 0.3 --outlet-length-m 0.4 --plan-only
+# Remove --plan-only to atomically write a named inlet/outlet/walls fluid domain.
 agentcfd geometry-normalize equipment.stl  # preview region-name mapping only
 agentcfd geometry-normalize equipment.stl fluid.stl  # write a new safe copy
 agentcfd geometry-check fluid.stl --unit mm --roles roles.json \
@@ -412,6 +416,19 @@ agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 # agentcfd clean . --include-retained --apply  # release expert copies
 ```
+
+`geometry-create elbow` is the first practical parameter-to-project geometry
+path. It uses metres, has no CAD dependency, and emits a deterministic,
+watertight 90-degree circular-elbow fluid volume with separate `inlet`,
+`outlet`, and `walls` STL regions. Its versioned JSON result includes the exact
+artifact hash and size, an interior point, upstream/downstream observation
+planes, explicit role map, inlet direction, a conservative mesh starting point,
+and the remaining operating-condition decisions. Planning renders the exact
+future bytes but does not create a file; writing refuses to overwrite. The
+report also quantifies the polygonal cross-section area and chord errors, so
+tessellation is an inspectable accuracy decision rather than a hidden CAD
+default. The generated surface still passes through ordinary
+`geometry-check`, project initialization, mesh planning, and quality gates.
 
 CAD exports often contain region names with spaces, punctuation, non-ASCII
 characters, or leading digits. Preview `geometry-normalize` before importing

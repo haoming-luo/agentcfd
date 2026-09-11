@@ -859,6 +859,44 @@ def test_imported_mesh_execution_gates_geometry_budget_and_quality(
     assert (prepared.directory / "agentcfd-imported-mesh-result.json").is_file()
 
 
+def test_imported_mesh_rejects_zero_exit_when_checkmesh_semantics_fail(
+    tmp_path, monkeypatch
+):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    prepared = prepare_imported_mesh(
+        _step(payload), source=source, directory=tmp_path / "case"
+    )
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_imported.shutil.which", lambda name: f"/{name}"
+    )
+
+    def completed(argv, **kwargs):
+        executable = argv[0].rsplit("/", 1)[-1]
+        if executable == "checkMesh":
+            kwargs["stdout"].write(
+                "    cells:            4200\n"
+                "Max aspect ratio = 12.5\n"
+                "Mesh non-orthogonality Max: 42 average: 8\n"
+                "Max skewness = 1.2\n"
+                "Failed 1 mesh checks.\n"
+            )
+        else:
+            kwargs["stdout"].write("End\n")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(
+        "agentcfd.providers.openfoam_imported.subprocess.run", completed
+    )
+    result = execute_imported_mesh(prepared)
+
+    command_checks = {check["code"]: check for check in result.checks}
+    assert result.return_codes["checkMesh"] == 0
+    assert command_checks["IMPORTED_MESH_CHECKMESH"]["status"] == "failed"
+    assert result.accepted is False
+
+
 def test_imported_mesh_cli_plans_and_prepares_without_openfoam(tmp_path, capsys):
     root = tmp_path / "project"
     _imported_project(root, b"surface")

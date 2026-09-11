@@ -10,6 +10,7 @@ from . import (
     engineering,
     fluids,
     geometry,
+    geometry_generation,
     geometry_io,
     initialization,
     interoperability,
@@ -29,6 +30,7 @@ from . import (
 from ._version import __version__
 from .archives import restore_project_archive, verify_project_archive
 from .geometry_io import normalize_geometry_regions, plan_region_normalization
+from .geometry_generation import plan_circular_elbow_stl, write_circular_elbow_stl
 from .model import Model, Step
 from .interoperability import ScientificDatasetReader, open_scientific_dataset
 from .projects import open_project
@@ -62,6 +64,7 @@ __all__ = [
     "engineering",
     "fluids",
     "geometry",
+    "geometry_generation",
     "geometry_io",
     "initialization",
     "interoperability",
@@ -73,6 +76,7 @@ __all__ = [
     "parameters",
     "postprocessing",
     "plan_region_normalization",
+    "plan_circular_elbow_stl",
     "procedures",
     "properties",
     "projects",
@@ -83,5 +87,6 @@ __all__ = [
     "templates",
     "verification",
     "verify_project_archive",
+    "write_circular_elbow_stl",
     "read_result_record",
 ]

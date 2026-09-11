@@ -62,6 +62,12 @@ consumers can therefore stream samples without importing AgentCFD or opening
 solver fields. `agentcfd verify dataset` performs a dependency-free package
 audit before a copied dataset is admitted downstream.
 
+AgentCFD consumers can call `open_scientific_dataset()` or `agentcfd dataset
+inspect` after admission. The reader preserves declared column order and raw
+physical units in plain Python matrices; NumPy conversion is opt-in. This keeps
+the core lightweight while giving AgentFEM, surrogate, and notebook adapters a
+single verified entrance instead of custom JSONL parsing.
+
 The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack
 behind the stable `agentcae.*` records.

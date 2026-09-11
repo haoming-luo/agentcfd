@@ -381,9 +381,21 @@ agentcfd export sample . pressure-loss.json \
 agentcfd export dataset . training/pressure-map \
   --input mean_velocity --output-quantity flow.pressure_drop
 agentcfd verify dataset training/pressure-map
+agentcfd dataset inspect training/pressure-map --preview 3
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 # agentcfd clean . --include-retained --apply  # release expert copies
+```
+
+Python and learning tools can open the same verified dataset without importing
+OpenFOAM, AgentFEM, pandas, or NumPy:
+
+```python
+from agentcfd import open_scientific_dataset
+
+dataset = open_scientific_dataset("training/pressure-map")
+X, Y = dataset.matrices()        # immutable tuples, values remain in declared units
+# X_np, Y_np = dataset.to_numpy()  # optional: pip install agentcfd[arrays]
 ```
 
 All project commands discover the nearest `agentcfd.toml` while walking upward,

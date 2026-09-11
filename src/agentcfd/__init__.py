@@ -26,6 +26,7 @@ from . import (
 )
 from ._version import __version__
 from .model import Model, Step
+from .interoperability import ScientificDatasetReader, open_scientific_dataset
 from .projects import open_project
 from .results import (
     Artifact,
@@ -45,6 +46,7 @@ __all__ = [
     "Model",
     "Quantity",
     "SimulationResult",
+    "ScientificDatasetReader",
     "Step",
     "__version__",
     "benchmarks",
@@ -61,6 +63,7 @@ __all__ = [
     "meshing",
     "outputs",
     "open_project",
+    "open_scientific_dataset",
     "parameters",
     "postprocessing",
     "procedures",

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add `open_scientific_dataset()` and `agentcfd dataset inspect` as the
+  fail-closed consumption side of campaign publication. Agents and scripts can
+  discover ordered columns, units, ranges, matrix shapes, trust counts, and
+  bounded rows or obtain raw-unit immutable matrices without solver, pandas,
+  or NumPy dependencies; the optional arrays adapter returns NumPy matrices.
 - Add atomic verified campaign datasets through `Project.export_campaign_dataset()`
   and `agentcfd export dataset`. Accepted points become streamable independent
   `agentcae.scientific-sample` JSON Lines under one content-hashed manifest;

@@ -38,7 +38,7 @@ jobs:
       - run: wheel-test/bin/agentcfd doctor --json
       - run: wheel-test/bin/agentcfd contracts --json
       - run: wheel-test/bin/python -c "import agentcfd; from agentcfd import contracts; assert callable(agentcfd.open_project); assert contracts.path('project-snapshot.schema.json').is_file(); assert contracts.path('project-verification.schema.json').is_file(); assert contracts.path('project-performance.schema.json').is_file(); assert contracts.path('performance-history.schema.json').is_file()"
-      - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file(); assert contracts.path('scientific-dataset.schema.json').is_file(); assert contracts.path('scientific-dataset-verification.schema.json').is_file()"
+      - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('parameter-set.schema.json').is_file(); assert contracts.path('inlet-direction-assessment.schema.json').is_file(); assert contracts.path('scientific-dataset.schema.json').is_file(); assert contracts.path('scientific-dataset-verification.schema.json').is_file(); assert contracts.path('scientific-dataset-inspection.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-precursor-map.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-wall-study.schema.json').is_file(); assert contracts.path('turbulent-precursor-grid-study.schema.json').is_file()"
       - run: wheel-test/bin/python -c "from agentcfd import contracts; assert contracts.path('openfoam-turbulent-wall-function-study.schema.json').is_file(); assert contracts.path('turbulent-wall-function-study.schema.json').is_file()"
@@ -57,6 +57,7 @@ jobs:
       - run: wheel-test/bin/agentcfd run operating-point-project --campaign --param mean_velocity=0.02 --json
       - run: wheel-test/bin/agentcfd export dataset operating-point-project operating-point-dataset --input mean_velocity --output-quantity flow.pressure_drop --json
       - run: wheel-test/bin/agentcfd verify dataset operating-point-dataset --json
+      - run: wheel-test/bin/agentcfd dataset inspect operating-point-dataset --preview 1 --json
       - run: wheel-test/bin/agentcfd params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
       - run: wheel-test/bin/agentcfd plan operating-point-project --param-file operating-point.json --json
       - run: wheel-test/bin/agentcfd init overview-project --template baffle-channel --provider openfoam

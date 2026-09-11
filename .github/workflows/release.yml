@@ -39,6 +39,7 @@ jobs:
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" run operating-point-project --campaign --param mean_velocity=0.02 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" export dataset operating-point-project operating-point-dataset --input mean_velocity --output-quantity flow.pressure_drop --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" verify dataset operating-point-dataset --json
+          "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" dataset inspect operating-point-dataset --preview 1 --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" params operating-point-project --param mean_velocity=0.015 --output operating-point.json --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" plan operating-point-project --param-file operating-point.json --json
           "$GITHUB_WORKSPACE/wheel-test/bin/agentcfd" init overview-project --template baffle-channel --provider openfoam

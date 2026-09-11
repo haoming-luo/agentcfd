@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/scientific-dataset-inspection.schema.json",
+  "title": "AgentCFD scientific dataset inspection 0.1",
+  "type": "object",
+  "required": [
+    "schema", "directory", "verified", "sample_count", "excluded_count",
+    "matrix_shapes", "inputs", "outputs", "trust_levels", "samples", "preview"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.scientific-dataset-inspection/0.1"},
+    "directory": {"type": "string", "minLength": 1},
+    "verified": {"const": true},
+    "sample_count": {"type": "integer", "minimum": 1},
+    "excluded_count": {"type": "integer", "minimum": 0},
+    "matrix_shapes": {
+      "type": "object",
+      "required": ["X", "Y"],
+      "properties": {
+        "X": {"$ref": "#/$defs/matrixShape"},
+        "Y": {"$ref": "#/$defs/matrixShape"}
+      },
+      "additionalProperties": false
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/numericColumn"}
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "unit", "kind", "minimum", "maximum", "constant"],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "unit": {"type": ["string", "null"]},
+          "kind": {"type": "string", "minLength": 1},
+          "minimum": {"type": "number"},
+          "maximum": {"type": "number"},
+          "constant": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "trust_levels": {
+      "type": "object",
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "samples": {
+      "type": "object",
+      "required": ["media_type", "bytes", "sha256"],
+      "properties": {
+        "media_type": {"const": "application/x-ndjson"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "preview": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["case_id", "inputs", "outputs", "trust_level"],
+        "properties": {
+          "case_id": {"type": "string", "minLength": 1},
+          "inputs": {"type": "object"},
+          "outputs": {"type": "object"},
+          "trust_level": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "matrixShape": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "integer", "minimum": 1},
+        {"type": "integer", "minimum": 1}
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "numericColumn": {
+      "type": "object",
+      "required": ["name", "unit", "minimum", "maximum", "constant"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "unit": {"type": ["string", "null"]},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "constant": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

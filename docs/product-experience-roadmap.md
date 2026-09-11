@@ -101,6 +101,8 @@ files stay hidden and reproducible.
   recursive storage scans remaining explicit opt-in;
 - verified atomic scalar-dataset export with fixed parameter/quantity semantics,
   streamable AgentCAE sample lines, content hashing, and explicit exclusions;
+- fail-closed dependency-free dataset reading with raw-unit matrices, optional
+  NumPy adaptation, and bounded machine-readable shape/unit/range inspection;
 - dependency-free, unit-labelled SVG operating maps over compact campaign
   markers, with accepted-only decision curves and explicit exclusions;
 - explicit `case.py` factory parameters shared by check/plan/run, fingerprinted

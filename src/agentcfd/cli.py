@@ -2030,6 +2030,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Audit emitted contract identities against the optional AgentCAE package.",
     )
 
+    dataset = subparsers.add_parser(
+        "dataset",
+        help="Open verified scientific datasets without a solver or ML dependency.",
+    )
+    dataset_subparsers = dataset.add_subparsers(dest="dataset_action", required=True)
+    dataset_inspect = dataset_subparsers.add_parser(
+        "inspect",
+        help="Show input/output dimensions, units, ranges, trust, and compact rows.",
+    )
+    dataset_inspect.add_argument("directory", type=Path)
+    dataset_inspect.add_argument(
+        "--preview",
+        type=int,
+        default=0,
+        help="Include at most this many compact input/output rows.",
+    )
+    dataset_inspect.add_argument("--json", action="store_true", dest="as_json")
+
     license_catalog = subparsers.add_parser(
         "licenses",
         help="Show dependency and external-solver license boundaries.",
@@ -3918,6 +3936,33 @@ def main(argv: list[str] | None = None) -> int:
                 if isinstance(next_action, dict):
                     print(f"next: {next_action['command']}")
         return 0 if compatibility is None or compatibility["compatible"] is True else 3
+    if args.command == "dataset" and args.dataset_action == "inspect":
+        report = interoperability.open_scientific_dataset(args.directory).inspect(
+            preview=args.preview
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Verified scientific dataset | {report['sample_count']} samples | "
+                f"X {tuple(report['matrix_shapes']['X'])} | "
+                f"Y {tuple(report['matrix_shapes']['Y'])}"
+            )
+            for record in report["inputs"]:
+                unit = f" {record['unit']}" if record["unit"] else ""
+                print(
+                    f"input {record['name']}: "
+                    f"[{record['minimum']}, {record['maximum']}]{unit}"
+                )
+            for record in report["outputs"]:
+                unit = f" {record['unit']}" if record["unit"] else ""
+                print(
+                    f"output {record['name']}: "
+                    f"[{record['minimum']}, {record['maximum']}]{unit}"
+                )
+            if report["preview"]:
+                print(json.dumps(report["preview"], indent=2, sort_keys=True))
+        return 0
     if args.command == "licenses":
         report = licensing.as_dict()
         if args.as_json:

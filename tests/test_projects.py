@@ -16,6 +16,7 @@ from agentcfd import (
     contracts,
     geometry_io,
     interoperability,
+    open_scientific_dataset,
     projects,
 )
 from agentcfd.cli import entrypoint
@@ -1953,6 +1954,37 @@ def test_campaign_dataset_is_verified_atomic_and_records_exclusions(tmp_path, ca
     cli_verification = json.loads(capsys.readouterr().out)
     assert cli_verification["verified"] is True
 
+    dataset = open_scientific_dataset(target)
+    assert dataset.input_names == ("diameter", "mean_velocity")
+    assert dataset.output_names == ("flow.pressure_drop",)
+    assert dataset.sample_count == 2
+    x_rows, y_rows = dataset.matrices()
+    assert x_rows == ((0.05, 0.01), (0.05, 0.03))
+    assert y_rows[0][0] == pytest.approx(1.28256)
+    x_array, y_array = dataset.to_numpy()
+    assert x_array.shape == (2, 2)
+    assert y_array.shape == (2, 1)
+    inspection = dataset.inspect(preview=1)
+    jsonschema.Draft202012Validator(
+        contracts.load("scientific-dataset-inspection.schema.json")
+    ).validate(inspection)
+    assert inspection["matrix_shapes"] == {"X": [2, 2], "Y": [2, 1]}
+    assert inspection["inputs"][0]["constant"] is True
+    assert inspection["inputs"][1]["minimum"] == 0.01
+    assert inspection["inputs"][1]["maximum"] == 0.03
+    assert inspection["outputs"][0]["unit"] == "Pa"
+    assert inspection["preview"][0]["case_id"] == f"agentcfd-{low.run_id}"
+    assert "scientific-dataset-inspection.schema.json" in contracts.available()
+    assert (
+        entrypoint(
+            ["dataset", "inspect", str(target), "--preview", "1", "--json"]
+        )
+        == 0
+    )
+    cli_inspection = json.loads(capsys.readouterr().out)
+    assert cli_inspection["verified"] is True
+    assert len(cli_inspection["preview"]) == 1
+
     with pytest.raises(ProjectError, match="already exists"):
         project.export_campaign_dataset(
             target,
@@ -1986,6 +2018,10 @@ def test_campaign_dataset_is_verified_atomic_and_records_exclusions(tmp_path, ca
     assert tampered["verified"] is False
     assert tampered["checks"][1]["code"] == "SAMPLE_PAYLOAD_INTEGRITY"
     assert tampered["checks"][1]["passed"] is False
+    with pytest.raises(ValueError, match="changed after it was opened"):
+        dataset.matrices()
+    with pytest.raises(ValueError, match="Scientific dataset is not verified"):
+        open_scientific_dataset(target)
 
 
 def test_campaign_operating_map_is_unit_aware_accepted_and_field_free(tmp_path, capsys):

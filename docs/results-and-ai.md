@@ -297,6 +297,14 @@ campaign point or interrupted export cannot leave a plausible partial dataset.
 it verifies the manifest, counts, JSONL byte length and SHA-256, every sample's
 contract and shared input/output metadata, line-to-run identity, and uniqueness.
 
+`open_scientific_dataset(DIRECTORY)` is the matching dependency-free Python
+consumer. It fails closed unless the package verifies, exposes stable input and
+output order, streams strict sample records, and returns raw-unit immutable
+`X/Y` matrices. `to_numpy()` is an explicit adapter from the optional `arrays`
+extra. `agentcfd dataset inspect DIRECTORY --preview 3` emits a compact,
+versioned view of shapes, units, ranges, trust-level counts, payload identity,
+and bounded rows; it never imports a solver or opens XDMF/HDF5 fields.
+
 The same record can be ingested by campaign managers, tabular surrogate tools,
 or user ML pipelines without importing PyTorch or JAX into the core package.
 Field-learning workflows should consume `field_records` and their artifacts;

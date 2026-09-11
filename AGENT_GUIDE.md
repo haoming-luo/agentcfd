@@ -107,6 +107,9 @@ python -m pytest -q
     it checks the package without opening OpenFOAM or HDF5 payloads.
     Keep byte integrity, scientific acceptance, and trust level separate; a
     verified artifact set does not repair a failed physical check.
+30. Use `open_scientific_dataset()` or `dataset inspect --json` after admission.
+    Preserve declared column order and units; call `to_numpy()` only when an
+    array consumer is actually needed, and never normalize silently.
 26. Use `performance --json` only for scheduling and ETA. Its bounded comparable
     runtime history is advisory and must never be treated as convergence,
     accuracy, acceptance, or permission to change the requested model.

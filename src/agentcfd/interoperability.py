@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping
@@ -369,3 +370,170 @@ def verify_scientific_dataset(directory: str | Path) -> dict[str, object]:
             "field_payloads_opened": 0,
         },
     }
+
+
+@dataclass(frozen=True, slots=True)
+class ScientificDatasetReader:
+    """Verified, dependency-free view over one scalar scientific dataset.
+
+    The reader deliberately exposes plain Python records first.  NumPy remains
+    an opt-in adapter so orchestration agents and lightweight installations do
+    not pay for a machine-learning stack merely to inspect campaign evidence.
+    """
+
+    directory: Path
+    manifest: Mapping[str, object]
+    verification: Mapping[str, object]
+
+    @classmethod
+    def open(cls, directory: str | Path) -> "ScientificDatasetReader":
+        root = Path(directory).resolve()
+        verification = verify_scientific_dataset(root)
+        if verification.get("verified") is not True:
+            failures = "; ".join(
+                str(check.get("message", "Dataset verification failed."))
+                for check in verification.get("checks", [])
+                if isinstance(check, Mapping) and check.get("passed") is not True
+            )
+            raise ValueError(f"Scientific dataset is not verified: {failures}")
+        manifest = strict_json_object(
+            (root / "manifest.json").read_text(encoding="utf-8"),
+            label=f"AgentCFD scientific dataset {root / 'manifest.json'}",
+        )
+        return cls(root, manifest, verification)
+
+    @property
+    def input_names(self) -> tuple[str, ...]:
+        return tuple(str(record["name"]) for record in self.manifest["inputs"])
+
+    @property
+    def output_names(self) -> tuple[str, ...]:
+        return tuple(str(record["name"]) for record in self.manifest["outputs"])
+
+    @property
+    def sample_count(self) -> int:
+        return int(self.manifest["sample_count"])
+
+    def iter_samples(self):
+        """Yield strict AgentCAE sample records in stable campaign order."""
+
+        path = self.directory / str(self.manifest["samples"]["path"])
+        if file_sha256(path) != self.manifest["samples"]["sha256"]:
+            raise ValueError(
+                "Scientific dataset changed after it was opened; reopen only after "
+                "reviewing and republishing the dataset."
+            )
+        with path.open("r", encoding="utf-8") as stream:
+            for line_number, line in enumerate(stream, start=1):
+                yield strict_json_object(
+                    line,
+                    label=f"AgentCAE scientific sample line {line_number}",
+                )
+
+    def matrices(self) -> tuple[tuple[tuple[float, ...], ...], tuple[tuple[float, ...], ...]]:
+        """Return immutable, raw-unit X/Y matrices without importing NumPy."""
+
+        x_rows: list[tuple[float, ...]] = []
+        y_rows: list[tuple[float, ...]] = []
+        for sample in self.iter_samples():
+            x_rows.append(tuple(float(sample["inputs"][name]) for name in self.input_names))
+            y_rows.append(
+                tuple(float(sample["outputs"][name]) for name in self.output_names)
+            )
+        return tuple(x_rows), tuple(y_rows)
+
+    def to_numpy(self):
+        """Return raw-unit NumPy matrices through the optional ``arrays`` extra."""
+
+        try:
+            import numpy as np
+        except ImportError as error:  # pragma: no cover - depends on optional install
+            raise RuntimeError(
+                "NumPy is optional; install AgentCFD with `pip install agentcfd[arrays]`."
+            ) from error
+        x_rows, y_rows = self.matrices()
+        return np.asarray(x_rows, dtype=float), np.asarray(y_rows, dtype=float)
+
+    def inspect(self, *, preview: int = 0) -> dict[str, object]:
+        """Summarize dimensions, units, ranges, trust, and optional compact rows."""
+
+        if isinstance(preview, bool) or not isinstance(preview, int) or preview < 0:
+            raise ValueError("Dataset preview count must be a non-negative integer.")
+        input_stats = {
+            name: {"minimum": math.inf, "maximum": -math.inf} for name in self.input_names
+        }
+        output_stats = {
+            name: {"minimum": math.inf, "maximum": -math.inf}
+            for name in self.output_names
+        }
+        trust_levels: Counter[str] = Counter()
+        preview_rows: list[dict[str, object]] = []
+        for sample in self.iter_samples():
+            for name in self.input_names:
+                value = float(sample["inputs"][name])
+                input_stats[name]["minimum"] = min(input_stats[name]["minimum"], value)
+                input_stats[name]["maximum"] = max(input_stats[name]["maximum"], value)
+            for name in self.output_names:
+                value = float(sample["outputs"][name])
+                output_stats[name]["minimum"] = min(output_stats[name]["minimum"], value)
+                output_stats[name]["maximum"] = max(output_stats[name]["maximum"], value)
+            trust_levels[str(sample["trust_level"])] += 1
+            if len(preview_rows) < preview:
+                preview_rows.append(
+                    {
+                        "case_id": sample["case_id"],
+                        "inputs": dict(sample["inputs"]),
+                        "outputs": dict(sample["outputs"]),
+                        "trust_level": sample["trust_level"],
+                    }
+                )
+        input_schema = {str(record["name"]): record for record in self.manifest["inputs"]}
+        output_schema = {
+            str(record["name"]): record for record in self.manifest["outputs"]
+        }
+        return {
+            "schema": "agentcfd.scientific-dataset-inspection/0.1",
+            "directory": str(self.directory),
+            "verified": True,
+            "sample_count": self.sample_count,
+            "excluded_count": int(self.manifest["excluded_count"]),
+            "matrix_shapes": {
+                "X": [self.sample_count, len(self.input_names)],
+                "Y": [self.sample_count, len(self.output_names)],
+            },
+            "inputs": [
+                {
+                    "name": name,
+                    "unit": (input_schema[name].get("metadata") or {}).get("unit"),
+                    "minimum": input_stats[name]["minimum"],
+                    "maximum": input_stats[name]["maximum"],
+                    "constant": input_stats[name]["minimum"] == input_stats[name]["maximum"],
+                }
+                for name in self.input_names
+            ],
+            "outputs": [
+                {
+                    "name": name,
+                    "unit": output_schema[name].get("unit"),
+                    "kind": output_schema[name].get("kind"),
+                    "minimum": output_stats[name]["minimum"],
+                    "maximum": output_stats[name]["maximum"],
+                    "constant": output_stats[name]["minimum"]
+                    == output_stats[name]["maximum"],
+                }
+                for name in self.output_names
+            ],
+            "trust_levels": dict(sorted(trust_levels.items())),
+            "samples": {
+                "media_type": self.manifest["samples"]["media_type"],
+                "bytes": self.manifest["samples"]["bytes"],
+                "sha256": self.manifest["samples"]["sha256"],
+            },
+            "preview": preview_rows,
+        }
+
+
+def open_scientific_dataset(directory: str | Path) -> ScientificDatasetReader:
+    """Open a verified scalar dataset for agents, scripts, or ML adapters."""
+
+    return ScientificDatasetReader.open(directory)

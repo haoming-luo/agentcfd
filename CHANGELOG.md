@@ -20,6 +20,9 @@
 - Record exact selected native times and the complete include/interval/latest/
   ceiling policy in every managed field-bundle manifest, including
   preconverted-VTK exports.
+- Make the human status parameter hint target the resolved selected project,
+  including shell-safe paths with spaces, instead of incorrectly assuming the
+  caller is already inside that project directory.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

@@ -3030,6 +3030,18 @@ def test_project_cli_init_check_run_and_inspect(tmp_path, capsys):
     assert inspection["run_count"] == 1
 
 
+def test_human_status_parameter_hint_targets_selected_project(tmp_path, capsys):
+    root = tmp_path / "pipe with spaces"
+    projects.init_project(root)
+
+    assert entrypoint(["status", str(root)]) == 0
+
+    output = capsys.readouterr().out
+    expected = f"agentcfd run {shlex.quote(str(root))} --param NAME=JSON"
+    assert f"change with: {expected}" in output
+    assert "change with: agentcfd run ." not in output
+
+
 def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, capsys):
     root = tmp_path / "wake"
 

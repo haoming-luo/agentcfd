@@ -3676,7 +3676,11 @@ def main(argv: list[str] | None = None) -> int:
                 if remaining:
                     rendered += f", +{remaining} more"
                 print(f"adjustable: {rendered}")
-                print("change with: agentcfd run . --param NAME=JSON")
+                project_argument = shlex.quote(str(report["root"]))
+                print(
+                    "change with: agentcfd run "
+                    f"{project_argument} --param NAME=JSON"
+                )
             if isinstance(latest, dict) and report["state"] in {
                 "running",
                 "interrupted",

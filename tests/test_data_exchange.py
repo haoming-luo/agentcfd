@@ -633,6 +633,13 @@ def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monk
     assert manifest["source"]["field_conversion"] == {
         "staging": "bounded-batch-isolated-vtu",
         "native_times": ["0.2"],
+        "time_selection": {
+            "include_initial": False,
+            "time_interval": 0.2,
+            "latest_only": False,
+            "maximum_frames": None,
+            "selected_frame_count": 1,
+        },
         "native_fields": ["U", "p"],
         "boundary_fields_included": False,
         "temporary_vtk_policy": "bounded-convert-write-release",
@@ -652,6 +659,32 @@ def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monk
     assert not list(case.glob(".agentcfd-vtk-*"))
     assert (case / "VTK" / "case_0" / "internal.vtu").is_file()
     assert (case / "VTK" / "case_0.2" / "internal.vtu").is_file()
+
+
+def test_preconverted_manifest_records_exact_filtered_time_selection(tmp_path):
+    case = tmp_path / "case"
+    for time in range(5):
+        _write_frame(case, time, float(time + 1))
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "latest",
+        convert=False,
+        include_initial=False,
+        time_interval=2.0,
+        latest_only=True,
+        maximum_frames=1,
+    )
+
+    conversion = json.loads(bundle.manifest.read_text())["source"]["field_conversion"]
+    assert conversion["native_times"] == ["4"]
+    assert conversion["time_selection"] == {
+        "include_initial": False,
+        "time_interval": 2.0,
+        "latest_only": True,
+        "maximum_frames": 1,
+        "selected_frame_count": 1,
+    }
 
 
 def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatch):

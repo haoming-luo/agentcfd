@@ -17,6 +17,9 @@
   unrequested native times from entering temporary VTU or portable HDF5 output.
 - Add a direct-export `--maximum-frames` guard that fails before portable
   writing instead of silently subsampling or allowing an unbounded selection.
+- Record exact selected native times and the complete include/interval/latest/
+  ceiling policy in every managed field-bundle manifest, including
+  preconverted-VTK exports.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

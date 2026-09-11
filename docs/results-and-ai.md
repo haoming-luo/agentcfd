@@ -374,6 +374,9 @@ Direct exports can also select `--time-interval`, `--latest-only`, and
 `--exclude-initial`; filtering occurs before `foamToVTK`, so omitted times do
 not consume temporary conversion space. Add `--maximum-frames N` for an
 explicit fail-closed ceiling; exceeding it never triggers silent subsampling.
+The bundle manifest records the complete selection policy and exact selected
+native times, including for preconverted VTK input, so downstream automation
+does not need to infer sampling intent from filenames.
 
 The NPZ layout does not require object deserialization:
 

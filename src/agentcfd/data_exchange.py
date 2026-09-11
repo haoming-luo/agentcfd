@@ -1251,6 +1251,11 @@ def export_openfoam_case(
             if convert
             else 0
         )
+        selected_native_times = (
+            list(selected_time_names)
+            if selected_time_names is not None
+            else [f"{_time_from_vtu(path):g}" for path in tuple(files or ())]
+        )
         if _progress_callback is not None:
             _progress_callback(
                 _field_export_progress(
@@ -1267,9 +1272,14 @@ def export_openfoam_case(
             "staging": (
                 "bounded-batch-isolated-vtu" if convert else "preconverted-vtu"
             ),
-            "native_times": (
-                "all" if selected_time_names is None else list(selected_time_names)
-            ),
+            "native_times": selected_native_times,
+            "time_selection": {
+                "include_initial": include_initial,
+                "time_interval": time_interval,
+                "latest_only": latest_only,
+                "maximum_frames": maximum_frames,
+                "selected_frame_count": total_frames,
+            },
             "native_fields": (
                 "all" if native_fields is None else list(native_fields)
             ),

@@ -37,6 +37,24 @@
         }
       },
       "additionalProperties": false
+    },
+    "connectedComponent": {
+      "type": "object",
+      "required": [
+        "id", "triangle_count", "area_native", "area_fraction",
+        "signed_volume_native", "region_names", "area_m2", "signed_volume_m3"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^component-[0-9]{4}$"},
+        "triangle_count": {"type": "integer", "minimum": 1},
+        "area_native": {"type": "number", "minimum": 0},
+        "area_fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "signed_volume_native": {"type": "number"},
+        "region_names": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "area_m2": {"type": ["number", "null"], "minimum": 0},
+        "signed_volume_m3": {"type": ["number", "null"]}
+      },
+      "additionalProperties": false
     }
   },
   "required": ["schema", "source", "surface", "policy", "boundary_roles", "tools", "readiness", "issues", "next_action", "observation_cost"],
@@ -77,6 +95,13 @@
         "orientation_conflict_count": {"type": ["integer", "null"], "minimum": 0},
         "watertight": {"type": ["boolean", "null"]},
         "signed_volume_native": {"type": ["number", "null"]},
+        "connected_component_count": {"type": ["integer", "null"], "minimum": 0},
+        "connected_components": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "array", "items": {"$ref": "#/$defs/connectedComponent"}}
+          ]
+        },
         "region_names": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "bounds_m": {"type": ["object", "null"]},
         "dimensions_m": {"type": ["array", "null"], "items": {"type": "number"}},

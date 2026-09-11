@@ -40,6 +40,10 @@ python -m pytest -q
    only to a new destination, retain the original, then rerun `geometry-check`
    on the copy and explicitly confirm roles. Normalization changes names only;
    it never establishes units, topology, role correctness, or mesh readiness.
+   If inspection reports `DISCONNECTED_SURFACE_COMPONENTS`, compare every
+   component's area fraction and region names. Never delete a component merely
+   because it is disconnected: distinguish accidental debris from intentional
+   internal shells or baffles, and retain that human/model decision.
 9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
    never infer physical time or point/cell association from shape alone.
 10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,

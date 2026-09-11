@@ -3084,6 +3084,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"{surface['triangle_count']} triangles | "
                 f"watertight {str(surface['watertight']).lower()}"
             )
+            if surface.get("connected_component_count") is not None:
+                print(f"components: {surface['connected_component_count']}")
             if surface["dimensions_m"] is not None:
                 dimensions = " × ".join(
                     f"{float(value):.6g}" for value in surface["dimensions_m"]

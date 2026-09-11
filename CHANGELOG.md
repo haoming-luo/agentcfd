@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Quantify edge-connected surface components during bounded STL/OBJ preflight.
+  Each component exposes size, area fraction, region membership, and signed
+  volume in native and SI units; multiple shells receive a review warning
+  because detached debris and intentional internal baffles require different
+  engineering decisions. The topology memory guard yields explicit nulls
+  instead of partial component evidence.
 - Add preview-first `geometry-normalize` for named ASCII STL and OBJ imports.
   Unsafe region tokens become deterministic OpenFOAM-safe words, collisions
   receive stable content-derived suffixes, and an atomic apply always writes a

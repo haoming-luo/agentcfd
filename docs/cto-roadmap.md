@@ -119,7 +119,8 @@ is still required before M1 numerical promotion.
 ### M2 — practical geometry and meshing
 
 - external STL/OBJ and common neutral CAD/mesh ingestion behind optional extras;
-- watertightness, scale, orientation, connected-region, and boundary-name audit;
+- watertightness, scale, orientation, connected-component, and boundary-name
+  audit (released for STL/OBJ; CAD tessellation remains optional/future);
 - `snappyHexMesh` surface, volume, refinement, feature, and layer lowering;
 - mesh preview, cell/storage/runtime estimate, quality repair actions, and
   content-addressed mesh reuse;

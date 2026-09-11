@@ -194,6 +194,9 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     assert report["surface"]["orientation_conflict_count"] == 0
     assert report["surface"]["watertight"] is True
     assert report["surface"]["region_names"] == ["fluid"]
+    assert report["surface"]["connected_component_count"] == 1
+    assert report["surface"]["connected_components"][0]["triangle_count"] == 4
+    assert report["surface"]["connected_components"][0]["area_fraction"] == 1.0
     assert report["surface"]["dimensions_m"] == [0.001, 0.001, 0.001]
     assert math.isclose(report["surface"]["enclosed_volume_m3"], 1.0e-9 / 6.0)
     fluid_metric = report["surface"]["region_metrics"]["fluid"]
@@ -239,6 +242,49 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     )
     cli = json.loads(capsys.readouterr().out)
     assert cli["boundary_roles"]["confirmed"] == {"fluid": "wall"}
+
+
+def test_disconnected_surface_components_are_quantified_for_review(tmp_path):
+    a = (0.0, 0.0, 0.0)
+    b = (1.0, 0.0, 0.0)
+    c = (0.0, 1.0, 0.0)
+    d = (0.0, 0.0, 1.0)
+    offset = (3.0, 0.0, 0.0)
+
+    def shifted(point):
+        return tuple(point[index] + offset[index] for index in range(3))
+
+    tetrahedron = ((a, c, b), (a, b, d), (a, d, c), (b, c, d))
+    surface = tmp_path / "two-shells.stl"
+    surface.write_text(
+        _ascii_stl("walls", tetrahedron)
+        + _ascii_stl(
+            "internal_baffle",
+            tuple(tuple(shifted(vertex) for vertex in face) for face in tetrahedron),
+        )
+    )
+
+    report = geometry_io.inspect_geometry(surface, unit="mm")
+
+    jsonschema.Draft202012Validator(
+        contracts.load("geometry-inspection.schema.json")
+    ).validate(report)
+    assert report["surface"]["watertight"] is True
+    assert report["surface"]["connected_component_count"] == 2
+    components = report["surface"]["connected_components"]
+    assert [component["triangle_count"] for component in components] == [4, 4]
+    assert {tuple(component["region_names"]) for component in components} == {
+        ("walls",),
+        ("internal_baffle",),
+    }
+    assert sum(component["area_fraction"] for component in components) == pytest.approx(1.0)
+    assert all(component["area_m2"] > 0.0 for component in components)
+    assert any(
+        issue["code"] == "DISCONNECTED_SURFACE_COMPONENTS"
+        and issue["severity"] == "warning"
+        for issue in report["issues"]
+    )
+    assert report["readiness"]["geometry_ready"] is True
 
 
 def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys):
@@ -540,6 +586,8 @@ def test_binary_stl_and_topology_memory_guard_are_deterministic(tmp_path):
     assert guarded["surface"]["topology_complete"] is False
     assert guarded["surface"]["unique_vertex_count"] is None
     assert guarded["surface"]["watertight"] is None
+    assert guarded["surface"]["connected_component_count"] is None
+    assert guarded["surface"]["connected_components"] is None
     assert any(
         issue["code"] == "TOPOLOGY_SCAN_LIMIT_REACHED" for issue in guarded["issues"]
     )

@@ -9,6 +9,7 @@ import shutil
 import struct
 import tempfile
 import unicodedata
+from array import array
 from pathlib import Path
 from typing import Iterable, Iterator, Mapping
 
@@ -621,6 +622,28 @@ def _surface_metrics(
     upper = [-math.inf, -math.inf, -math.inf]
     unique_vertices: set[tuple[float | int, float | int, float | int]] = set()
     edge_counts: dict[tuple[tuple[object, ...], tuple[object, ...]], list[int]] = {}
+    component_parents = array("q")
+    component_ranks = bytearray()
+    component_regions: list[str | None] = []
+    component_areas = array("d")
+    component_signed_volumes = array("d")
+
+    def component_root(index: int) -> int:
+        while component_parents[index] != index:
+            component_parents[index] = component_parents[component_parents[index]]
+            index = component_parents[index]
+        return index
+
+    def connect_components(left: int, right: int) -> None:
+        left_root = component_root(left)
+        right_root = component_root(right)
+        if left_root == right_root:
+            return
+        if component_ranks[left_root] < component_ranks[right_root]:
+            left_root, right_root = right_root, left_root
+        component_parents[right_root] = left_root
+        if component_ranks[left_root] == component_ranks[right_root]:
+            component_ranks[left_root] += 1
     triangle_count = 0
     degenerate_count = 0
     signed_volume = 0.0
@@ -665,12 +688,19 @@ def _surface_metrics(
                 centroid_moment[axis] += (
                     area * sum(vertex[axis] for vertex in triangle) / 3.0
                 )
-        signed_volume += (
+        triangle_signed_volume = (
             a[0] * (b[1] * c[2] - b[2] * c[1])
             + a[1] * (b[2] * c[0] - b[0] * c[2])
             + a[2] * (b[0] * c[1] - b[1] * c[0])
         ) / 6.0
+        signed_volume += triangle_signed_volume
         if topology_complete and triangle_count <= topology_triangle_limit:
+            triangle_index = triangle_count - 1
+            component_parents.append(triangle_index)
+            component_ranks.append(0)
+            component_regions.append(region)
+            component_areas.append(area)
+            component_signed_volumes.append(triangle_signed_volume)
             keys = tuple(
                 vertex
                 if merge_tolerance == 0.0
@@ -682,12 +712,18 @@ def _surface_metrics(
             for left, right in ((ka, kb), (kb, kc), (kc, ka)):
                 canonical = (left, right) if left <= right else (right, left)
                 direction = 0 if canonical == (left, right) else 1
-                counts = edge_counts.setdefault(canonical, [0, 0])
+                counts = edge_counts.setdefault(canonical, [0, 0, triangle_index])
+                connect_components(triangle_index, counts[2])
                 counts[direction] += 1
         elif topology_complete:
             topology_complete = False
             unique_vertices.clear()
             edge_counts.clear()
+            component_parents.clear()
+            component_ranks.clear()
+            component_regions.clear()
+            component_areas.clear()
+            component_signed_volumes.clear()
     if triangle_count == 0:
         bounds = None
         dimensions = None
@@ -697,13 +733,68 @@ def _surface_metrics(
     boundary_edges = None
     non_manifold_edges = None
     orientation_conflicts = None
+    connected_component_count = None
+    connected_components = None
     if topology_complete:
-        boundary_edges = sum(sum(counts) == 1 for counts in edge_counts.values())
-        non_manifold_edges = sum(sum(counts) > 2 for counts in edge_counts.values())
+        boundary_edges = sum(
+            counts[0] + counts[1] == 1 for counts in edge_counts.values()
+        )
+        non_manifold_edges = sum(
+            counts[0] + counts[1] > 2 for counts in edge_counts.values()
+        )
         orientation_conflicts = sum(
-            sum(counts) == 2 and (counts[0] == 2 or counts[1] == 2)
+            counts[0] + counts[1] == 2
+            and (counts[0] == 2 or counts[1] == 2)
             for counts in edge_counts.values()
         )
+        groups: dict[int, dict[str, object]] = {}
+        total_area = sum(component_areas)
+        for index, region in enumerate(component_regions):
+            area = component_areas[index]
+            triangle_volume = component_signed_volumes[index]
+            root = component_root(index)
+            group = groups.setdefault(
+                root,
+                {
+                    "first_triangle_index": index,
+                    "triangle_count": 0,
+                    "area_native": 0.0,
+                    "signed_volume_native": 0.0,
+                    "region_names": set(),
+                },
+            )
+            group["triangle_count"] = int(group["triangle_count"]) + 1
+            group["area_native"] = float(group["area_native"]) + area
+            group["signed_volume_native"] = (
+                float(group["signed_volume_native"]) + triangle_volume
+            )
+            if region is not None:
+                region_names = group["region_names"]
+                assert isinstance(region_names, set)
+                region_names.add(region)
+        ordered_groups = sorted(
+            groups.values(),
+            key=lambda group: (
+                -int(group["triangle_count"]),
+                -float(group["area_native"]),
+                tuple(sorted(group["region_names"])),
+                int(group["first_triangle_index"]),
+            ),
+        )
+        connected_components = []
+        for position, group in enumerate(ordered_groups, start=1):
+            area = float(group["area_native"])
+            connected_components.append(
+                {
+                    "id": f"component-{position:04d}",
+                    "triangle_count": int(group["triangle_count"]),
+                    "area_native": area,
+                    "area_fraction": area / total_area if total_area > 0.0 else None,
+                    "signed_volume_native": float(group["signed_volume_native"]),
+                    "region_names": sorted(group["region_names"]),
+                }
+            )
+        connected_component_count = len(connected_components)
     region_metrics: dict[str, dict[str, object]] = {}
     for name, accumulator in sorted(region_accumulators.items()):
         area = float(accumulator["area_native"])
@@ -736,6 +827,8 @@ def _surface_metrics(
         "boundary_edge_count": boundary_edges,
         "non_manifold_edge_count": non_manifold_edges,
         "orientation_conflict_count": orientation_conflicts,
+        "connected_component_count": connected_component_count,
+        "connected_components": connected_components,
         "watertight": (
             boundary_edges == 0 and non_manifold_edges == 0
             if topology_complete and triangle_count > 0
@@ -835,6 +928,8 @@ def inspect_geometry(
             "boundary_edge_count": None,
             "non_manifold_edge_count": None,
             "orientation_conflict_count": None,
+            "connected_component_count": None,
+            "connected_components": None,
             "watertight": None,
             "signed_volume_native": None,
             "region_metrics": {},
@@ -902,6 +997,16 @@ def inspect_geometry(
             f"Found {metrics['orientation_conflict_count']} same-direction shared edges.",
             "Orient connected faces consistently before using inside/outside meshing controls.",
         )
+    if (
+        isinstance(metrics["connected_component_count"], int)
+        and metrics["connected_component_count"] > 1
+    ):
+        issue(
+            "DISCONNECTED_SURFACE_COMPONENTS",
+            "warning",
+            f"Found {metrics['connected_component_count']} edge-connected surface components.",
+            "Review component sizes and regions; remove accidental debris or explicitly confirm intentional internal shells and baffles.",
+        )
     if format_name in {"stl", "obj"} and not regions:
         issue(
             "BOUNDARY_REGIONS_UNNAMED",
@@ -962,6 +1067,27 @@ def inspect_geometry(
                 else [float(value) * scale**2 for value in area_vector_native]
             ),
         }
+    connected_components = metrics["connected_components"]
+    scaled_connected_components = None
+    if isinstance(connected_components, list):
+        scaled_connected_components = []
+        for raw_component in connected_components:
+            assert isinstance(raw_component, dict)
+            scaled_connected_components.append(
+                {
+                    **raw_component,
+                    "area_m2": (
+                        None
+                        if scale is None
+                        else float(raw_component["area_native"]) * scale**2
+                    ),
+                    "signed_volume_m3": (
+                        None
+                        if scale is None
+                        else float(raw_component["signed_volume_native"]) * scale**3
+                    ),
+                }
+            )
     if scale is not None and metrics["bounds"] is not None:
         bounds = metrics["bounds"]
         assert isinstance(bounds, dict)
@@ -1118,6 +1244,7 @@ def inspect_geometry(
             "dimensions_m": dimensions_m,
             "enclosed_volume_m3": volume_m3,
             "region_metrics": scaled_region_metrics,
+            "connected_components": scaled_connected_components,
         },
         "policy": {
             "require_watertight": require_watertight,

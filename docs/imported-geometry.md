@@ -72,6 +72,16 @@ well-defined cap. These metrics follow OpenFOAM's region-to-patch convention
 and area-normal view of mesh faces; they are geometry evidence, not a substitute
 for `surfaceCheck`, meshing, or post-mesh patch integration.
 
+The bounded topology pass also partitions faces into edge-connected surface
+components. Each component has a stable inspection-local identifier, triangle
+count, area and area fraction, signed-volume contribution, and the exact
+region names it contains. Multiple components produce an explicit review
+warning, not an automatic repair or failure: a tiny detached shell may be CAD
+debris, while a disconnected internal baffle may be intentional. If the
+topology memory guard is reached, component count and details become `null`
+rather than a partial answer. This makes the ambiguity visible before
+`locationInMesh` selects the connected volume that OpenFOAM keeps.
+
 For a Cartesian velocity inlet, AgentCFD combines the consistently oriented
 inlet normal with the sign of the enclosed volume to determine the outward
 direction. A vector pointing out of the named inlet is rejected during project

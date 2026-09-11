@@ -444,6 +444,105 @@ endsolid branch_b
     assert [report.name for report in step.output.reports] == ["flow-split"]
 
 
+def test_cli_materializes_multi_outlet_targets_and_design_limit(
+    tmp_path, capsys
+):
+    example = Path(__file__).parents[1] / "examples/imported_split_duct_geometry"
+    root = tmp_path / "targeted-split"
+
+    assert entrypoint(
+        [
+            "init",
+            str(root),
+            "--template",
+            "imported-internal-flow",
+            "--geometry",
+            str(example / "fluid.stl"),
+            "--unit",
+            "m",
+            "--roles",
+            str(example / "boundary-roles.json"),
+            "--interior-point-m",
+            "0.5",
+            "0.25",
+            "0.1",
+            "--inlet-velocity-m-s",
+            "0.5",
+            "0",
+            "0",
+            "--base-size-m",
+            "0.05",
+            "--maximum-cells",
+            "200000",
+            "--outlet-target",
+            "branch_b=0.6",
+            "--outlet-target",
+            "branch_a=0.4",
+            "--maximum-fraction-error",
+            "0.02",
+            "--json",
+        ]
+    ) == 0
+    json.loads(capsys.readouterr().out)
+
+    step = projects.Project(root).load_step()
+    report = step.output.reports[0]
+    assert report.to_dict()["target_fractions"] == {
+        "branch_a": 0.4,
+        "branch_b": 0.6,
+    }
+    assert [criterion.to_dict() for criterion in step.output.criteria] == [
+        {
+            "type": "quantity-criterion",
+            "name": "flow-split-target",
+            "quantity": "report.flow-split.maximum_fraction_error",
+            "unit": "1",
+            "minimum": None,
+            "maximum": 0.02,
+        }
+    ]
+    project_source = (root / "case.py").read_text()
+    assert "targets={'branch_a': 0.4, 'branch_b': 0.6}" in project_source
+    assert "maximum=0.02" in project_source
+
+
+def test_flow_targets_fail_closed_before_project_creation(tmp_path):
+    example = Path(__file__).parents[1] / "examples/imported_split_duct_geometry"
+    common = {
+        "provider": "openfoam",
+        "template": "imported-internal-flow",
+        "geometry_path": example / "fluid.stl",
+        "geometry_unit": "m",
+        "boundary_roles": {
+            "inlet": "inlet",
+            "branch_a": "outlet",
+            "branch_b": "outlet",
+            "walls": "wall",
+        },
+        "interior_point_m": (0.5, 0.25, 0.1),
+        "inlet_velocity_m_s": (0.5, 0.0, 0.0),
+        "base_size_m": 0.05,
+        "maximum_cells": 200_000,
+    }
+    partial_root = tmp_path / "partial-targets"
+    with pytest.raises(ValueError, match="every declared outlet"):
+        projects.init_project(
+            partial_root,
+            **common,
+            outlet_target_fractions={"branch_a": 1.0},
+        )
+    assert not partial_root.exists()
+
+    missing_target_root = tmp_path / "limit-without-targets"
+    with pytest.raises(ValueError, match="requires complete outlet target"):
+        projects.init_project(
+            missing_target_root,
+            **common,
+            maximum_fraction_error=0.01,
+        )
+    assert not missing_target_root.exists()
+
+
 def test_cli_initializes_imported_flow_with_mass_flow_as_primary_control(
     tmp_path, capsys
 ):
@@ -719,6 +818,27 @@ def test_creation_request_can_confirm_unambiguous_name_roles(tmp_path):
     assert json.loads(
         (project.root / "geometry/boundary-roles.json").read_text()
     )["regions"] == {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
+
+
+def test_creation_request_materializes_multi_outlet_decision_intent(tmp_path):
+    example = Path(__file__).parents[1] / "examples/imported_split_duct_geometry"
+    request = json.loads((example / "project-request.json").read_text())
+    jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    ).validate(request)
+
+    project = projects.init_project_from_request(
+        tmp_path / "request-split",
+        request,
+        base_directory=example,
+    )
+    step = project.load_step()
+
+    assert step.output.reports[0].to_dict()["target_fractions"] == {
+        "branch_a": 0.5,
+        "branch_b": 0.5,
+    }
+    assert step.output.criteria[0].maximum == 0.001
 
 
 def test_creation_request_materializes_heated_pipe_defaults(tmp_path):

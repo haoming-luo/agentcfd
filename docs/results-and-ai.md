@@ -117,6 +117,11 @@ unit="1", maximum=...)` beside it and screen summary-only campaigns without
 opening a field bundle. AgentCFD requires complete target coverage and verifies
 the final signed direction at every declared port; it never takes absolute
 values that could hide branch backflow.
+For creation automation, the same target map and optional tolerance can arrive
+through `--outlet-target` / `--maximum-fraction-error` or the strict
+`project-creation-request` contract. Both routes generate ordinary Python API
+calls, preserving one inspectable source of truth after the ephemeral request
+has been consumed.
 
 `outputs.require(...)` turns canonical quantities into explicit, versioned
 design gates. Each criterion carries its own name, exact unit, and inclusive

@@ -1,0 +1,28 @@
+{
+  "schema": "agentcfd.project-creation-request/0.1",
+  "template": "imported-internal-flow",
+  "provider": "openfoam",
+  "geometry": {
+    "path": "fluid.stl",
+    "unit": "m",
+    "boundary_roles": {
+      "inlet": "inlet",
+      "branch_a": "outlet",
+      "branch_b": "outlet",
+      "walls": "wall"
+    }
+  },
+  "interior_point_m": [0.5, 0.25, 0.1],
+  "inlet_velocity_m_s": [0.5, 0.0, 0.0],
+  "mesh": {
+    "base_size_m": 0.05,
+    "maximum_cells": 200000
+  },
+  "flow_distribution": {
+    "targets": {
+      "branch_a": 0.5,
+      "branch_b": 0.5
+    },
+    "maximum_fraction_error": 0.001
+  }
+}

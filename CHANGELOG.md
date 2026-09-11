@@ -8,6 +8,9 @@
   optional target-fraction errors. Imported OpenFOAM projects accept multiple
   static-pressure outlets, generate the report by default, monitor every port,
   and fail closed if final flow reverses or any branch is omitted.
+  CLI and strict JSON project creation can materialize complete outlet targets
+  and an optional maximum-fraction-error design gate directly into readable
+  `case.py` intent.
 - Add provider-neutral `outputs.require()` design criteria over canonical
   scalar results. Inclusive bounds, missing values, and exact-unit mismatches
   become explicit `requirement.*` checks across every numerical provider;

@@ -31,6 +31,7 @@ from . import (
     diagnostics,
     engineering,
     geometry_io,
+    outputs,
     parameters as parameter_definitions,
     postprocessing,
 )
@@ -5802,6 +5803,8 @@ def _imported_internal_flow_template(
     inlet_velocity_m_s: tuple[float, float, float] | None,
     inlet_mass_flow_kg_s: float | None,
     inlet_total_gauge_pressure_pa: float | None,
+    outlet_target_fractions: Mapping[str, float] | None,
+    maximum_fraction_error: float | None,
     base_size_m: float,
     maximum_cells: int,
 ) -> str:
@@ -5823,17 +5826,34 @@ def _imported_internal_flow_template(
             "),",
         )
     else:
+        target_line = (
+            f"    targets={dict(outlet_target_fractions)!r},\n"
+            if outlet_target_fractions is not None
+            else ""
+        )
         report_snippets = (
             "outputs.flow_distribution(\n"
             '    "flow-split",\n'
             f"    inlet={inlet_name!r},\n"
             f"    outlets={outlet_names!r},\n"
+            f"{target_line}"
             "),",
         )
     report_block = "\n".join(
         "                " + snippet.replace("\n", "\n                ")
         for snippet in report_snippets
     )
+    criteria_block = ""
+    if maximum_fraction_error is not None:
+        criteria_block = f'''
+            criteria=(
+                outputs.require(
+                    "flow-split-target",
+                    quantity="report.flow-split.maximum_fraction_error",
+                    unit="1",
+                    maximum={maximum_fraction_error!r},
+                ),
+            ),'''
     conditions = []
     for name, role in sorted(roles.items()):
         constructor = {
@@ -5971,7 +5991,7 @@ def build(
         output_request = outputs.standard(
             reports=(
 {report_block}
-            ),
+            ),{criteria_block}
         )
     else:
         if turbulence_model != "k-omega-sst":
@@ -6004,7 +6024,7 @@ def build(
             turbulence_model=turbulence_model,
             reports=(
 {report_block}
-            ),
+            ),{criteria_block}
         )
     boundary_conditions = {{
 {boundary_block}
@@ -6061,6 +6081,7 @@ def init_project_from_request(
         "inlet_total_gauge_pressure_pa",
         "mesh",
         "parameters",
+        "flow_distribution",
     }
     unknown = sorted(set(payload) - allowed)
     if unknown:
@@ -6083,6 +6104,7 @@ def init_project_from_request(
                 "inlet_mass_flow_kg_s",
                 "inlet_total_gauge_pressure_pa",
                 "mesh",
+                "flow_distribution",
             )
             if key in payload
         )
@@ -6117,6 +6139,7 @@ def init_project_from_request(
                 "inlet_total_gauge_pressure_pa",
                 "mesh",
                 "parameters",
+                "flow_distribution",
             )
             if key in payload
         )
@@ -6155,10 +6178,15 @@ def init_project_from_request(
         )
     geometry_record = payload["geometry"]
     mesh_record = payload["mesh"]
+    flow_distribution_record = payload.get("flow_distribution")
     if not isinstance(geometry_record, Mapping):
         raise ProjectError("Project creation geometry must be an object.")
     if not isinstance(mesh_record, Mapping):
         raise ProjectError("Project creation mesh must be an object.")
+    if flow_distribution_record is not None and not isinstance(
+        flow_distribution_record, Mapping
+    ):
+        raise ProjectError("Project creation flow_distribution must be an object.")
     geometry_unknown = sorted(
         set(geometry_record)
         - {"path", "unit", "boundary_roles", "role_confirmation"}
@@ -6176,6 +6204,18 @@ def init_project_from_request(
             + ", ".join(mesh_unknown)
             + "."
         )
+    if flow_distribution_record is not None:
+        flow_distribution_unknown = sorted(
+            set(flow_distribution_record) - {"targets", "maximum_fraction_error"}
+        )
+        if flow_distribution_unknown:
+            raise ProjectError(
+                "Unknown project creation flow_distribution keys: "
+                + ", ".join(flow_distribution_unknown)
+                + "."
+            )
+        if "targets" not in flow_distribution_record:
+            raise ProjectError("Project creation flow_distribution requires targets.")
     geometry_missing = sorted(
         key for key in ("path", "unit") if key not in geometry_record
     )
@@ -6237,6 +6277,16 @@ def init_project_from_request(
         ),
         base_size_m=mesh_record["base_size_m"],
         maximum_cells=mesh_record["maximum_cells"],
+        outlet_target_fractions=(
+            flow_distribution_record["targets"]
+            if flow_distribution_record is not None
+            else None
+        ),
+        maximum_fraction_error=(
+            flow_distribution_record.get("maximum_fraction_error")
+            if flow_distribution_record is not None
+            else None
+        ),
     )
 
 
@@ -6255,6 +6305,8 @@ def init_project(
     inlet_total_gauge_pressure_pa: float | None = None,
     base_size_m: float | None = None,
     maximum_cells: int | None = None,
+    outlet_target_fractions: Mapping[str, float] | None = None,
+    maximum_fraction_error: float | None = None,
     parameter_defaults: Mapping[str, object] | None = None,
 ) -> Project:
     """Create a complete editable project without overwriting user data."""
@@ -6288,6 +6340,8 @@ def init_project(
         inlet_total_gauge_pressure_pa,
         base_size_m,
         maximum_cells,
+        outlet_target_fractions,
+        maximum_fraction_error,
     )
     if template != "imported-internal-flow" and any(
         value is not None and value is not False for value in imported_options
@@ -6415,6 +6469,46 @@ def init_project(
             raise ProjectError(
                 "The imported internal-flow template requires exactly one inlet and at least one outlet."
             )
+        inlet_name = next(
+            name for name, role in normalized_roles.items() if role == "inlet"
+        )
+        outlet_names = tuple(
+            sorted(name for name, role in normalized_roles.items() if role == "outlet")
+        )
+        normalized_targets: dict[str, float] | None = None
+        if outlet_target_fractions is not None:
+            if not isinstance(outlet_target_fractions, Mapping):
+                raise ValueError("outlet_target_fractions must be a mapping.")
+            if not outlet_target_fractions:
+                raise ValueError("outlet_target_fractions must not be empty.")
+            if len(outlet_names) < 2:
+                raise ValueError(
+                    "Outlet target fractions require at least two outlet-role surfaces."
+                )
+            distribution = outputs.flow_distribution(
+                "flow-split",
+                inlet=inlet_name,
+                outlets=outlet_names,
+                targets=outlet_target_fractions,
+            )
+            normalized_targets = dict(distribution.target_fractions)
+        if maximum_fraction_error is not None:
+            if normalized_targets is None:
+                raise ValueError(
+                    "maximum_fraction_error requires complete outlet target fractions."
+                )
+            if (
+                isinstance(maximum_fraction_error, bool)
+                or not isinstance(maximum_fraction_error, (int, float))
+                or not math.isfinite(maximum_fraction_error)
+                or not 0.0 <= maximum_fraction_error <= 1.0
+            ):
+                raise ValueError(
+                    "maximum_fraction_error must be a finite fraction from zero to one."
+                )
+            selected_maximum_fraction_error = float(maximum_fraction_error)
+        else:
+            selected_maximum_fraction_error = None
         if selected_velocity is not None:
             geometry_io.validate_inlet_velocity_direction(
                 imported_report,
@@ -6466,6 +6560,8 @@ def init_project(
             inlet_velocity_m_s=selected_velocity,
             inlet_mass_flow_kg_s=selected_mass_flow,
             inlet_total_gauge_pressure_pa=selected_total_pressure,
+            outlet_target_fractions=normalized_targets,
+            maximum_fraction_error=selected_maximum_fraction_error,
             base_size_m=float(base_size_m),
             maximum_cells=maximum_cells,
         )

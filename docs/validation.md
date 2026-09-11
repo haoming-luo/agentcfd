@@ -77,7 +77,7 @@ passed its declared inclusive 0.001 requirement without changing verified
 scientific trust.
 The three distribution source tables occupy 37,968 bytes, versus 185,382 bytes
 when four optional per-outlet loss and uniformity histories were also enabled.
-The lean default published 910,008 bytes in total and retained no field bundle.
+The lean default published 909,997 bytes in total and retained no field bundle.
 This proves multi-patch selection, per-port signed flux, aggregate conservation,
 SI recovery, project generation, and the summary-only storage path. The split
 coplanar outlet is integration evidence, not a physical manifold benchmark;

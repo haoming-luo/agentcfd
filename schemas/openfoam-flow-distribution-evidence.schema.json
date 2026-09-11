@@ -67,7 +67,7 @@
       "type": "object",
       "required": ["name", "quantity", "unit", "limit", "passed"],
       "properties": {
-        "name": {"const": "flow-split-within-one-tenth-percent"},
+        "name": {"const": "flow-split-target"},
         "quantity": {"const": "report.flow-split.maximum_fraction_error"},
         "unit": {"const": "1"},
         "limit": {"type": "number", "minimum": 0, "maximum": 1},

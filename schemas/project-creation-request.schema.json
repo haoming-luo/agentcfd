@@ -45,6 +45,27 @@
         "maximum_cells": {"type": "integer", "minimum": 1}
       }
     },
+    "flow_distribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["targets"],
+      "properties": {
+        "targets": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "maximum": 1
+          }
+        },
+        "maximum_fraction_error": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
     "parameters": {
       "type": "object"
     }
@@ -68,7 +89,8 @@
           "inlet_velocity_m_s": false,
           "inlet_mass_flow_kg_s": false,
           "inlet_total_gauge_pressure_pa": false,
-          "mesh": false
+          "mesh": false,
+          "flow_distribution": false
         }
       }
     },

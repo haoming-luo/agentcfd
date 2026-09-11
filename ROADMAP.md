@@ -36,6 +36,8 @@ histories now support flow-distribution screening without another field frame.
 One-inlet/multi-outlet reports now add per-branch flow, fractions, conservation,
 variation, and optional target errors; imported projects can expose multiple
 pressure outlets without leaking OpenFOAM patch-monitor setup into `case.py`.
+CLI and strict JSON creation requests can materialize confirmed split targets
+and a design tolerance into that same readable source without text patching.
 Typed quantity criteria now keep user-confirmed design bounds inside the same
 analysis request while separating product fitness from scientific trust.
 Provider lowering remains capability-gated: the next product slice is the

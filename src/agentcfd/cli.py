@@ -109,6 +109,34 @@ def _project_parameter(value: str) -> tuple[str, object]:
     return name, decoded
 
 
+def _outlet_target(value: str) -> tuple[str, float]:
+    name, separator, encoded = value.partition("=")
+    if not separator or not name.strip():
+        raise argparse.ArgumentTypeError(
+            "Outlet targets must use NAME=FRACTION, for example branch_a=0.5."
+        )
+    try:
+        fraction = float(encoded)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            f"Outlet target {name!r} must be a numeric fraction."
+        ) from error
+    return name.strip(), fraction
+
+
+def _outlet_targets(
+    assignments: list[tuple[str, float]] | None,
+) -> dict[str, float] | None:
+    if assignments is None:
+        return None
+    selected: dict[str, float] = {}
+    for name, fraction in assignments:
+        if name in selected:
+            raise ProjectError(f"Outlet target {name!r} was supplied more than once.")
+        selected[name] = fraction
+    return selected
+
+
 def _project_parameters(
     assignments: list[tuple[str, object]] | None,
     parameter_file: Path | None = None,
@@ -1528,6 +1556,22 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--base-size-m", type=float)
     init.add_argument("--maximum-cells", type=int)
     init.add_argument(
+        "--outlet-target",
+        action="append",
+        type=_outlet_target,
+        metavar="NAME=FRACTION",
+        help=(
+            "Declare one multi-outlet target fraction; repeat once for every outlet."
+        ),
+    )
+    init.add_argument(
+        "--maximum-fraction-error",
+        type=float,
+        help=(
+            "Optional inclusive design limit for the largest outlet-fraction error."
+        ),
+    )
+    init.add_argument(
         "--request",
         type=Path,
         help="Versioned JSON project-creation request; paths resolve beside the file.",
@@ -2734,6 +2778,8 @@ def main(argv: list[str] | None = None) -> int:
             args.inlet_total_gauge_pressure_pa,
             args.base_size_m,
             args.maximum_cells,
+            args.outlet_target,
+            args.maximum_fraction_error,
         )
         request_sha256 = None
         if args.request is not None:
@@ -2787,6 +2833,8 @@ def main(argv: list[str] | None = None) -> int:
                 inlet_total_gauge_pressure_pa=args.inlet_total_gauge_pressure_pa,
                 base_size_m=args.base_size_m,
                 maximum_cells=args.maximum_cells,
+                outlet_target_fractions=_outlet_targets(args.outlet_target),
+                maximum_fraction_error=args.maximum_fraction_error,
             )
         report = {
             "schema": "agentcfd.project-initialization/0.1",

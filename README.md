@@ -298,6 +298,22 @@ outputs.flow_distribution(
 )
 ```
 
+The same intent can be materialized at project creation, so an agent or GUI
+does not need to patch Python text:
+
+```bash
+agentcfd init manifold --template imported-internal-flow \
+  ...geometry-and-inlet-options... \
+  --outlet-target branch_a=0.5 --outlet-target branch_b=0.5 \
+  --maximum-fraction-error 0.001
+```
+
+The strict JSON creation request accepts the equivalent
+`flow_distribution.targets` and optional `maximum_fraction_error`. Both paths
+write ordinary, inspectable `outputs.flow_distribution()` and
+`outputs.require()` calls into `case.py`; the creation request does not become
+a second project language.
+
 For pressure-loss reports, the final coefficient is available as
 `report.valve-loss.loss_coefficient`; the corresponding dimensional value is
 `report.valve-loss.total_pressure_loss`. This is the complete loss between the

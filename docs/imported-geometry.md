@@ -164,6 +164,13 @@ branch fractions, mass/volume flows, coefficient of variation, and conservation
 under stable names. Users may add a complete `targets={...}` map and an explicit
 quantity criterion for maximum fraction error; no target or tolerance is
 invented from geometry names.
+Creation automation may provide the same intent with repeated
+`--outlet-target NAME=FRACTION` options plus an optional
+`--maximum-fraction-error`, or with a strict request
+`flow_distribution` object containing `targets` and
+`maximum_fraction_error`. AgentCFD validates complete port coverage and writes
+the corresponding API calls into the readable `case.py` before the project is
+created.
 
 The flow-uniformity report adds a vector-velocity uniformity index, signed normal mean
 velocity, and actual patch area as compact scalar histories. This makes flow

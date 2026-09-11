@@ -1,7 +1,7 @@
 {
   "accepted": true,
-  "analysis_sha256": "5408999f7d180cadb46b9ec1dd0a4858dd96d5df74fa014557e3ec911709b7f4",
-  "case": "examples/imported_split_duct_geometry initialized as a summary-only project",
+  "analysis_sha256": "1bfafe45f246c8f7857b353e2de2dc87550680d073e148fffcdfb81039667837",
+  "case": "examples/imported_split_duct_geometry initialized from CLI targets as a summary-only project",
   "cell_count": 6400,
   "claim": "workflow-and-runtime-evidence-not-physical-validation",
   "converged": true,
@@ -39,7 +39,7 @@
   },
   "requirement": {
     "limit": 0.001,
-    "name": "flow-split-within-one-tenth-percent",
+    "name": "flow-split-target",
     "passed": true,
     "quantity": "report.flow-split.maximum_fraction_error",
     "unit": "1"
@@ -52,7 +52,7 @@
     "all_compact_report_bytes": 37968,
     "distribution_report_bytes": 37968,
     "field_bundle_retained": false,
-    "published_output_bytes": 910008,
+    "published_output_bytes": 909997,
     "result_profile": "summary-only"
   },
   "trust_level": "verified"

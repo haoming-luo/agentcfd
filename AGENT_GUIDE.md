@@ -127,7 +127,10 @@ python -m pytest -q
     `outputs.flow_distribution(...)` covering every outlet. Preserve signed
     port direction, complete target fractions, and
     `report.<name>.maximum_fraction_error`; do not rebuild the split by loading
-    fields or taking absolute values of reversed branches.
+    fields or taking absolute values of reversed branches. When targets are
+    already confirmed at project creation, materialize them with repeated
+    `--outlet-target` options or the strict request object so the readable
+    `case.py` remains the durable scientific source.
 
 ## Current boundary
 

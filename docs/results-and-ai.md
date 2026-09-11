@@ -366,6 +366,11 @@ layout explicitly when an array or learning workflow needs it:
 agentcfd export openfoam CASE fields --with-npz
 ```
 
+Without `--json`, the direct exporter emits one stderr milestone per bounded
+conversion/write phase, including completed frames and batch position. JSON
+stdout remains a single document for agents; managed projects expose identical
+progress through `status` and `watch` without opening XDMF/H5.
+
 The NPZ layout does not require object deserialization:
 
 ```python

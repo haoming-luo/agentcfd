@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import jsonschema
 import pytest
@@ -10,6 +11,7 @@ from agentcfd import (
     benchmarks,
     capabilities,
     contracts,
+    data_exchange,
     licensing,
     properties,
     templates,
@@ -1366,6 +1368,72 @@ def test_console_entrypoint_reports_expected_errors_without_traceback(tmp_path, 
     captured = capsys.readouterr()
     assert "agentcfd: error:" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
+    tmp_path, capsys, monkeypatch
+):
+    callbacks = []
+
+    def export(_case, output, **kwargs):
+        callback = kwargs["_progress_callback"]
+        callbacks.append(callback)
+        if callback is not None:
+            callback(
+                {
+                    "phase": "writing",
+                    "completed_frames": 4,
+                    "total_frames": 6,
+                    "fraction": 2 / 3,
+                    "batch_index": 2,
+                    "batch_count": 2,
+                }
+            )
+        output = Path(output)
+        return data_exchange.FieldBundle(
+            directory=output,
+            xdmf=output / "fields.xdmf",
+            hdf5=output / "fields.h5",
+            npz=None,
+            manifest=output / "manifest.json",
+            frame_count=6,
+            times=(0.0, 1.0, 2.0, 3.0, 4.0, 5.0),
+        )
+
+    monkeypatch.setattr("agentcfd.cli.data_exchange.export_openfoam_case", export)
+
+    assert (
+        main(
+            [
+                "export",
+                "openfoam",
+                str(tmp_path / "case"),
+                str(tmp_path / "human"),
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert captured.out.startswith("Exported 6 frames | XDMF/H5")
+    assert captured.err == "field export | writing | frames 4/6 66.7% | batch 2/2\n"
+
+    assert (
+        main(
+            [
+                "export",
+                "openfoam",
+                str(tmp_path / "case"),
+                str(tmp_path / "machine"),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["frame_count"] == 6
+    assert captured.err == ""
+    assert callbacks[0] is not None
+    assert callbacks[1] is None
 
 
 def test_grid_study_cli_rejects_ambiguous_json_plan(tmp_path, capsys):

@@ -353,6 +353,21 @@ def _watch_summary(report: dict[str, object]) -> str:
     return " | ".join(parts)
 
 
+def _field_export_cli_summary(record: dict[str, object]) -> str:
+    """Render one direct-export milestone without reading a field payload."""
+
+    completed = int(record["completed_frames"])
+    total = int(record["total_frames"])
+    parts = [
+        "field export",
+        str(record["phase"]),
+        f"frames {completed}/{total} {100.0 * float(record['fraction']):.1f}%",
+    ]
+    if record.get("batch_index") is not None:
+        parts.append(f"batch {record['batch_index']}/{record['batch_count']}")
+    return " | ".join(parts)
+
+
 def _result_cli_payload(result: SimulationResult) -> dict[str, object]:
     """Add a compact decision surface without changing the result contract."""
 
@@ -4534,6 +4549,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
         return 0
     if args.command == "export" and args.export_format == "openfoam":
+        def direct_export_progress(record: dict[str, object]) -> None:
+            print(_field_export_cli_summary(record), file=sys.stderr, flush=True)
+
         bundle = data_exchange.export_openfoam_case(
             args.case_directory,
             args.output_directory,
@@ -4546,6 +4564,7 @@ def main(argv: list[str] | None = None) -> int:
             formats=("xdmf", "npz") if args.with_npz else ("xdmf",),
             compression=args.compression,
             maximum_bytes=args.storage_budget,
+            _progress_callback=None if args.as_json else direct_export_progress,
         )
         report = bundle.to_dict()
         if args.as_json:

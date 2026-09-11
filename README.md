@@ -770,6 +770,10 @@ The optional `field-sample` command extracts one frame into AgentFEM's
 `coordinates`, `values`, `encoding_json`, and `metadata_json` NPZ layout. It
 opens directly with `agentfem.datasets.FEMFieldSample.read(...)`, or with
 `numpy.load(..., allow_pickle=False)`, without adding AgentFEM as a dependency.
+When used interactively without `--json`, direct OpenFOAM export writes bounded
+phase, frame, and micro-batch milestones to stderr while keeping the final
+stdout summary stable. Machine-readable `--json` stays progress-free; project
+runs expose the same work through `agentcfd watch` and the status schema.
 
 Portable output is intentionally profiled instead of dumping every array:
 `visualization` writes selected interpolated point fields, `native` writes

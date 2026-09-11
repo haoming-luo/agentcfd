@@ -10,6 +10,8 @@
 - Publish the terminal `run.json` through the same atomic replacement contract
   as live progress, so concurrent CLIs, GUIs, and agents cannot observe a
   partially written record during the result handoff.
+- Show bounded phase/frame/batch milestones for interactive direct OpenFOAM
+  exports on stderr, while keeping `--json` output silent and machine-stable.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

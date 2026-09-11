@@ -31,6 +31,7 @@ from . import (
     projects,
     properties,
     studies,
+    templates,
 )
 from ._version import __version__
 from .errors import AgentCFDError, ProjectError
@@ -1506,12 +1507,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("directory", nargs="?", type=Path, default=Path("."))
     init.add_argument(
         "--template",
-        choices=(
-            "industrial-pipe",
-            "heated-pipe",
-            "baffle-channel",
-            "imported-internal-flow",
-        ),
+        choices=templates.ids(),
         default=None,
     )
     init.add_argument(
@@ -2018,6 +2014,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show the evidence-gated benchmark roadmap.",
     )
     benchmark_catalog.add_argument("--json", action="store_true", dest="as_json")
+
+    template_catalog = subparsers.add_parser(
+        "templates",
+        help="Discover truthful project starting points and executable init commands.",
+    )
+    template_catalog.add_argument(
+        "template",
+        nargs="?",
+        choices=templates.ids(),
+        help="Show one template in detail; omit to list the complete catalog.",
+    )
+    template_catalog.add_argument("--json", action="store_true", dest="as_json")
 
     contract_catalog = subparsers.add_parser(
         "contracts",
@@ -2889,16 +2897,11 @@ def main(argv: list[str] | None = None) -> int:
             selected_template = str(request["template"])
             request_sha256 = content_fingerprint(request)
         else:
-            selected_template = args.template or "industrial-pipe"
+            selected_template = args.template or templates.default().id
+            selected_spec = templates.get(selected_template)
             project = projects.init_project(
                 args.directory,
-                provider=args.provider
-                or (
-                    "openfoam"
-                    if selected_template
-                    in {"heated-pipe", "baffle-channel", "imported-internal-flow"}
-                    else "reference"
-                ),
+                provider=args.provider or selected_spec.default_provider,
                 template=selected_template,
                 geometry_path=args.geometry,
                 geometry_unit=args.unit,
@@ -3931,6 +3934,35 @@ def main(argv: list[str] | None = None) -> int:
         else:
             for case in benchmarks.all():
                 print(f"{case.id}: {case.status} | next: {case.next_gate}")
+        return 0
+    if args.command == "templates":
+        report = templates.as_dict()
+        if args.template is not None:
+            selected = templates.get(args.template).to_dict()
+            report = {
+                "schema": "agentcfd.template-catalog/0.1",
+                "default_template": templates.default().id,
+                "templates": [selected],
+            }
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        elif args.template is not None:
+            selected = report["templates"][0]
+            print(f"{selected['id']}: {selected['title']} [{selected['maturity']}]")
+            print(selected["purpose"])
+            print(f"provider: {selected['default_provider']}")
+            print(f"create: {selected['create_command']}")
+            print("limitations:")
+            for limitation in selected["limitations"]:
+                print(f"- {limitation}")
+        else:
+            print("AgentCFD project templates:")
+            for selected in report["templates"]:
+                print(
+                    f"- {selected['id']}: {selected['title']} | "
+                    f"{selected['maturity']} | {selected['default_provider']}"
+                )
+            print("inspect one: agentcfd templates TEMPLATE")
         return 0
     if args.command == "contracts":
         report = contracts.catalog()

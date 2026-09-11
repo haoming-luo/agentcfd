@@ -22,6 +22,7 @@ from . import (
     providers,
     regions,
     studies,
+    templates,
     verification,
 )
 from ._version import __version__
@@ -72,6 +73,7 @@ __all__ = [
     "providers",
     "regions",
     "studies",
+    "templates",
     "verification",
     "read_result_record",
 ]

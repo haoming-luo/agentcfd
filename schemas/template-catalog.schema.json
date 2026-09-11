@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/template-catalog.schema.json",
+  "title": "AgentCFD project template catalog 0.1",
+  "type": "object",
+  "required": ["schema", "default_template", "templates"],
+  "properties": {
+    "schema": {"const": "agentcfd.template-catalog/0.1"},
+    "default_template": {"type": "string", "minLength": 1},
+    "templates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/template"}
+    }
+  },
+  "$defs": {
+    "template": {
+      "type": "object",
+      "required": [
+        "id", "title", "purpose", "maturity", "providers",
+        "default_provider", "geometry_mode", "physics", "outputs",
+        "requires", "limitations", "create_command"
+      ],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+        "title": {"type": "string", "minLength": 1},
+        "purpose": {"type": "string", "minLength": 1},
+        "maturity": {"enum": ["release", "experimental"]},
+        "providers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["reference", "openfoam"]}
+        },
+        "default_provider": {"enum": ["reference", "openfoam"]},
+        "geometry_mode": {"enum": ["generated", "imported"]},
+        "physics": {"$ref": "#/$defs/nonEmptyStrings"},
+        "outputs": {"$ref": "#/$defs/nonEmptyStrings"},
+        "requires": {"$ref": "#/$defs/nonEmptyStrings"},
+        "limitations": {"$ref": "#/$defs/nonEmptyStrings"},
+        "create_command": {"type": "string", "pattern": "^agentcfd init "}
+      },
+      "additionalProperties": false
+    },
+    "nonEmptyStrings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "additionalProperties": false
+}

@@ -34,6 +34,7 @@ from . import (
     outputs,
     parameters as parameter_definitions,
     postprocessing,
+    templates as project_templates,
 )
 from .errors import (
     AgentCFDError,
@@ -6758,26 +6759,17 @@ def init_project(
 
     if provider not in {"reference", "openfoam"}:
         raise ValueError("Project provider must be 'reference' or 'openfoam'.")
-    if template not in {
-        "industrial-pipe",
-        "heated-pipe",
-        "baffle-channel",
-        "imported-internal-flow",
-    }:
+    template_spec = project_templates.get(template)
+    if provider not in template_spec.providers:
+        if len(template_spec.providers) == 1:
+            raise ValueError(
+                f"The {template} template requires "
+                f"provider={template_spec.providers[0]!r}."
+            )
         raise ValueError(
-            "Project template must be 'industrial-pipe', 'heated-pipe', "
-            "'baffle-channel', or 'imported-internal-flow'."
+            f"The {template} template supports providers "
+            f"{template_spec.providers}, not {provider!r}."
         )
-    if (
-        template
-        in {
-            "heated-pipe",
-            "baffle-channel",
-            "imported-internal-flow",
-        }
-        and provider != "openfoam"
-    ):
-        raise ValueError(f"The {template} template requires provider='openfoam'.")
     imported_options = (
         geometry_path,
         geometry_unit,

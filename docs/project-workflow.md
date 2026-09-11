@@ -35,6 +35,13 @@ agentcfd run .
 agentcfd view .
 ```
 
+Before a project exists, `agentcfd templates` is the discovery surface. It
+states provider compatibility, generated versus imported geometry, physics,
+default outputs, required user decisions, scientific limitations, and a
+copyable `init` command. `agentcfd templates --json` carries the same versioned
+catalog to agents and frontends; `init` derives its accepted names and default
+provider from that catalog rather than maintaining a second list.
+
 `agentcfd project . --json` is the unified integration view over the same
 lifecycle. It returns the status, compact current result, named published
 files, XDMF/H5 entry points, provider-workspace retention, and a typed

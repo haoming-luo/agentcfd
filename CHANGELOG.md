@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add the versioned `agentcfd templates` catalog. Every built-in starting point
+  now publishes provider compatibility, geometry mode, physics, default
+  outputs, required decisions, limitations, and a copyable creation command;
+  CLI `init` choices and provider defaults consume this same source of truth.
 - Add `open_scientific_dataset()` and `agentcfd dataset inspect` as the
   fail-closed consumption side of campaign publication. Agents and scripts can
   discover ordered columns, units, ranges, matrix shapes, trust counts, and

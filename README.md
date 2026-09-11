@@ -101,6 +101,8 @@ The current development version exposes the same readable project to people,
 agents, CI, and future GUIs:
 
 ```bash
+agentcfd templates                       # discover scope before creating files
+agentcfd templates imported-internal-flow
 agentcfd init --template industrial-pipe my-flow
 cd my-flow
 agentcfd doctor .       # project/runtime/resource audit; no solve or field read
@@ -126,6 +128,12 @@ agentcfd campaigns . --plot-svg loss-map.svg \
 agentcfd verify component-loss equipment/result.json straight-run/result.json \
   --confirm-equivalent-baseline --output local-loss.json
 ```
+
+`agentcfd templates --json` is the machine-readable source of truth for each
+starting point's provider, geometry mode, physics, default outputs, required
+inputs, limitations, and executable creation command. The `init` parser and
+provider defaults consume the same catalog, so a new frontend or AI agent does
+not need its own hard-coded template list.
 
 For the first bounded heat-transfer workflow:
 

@@ -3,7 +3,17 @@ import json
 import jsonschema
 import pytest
 
-from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing, properties
+from agentcfd import (
+    Check,
+    Quantity,
+    SimulationResult,
+    benchmarks,
+    capabilities,
+    contracts,
+    licensing,
+    properties,
+    templates,
+)
 from agentcfd.cli import (
     _flow_distribution_groups,
     _flow_distribution_lines,
@@ -32,6 +42,40 @@ def test_capability_catalog_is_truthful():
     jsonschema.Draft202012Validator(
         contracts.load("capability-catalog.schema.json")
     ).validate(report)
+
+
+def test_template_catalog_is_single_source_for_cli_and_project_creation(capsys):
+    report = templates.as_dict()
+    jsonschema.Draft202012Validator(
+        contracts.load("template-catalog.schema.json")
+    ).validate(report)
+    assert templates.ids() == (
+        "industrial-pipe",
+        "heated-pipe",
+        "baffle-channel",
+        "imported-internal-flow",
+    )
+    assert report["default_template"] == "industrial-pipe"
+    imported = templates.get("imported-internal-flow")
+    assert imported.geometry_mode == "imported"
+    assert imported.providers == ("openfoam",)
+    assert "--maximum-cells COUNT" in imported.create_command
+    assert "template-catalog.schema.json" in contracts.available()
+
+    parser = build_parser()
+    parsed = parser.parse_args(["init", "project", "--template", "heated-pipe"])
+    assert parsed.template == "heated-pipe"
+    assert main(["templates", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == report
+    assert main(["templates", "baffle-channel", "--json"]) == 0
+    selected = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("template-catalog.schema.json")
+    ).validate(selected)
+    assert [item["id"] for item in selected["templates"]] == ["baffle-channel"]
+
+    with pytest.raises(ValueError, match="Unknown project template"):
+        templates.get("unknown")
 
 
 def test_cli_result_payload_exposes_failed_decision_gates_to_agents():

@@ -62,6 +62,8 @@ files stay hidden and reproducible.
 ### Shipped in the current development line
 
 - readable replace-by-default project with explicit campaign mode;
+- one truthful template catalog shared by CLI validation, provider defaults,
+  people, agents, and future frontends, including required inputs and limits;
 - unified lifecycle states and one recommended next action;
 - active-run collision protection and atomic phase records;
 - interrupted/failed run detection with retained diagnostic workspace;

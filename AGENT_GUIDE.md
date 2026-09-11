@@ -10,6 +10,7 @@ validation and the selected provider advertises the required capability.
 python -m pip install -e .
 agentcfd doctor --json
 agentcfd capabilities --json
+agentcfd templates --json
 agentcfd init --template industrial-pipe first-flow
 agentcfd project first-flow --json
 agentcfd status first-flow --json
@@ -32,6 +33,8 @@ python -m pytest -q
    records why a failed check is acceptable for that dataset.
 7. Explain unsupported physics instead of silently changing the model.
 8. Prefer the project lifecycle over case-specific CLI commands for new work.
+   Query `templates --json` before selecting a starting point; preserve its
+   stated required inputs and limitations rather than guessing a nearby model.
 9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
    never infer physical time or point/cell association from shape alone.
 10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,

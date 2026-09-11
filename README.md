@@ -592,7 +592,11 @@ channels with wall-attached baffles, pressure and mass-flow boundary variants,
 uniform/potential/previous-result initialization, mesh intent, compact probes,
 surface reductions, force reports, and final-frame line profiles that publish
 only distance plus one requested scalar or explicit vector component/magnitude
-to CSV. See the
+to CSV. Reusable `regions.plane(...)` measurement sections let pressure-loss,
+flow-uniformity, and scalar surface reports share stable internal locations
+without adding CAD patches or full-field frames. Current imported-volume and
+baffled-channel OpenFOAM routes lower them to sampled cutting planes; port
+balance and wall force remain physical-boundary operations. See the
 [common workflow API](docs/common-workflow-api.md) and the readable
 [bottom-baffle project](examples/channel_baffle_project/case.py). New intent is
 checked against provider capabilities before execution and is never silently

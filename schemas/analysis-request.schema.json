@@ -8,7 +8,24 @@
     "schema": {"const": "agentcfd.analysis-request/0.1"},
     "model": {
       "type": "object",
-      "required": ["schema", "name", "study", "domain", "fluid", "boundaries", "metadata"]
+      "required": ["schema", "name", "study", "domain", "fluid", "boundaries", "metadata"],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind", "role", "origin", "normal"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "kind": {"const": "section"},
+              "role": {"type": "string"},
+              "origin": {"$ref": "#/$defs/vector3"},
+              "normal": {"$ref": "#/$defs/vector3"}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
     },
     "procedure": {
       "oneOf": [

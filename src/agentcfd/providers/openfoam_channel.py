@@ -44,6 +44,7 @@ from .openfoam_reports import (
     FIELD_NAMES as _FIELD_NAMES,
     REPORT_OPERATIONS as _REPORT_OPERATIONS,
     RESERVED_REPORT_NAMES as _RESERVED_REPORT_NAMES,
+    foam_name as _foam_name,
     recover_reports as _recover_compact_reports,
     render_report_functions,
     report_function_names as _report_function_names,
@@ -884,6 +885,27 @@ class OpenFOAMChannelProvider:
                 "Report names collide with each other or a reserved provider monitor "
                 "after deterministic OpenFOAM name lowering."
             )
+        sections = model.section_definitions
+        lowered_sections = [_foam_name(name) for name in sections]
+        if len(set(lowered_sections)) != len(lowered_sections):
+            raise UnsupportedCaseError(
+                "Measurement section names collide after deterministic OpenFOAM "
+                "name lowering."
+            )
+        domain = model.domain
+        for section in sections.values():
+            assert section.location is not None
+            x, y, z = section.location
+            if not (
+                0.0 < x < domain.length
+                and 0.0 < y < domain.height
+                and 0.0 < z < domain.width
+            ):
+                raise UnsupportedCaseError(
+                    f"Measurement section {section.name!r} origin must lie strictly "
+                    "inside the channel bounds."
+                )
+        report_targets = set(model.domain.surface_names) | set(sections)
         for report in step.output.reports:
             if isinstance(report, outputs.PointProbe):
                 if set(report.fields) - {"fluid.velocity", "fluid.pressure"}:
@@ -891,7 +913,7 @@ class OpenFOAMChannelProvider:
                         f"Probe {report.name!r} supports velocity and pressure only."
                     )
             elif isinstance(report, outputs.SurfaceReport):
-                if report.region not in model.domain.surface_names:
+                if report.region not in report_targets:
                     raise UnsupportedCaseError(
                         f"Surface report {report.name!r} references unknown region {report.region!r}."
                     )
@@ -905,13 +927,23 @@ class OpenFOAMChannelProvider:
                         f"Surface report {report.name!r} requests an unsupported operation."
                     )
             elif isinstance(report, outputs.PressureLossReport):
-                if report.inlet != "inlet" or report.outlet != "outlet":
+                invalid_physical = (
+                    report.inlet in model.domain.surface_names
+                    and report.inlet != "inlet"
+                ) or (
+                    report.outlet in model.domain.surface_names
+                    and report.outlet != "outlet"
+                )
+                if (
+                    {report.inlet, report.outlet} - report_targets
+                    or invalid_physical
+                ):
                     raise UnsupportedCaseError(
-                        f"Pressure-loss report {report.name!r} must use the channel "
-                        "inlet and outlet surfaces."
+                        f"Pressure-loss report {report.name!r} must use declared "
+                        "sections or the channel inlet/outlet surfaces."
                     )
             elif isinstance(report, outputs.FlowUniformityReport):
-                if report.region not in {"inlet", "outlet"}:
+                if report.region not in {"inlet", "outlet", *sections}:
                     raise UnsupportedCaseError(
                         f"Flow-uniformity report {report.name!r} must use the channel "
                         "inlet or outlet surface."

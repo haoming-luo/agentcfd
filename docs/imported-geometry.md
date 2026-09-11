@@ -190,6 +190,24 @@ adding XDMF/H5 frames. The coefficient covers the full distance between the two
 patches; it must not be presented as a fitting-only K value unless a matching
 straight-run loss has been removed explicitly.
 
+For equipment pressure loss away from the CAD caps, add reusable internal
+planes to the readable model rather than splitting geometry solely to create
+report patches:
+
+```python
+from agentcfd import regions
+
+model.sections(
+    regions.plane("upstream", origin=(0.10, 0.03, 0.03), normal=(1, 0, 0)),
+    regions.plane("downstream", origin=(0.30, 0.03, 0.03), normal=(1, 0, 0)),
+)
+```
+
+`outputs.pressure_loss`, `outputs.flow_uniformity`, and scalar
+`outputs.surface_report` accept these names. The sampled planes produce compact
+histories and do not create extra XDMF/H5 frames. Port flow distribution and
+wall force remain tied to physical surface regions.
+
 The flow-split report monitors every declared patch independently and publishes
 branch fractions, mass/volume flows, coefficient of variation, and conservation
 under stable names. Users may add a complete `targets={...}` map and an explicit

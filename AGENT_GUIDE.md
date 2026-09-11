@@ -147,7 +147,10 @@ python -m pytest -q
     `report.system-loss.total_pressure_loss` for its dimensional value. This is
     the complete loss between the declared planes; never silently relabel it as
     a fitting-only K value or subtract straight-run friction without explicit
-    baseline evidence.
+    baseline evidence. When the measurement locations are inside the volume,
+    declare them once with `model.sections(regions.plane(...), ...)` and reuse
+    those names. Do not split CAD merely to create report patches, and do not
+    substitute the global inlet flow for a section's own reference flow.
 28. Use `verify component-loss` only when the equipment and straight-run results
     have equivalent distributed length, section and measurement planes, walls,
     roughness, fluid, and operating point. Pass

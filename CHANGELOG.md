@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add reusable solver-neutral `regions.plane()` measurement sections. A model
+  declares upstream/downstream planes once in SI coordinates, then pressure-
+  loss, flow-uniformity, and scalar surface reports reuse their names. Imported
+  and baffled-channel OpenFOAM providers lower sections to sampled cutting
+  planes, use velocity-normal weighting where face-only `phi` is unavailable,
+  retain only compact histories, reject empty-bound candidates by origin bounds,
+  and keep port balance and wall forces restricted to physical patches. The
+  generated OpenCFD v2606 function objects pass a real solver dry-run.
 - Accept repeated `--role REGION=ROLE` confirmations in `geometry-check` and
   imported project creation. This removes a needless hand-written intermediate
   file for small models while preserving mutual exclusion, duplicate

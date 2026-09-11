@@ -48,6 +48,7 @@ from .openfoam import (
 from .openfoam_reports import (
     REPORT_OPERATIONS,
     RESERVED_REPORT_NAMES,
+    foam_name,
     recover_reports,
     render_report_functions,
     report_function_names,
@@ -1303,6 +1304,25 @@ class OpenFOAMImportedProvider:
                 "Report names collide with each other or a reserved provider monitor "
                 "after deterministic OpenFOAM name lowering."
             )
+        sections = step.model.section_definitions
+        lowered_sections = [foam_name(name) for name in sections]
+        if len(set(lowered_sections)) != len(lowered_sections):
+            raise UnsupportedCaseError(
+                "Measurement section names collide after deterministic OpenFOAM "
+                "name lowering."
+            )
+        for section in sections.values():
+            assert section.location is not None
+            minimum, maximum = domain.bounds_m
+            if any(
+                value <= low or value >= high
+                for value, low, high in zip(section.location, minimum, maximum)
+            ):
+                raise UnsupportedCaseError(
+                    f"Measurement section {section.name!r} origin must lie strictly "
+                    "inside the imported fluid-volume bounds."
+                )
+        report_targets = set(domain.surface_names) | set(sections)
         for report in step.output.reports:
             if isinstance(report, outputs.PointProbe):
                 if set(report.fields) - {"fluid.velocity", "fluid.pressure"}:
@@ -1319,7 +1339,7 @@ class OpenFOAMImportedProvider:
                         "fluid-volume bounds."
                     )
             elif isinstance(report, outputs.SurfaceReport):
-                if report.region not in domain.surface_names:
+                if report.region not in report_targets:
                     raise UnsupportedCaseError(
                         f"Surface report {report.name!r} references unknown region "
                         f"{report.region!r}."
@@ -1335,26 +1355,35 @@ class OpenFOAMImportedProvider:
                         f"Surface report {report.name!r} requests an unsupported operation."
                     )
             elif isinstance(report, outputs.PressureLossReport):
-                unknown = {report.inlet, report.outlet} - set(domain.surface_names)
+                unknown = {report.inlet, report.outlet} - report_targets
                 if unknown:
                     raise UnsupportedCaseError(
                         f"Pressure-loss report {report.name!r} references unknown regions."
                     )
-                if (
-                    roles.get(report.inlet) != "inlet"
-                    or roles.get(report.outlet) != "outlet"
+                physical_targets = {
+                    name
+                    for name in (report.inlet, report.outlet)
+                    if name in domain.surface_names
+                }
+                if any(
+                    roles.get(name)
+                    != ("inlet" if name == report.inlet else "outlet")
+                    for name in physical_targets
                 ):
                     raise UnsupportedCaseError(
-                        f"Pressure-loss report {report.name!r} requires inlet-role and "
-                        "outlet-role surfaces."
+                        f"Pressure-loss report {report.name!r} requires physical "
+                        "targets to use their inlet-role and outlet-role surfaces."
                     )
             elif isinstance(report, outputs.FlowUniformityReport):
-                if report.region not in domain.surface_names:
+                if report.region not in report_targets:
                     raise UnsupportedCaseError(
                         f"Flow-uniformity report {report.name!r} references unknown "
                         f"region {report.region!r}."
                     )
-                if roles.get(report.region) not in {"inlet", "outlet"}:
+                if (
+                    report.region in domain.surface_names
+                    and roles.get(report.region) not in {"inlet", "outlet"}
+                ):
                     raise UnsupportedCaseError(
                         f"Flow-uniformity report {report.name!r} requires an inlet- "
                         "or outlet-role surface."

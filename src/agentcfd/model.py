@@ -15,6 +15,7 @@ from . import procedures as procedure_types
 from .errors import ModelValidationError
 from .fluids import NewtonianFluid
 from .geometry import CircularPipe, Domain, ImportedSurface, RectangularChannel
+from .regions import Region
 from .results import SimulationResult
 from .studies import Study
 
@@ -29,6 +30,7 @@ class Model:
     _boundaries: dict[str, boundary_types.Boundary] = field(
         default_factory=dict, init=False, repr=False
     )
+    _sections: dict[str, Region] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -76,6 +78,21 @@ class Model:
     def boundary_conditions(self) -> dict[str, boundary_types.Boundary]:
         return dict(self._boundaries)
 
+    def sections(self, *items: Region) -> "Model":
+        """Attach reusable internal measurement planes and return this model."""
+
+        for item in items:
+            if not isinstance(item, Region) or item.kind != "section":
+                raise TypeError("Model sections must be created with regions.plane().")
+            if item.name in self._sections:
+                raise ValueError(f"Section name {item.name!r} is already defined.")
+            self._sections[item.name] = item
+        return self
+
+    @property
+    def section_definitions(self) -> dict[str, Region]:
+        return dict(self._sections)
+
     def validate(self) -> None:
         def require_string_keys(value: object, path: str) -> None:
             if isinstance(value, dict):
@@ -97,6 +114,13 @@ class Model:
                 "Model metadata must be finite, JSON-serializable scientific context."
             ) from error
         surface_names = set(self.domain.surface_names)
+        conflicting_sections = sorted(surface_names & self._sections.keys())
+        if conflicting_sections:
+            raise ModelValidationError(
+                "Measurement section names collide with domain surfaces: "
+                + ", ".join(conflicting_sections)
+                + "."
+            )
         supplied_names = set(self._boundaries)
         unknown_names = sorted(supplied_names - surface_names)
         missing_names = sorted(surface_names - supplied_names)
@@ -248,6 +272,10 @@ class Model:
                 name: condition.to_dict()
                 for name, condition in sorted(self._boundaries.items())
             },
+            "sections": [
+                section.to_dict()
+                for _, section in sorted(self._sections.items())
+            ],
             "metadata": self.metadata,
         }
 
@@ -338,6 +366,7 @@ class Step:
         ):
             raise ValueError(f"Checkpoints must use {coordinate!r} for this procedure.")
         regions = {item.name: item for item in self.model.domain.regions}
+        report_regions = {**regions, **self.model.section_definitions}
         if self.mesh is not None:
             unknown_mesh_regions = sorted(
                 set(self.mesh.referenced_regions) - regions.keys()
@@ -375,14 +404,33 @@ class Step:
                 if isinstance(report, output_types.PressureLossReport)
                 else report.regions
             )
-            unknown = sorted(set(names) - regions.keys())
+            eligible_regions = (
+                report_regions
+                if isinstance(
+                    report,
+                    (
+                        output_types.SurfaceReport,
+                        output_types.PressureLossReport,
+                        output_types.FlowUniformityReport,
+                    ),
+                )
+                else regions
+            )
+            unknown = sorted(set(names) - eligible_regions.keys())
             if unknown:
                 raise ValueError(
                     f"Output report {report.name!r} targets unknown regions: "
                     + ", ".join(unknown)
                     + "."
                 )
-            nonsurfaces = [name for name in names if regions[name].kind != "surface"]
+            allowed_kinds = (
+                {"surface", "section"}
+                if eligible_regions is report_regions
+                else {"surface"}
+            )
+            nonsurfaces = [
+                name for name in names if eligible_regions[name].kind not in allowed_kinds
+            ]
             if nonsurfaces:
                 raise ValueError(
                     f"Output report {report.name!r} requires surfaces; invalid: "

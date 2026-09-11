@@ -47,6 +47,26 @@ def _foam_scalar(value: float) -> str:
     return f"{value:.17g}"
 
 
+def _surface_selection(step, name: str) -> str:
+    section = step.model.section_definitions.get(name)
+    if section is None:
+        return f"""regionType patch;
+        name {name};"""
+    assert section.location is not None
+    assert section.normal is not None
+    point = " ".join(_foam_scalar(value) for value in section.location)
+    normal = " ".join(_foam_scalar(value) for value in section.normal)
+    return f"""regionType sampledSurface;
+        name {foam_name(section.name)};
+        sampledSurfaceDict
+        {{
+            type cuttingPlane;
+            point ({point});
+            normal ({normal});
+            interpolate false;
+        }}"""
+
+
 def report_function_names(report: outputs.Report) -> tuple[str, ...]:
     """Return every OpenFOAM function-object name owned by a public report."""
 
@@ -55,6 +75,7 @@ def report_function_names(report: outputs.Report) -> tuple[str, ...]:
         return (
             f"agentcfd_loss_{stem}_inlet",
             f"agentcfd_loss_{stem}_outlet",
+            f"agentcfd_loss_{stem}_flow",
         )
     if isinstance(report, outputs.FlowUniformityReport):
         stem = foam_name(report.name)
@@ -130,13 +151,13 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
     }}
 """)
         elif isinstance(report, outputs.SurfaceReport):
+            selection = _surface_selection(step, report.region)
             definitions.append(f"""
     {foam_name(report.name)}
     {{
         type surfaceFieldValue;
         libs (fieldFunctionObjects);
-        regionType patch;
-        name {report.region};
+        {selection}
         operation {REPORT_OPERATIONS[report.operation]};
         fields ({FIELD_NAMES[report.field]});
         writeFields false;
@@ -147,20 +168,25 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
     }}
 """)
         elif isinstance(report, outputs.PressureLossReport):
-            inlet_function, outlet_function = report_function_names(report)
+            inlet_function, outlet_function, flow_function = report_function_names(
+                report
+            )
             for function_name, region in (
                 (inlet_function, report.inlet),
                 (outlet_function, report.outlet),
             ):
+                selection = _surface_selection(step, region)
+                weight_field = (
+                    "U" if region in step.model.section_definitions else "phi"
+                )
                 definitions.append(f"""
     {function_name}
     {{
         type surfaceFieldValue;
         libs (fieldFunctionObjects);
-        regionType patch;
-        name {region};
+        {selection}
         operation weightedAverage;
-        weightField phi;
+        weightField {weight_field};
         fields (agentcfd_total_pressure);
         writeArea true;
         writeFields false;
@@ -170,8 +196,31 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
         writeInterval {report.every};
     }}
 """)
+            flow_selection = _surface_selection(step, report.inlet)
+            if report.inlet in step.model.section_definitions:
+                flow_operation = "areaNormalIntegrate"
+                flow_field = "U"
+            else:
+                flow_operation = "sum"
+                flow_field = "phi"
+            definitions.append(f"""
+    {flow_function}
+    {{
+        type surfaceFieldValue;
+        libs (fieldFunctionObjects);
+        {flow_selection}
+        operation {flow_operation};
+        fields ({flow_field});
+        writeFields false;
+        executeControl timeStep;
+        executeInterval {report.every};
+        writeControl timeStep;
+        writeInterval {report.every};
+    }}
+""")
         elif isinstance(report, outputs.FlowUniformityReport):
             uniformity_function, normal_function = report_function_names(report)
+            selection = _surface_selection(step, report.region)
             for function_name, operation in (
                 (uniformity_function, "uniformity"),
                 (normal_function, "areaNormalAverage"),
@@ -181,8 +230,7 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
     {{
         type surfaceFieldValue;
         libs (fieldFunctionObjects);
-        regionType patch;
-        name {report.region};
+        {selection}
         operation {operation};
         fields (U);
         writeArea true;
@@ -378,23 +426,36 @@ def recover_reports(
                 )
                 quantities[name] = Quantity(values[-1], unit)
         elif isinstance(report, outputs.PressureLossReport):
-            inlet_function, outlet_function = report_function_names(report)
+            inlet_function, outlet_function, flow_function = report_function_names(
+                report
+            )
             inlet_root = case / "postProcessing" / inlet_function
             outlet_root = case / "postProcessing" / outlet_function
-            artifact_roots = (inlet_root, outlet_root)
+            flow_root = case / "postProcessing" / flow_function
+            artifact_roots = (inlet_root, outlet_root, flow_root)
             inlet_rows = read_segmented_rows(inlet_root, "surfaceFieldValue.dat")
             outlet_rows = read_segmented_rows(outlet_root, "surfaceFieldValue.dat")
-            flow_rows = read_segmented_rows(
-                case / "postProcessing" / "agentcfd_inlet_flow",
-                "surfaceFieldValue.dat",
-            )
+            flow_rows = read_segmented_rows(flow_root, "surfaceFieldValue.dat")
+            section_flow = report.inlet in step.model.section_definitions
+            if not flow_rows:
+                # Continue to recover older project results produced before each
+                # pressure-loss report owned its exact reference-flow monitor.
+                flow_rows = read_segmented_rows(
+                    case / "postProcessing" / "agentcfd_inlet_flow",
+                    "surfaceFieldValue.dat",
+                )
+                section_flow = False
             # ``writeArea true`` inserts Area between Time and the reduced field.
             # The final column also supports runtimes that keep area in the header.
             inlet_values = {row[0]: row[-1] for row in inlet_rows if len(row) >= 2}
             outlet_values = {
                 row[0]: row[-1] for row in outlet_rows if len(row) >= 2
             }
-            flow_values = {row[0]: row[1] for row in flow_rows if len(row) >= 2}
+            flow_values = {
+                row[0]: (row[-3] if section_flow and len(row) >= 4 else row[-1])
+                for row in flow_rows
+                if len(row) >= 2
+            }
             shared = sorted(set(inlet_values) & set(outlet_values) & set(flow_values))
             area = report.reference_area or read_surface_area(inlet_root)
             prefix = f"report.{report.name}"

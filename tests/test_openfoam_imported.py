@@ -16,6 +16,7 @@ from agentcfd import (
     meshing,
     outputs,
     projects,
+    regions,
     studies,
 )
 from agentcfd.cli import entrypoint
@@ -120,6 +121,52 @@ def _pressure_driven_step(payload: bytes):
         walls=boundaries.no_slip_wall(),
     )
     return model.step(mesh=base.mesh, output=base.output)
+
+
+def test_imported_provider_accepts_declared_internal_measurement_sections(tmp_path):
+    source = tmp_path / "source.stl"
+    source.write_bytes(b"geometry")
+    step = _step(b"geometry")
+    step.model.sections(
+        regions.plane(
+            "upstream",
+            origin=(0.025, 0.025, 0.0125),
+            normal=(1.0, 0.0, 0.0),
+        ),
+        regions.plane(
+            "downstream",
+            origin=(0.075, 0.025, 0.0125),
+            normal=(1.0, 0.0, 0.0),
+        ),
+    )
+    step = step.model.step(
+        mesh=step.mesh,
+        output=outputs.standard(
+            reports=(
+                outputs.pressure_loss(
+                    "internal-loss", inlet="upstream", outlet="downstream"
+                ),
+                outputs.flow_uniformity("internal-quality", region="downstream"),
+            )
+        ),
+    )
+
+    OpenFOAMImportedProvider(source=source).validate(step)
+
+    outside = _step(b"geometry-outside")
+    outside_source = tmp_path / "outside.stl"
+    outside_source.write_bytes(b"geometry-outside")
+    outside.model.sections(
+        regions.plane(
+            "outside",
+            origin=(0.2, 0.025, 0.0125),
+            normal=(1.0, 0.0, 0.0),
+        )
+    )
+    with pytest.raises(UnsupportedCaseError, match="strictly inside"):
+        OpenFOAMImportedProvider(source=outside_source).validate(
+            outside.model.step(mesh=outside.mesh)
+        )
 
 
 def _multi_outlet_step(payload: bytes, *, include_report: bool = True):
@@ -453,7 +500,9 @@ def test_pressure_loss_report_recovers_compact_engineering_quantities(tmp_path):
         output=outputs.standard(reports=(report,)),
     )
     files = {
-        "agentcfd_inlet_flow/0/surfaceFieldValue.dat": "10 -0.002\n20 -0.002\n",
+        "agentcfd_loss_device_loss_flow/0/surfaceFieldValue.dat": (
+            "10 -0.002\n20 -0.002\n"
+        ),
         "agentcfd_loss_device_loss_inlet/0/surfaceFieldValue.dat": (
             "# Area : 0.001\n# Time Area weightedAverage(p)\n"
             "10 0.001 1120\n20 0.001 1110\n"
@@ -486,7 +535,56 @@ def test_pressure_loss_report_recovers_compact_engineering_quantities(tmp_path):
     ].description
     assert histories[f"{prefix}.loss_coefficient"].unit == "1"
     assert report_recovered(report, histories) is True
-    assert len(artifacts) == 2
+    assert len(artifacts) == 3
+
+
+def test_internal_section_pressure_loss_uses_its_own_normal_flow(tmp_path):
+    base = _step(b"surface-section-loss")
+    base.model.sections(
+        regions.plane(
+            "upstream",
+            origin=(0.025, 0.025, 0.0125),
+            normal=(1.0, 0.0, 0.0),
+        ),
+        regions.plane(
+            "downstream",
+            origin=(0.075, 0.025, 0.0125),
+            normal=(1.0, 0.0, 0.0),
+        ),
+    )
+    report = outputs.pressure_loss(
+        "section-loss", inlet="upstream", outlet="downstream"
+    )
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=(report,)),
+    )
+    files = {
+        "agentcfd_inlet_flow/0/surfaceFieldValue.dat": "10 -0.099\n",
+        "agentcfd_loss_section_loss_flow/0/surfaceFieldValue.dat": (
+            "# Time areaNormalIntegrate(U)\n10 (0.002 0 0)\n"
+        ),
+        "agentcfd_loss_section_loss_inlet/0/surfaceFieldValue.dat": (
+            "# Area : 0.001\n10 0.001 1100\n"
+        ),
+        "agentcfd_loss_section_loss_outlet/0/surfaceFieldValue.dat": (
+            "# Area : 0.001\n10 0.001 1000\n"
+        ),
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+    quantities, histories, artifacts = {}, {}, {}
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    prefix = "report.section-loss"
+    assert quantities[f"{prefix}.reference_bulk_velocity"].value == pytest.approx(2.0)
+    assert quantities[f"{prefix}.loss_coefficient"].value == pytest.approx(
+        100.0 / 1996.4
+    )
+    assert len(artifacts) == 3
 
 
 def test_flow_uniformity_recovers_compact_si_history_and_area(tmp_path):

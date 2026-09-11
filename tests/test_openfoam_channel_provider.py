@@ -16,6 +16,7 @@ from agentcfd import (
     initialization,
     outputs,
     procedures,
+    regions,
 )
 from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
 from agentcfd.projects import Project
@@ -128,6 +129,52 @@ def test_channel_accepts_shared_flow_uniformity_report(tmp_path):
     assert "agentcfd_uniformity_outlet_quality" in control
     assert "operation uniformity;" in control
     assert "operation areaNormalAverage;" in control
+
+
+def test_channel_lowers_reusable_internal_sections_to_sampled_planes(tmp_path):
+    step = Project(EXAMPLE).load_step()
+    step.model.sections(
+        regions.plane(
+            "upstream-section",
+            origin=(0.20, 0.10, 0.05),
+            normal=(2.0, 0.0, 0.0),
+        ),
+        regions.plane(
+            "downstream-section",
+            origin=(0.80, 0.10, 0.05),
+            normal=(1.0, 0.0, 0.0),
+        ),
+    )
+    step = replace(
+        step,
+        output=replace(
+            step.output,
+            reports=(
+                outputs.pressure_loss(
+                    "internal-loss",
+                    inlet="upstream-section",
+                    outlet="downstream-section",
+                ),
+                outputs.flow_uniformity(
+                    "internal-quality", region="downstream-section"
+                ),
+            ),
+        ),
+    )
+
+    OpenFOAMChannelProvider(case_directory=tmp_path).prepare(step)
+    control = (tmp_path / "system/controlDict").read_text()
+
+    assert control.count("regionType sampledSurface;") == 5
+    assert "name upstream_section;" in control
+    assert "name downstream_section;" in control
+    assert "type cuttingPlane;" in control
+    assert "point (0.20000000000000001 0.10000000000000001 0.050000000000000003);" in control
+    assert "normal (1 0 0);" in control
+    assert control.count("weightField U;") == 2
+    assert "weightField phi;" not in control
+    assert "operation areaNormalIntegrate;" in control
+    assert "fields (U);" in control
 
 
 def test_channel_provider_recovers_compact_reports_with_si_units(tmp_path):

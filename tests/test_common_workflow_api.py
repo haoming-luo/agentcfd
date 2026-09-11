@@ -13,6 +13,7 @@ from agentcfd import (
     meshing,
     outputs,
     procedures,
+    regions,
     studies,
 )
 from agentcfd.errors import ModelValidationError, UnsupportedCaseError
@@ -185,6 +186,88 @@ def test_mesh_and_report_region_references_fail_early():
                         field="fluid.pressure",
                     ),
                 ),
+            ),
+        )
+
+
+def test_reusable_measurement_sections_are_solver_neutral_report_targets():
+    model = baffle_model().sections(
+        regions.plane(
+            "upstream",
+            origin=(0.20, 0.10, 0.05),
+            normal=(2.0, 0.0, 0.0),
+        ),
+        regions.plane(
+            "downstream",
+            origin=(0.80, 0.10, 0.05),
+            normal=(1.0, 0.0, 0.0),
+        ),
+    )
+    step = model.step(
+        procedure=procedures.transient(end_time=1.0, initial_time_step=0.01),
+        output=outputs.standard(
+            reports=(
+                outputs.pressure_loss(
+                    "fitting-loss", inlet="upstream", outlet="downstream"
+                ),
+                outputs.flow_uniformity("wake-quality", region="downstream"),
+                outputs.surface_report(
+                    "upstream-pressure",
+                    region="upstream",
+                    field="fluid.pressure",
+                ),
+            )
+        ),
+    )
+
+    sections = step.to_dict()["model"]["sections"]
+    assert sections == [
+        {
+            "name": "downstream",
+            "kind": "section",
+            "role": "observation",
+            "origin": [0.8, 0.1, 0.05],
+            "normal": [1.0, 0.0, 0.0],
+        },
+        {
+            "name": "upstream",
+            "kind": "section",
+            "role": "observation",
+            "origin": [0.2, 0.1, 0.05],
+            "normal": [1.0, 0.0, 0.0],
+        },
+    ]
+    jsonschema.Draft202012Validator(
+        contracts.load("analysis-request.schema.json")
+    ).validate(step.to_dict())
+
+    with pytest.raises(ValueError, match="zero vector"):
+        regions.plane("invalid", origin=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 0.0))
+    with pytest.raises(TypeError, match="regions.plane"):
+        baffle_model().sections(regions.surface("not-a-section"))
+    with pytest.raises(ModelValidationError, match="collide"):
+        baffle_model().sections(
+            regions.plane(
+                "inlet", origin=(0.2, 0.1, 0.05), normal=(1.0, 0.0, 0.0)
+            )
+        ).validate()
+
+
+def test_force_reports_remain_physical_surface_only():
+    model = baffle_model().sections(
+        regions.plane(
+            "internal", origin=(0.8, 0.1, 0.05), normal=(1.0, 0.0, 0.0)
+        )
+    )
+    with pytest.raises(ValueError, match="unknown regions: internal"):
+        model.step(
+            procedure=procedures.transient(end_time=1.0, initial_time_step=0.01),
+            output=outputs.standard(
+                reports=(
+                    outputs.force_report(
+                        "invalid", regions=("internal",), direction=(1.0, 0.0, 0.0)
+                    ),
+                )
             ),
         )
 

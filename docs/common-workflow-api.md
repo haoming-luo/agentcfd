@@ -17,7 +17,8 @@ Study
 └── Model
     ├── Domain ── stable Regions
     ├── Fluid
-    └── Boundary conditions keyed by Region name
+    ├── Boundary conditions keyed by Region name
+    └── reusable internal measurement Sections
         └── Step
             ├── Procedure
             ├── Initialization
@@ -85,6 +86,52 @@ reports = (
     outputs.flow_uniformity("outlet-quality", region="outlet"),
 )
 ```
+
+Boundary patches are not the only useful reporting locations. Bends, valves,
+tees, manifolds, and diffusers often need the same upstream/downstream planes
+for pressure loss, uniformity, and scalar reductions. Declare those planes once
+in SI coordinates and reuse their stable names:
+
+```python
+from agentcfd import regions
+
+model.sections(
+    regions.plane(
+        "upstream",
+        origin=(0.20, 0.05, 0.05),
+        normal=(1.0, 0.0, 0.0),
+    ),
+    regions.plane(
+        "downstream",
+        origin=(0.80, 0.05, 0.05),
+        normal=(1.0, 0.0, 0.0),
+    ),
+)
+
+output = outputs.standard(
+    reports=(
+        outputs.pressure_loss(
+            "valve-loss", inlet="upstream", outlet="downstream"
+        ),
+        outputs.flow_uniformity("downstream-quality", region="downstream"),
+    )
+)
+```
+
+A section is an infinite plane clipped by the fluid mesh, not a new boundary
+and not a duplicated field export. The OpenFOAM imported-volume and baffled-
+channel providers lower it to a `cuttingPlane` sampled surface and retain only
+the requested scalar histories. Its origin must be strictly inside the domain
+bounds so an obviously empty request fails before execution. Physical port
+balance and wall forces still require actual boundary surfaces; an internal
+plane cannot be passed to flow-distribution or force reports.
+
+For constant-density pressure loss, boundary patches retain flux-field
+weighting while internal planes use velocity projected onto the plane normal.
+Both are mass-flow averages; this distinction avoids asking a general sampled
+surface to consume OpenFOAM's face-only `phi` field. Plane normals should point
+consistently from upstream to downstream. The generated OpenCFD v2606 syntax is
+covered by an actual solver dry-run, not only string tests.
 
 `pressure_loss` returns `report.system-loss.total_pressure_loss` in Pa and
 `report.system-loss.loss_coefficient` as a dimensionless scalar, using the
@@ -219,6 +266,8 @@ solver's file syntax:
   and [surfaceFieldValue](https://doc.openfoam.com/2312/tools/post-processing/function-objects/field/surfaceFieldValue/)
   for physical total pressure, mass-flow weighting, area recovery, velocity
   uniformity, normal velocity, and compact component-loss reports;
+  [cuttingPlane](https://doc.openfoam.com/2306/tools/post-processing/function-objects/sampling/surfaces/cuttingPlane/)
+  defines the provider lowering for reusable internal sections;
   [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
   informed the solver-neutral report vocabulary;
 - [PyFluent solver settings](https://fluent.docs.pyansys.com/version/stable/user_guide/solver_settings/solver_settings_contents.html)

@@ -117,3 +117,45 @@ def test_public_open_project_and_cli_snapshot_work_from_nested_path(
 
 def test_project_snapshot_schema_is_shipped() -> None:
     assert "project-snapshot.schema.json" in contracts.available()
+
+
+def test_project_actions_publish_state_cost_and_side_effect_contracts(
+    tmp_path, capsys
+) -> None:
+    project = projects.init_project(tmp_path / "pipe")
+
+    ready = project.actions()
+    jsonschema.Draft202012Validator(
+        contracts.load("project-actions.schema.json")
+    ).validate(ready)
+    by_operation = {action["operation"]: action for action in ready["actions"]}
+    assert len(by_operation) == len(ready["actions"])
+    assert ready["recommended_operation"] == "run"
+    assert by_operation["run"]["available"] is True
+    assert by_operation["run"]["mutates_project"] is True
+    assert by_operation["run"]["starts_solver"] is True
+    assert by_operation["run"]["approval"] == "solver-execution"
+    assert by_operation["verify"]["available"] is False
+    assert by_operation["clean"]["mutates_project"] is False
+    assert by_operation["clean"]["command"].endswith(" --json")
+    assert ready["observation_cost"] == {
+        "field_payloads_opened": 0,
+        "recursive_storage_scan": False,
+    }
+
+    project.run()
+    complete = project.actions()
+    complete_actions = {action["operation"]: action for action in complete["actions"]}
+    assert complete["recommended_operation"] == "view"
+    assert sum(action["recommended"] for action in complete["actions"]) == 1
+    assert complete_actions["view"]["available"] is True
+    assert complete_actions["result"]["available"] is True
+    assert complete_actions["verify"]["available"] is True
+    assert complete_actions["verify"]["cost"] == "full-integrity"
+    assert complete_actions["archive"]["available"] is True
+    assert complete_actions["archive"]["mutates_project"] is False
+
+    assert entrypoint(["actions", str(project.root), "--json"]) == 0
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report == complete
+    assert "project-actions.schema.json" in contracts.available()

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-actions.schema.json",
+  "title": "AgentCFD state-aware project action catalog 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "state", "recommended_operation", "actions",
+    "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-actions/0.1"},
+    "root": {"type": "string", "minLength": 1},
+    "state": {
+      "enum": [
+        "blocked", "ready", "running", "interrupted", "modified",
+        "complete", "review", "failed"
+      ]
+    },
+    "recommended_operation": {"type": "string", "minLength": 1},
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "operation", "kind", "argv", "command", "available",
+          "recommended", "mutates_project", "starts_solver",
+          "opens_external_app", "approval", "cost", "availability_reason"
+        ],
+        "properties": {
+          "operation": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["execute", "maintain", "observe", "review"]},
+          "argv": {
+            "type": "array",
+            "minItems": 2,
+            "items": {"type": "string"}
+          },
+          "command": {"type": "string", "minLength": 1},
+          "available": {"type": "boolean"},
+          "recommended": {"type": "boolean"},
+          "mutates_project": {"type": "boolean"},
+          "starts_solver": {"type": "boolean"},
+          "opens_external_app": {"type": "boolean"},
+          "approval": {"enum": ["none", "solver-execution"]},
+          "cost": {
+            "enum": [
+              "metadata", "bounded-io", "recursive-io", "full-integrity",
+              "solver"
+            ]
+          },
+          "availability_reason": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": ["field_payloads_opened", "recursive_storage_scan"],
+      "properties": {
+        "field_payloads_opened": {"const": 0},
+        "recursive_storage_scan": {"const": false}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

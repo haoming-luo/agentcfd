@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `Project.actions()` and `agentcfd actions` as a read-only, state-aware
+  operation catalog for AI agents and future GUIs. Each exact argv publishes
+  availability, recommendation, I/O cost, mutation, solver-start, external-app,
+  and approval semantics; cleanup and archive are preview-only entries.
 - Add preview-first verified project archives. The default `decision` profile
   carries readable intent, owned inputs, results, and evidence without native
   solver state or field payloads; `portable` explicitly adds XDMF/H5 and

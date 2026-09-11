@@ -52,6 +52,7 @@ _SCHEMAS = (
     "project-archive-restoration.schema.json",
     "project-archive-verification.schema.json",
     "project-archive.schema.json",
+    "project-actions.schema.json",
     "project-creation-request.schema.json",
     "project-diagnosis.schema.json",
     "project-doctor.schema.json",

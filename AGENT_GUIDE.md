@@ -107,6 +107,9 @@ python -m pytest -q
     `archive-source.json` is provenance, not a substitute for `verify project`.
 26. Read `output/summary.json` or `agentcfd result --json` for routine decisions;
     open full `result.json` histories and HDF5 fields only when the task needs them.
+    Use `agentcfd actions --json` when choosing an operation programmatically;
+    honor `available`, `cost`, `mutates_project`, `starts_solver`, and `approval`
+    instead of parsing prose or inventing flags.
 27. Use `agentcfd export sample` for scalar learning data; it verifies the
     project and preserves numeric parameter inputs, units, trust, and source hash.
 28. Use `agentcfd export dataset` for campaigns; include only verified accepted

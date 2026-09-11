@@ -384,6 +384,26 @@ def _write_json_atomic(path: Path, payload: Mapping[str, object]) -> None:
     temporary.replace(path)
 
 
+_PROJECT_ACTION_POLICIES = {
+    "archive": ("maintain", False, False),
+    "campaigns": ("observe", False, False),
+    "check": ("observe", False, False),
+    "clean": ("maintain", False, False),
+    "diagnose": ("observe", False, False),
+    "logs": ("observe", False, False),
+    "performance": ("observe", False, False),
+    "plan": ("observe", False, False),
+    "project": ("observe", False, False),
+    "result": ("review", False, False),
+    "run": ("execute", True, True),
+    "status": ("observe", False, False),
+    "storage": ("observe", False, False),
+    "verify": ("review", False, False),
+    "view": ("review", False, False),
+    "watch": ("observe", False, False),
+}
+
+
 def _structured_project_action(action: Mapping[str, object]) -> dict[str, object]:
     """Add a bounded machine operation to a human-readable next command."""
 
@@ -396,22 +416,11 @@ def _structured_project_action(action: Mapping[str, object]) -> dict[str, object
     except ValueError as error:
         raise ProjectError("Project next action is not shell-tokenizable.") from error
     operation = tokens[1] if len(tokens) >= 2 and tokens[0] == "agentcfd" else None
-    policies = {
-        "check": ("observe", False, False),
-        "clean": ("maintain", True, False),
-        "diagnose": ("observe", False, False),
-        "logs": ("observe", False, False),
-        "plan": ("observe", False, False),
-        "result": ("review", False, False),
-        "run": ("execute", True, True),
-        "view": ("review", False, False),
-        "watch": ("observe", False, False),
-    }
-    if operation not in policies:
+    if operation not in _PROJECT_ACTION_POLICIES:
         raise ProjectError(
             f"Project next action uses unsupported operation {operation!r}."
         )
-    kind, mutates_project, starts_solver = policies[operation]
+    kind, mutates_project, starts_solver = _PROJECT_ACTION_POLICIES[operation]
     return {
         "operation": operation,
         "kind": kind,
@@ -4895,6 +4904,232 @@ class Project:
                 "field_payloads_opened": 0,
                 "compact_result_json_bytes_read": result_bytes,
                 "recursive_storage_scan": include_storage,
+            },
+        }
+
+    def actions(self) -> dict[str, object]:
+        """Return a state-aware, side-effect-explicit action catalog for agents."""
+
+        status = self.status()
+        state = str(status["state"])
+        project_argument = self._cli_project_argument()
+        latest = status.get("latest_run")
+        run_directory = self._record_directory(
+            latest if isinstance(latest, Mapping) else None
+        )
+        has_result = (
+            run_directory is not None and (run_directory / "result.json").is_file()
+        )
+        has_view = status["postprocess"]["primary"] is not None
+        has_logs = bool(
+            self._log_candidates(
+                latest if isinstance(latest, Mapping) else None,
+                run_directory,
+            )
+        )
+        recommended = _structured_project_action(status["next_action"])
+
+        records: list[dict[str, object]] = []
+
+        def add(
+            operation: str,
+            command: str,
+            *,
+            available: bool,
+            availability_reason: str,
+            cost: str,
+        ) -> None:
+            kind, mutates_project, starts_solver = _PROJECT_ACTION_POLICIES[operation]
+            tokens = shlex.split(command)
+            records.append(
+                {
+                    "operation": operation,
+                    "kind": kind,
+                    "argv": tokens,
+                    "command": command,
+                    "available": available,
+                    "recommended": operation == recommended["operation"],
+                    "mutates_project": mutates_project,
+                    "starts_solver": starts_solver,
+                    "opens_external_app": False,
+                    "approval": "solver-execution" if starts_solver else "none",
+                    "cost": cost,
+                    "availability_reason": availability_reason,
+                }
+            )
+
+        add(
+            "status",
+            f"agentcfd status {project_argument} --json",
+            available=True,
+            availability_reason="Project state is always observable.",
+            cost="metadata",
+        )
+        add(
+            "project",
+            f"agentcfd project {project_argument} --json",
+            available=True,
+            availability_reason="The unified compact project view is always available.",
+            cost="bounded-io",
+        )
+        add(
+            "check",
+            f"agentcfd check {project_argument} --json",
+            available=True,
+            availability_reason="Input and provider readiness can always be checked.",
+            cost="bounded-io",
+        )
+        add(
+            "plan",
+            f"agentcfd plan {project_argument} --json",
+            available=state != "running",
+            availability_reason=(
+                "A run is active; inspect status instead of resolving changed intent."
+                if state == "running"
+                else "Current readable intent can be resolved without starting a solver."
+            ),
+            cost="bounded-io",
+        )
+        run_available = (
+            state != "running" and status["readiness"]["ready_to_run"] is True
+        )
+        add(
+            "run",
+            f"agentcfd run {project_argument}",
+            available=run_available,
+            availability_reason=(
+                "The project is ready for deterministic provider execution."
+                if run_available
+                else "Resolve readiness issues or wait for the active run."
+            ),
+            cost="solver",
+        )
+        add(
+            "watch",
+            f"agentcfd watch {project_argument} --json",
+            available=state == "running",
+            availability_reason=(
+                "A live run can be followed with bounded polling."
+                if state == "running"
+                else "No live run needs polling."
+            ),
+            cost="bounded-io",
+        )
+        add(
+            "logs",
+            f"agentcfd logs {project_argument} --json",
+            available=has_logs,
+            availability_reason=(
+                "Bounded solver evidence is available."
+                if has_logs
+                else "No live or published solver log exists."
+            ),
+            cost="bounded-io",
+        )
+        add(
+            "diagnose",
+            f"agentcfd diagnose {project_argument} --json",
+            available=has_logs and state in {"failed", "interrupted"},
+            availability_reason=(
+                "A failed or interrupted run has bounded evidence to classify."
+                if has_logs and state in {"failed", "interrupted"}
+                else "Diagnosis is reserved for failed or interrupted runs with logs."
+            ),
+            cost="bounded-io",
+        )
+        add(
+            "result",
+            f"agentcfd result {project_argument} --json",
+            available=has_result,
+            availability_reason=(
+                "A compact published result exists."
+                if has_result
+                else "Run the project before requesting result quantities."
+            ),
+            cost="bounded-io",
+        )
+        add(
+            "view",
+            f"agentcfd view {project_argument}",
+            available=has_view,
+            availability_reason=(
+                "A published result target exists."
+                if has_view
+                else "No published result target exists."
+            ),
+            cost="metadata",
+        )
+        add(
+            "verify",
+            f"agentcfd verify project {project_argument} --json",
+            available=has_result,
+            availability_reason=(
+                "A result exists for full artifact integrity verification."
+                if has_result
+                else "No result exists to verify."
+            ),
+            cost="full-integrity",
+        )
+        add(
+            "archive",
+            f"agentcfd archive {project_argument} --plan-only --json",
+            available=has_result and state != "running",
+            availability_reason=(
+                "A completed result can be verified and inventoried for handoff."
+                if has_result and state != "running"
+                else "Archive planning requires a published result and no active run."
+            ),
+            cost="full-integrity",
+        )
+        add(
+            "performance",
+            f"agentcfd performance {project_argument} --json",
+            available=state != "running",
+            availability_reason=(
+                "Runtime history can be compared with current resolved intent."
+                if state != "running"
+                else "Use live progress while the solver is active."
+            ),
+            cost="bounded-io",
+        )
+        add(
+            "campaigns",
+            f"agentcfd campaigns {project_argument} --json",
+            available=self.manifest.run_mode == "campaign",
+            availability_reason=(
+                "The project uses immutable campaign mode."
+                if self.manifest.run_mode == "campaign"
+                else "This project uses replace mode."
+            ),
+            cost="bounded-io",
+        )
+        add(
+            "storage",
+            f"agentcfd storage {project_argument} --json",
+            available=True,
+            availability_reason="Managed storage can be inventoried explicitly.",
+            cost="recursive-io",
+        )
+        add(
+            "clean",
+            f"agentcfd clean {project_argument} --json",
+            available=state != "running",
+            availability_reason=(
+                "A non-mutating cleanup preview is available."
+                if state != "running"
+                else "Do not plan cleanup while a solver is active."
+            ),
+            cost="recursive-io",
+        )
+        return {
+            "schema": "agentcfd.project-actions/0.1",
+            "root": str(self.root),
+            "state": state,
+            "recommended_operation": recommended["operation"],
+            "actions": records,
+            "observation_cost": {
+                "field_payloads_opened": 0,
+                "recursive_storage_scan": False,
             },
         }
 

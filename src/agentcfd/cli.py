@@ -1745,6 +1745,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     project_snapshot.add_argument("--json", action="store_true", dest="as_json")
 
+    actions = subparsers.add_parser(
+        "actions",
+        help="List state-aware safe project operations for agents and GUIs.",
+    )
+    actions.add_argument("project", nargs="?", type=Path, default=Path("."))
+    actions.add_argument("--json", action="store_true", dest="as_json")
+
     params = subparsers.add_parser(
         "params",
         help="Inspect or export one validated, reusable project operating point.",
@@ -3420,6 +3427,23 @@ def main(argv: list[str] | None = None) -> int:
                 f"{action['reason']}"
             )
         return 0 if report["state"] not in {"blocked", "failed"} else 3
+    if args.command == "actions":
+        report = projects.open_project(args.project).actions()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Project actions | {report['state']} | recommended "
+                f"{report['recommended_operation']}"
+            )
+            for action in report["actions"]:
+                marker = "*" if action["recommended"] else " "
+                availability = "ready" if action["available"] else "unavailable"
+                print(
+                    f"{marker} {action['operation']}: {availability} | "
+                    f"{action['cost']} | {action['command']}"
+                )
+        return 0
     if args.command == "params":
         project = projects.Project(args.project)
         selected = _project_parameters(args.param, args.param_file)

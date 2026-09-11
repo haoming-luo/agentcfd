@@ -108,6 +108,7 @@ cd my-flow
 agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
 agentcfd project .      # unified project/result/output view; no HDF5 read
+agentcfd actions .      # state-aware operations, costs, and side effects for AI
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
 agentcfd verify project . # hash result artifacts and verify XDMF/H5 consistency
@@ -480,6 +481,13 @@ strictly observational: it never opens HDF5, launches ParaView, or starts a
 solver. Runtime scheduling evidence is available separately through
 `agentcfd.open_project(path).performance()` so it cannot be confused with the
 scientific result.
+
+`agentcfd actions . --json` is the execution menu for agents and future GUIs.
+It publishes exact argument vectors and commands, current availability and
+reason, the one recommended operation, I/O cost class, project mutation and
+solver-start flags, and whether approval is needed. The catalog itself is
+read-only and never scans storage recursively or opens field payloads; cleanup
+and archive entries are deliberately preview commands.
 
 When integrity—not just a lightweight overview—is required, run `agentcfd
 verify project . --json`. This explicit operation hashes every registered

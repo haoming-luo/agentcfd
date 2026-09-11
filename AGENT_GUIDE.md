@@ -110,6 +110,9 @@ python -m pytest -q
 30. Use `open_scientific_dataset()` or `dataset inspect --json` after admission.
     Preserve declared column order and units; call `to_numpy()` only when an
     array consumer is actually needed, and never normalize silently.
+31. Generate `dataset plan` before model training. Bind downstream artifacts to
+    its source sample hash, case-ID split, column order, units, and explicit
+    offset/scale; never substitute a random notebook split without recording it.
 26. Use `performance --json` only for scheduling and ETA. Its bounded comparable
     runtime history is advisory and must never be treated as convergence,
     accuracy, acceptance, or permission to change the requested model.

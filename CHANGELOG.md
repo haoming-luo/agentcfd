@@ -7,6 +7,8 @@
   discover ordered columns, units, ranges, matrix shapes, trust counts, and
   bounded rows or obtain raw-unit immutable matrices without solver, pandas,
   or NumPy dependencies; the optional arrays adapter returns NumPy matrices.
+  `dataset plan` adds a content-bound, deterministic train/validation split and
+  explicit unit-preserving z-score contract without copying sample payloads.
 - Add atomic verified campaign datasets through `Project.export_campaign_dataset()`
   and `agentcfd export dataset`. Accepted points become streamable independent
   `agentcae.scientific-sample` JSON Lines under one content-hashed manifest;

@@ -382,6 +382,8 @@ agentcfd export dataset . training/pressure-map \
   --input mean_velocity --output-quantity flow.pressure_drop
 agentcfd verify dataset training/pressure-map
 agentcfd dataset inspect training/pressure-map --preview 3
+agentcfd dataset plan training/pressure-map --seed 17 \
+  --validation-fraction 0.2 --output training/plan.json
 agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 # agentcfd clean . --include-retained --apply  # release expert copies
@@ -395,6 +397,7 @@ from agentcfd import open_scientific_dataset
 
 dataset = open_scientific_dataset("training/pressure-map")
 X, Y = dataset.matrices()        # immutable tuples, values remain in declared units
+plan = dataset.training_plan(seed=17)  # content-bound split + explicit z-score stats
 # X_np, Y_np = dataset.to_numpy()  # optional: pip install agentcfd[arrays]
 ```
 

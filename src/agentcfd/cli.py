@@ -2047,6 +2047,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include at most this many compact input/output rows.",
     )
     dataset_inspect.add_argument("--json", action="store_true", dest="as_json")
+    dataset_plan = dataset_subparsers.add_parser(
+        "plan",
+        help="Create a content-bound deterministic split and normalization contract.",
+    )
+    dataset_plan.add_argument("directory", type=Path)
+    dataset_plan.add_argument("--validation-fraction", type=float, default=0.2)
+    dataset_plan.add_argument("--seed", type=int, default=0)
+    dataset_plan.add_argument(
+        "--output",
+        type=Path,
+        help="Atomically write the plan as JSON in addition to printing it.",
+    )
+    dataset_plan.add_argument("--json", action="store_true", dest="as_json")
 
     license_catalog = subparsers.add_parser(
         "licenses",
@@ -3962,6 +3975,29 @@ def main(argv: list[str] | None = None) -> int:
                 )
             if report["preview"]:
                 print(json.dumps(report["preview"], indent=2, sort_keys=True))
+        return 0
+    if args.command == "dataset" and args.dataset_action == "plan":
+        report = interoperability.open_scientific_dataset(
+            args.directory
+        ).training_plan(
+            validation_fraction=args.validation_fraction,
+            seed=args.seed,
+        )
+        if args.output is not None:
+            _write_json_atomic(args.output, report)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            split = report["split"]
+            print(
+                f"Verified training plan | train {split['train_count']} | "
+                f"validation {split['validation_count']} | seed {split['seed']}"
+            )
+            print(
+                "normalization: z-score-population in explicitly declared raw units"
+            )
+            if args.output is not None:
+                print(args.output)
         return 0
     if args.command == "licenses":
         report = licensing.as_dict()

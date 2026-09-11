@@ -68,6 +68,13 @@ physical units in plain Python matrices; NumPy conversion is opt-in. This keeps
 the core lightweight while giving AgentFEM, surrogate, and notebook adapters a
 single verified entrance instead of custom JSONL parsing.
 
+`ScientificDatasetReader.training_plan()` defines a framework-neutral training
+handoff over those samples. Its train/validation membership is ordered by a
+SHA-256 function of seed and case ID, its normalization is explicit and
+unit-aware, and its source sample hash prevents applying a stale plan to a
+different campaign export. It does not prescribe a network or serialize
+framework-specific tensors.
+
 The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack
 behind the stable `agentcae.*` records.

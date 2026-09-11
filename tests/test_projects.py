@@ -1985,6 +1985,47 @@ def test_campaign_dataset_is_verified_atomic_and_records_exclusions(tmp_path, ca
     assert cli_inspection["verified"] is True
     assert len(cli_inspection["preview"]) == 1
 
+    training_plan = dataset.training_plan(validation_fraction=0.5, seed=17)
+    jsonschema.Draft202012Validator(
+        contracts.load("training-plan.schema.json")
+    ).validate(training_plan)
+    assert training_plan == dataset.training_plan(validation_fraction=0.5, seed=17)
+    assert training_plan["source"]["samples_sha256"] == manifest["samples"]["sha256"]
+    assert training_plan["split"]["train_count"] == 1
+    assert training_plan["split"]["validation_count"] == 1
+    split_ids = (
+        training_plan["split"]["train_case_ids"]
+        + training_plan["split"]["validation_case_ids"]
+    )
+    assert set(split_ids) == {f"agentcfd-{low.run_id}", f"agentcfd-{medium.run_id}"}
+    assert training_plan["normalization"]["inputs"][0]["constant"] is True
+    assert training_plan["normalization"]["inputs"][0]["scale"] == 1.0
+    assert training_plan["normalization"]["inputs"][1]["offset"] == pytest.approx(0.02)
+    assert training_plan["normalization"]["inputs"][1]["scale"] == pytest.approx(0.01)
+    assert "training-plan.schema.json" in contracts.available()
+    plan_path = tmp_path / "training-plan.json"
+    assert (
+        entrypoint(
+            [
+                "dataset",
+                "plan",
+                str(target),
+                "--validation-fraction",
+                "0.5",
+                "--seed",
+                "17",
+                "--output",
+                str(plan_path),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == training_plan
+    assert json.loads(plan_path.read_text()) == training_plan
+    with pytest.raises(ValueError, match="strictly between"):
+        dataset.training_plan(validation_fraction=1.0)
+
     with pytest.raises(ProjectError, match="already exists"):
         project.export_campaign_dataset(
             target,
@@ -2022,6 +2063,46 @@ def test_campaign_dataset_is_verified_atomic_and_records_exclusions(tmp_path, ca
         dataset.matrices()
     with pytest.raises(ValueError, match="Scientific dataset is not verified"):
         open_scientific_dataset(target)
+
+
+def test_training_plan_detects_repeated_float_as_constant(tmp_path):
+    samples = [
+        {
+            "case_id": f"case-{index}",
+            "inputs": {"diameter": 0.05, "velocity": velocity},
+            "outputs": {"pressure": pressure},
+        }
+        for index, (velocity, pressure) in enumerate(
+            ((0.01, 1.0), (0.02, 2.0), (0.03, 3.0)), start=1
+        )
+    ]
+    samples_path = tmp_path / "samples.jsonl"
+    samples_path.write_text(
+        "".join(json.dumps(sample) + "\n" for sample in samples),
+        encoding="utf-8",
+    )
+    manifest = {
+        "schema": "agentcfd.scientific-dataset/0.1",
+        "sample_schema": "agentcae.scientific-sample/0.1.0",
+        "sample_count": 3,
+        "inputs": [
+            {"name": "diameter", "metadata": {"unit": "m"}},
+            {"name": "velocity", "metadata": {"unit": "m/s"}},
+        ],
+        "outputs": [{"name": "pressure", "unit": "Pa"}],
+        "samples": {
+            "path": "samples.jsonl",
+            "sha256": hashlib.sha256(samples_path.read_bytes()).hexdigest(),
+        },
+    }
+    reader = interoperability.ScientificDatasetReader(tmp_path, manifest, {})
+
+    plan = reader.training_plan(validation_fraction=1 / 3, seed=17)
+
+    diameter = plan["normalization"]["inputs"][0]
+    assert diameter["constant"] is True
+    assert diameter["offset"] == 0.05
+    assert diameter["scale"] == 1.0
 
 
 def test_campaign_operating_map_is_unit_aware_accepted_and_field_free(tmp_path, capsys):

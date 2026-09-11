@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/training-plan.schema.json",
+  "title": "AgentCFD reproducible scalar training plan 0.1",
+  "type": "object",
+  "required": ["schema", "source", "columns", "normalization", "split"],
+  "properties": {
+    "schema": {"const": "agentcfd.training-plan/0.1"},
+    "source": {
+      "type": "object",
+      "required": ["dataset_schema", "sample_schema", "sample_count", "samples_sha256"],
+      "properties": {
+        "dataset_schema": {"const": "agentcfd.scientific-dataset/0.1"},
+        "sample_schema": {"const": "agentcae.scientific-sample/0.1.0"},
+        "sample_count": {"type": "integer", "minimum": 2},
+        "samples_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
+    "columns": {
+      "type": "object",
+      "required": ["inputs", "outputs", "units_policy"],
+      "properties": {
+        "inputs": {"$ref": "#/$defs/names"},
+        "outputs": {"$ref": "#/$defs/names"},
+        "units_policy": {"const": "raw-declared-units-before-explicit-normalization"}
+      },
+      "additionalProperties": false
+    },
+    "normalization": {
+      "type": "object",
+      "required": ["method", "formula", "inputs", "outputs"],
+      "properties": {
+        "method": {"const": "z-score-population"},
+        "formula": {"const": "normalized=(value-offset)/scale"},
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/normalizationColumn"}
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/normalizationColumn"}
+        }
+      },
+      "additionalProperties": false
+    },
+    "split": {
+      "type": "object",
+      "required": [
+        "method", "seed", "requested_validation_fraction", "train_count",
+        "validation_count", "train_case_ids", "validation_case_ids"
+      ],
+      "properties": {
+        "method": {"const": "sha256(seed\\0case_id)-ordered"},
+        "seed": {"type": "integer"},
+        "requested_validation_fraction": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+        "train_count": {"type": "integer", "minimum": 1},
+        "validation_count": {"type": "integer", "minimum": 1},
+        "train_case_ids": {"$ref": "#/$defs/names"},
+        "validation_case_ids": {"$ref": "#/$defs/names"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "normalizationColumn": {
+      "type": "object",
+      "required": ["name", "unit", "offset", "scale", "minimum", "maximum", "constant"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "unit": {"type": ["string", "null"]},
+        "offset": {"type": "number"},
+        "scale": {"type": "number", "exclusiveMinimum": 0},
+        "minimum": {"type": "number"},
+        "maximum": {"type": "number"},
+        "constant": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

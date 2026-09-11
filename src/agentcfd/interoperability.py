@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import asdict, dataclass
+import hashlib
 from pathlib import Path
 from typing import Mapping
 
@@ -530,6 +531,115 @@ class ScientificDatasetReader:
                 "sha256": self.manifest["samples"]["sha256"],
             },
             "preview": preview_rows,
+        }
+
+    def training_plan(
+        self,
+        *,
+        validation_fraction: float = 0.2,
+        seed: int = 0,
+    ) -> dict[str, object]:
+        """Create a reproducible split and raw-unit z-score contract.
+
+        The plan references the content-addressed JSONL instead of copying its
+        samples.  Constant columns remain explicit and use a safe scale of one;
+        consumers must not silently drop them because they may carry scientific
+        context such as a fixed diameter or material property.
+        """
+
+        fraction = float(validation_fraction)
+        if not math.isfinite(fraction) or not 0.0 < fraction < 1.0:
+            raise ValueError("validation_fraction must lie strictly between 0 and 1.")
+        if isinstance(seed, bool) or not isinstance(seed, int):
+            raise ValueError("Training split seed must be an integer.")
+        if self.sample_count < 2:
+            raise ValueError("At least two verified samples are required for a split.")
+
+        samples = tuple(self.iter_samples())
+        case_ids = [str(sample["case_id"]) for sample in samples]
+        ordered = sorted(
+            case_ids,
+            key=lambda case_id: hashlib.sha256(
+                f"{seed}\0{case_id}".encode("utf-8")
+            ).hexdigest(),
+        )
+        validation_count = max(
+            1,
+            min(self.sample_count - 1, int(self.sample_count * fraction + 0.5)),
+        )
+        validation_ids = ordered[:validation_count]
+        train_ids = ordered[validation_count:]
+
+        input_schema = {str(record["name"]): record for record in self.manifest["inputs"]}
+        output_schema = {
+            str(record["name"]): record for record in self.manifest["outputs"]
+        }
+
+        def statistics(
+            names: tuple[str, ...],
+            source: str,
+            schemas: Mapping[str, Mapping[str, object]],
+        ) -> list[dict[str, object]]:
+            result: list[dict[str, object]] = []
+            for name in names:
+                values = [float(sample[source][name]) for sample in samples]
+                minimum = min(values)
+                maximum = max(values)
+                constant = minimum == maximum
+                offset = minimum if constant else math.fsum(values) / len(values)
+                variance = (
+                    0.0
+                    if constant
+                    else math.fsum((value - offset) ** 2 for value in values)
+                    / len(values)
+                )
+                standard_deviation = math.sqrt(variance)
+                metadata = schemas[name]
+                if source == "inputs":
+                    unit = (metadata.get("metadata") or {}).get("unit")
+                else:
+                    unit = metadata.get("unit")
+                result.append(
+                    {
+                        "name": name,
+                        "unit": unit,
+                        "offset": offset,
+                        "scale": 1.0 if constant else standard_deviation,
+                        "minimum": minimum,
+                        "maximum": maximum,
+                        "constant": constant,
+                    }
+                )
+            return result
+
+        return {
+            "schema": "agentcfd.training-plan/0.1",
+            "source": {
+                "dataset_schema": self.manifest["schema"],
+                "sample_schema": self.manifest["sample_schema"],
+                "sample_count": self.sample_count,
+                "samples_sha256": self.manifest["samples"]["sha256"],
+            },
+            "columns": {
+                "inputs": list(self.input_names),
+                "outputs": list(self.output_names),
+                "units_policy": "raw-declared-units-before-explicit-normalization",
+            },
+            "normalization": {
+                "method": "z-score-population",
+                "formula": "normalized=(value-offset)/scale",
+                "inputs": statistics(self.input_names, "inputs", input_schema),
+                "outputs": statistics(self.output_names, "outputs", output_schema),
+            },
+            "split": {
+                "method": "sha256(seed\\0case_id)-ordered",
+                "seed": seed,
+                "requested_validation_fraction": fraction,
+                "train_count": len(train_ids),
+                "validation_count": len(validation_ids),
+                "train_case_ids": train_ids,
+                "validation_case_ids": validation_ids,
+            },
         }
 
 

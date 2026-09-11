@@ -6,6 +6,9 @@
 
 - Keep bounded STL topology inspection compatible with Python 3.11 by clearing
   compact numeric buffers through slice deletion rather than `array.clear()`.
+- Make generated-elbow integration checks distinguish project-input readiness
+  from execution-runtime availability, so validation stays portable on hosts
+  without an installed OpenFOAM runtime.
 - Enforce agreement among package, runtime, citation, installation, and
   changelog versions in the lightweight release gate.
 - End human project runs with a bounded four-quantity engineering summary and

@@ -145,7 +145,13 @@ def test_circular_elbow_cli_plans_then_writes(tmp_path, capsys):
     ) == 0
     capsys.readouterr()
     solution_plan = projects.Project(project).plan()
-    assert solution_plan["readiness"]["ready_to_run"] is True
+    readiness = solution_plan["readiness"]
+    assert readiness["model_valid"] is True
+    assert readiness["provider_compatible"] is True
+    assert readiness["portable_io_available"] is True
+    assert readiness["input_assets_ready"] is True
+    assert readiness["mesh_intent_ready"] is True
+    assert readiness["ready_to_run"] is readiness["runtime_available"]
     assert set(projects.Project(project).load_step().model.boundary_conditions) == {
         "inlet", "outlet", "walls"
     }

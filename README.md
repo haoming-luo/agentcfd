@@ -522,9 +522,11 @@ schemas give agents the same state, next action, and repair path. During a long
 run, status distinguishes solver and field-export phases and reads only a
 bounded log tail plus compact monitor rows to report physical time/iteration,
 residuals, Courant number, mass imbalance, pressure drop, elapsed time, and a
-wide transient ETA range. Add `--storage` when recursive workspace size is
-worth the extra I/O. A dead process becomes `interrupted`, and the next replace
-run can recover without manual folder surgery.
+wide transient ETA range. During portable publication it switches to completed/
+total frames and micro-batch position rather than continuing to show a stale
+solver percentage. Add `--storage` when recursive workspace size is worth the
+extra I/O. A dead process becomes `interrupted`, and the next replace run can
+recover without manual folder surgery.
 
 Completed runs publish `summary.json` beside `result.json`. The first is the
 small default decision surface for people, CLIs, GUIs, and AI agents; the

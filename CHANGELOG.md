@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Report bounded portable-field progress through `status` and `watch`: phase,
+  completed/total frames, batch position, and fraction are written atomically
+  once per micro-batch without opening field payloads. Human watch lines and the
+  versioned status schema expose the same contract; solver ETA is deliberately
+  suppressed during export because it cannot predict conversion throughput.
 - Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
   one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
   batch release. The total timeout covers the complete pipeline, per-batch logs

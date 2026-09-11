@@ -82,7 +82,7 @@
             "schema", "run_id", "status", "phase", "current_command",
             "observed_at", "updated_at", "elapsed_seconds", "elapsed_display",
             "coordinate", "latest_residuals", "courant_number",
-            "monitors", "estimated_remaining", "checkpoint", "workspace",
+            "monitors", "estimated_remaining", "field_export", "checkpoint", "workspace",
             "observation_cost"
           ],
           "properties": {
@@ -168,6 +168,32 @@
                     "minimum_seconds": {"type": "number", "minimum": 0},
                     "maximum_seconds": {"type": "number", "minimum": 0},
                     "basis": {"type": "string"}
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "field_export": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "required": [
+                    "schema", "phase", "completed_frames", "total_frames",
+                    "fraction", "batch_index", "batch_count",
+                    "current_batch_frames", "maximum_batch_frames", "updated_at"
+                  ],
+                  "properties": {
+                    "schema": {"const": "agentcfd.field-export-progress/0.1"},
+                    "phase": {"enum": ["preparing", "converting", "writing", "publishing", "complete"]},
+                    "completed_frames": {"type": "integer", "minimum": 0},
+                    "total_frames": {"type": "integer", "minimum": 1},
+                    "fraction": {"type": "number", "minimum": 0, "maximum": 1},
+                    "batch_index": {"type": ["integer", "null"], "minimum": 1},
+                    "batch_count": {"type": "integer", "minimum": 0},
+                    "current_batch_frames": {"type": ["integer", "null"], "minimum": 1, "maximum": 4},
+                    "maximum_batch_frames": {"const": 4},
+                    "updated_at": {"type": "string", "format": "date-time"}
                   },
                   "additionalProperties": false
                 }

@@ -17,7 +17,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .errors import AgentCFDError, ProviderUnavailableError
 from .provenance import file_sha256
@@ -403,12 +403,26 @@ def _converted_openfoam_frame_stream(
     timeout_seconds: float,
     include_initial: bool,
     fields: tuple[str, ...] | None,
+    progress_callback: Callable[[Mapping[str, object]], None] | None,
 ) -> Iterable[Path]:
     """Convert, expose, and release one bounded isolated VTU micro-batch."""
 
     deadline = time.monotonic() + timeout_seconds
+    batch_count = math.ceil(len(time_names) / OPENFOAM_CONVERSION_BATCH_FRAMES)
     for start in range(0, len(time_names), OPENFOAM_CONVERSION_BATCH_FRAMES):
         batch = time_names[start : start + OPENFOAM_CONVERSION_BATCH_FRAMES]
+        batch_index = start // OPENFOAM_CONVERSION_BATCH_FRAMES + 1
+        if progress_callback is not None:
+            progress_callback(
+                _field_export_progress(
+                    phase="converting",
+                    completed_frames=start,
+                    total_frames=len(time_names),
+                    batch_index=batch_index,
+                    batch_count=batch_count,
+                    current_batch_frames=len(batch),
+                )
+            )
         remaining = deadline - time.monotonic()
         if remaining <= 0.0:
             raise AgentCFDError(
@@ -436,7 +450,40 @@ def _converted_openfoam_frame_stream(
                     "Bounded foamToVTK conversion produced an unexpected "
                     f"{len(frames)} internal-field frames for {len(batch)} native times."
                 )
+            if progress_callback is not None:
+                progress_callback(
+                    _field_export_progress(
+                        phase="writing",
+                        completed_frames=start,
+                        total_frames=len(time_names),
+                        batch_index=batch_index,
+                        batch_count=batch_count,
+                        current_batch_frames=len(batch),
+                    )
+                )
             yield from frames
+
+
+def _field_export_progress(
+    *,
+    phase: str,
+    completed_frames: int,
+    total_frames: int,
+    batch_index: int | None,
+    batch_count: int,
+    current_batch_frames: int | None,
+) -> dict[str, object]:
+    return {
+        "schema": "agentcfd.field-export-progress/0.1",
+        "phase": phase,
+        "completed_frames": completed_frames,
+        "total_frames": total_frames,
+        "fraction": completed_frames / total_frames,
+        "batch_index": batch_index,
+        "batch_count": batch_count,
+        "current_batch_frames": current_batch_frames,
+        "maximum_batch_frames": OPENFOAM_CONVERSION_BATCH_FRAMES,
+    }
 
 
 def _semantic(source_name: str) -> FieldSemantic:
@@ -1088,6 +1135,7 @@ def export_openfoam_case(
     include_initial: bool = True,
     time_interval: float | None = None,
     latest_only: bool = False,
+    _progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> FieldBundle:
     """Export selected OpenFOAM times to the standard field bundle.
 
@@ -1144,6 +1192,7 @@ def export_openfoam_case(
                 include_initial=include_initial,
                 time_names=selected_time_names,
                 fields=native_fields,
+                progress_callback=_progress_callback,
             )
         else:
             files = openfoam_vtu_series(case)
@@ -1177,6 +1226,27 @@ def export_openfoam_case(
                     )
             if latest_only:
                 files = (max(files, key=_time_from_vtu),)
+        total_frames = (
+            len(selected_time_names)
+            if selected_time_names is not None
+            else len(tuple(files or ()))
+        )
+        batch_count = (
+            math.ceil(total_frames / OPENFOAM_CONVERSION_BATCH_FRAMES)
+            if convert
+            else 0
+        )
+        if _progress_callback is not None:
+            _progress_callback(
+                _field_export_progress(
+                    phase="preparing",
+                    completed_frames=0,
+                    total_frames=total_frames,
+                    batch_index=None,
+                    batch_count=batch_count,
+                    current_batch_frames=None,
+                )
+            )
         selected_density = density if density is not None else _density_from_result(case)
         conversion_record = {
             "staging": (
@@ -1246,9 +1316,31 @@ def export_openfoam_case(
             ),
             _bundle_publication_strategy="same-parent-atomic-rename",
         )
+        if _progress_callback is not None:
+            _progress_callback(
+                _field_export_progress(
+                    phase="publishing",
+                    completed_frames=total_frames,
+                    total_frames=total_frames,
+                    batch_index=batch_count if batch_count else None,
+                    batch_count=batch_count,
+                    current_batch_frames=None,
+                )
+            )
         if target.exists():
             target.rmdir()
         publication_directory.replace(target)
+        if _progress_callback is not None:
+            _progress_callback(
+                _field_export_progress(
+                    phase="complete",
+                    completed_frames=total_frames,
+                    total_frames=total_frames,
+                    batch_index=batch_count if batch_count else None,
+                    batch_count=batch_count,
+                    current_batch_frames=None,
+                )
+            )
         return FieldBundle(
             directory=target,
             xdmf=target / bundle.xdmf.name,

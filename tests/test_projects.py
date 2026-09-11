@@ -22,7 +22,7 @@ from agentcfd import (
     open_scientific_dataset,
     projects,
 )
-from agentcfd.cli import entrypoint
+from agentcfd.cli import _watch_summary, entrypoint
 from agentcfd.errors import ProjectError
 
 
@@ -1245,6 +1245,7 @@ def test_successful_project_preserves_bounded_field_conversion_log(
     project = projects.init_project(
         tmp_path / "wake", template="baffle-channel", provider="openfoam"
     )
+    observed_progress = {}
 
     def complete(provider, _step, **_kwargs):
         provider.case_directory.mkdir(parents=True)
@@ -1268,6 +1269,22 @@ def test_successful_project_preserves_bounded_field_conversion_log(
         manifest.write_text(json.dumps({"fields": []}) + "\n")
         (case_directory / "log.foamToVTK").write_text(
             "=== native times 0.5,1 ===\nconverted\n"
+        )
+        _kwargs["_progress_callback"](
+            {
+                "schema": "agentcfd.field-export-progress/0.1",
+                "phase": "writing",
+                "completed_frames": 0,
+                "total_frames": 2,
+                "fraction": 0.0,
+                "batch_index": 1,
+                "batch_count": 1,
+                "current_batch_frames": 2,
+                "maximum_batch_frames": 4,
+            }
+        )
+        observed_progress.update(
+            json.loads((project.run_root / "run.json").read_text())["field_export"]
         )
         return projects.data_exchange.FieldBundle(
             directory=output_directory,
@@ -1300,6 +1317,11 @@ def test_successful_project_preserves_bounded_field_conversion_log(
     assert Path(artifact.path) == published
     assert artifact.role == "field-conversion-log"
     assert completed.solver_workspace is None
+    assert observed_progress["completed_frames"] == 0
+    assert observed_progress["updated_at"].endswith("+00:00")
+    log_report = project.logs(command="foamToVTK", lines=1)
+    assert log_report["source"] == "published-evidence"
+    assert log_report["tail"] == "converted\n"
 
 
 def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
@@ -3515,6 +3537,56 @@ GAMG: Solving for p, Initial residual = 8e-4, Final residual = 9e-7, No Iteratio
     assert progress["observation_cost"]["monitor_bytes_read"] > 0
     assert progress["observation_cost"]["checkpoint_metadata_bytes_read"] > 0
     assert progress["estimated_remaining"]["minimum_seconds"] >= 0
+
+
+def test_project_status_reports_bounded_field_export_progress(tmp_path):
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+    project.run_root.mkdir()
+    marker = project.run_root / "run.json"
+    record = {
+        "schema": "agentcfd.project-run/0.1",
+        "run_id": "live-field-export",
+        "mode": "replace",
+        "directory": str(project.run_root),
+        "status": "exporting",
+        "phase": "portable-fields",
+        "pid": os.getpid(),
+        "started_at": "2026-09-06T00:00:00+00:00",
+        "completed_at": None,
+        "field_export": {
+            "schema": "agentcfd.field-export-progress/0.1",
+            "phase": "writing",
+            "completed_frames": 0,
+            "total_frames": 10,
+            "fraction": 0.0,
+            "batch_index": 1,
+            "batch_count": 3,
+            "current_batch_frames": 4,
+            "maximum_batch_frames": 4,
+            "updated_at": "2026-09-06T00:00:03+00:00",
+        },
+    }
+    marker.write_text(json.dumps(record))
+
+    report = project.status()
+
+    jsonschema.Draft202012Validator(
+        contracts.load("project-status.schema.json")
+    ).validate(report)
+    assert report["state"] == "running"
+    assert report["progress"]["current_command"] == "portable-field-export"
+    assert report["progress"]["field_export"] == record["field_export"]
+    assert report["progress"]["estimated_remaining"] is None
+    assert report["progress"]["observation_cost"]["field_payloads_opened"] == 0
+    assert _watch_summary(report).startswith(
+        "RUNNING | portable-field-export | frames 0/10 0.0% | batch 1/3"
+    )
+
+    record["field_export"]["fraction"] = 0.9
+    marker.write_text(json.dumps(record))
+    assert project.status()["progress"]["field_export"] is None
 
 
 def test_project_status_rereads_atomic_completion_before_reporting_interrupted(

@@ -306,6 +306,7 @@ _CAPABILITIES = (
             "XDMF/HDF5 and NPZ cross-format round-trip tests",
             "field-unit, association, axis, and artifact-hash contract tests",
             "observed bounded four-frame OpenCFD v2606 conversion pipeline",
+            "field-free micro-batch progress contract and terminal rendering tests",
             "16-frame OpenCFD v2606 turbulent-pipe export",
         ),
         limitations=(

@@ -637,6 +637,7 @@ def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatc
     calls: list[tuple[str, ...]] = []
     simultaneous_staging_counts: list[int] = []
     generated_frame_counts: list[int] = []
+    progress: list[dict[str, object]] = []
 
     def fake_convert(*_args, **kwargs):
         time_names = kwargs["times"]
@@ -664,6 +665,7 @@ def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatc
         tmp_path / "bundle",
         density=1000.0,
         include_initial=False,
+        _progress_callback=lambda record: progress.append(dict(record)),
     )
 
     assert calls == [
@@ -678,6 +680,25 @@ def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatc
     assert manifest["storage"]["maximum_managed_source_vtu_frames"] == 4
     assert manifest["storage"]["conversion_invocation_count"] == 2
     assert not list(tmp_path.glob(".bundle.agentcfd-publish-*"))
+    assert [record["phase"] for record in progress] == [
+        "preparing",
+        "converting",
+        "writing",
+        "converting",
+        "writing",
+        "publishing",
+        "complete",
+    ]
+    assert [record["completed_frames"] for record in progress] == [
+        0,
+        0,
+        0,
+        4,
+        4,
+        6,
+        6,
+    ]
+    assert all(record["total_frames"] == 6 for record in progress)
 
 
 def test_openfoam_frame_pipeline_uses_one_total_conversion_timeout(

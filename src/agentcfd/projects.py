@@ -1025,6 +1025,93 @@ def _checkpoint_progress(
     return report, metadata_bytes
 
 
+def _field_export_progress_report(
+    record: Mapping[str, object],
+) -> dict[str, object] | None:
+    raw = record.get("field_export")
+    if not isinstance(raw, dict):
+        return None
+    phase = raw.get("phase")
+    completed = raw.get("completed_frames")
+    total = raw.get("total_frames")
+    fraction = raw.get("fraction")
+    batch_index = raw.get("batch_index")
+    batch_count = raw.get("batch_count")
+    current_batch = raw.get("current_batch_frames")
+    maximum_batch = raw.get("maximum_batch_frames")
+    updated_at = raw.get("updated_at")
+    integer_values = (completed, total, batch_count, maximum_batch)
+    optional_integers = (batch_index, current_batch)
+    parsed_updated_at = None
+    if isinstance(updated_at, str):
+        try:
+            parsed_updated_at = datetime.fromisoformat(updated_at)
+        except ValueError:
+            pass
+    if (
+        raw.get("schema") != "agentcfd.field-export-progress/0.1"
+        or phase not in {"preparing", "converting", "writing", "publishing", "complete"}
+        or any(isinstance(value, bool) or not isinstance(value, int) for value in integer_values)
+        or any(
+            value is not None
+            and (isinstance(value, bool) or not isinstance(value, int))
+            for value in optional_integers
+        )
+        or total <= 0
+        or completed < 0
+        or completed > total
+        or maximum_batch != data_exchange.OPENFOAM_CONVERSION_BATCH_FRAMES
+        or batch_count != math.ceil(total / maximum_batch)
+        or (batch_index is not None and not 1 <= batch_index <= batch_count)
+        or (current_batch is not None and not 1 <= current_batch <= maximum_batch)
+        or isinstance(fraction, bool)
+        or not isinstance(fraction, (int, float))
+        or not math.isfinite(float(fraction))
+        or not math.isclose(float(fraction), completed / total)
+        or parsed_updated_at is None
+        or parsed_updated_at.tzinfo is None
+        or (
+            phase == "preparing"
+            and (completed != 0 or batch_index is not None or current_batch is not None)
+        )
+        or (
+            phase == "converting"
+            and (
+                batch_index is None
+                or current_batch
+                != min(maximum_batch, total - (batch_index - 1) * maximum_batch)
+                or completed != (batch_index - 1) * maximum_batch
+            )
+        )
+        or (
+            phase == "writing"
+            and (
+                batch_index is None
+                or current_batch
+                != min(maximum_batch, total - (batch_index - 1) * maximum_batch)
+                or completed != (batch_index - 1) * maximum_batch
+            )
+        )
+        or (
+            phase in {"publishing", "complete"}
+            and (completed != total or batch_index != batch_count or current_batch is not None)
+        )
+    ):
+        return None
+    return {
+        "schema": "agentcfd.field-export-progress/0.1",
+        "phase": phase,
+        "completed_frames": completed,
+        "total_frames": total,
+        "fraction": float(fraction),
+        "batch_index": batch_index,
+        "batch_count": batch_count,
+        "current_batch_frames": current_batch,
+        "maximum_batch_frames": maximum_batch,
+        "updated_at": updated_at,
+    }
+
+
 def _run_progress_snapshot(
     root: Path,
     record: Mapping[str, object] | None,
@@ -1062,6 +1149,7 @@ def _run_progress_snapshot(
     )
     if record.get("status") == "exporting":
         current_command = "portable-field-export"
+    field_export = _field_export_progress_report(record)
     tail, tail_bytes = (
         _read_text_tail(current_log) if current_log is not None else ("", 0)
     )
@@ -1090,6 +1178,13 @@ def _run_progress_snapshot(
         try:
             updated_timestamps.append(path.stat().st_mtime)
         except OSError:
+            pass
+    if field_export is not None:
+        try:
+            updated_timestamps.append(
+                datetime.fromisoformat(str(field_export["updated_at"])).timestamp()
+            )
+        except ValueError:
             pass
 
     log_coordinates = [
@@ -1227,6 +1322,9 @@ def _run_progress_snapshot(
         )
         if calibrated is not None:
             remaining_range = calibrated
+    if record.get("status") == "exporting":
+        # Solver calibration does not predict converter or HDF5 throughput.
+        remaining_range = None
 
     checkpoint, checkpoint_bytes = _checkpoint_progress(root, record, plan)
 
@@ -1275,6 +1373,7 @@ def _run_progress_snapshot(
             },
         },
         "estimated_remaining": remaining_range,
+        "field_export": field_export,
         "checkpoint": checkpoint,
         "workspace": {
             "path": None if workspace is None else str(workspace),
@@ -6819,6 +6918,20 @@ class Project:
             and plan["decisions"]["portable_field_bundle"] is True
         ):
             write_marker(status="exporting", phase="portable-fields")
+
+            def update_field_export_progress(
+                progress: Mapping[str, object],
+            ) -> None:
+                progress_record = {
+                    **dict(progress),
+                    "updated_at": datetime.now(UTC).isoformat(),
+                }
+                write_marker(
+                    status="exporting",
+                    phase="portable-fields",
+                    field_export=progress_record,
+                )
+
             try:
                 bundle = data_exchange.export_openfoam_case(
                     case_directory,
@@ -6862,6 +6975,7 @@ class Project:
                         else None
                     ),
                     latest_only=step.output.frames.mode == "final",
+                    _progress_callback=update_field_export_progress,
                 )
             except Exception as error:
                 write_marker(

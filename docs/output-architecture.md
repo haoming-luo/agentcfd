@@ -148,6 +148,8 @@ Implemented now:
   total-pipeline timeout, failure-safe cleanup, and preservation of user VTK;
 - same-parent atomic directory publication that keeps a partial XDMF/H5 bundle
   out of the requested destination on conversion or validation failure;
+- atomic, field-free `status`/`watch` progress at micro-batch cadence, with
+  completed/total frames and batch position instead of a stale solver ETA;
 - multi-view ParaView overview scripts and derived slice-vector projections
   that continue to reference one portable XDMF/H5 field payload;
 - project storage inventory plus preview-first cleanup that protects active

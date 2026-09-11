@@ -288,6 +288,9 @@ animation no longer stages every restart time or unused solver field, and even
 a long selected animation has a fixed four-frame VTU ceiling at conversion peak.
 The accumulated per-batch converter log is retained as
 `output/evidence/foamToVTK.log` before the disposable workspace is removed.
+While this phase is active, `status` and `watch` read only the atomic `run.json`
+marker and report completed/total frames, batch position, and fraction. They do
+not scan VTU or HDF5 payloads, and they do not reuse solver ETA for export.
 
 ## Campaign mode
 

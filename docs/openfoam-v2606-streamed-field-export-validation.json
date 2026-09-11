@@ -44,5 +44,14 @@
     "preexisting_vtk_directory_preserved": true,
     "temporary_directories_remaining": 0
   },
-  "interpretation": "A fresh four-frame OpenFOAM v2606 field set was converted by one bounded foamToVTK invocation. An external observer measured one staging directory and four VTU frames at peak, matching the fixed micro-batch ceiling. AgentCFD wrote the batch directly into compressed HDF5, removed staging before any later batch could begin, preserved user VTK output, and verified the resulting XDMF/HDF5 bundle. The total timeout covers the complete conversion pipeline rather than restarting per batch. Unit coverage confirms longer selections are split into successive batches of at most four. This is data-pipeline and peak-storage evidence, not physical or numerical validation of the flow solution."
+  "progress_observation": {
+    "schema": "agentcfd.field-export-progress/0.1",
+    "phases": ["preparing", "converting", "writing", "publishing", "complete"],
+    "completed_frames": [0, 0, 0, 4, 4],
+    "total_frames": 4,
+    "batch_count": 1,
+    "maximum_batch_frames": 4,
+    "field_payloads_opened_by_status": 0
+  },
+  "interpretation": "A fresh four-frame OpenFOAM v2606 field set was converted by one bounded foamToVTK invocation. An external observer measured one staging directory and four VTU frames at peak, matching the fixed micro-batch ceiling. AgentCFD wrote the batch directly into compressed HDF5, removed staging before any later batch could begin, preserved user VTK output, emitted the complete preparing-to-publication progress sequence, and verified the resulting XDMF/HDF5 bundle. The total timeout covers the complete conversion pipeline rather than restarting per batch. Unit coverage confirms longer selections are split into successive batches of at most four and status reads no field payload. This is data-pipeline and peak-storage evidence, not physical or numerical validation of the flow solution."
 }

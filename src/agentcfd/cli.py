@@ -313,8 +313,19 @@ def _watch_summary(report: dict[str, object]) -> str:
         return " | ".join(parts)
     if progress.get("current_command"):
         parts.append(str(progress["current_command"]))
+    field_export = progress.get("field_export")
     coordinate = progress.get("coordinate")
-    if isinstance(coordinate, dict) and coordinate.get("current") is not None:
+    if isinstance(field_export, dict):
+        completed = int(field_export["completed_frames"])
+        total = int(field_export["total_frames"])
+        parts.append(
+            f"frames {completed}/{total} {100.0 * float(field_export['fraction']):.1f}%"
+        )
+        if field_export.get("batch_index") is not None:
+            parts.append(
+                f"batch {field_export['batch_index']}/{field_export['batch_count']}"
+            )
+    elif isinstance(coordinate, dict) and coordinate.get("current") is not None:
         current = float(coordinate["current"])
         target = coordinate.get("target")
         unit = "s" if coordinate.get("unit") == "s" else "iter"
@@ -3650,12 +3661,25 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(progress, dict):
                 command = progress.get("current_command")
                 coordinate = progress["coordinate"]
+                field_export = progress.get("field_export")
                 parts = []
                 if command:
                     parts.append(str(command))
                 current = coordinate.get("current")
                 target = coordinate.get("target")
-                if current is not None and target is not None:
+                if isinstance(field_export, dict):
+                    field_detail = (
+                        f"frames {field_export['completed_frames']}/"
+                        f"{field_export['total_frames']} "
+                        f"({100.0 * float(field_export['fraction']):.1f}%)"
+                    )
+                    if field_export.get("batch_index") is not None:
+                        field_detail += (
+                            f" | batch {field_export['batch_index']}/"
+                            f"{field_export['batch_count']}"
+                        )
+                    parts.append(field_detail)
+                elif current is not None and target is not None:
                     unit = " s" if coordinate.get("unit") == "s" else ""
                     fraction = coordinate.get("fraction")
                     percent = (

@@ -1530,16 +1530,27 @@ def _resolved_output_plan(
         )
         if export_fields and "npz" in step.output.portable_formats:
             estimated_portable_bytes += field_bytes + mesh_bytes
-        # Full export consumes isolated VTK frames while writing compressed HDF5
-        # directly, with no repack copy. Keep the previously calibrated
-        # native+VTK+portable upper bound until the path has measured evidence
-        # across representative meshes.
-        # Summary-only still needs native solver frames during execution, but
-        # neither VTK conversion nor a permanent portable field copy.
+        native_solver_field_bytes = (
+            requested_frames * estimated_cells * scalar_components * 8
+        )
+        single_vtu_frame_bytes = (
+            math.ceil(entities * scalar_components * 8) + mesh_bytes
+        )
+        managed_vtu_frames = min(
+            requested_frames,
+            data_exchange.OPENFOAM_CONVERSION_BATCH_FRAMES,
+        )
+        maximum_vtu_batch_bytes = managed_vtu_frames * single_vtu_frame_bytes
+        # The converter now creates one bounded micro-batch before HDF5
+        # consumption, so temporary conversion cost has a fixed ceiling rather
+        # than scaling with animation length. Native solver frames still coexist
+        # with the growing portable bundle until publication completes.
         raw_staging_bytes = (
-            estimated_portable_bytes + field_bytes * 2
+            estimated_portable_bytes
+            + native_solver_field_bytes
+            + maximum_vtu_batch_bytes
             if export_fields
-            else field_bytes + mesh_bytes
+            else native_solver_field_bytes + mesh_bytes
         )
         temporary_peak_safety_factor = 1.25
         estimated_temporary_peak_bytes = math.ceil(
@@ -1548,23 +1559,30 @@ def _resolved_output_plan(
         imported_bound = isinstance(step.model.domain, ImportedSurface)
         estimate_calibration = {
             "method": (
-                "snappy-hard-cell-bound-plus-export-staging"
+                "snappy-hard-cell-bound-plus-bounded-vtu-staging"
                 if imported_bound and export_fields
                 else "snappy-hard-cell-bound-native-only"
                 if imported_bound
-                else "native-plus-streamed-vtk-conservative-measured-headroom"
+                else "native-plus-bounded-vtu-stream-conservative-measured-headroom"
                 if export_fields
                 else "native-solver-only-summary-with-conservative-headroom"
             ),
             "uncompressed_requested_field_bytes": field_bytes,
+            "native_solver_field_bytes": native_solver_field_bytes,
+            "maximum_vtu_batch_bytes": (
+                maximum_vtu_batch_bytes if export_fields else 0
+            ),
+            "maximum_managed_vtu_frames": (
+                managed_vtu_frames if export_fields else 0
+            ),
             "raw_staging_bytes": raw_staging_bytes,
             "safety_factor": temporary_peak_safety_factor,
             "evidence": (
                 "Imported geometry uses maximum_cells/maxGlobalCells as a fail-safe "
                 "upper bound; the checked duct resolved 6,400 of 200,000 allowed cells."
                 if imported_bound
-                else "OpenCFD-v2606 baffled-channel 20-frame run: 122.05 MiB managed "
-                "during retained-workspace publication versus 101.84 MiB raw estimate"
+                else "OpenCFD-v2606 four-frame baffled-channel conversion: one "
+                "managed staging directory and four VTU frames observed at peak"
             ),
         }
 
@@ -6858,6 +6876,13 @@ class Project:
                     },
                 )
                 raise
+            conversion_log = case_directory / "log.foamToVTK"
+            if conversion_log.is_file():
+                result.artifacts["log_foamToVTK"] = Artifact.from_path(
+                    conversion_log,
+                    role="field-conversion-log",
+                    media_type="text/plain",
+                )
             portable_artifacts = [
                 ("fields.xdmf", bundle.xdmf, "application/x-xdmf+xml"),
                 ("fields.hdf5", bundle.hdf5, "application/x-hdf5"),

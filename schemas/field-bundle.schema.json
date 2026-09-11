@@ -139,6 +139,10 @@
         "temporary_hdf5_copy_bytes": {"type": "integer", "const": 0},
         "source_vtu_policy": {"enum": ["preserve", "delete-after-frame"]},
         "consumed_source_vtu_bytes": {"type": "integer", "minimum": 0},
+        "source_vtu_pipeline": {"enum": ["preserve-preconverted", "bounded-convert-write-release"]},
+        "maximum_managed_source_vtu_frames": {"type": "integer", "minimum": 0, "maximum": 4},
+        "conversion_invocation_count": {"type": "integer", "minimum": 0},
+        "bundle_publication_strategy": {"const": "same-parent-atomic-rename"},
         "actual_portable_bytes": {"type": "integer", "minimum": 1}
       },
       "additionalProperties": false

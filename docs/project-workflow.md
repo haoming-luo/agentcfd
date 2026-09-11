@@ -283,8 +283,11 @@ listed paths are no longer needed. Active workspaces and sole recovery
 checkpoints remain protected even in this expanded scope.
 
 The OpenFOAM-to-XDMF adapter passes selected native times and field names to
-`foamToVTK`, so a sparse public animation no longer requires staging every
-restart time or unused solver field as temporary VTK data.
+`foamToVTK` in isolated micro-batches of at most four frames. A sparse public
+animation no longer stages every restart time or unused solver field, and even
+a long selected animation has a fixed four-frame VTU ceiling at conversion peak.
+The accumulated per-batch converter log is retained as
+`output/evidence/foamToVTK.log` before the disposable workspace is removed.
 
 ## Campaign mode
 

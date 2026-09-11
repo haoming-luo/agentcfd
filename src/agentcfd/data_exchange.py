@@ -7,12 +7,14 @@ workflows do not pay its storage or memory cost unless they request it.
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import os
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -101,6 +103,8 @@ _OPENFOAM_FIELDS = {
         description="Second invariant used to identify rotation-dominated regions.",
     ),
 }
+
+OPENFOAM_CONVERSION_BATCH_FRAMES = 4
 
 
 def _io_modules():
@@ -269,6 +273,8 @@ def convert_openfoam_fields(
     times: Iterable[str] | None = None,
     fields: Iterable[str] | None = None,
     output_name: str | None = None,
+    _append_log: bool = False,
+    _log_header: str | None = None,
 ) -> tuple[Path, ...]:
     """Run foamToVTK for only the requested times/fields and return its series."""
 
@@ -345,6 +351,13 @@ def convert_openfoam_fields(
     if not include_initial:
         argv.append("-noZero")
     log = root / "log.foamToVTK"
+
+    def write_log(content: str) -> None:
+        with log.open("a" if _append_log else "w", encoding="utf-8") as stream:
+            if _log_header is not None:
+                stream.write(f"=== {_log_header} ===\n")
+            stream.write(content)
+
     try:
         completed = subprocess.run(
             argv,
@@ -367,19 +380,63 @@ def convert_openfoam_fields(
                     text=True,
                 )
                 stopped = f"\nStopped timed-out container {container_id}: {stop.stdout}{stop.stderr}"
-        log.write_text(stdout + stderr + stopped, encoding="utf-8")
+        write_log(stdout + stderr + stopped)
         raise AgentCFDError(
             f"foamToVTK exceeded {timeout_seconds:g} seconds; see {log}."
         ) from error
     finally:
         if cidfile is not None and cidfile.is_file():
             cidfile.unlink()
-    log.write_text(completed.stdout + completed.stderr, encoding="utf-8")
+    write_log(completed.stdout + completed.stderr)
     if completed.returncode != 0:
         raise AgentCFDError(
             f"foamToVTK failed with exit code {completed.returncode}; see {log}."
         )
     return openfoam_vtu_series(root, directory=output_name or "VTK")
+
+
+def _converted_openfoam_frame_stream(
+    case_directory: Path,
+    time_names: tuple[str, ...],
+    *,
+    container_image: str | None,
+    timeout_seconds: float,
+    include_initial: bool,
+    fields: tuple[str, ...] | None,
+) -> Iterable[Path]:
+    """Convert, expose, and release one bounded isolated VTU micro-batch."""
+
+    deadline = time.monotonic() + timeout_seconds
+    for start in range(0, len(time_names), OPENFOAM_CONVERSION_BATCH_FRAMES):
+        batch = time_names[start : start + OPENFOAM_CONVERSION_BATCH_FRAMES]
+        remaining = deadline - time.monotonic()
+        if remaining <= 0.0:
+            raise AgentCFDError(
+                "foamToVTK field-export pipeline exhausted its total timeout "
+                f"before native time {batch[0]}."
+            )
+        with tempfile.TemporaryDirectory(
+            prefix=".agentcfd-vtk-frame-",
+            dir=case_directory,
+        ) as staging:
+            output_name = Path(staging).name
+            frames = convert_openfoam_fields(
+                case_directory,
+                container_image=container_image,
+                timeout_seconds=remaining,
+                include_initial=include_initial,
+                times=batch,
+                fields=fields,
+                output_name=output_name,
+                _append_log=start > 0,
+                _log_header=f"native times {','.join(batch)}",
+            )
+            if len(frames) != len(batch):
+                raise AgentCFDError(
+                    "Bounded foamToVTK conversion produced an unexpected "
+                    f"{len(frames)} internal-field frames for {len(batch)} native times."
+                )
+            yield from frames
 
 
 def _semantic(source_name: str) -> FieldSemantic:
@@ -616,16 +673,29 @@ def export_vtu_series(
     compression: str = "gzip",
     maximum_bytes: int | None = None,
     _consume_source_files: bool = False,
+    _expected_times: Iterable[float] | None = None,
+    _source_vtu_pipeline: str | None = None,
+    _maximum_managed_source_vtu_frames: int | None = None,
+    _conversion_invocation_count: int = 0,
+    _bundle_publication_strategy: str | None = None,
 ) -> FieldBundle:
     """Write a canonical XDMF/HDF5 bundle and, when selected, an NPZ mirror."""
 
     meshio, np = _io_modules()
-    files = tuple(Path(path) for path in vtu_files)
-    if not files:
-        raise ValueError("At least one VTU frame is required.")
-    times = tuple(_time_from_vtu(path) for path in files)
-    if any(right <= left for left, right in zip(times, times[1:])):
-        raise ValueError("VTU frames must have strictly increasing time values.")
+    expected_times = (
+        None
+        if _expected_times is None
+        else tuple(float(value) for value in _expected_times)
+    )
+    if expected_times is not None:
+        if not expected_times:
+            raise ValueError("Expected VTU times must not be empty.")
+        if any(not math.isfinite(value) for value in expected_times):
+            raise ValueError("VTU frame times must be finite.")
+        if any(
+            right <= left for left, right in zip(expected_times, expected_times[1:])
+        ):
+            raise ValueError("VTU frames must have strictly increasing time values.")
     if density is not None:
         density = float(density)
         if not math.isfinite(density) or density <= 0:
@@ -668,8 +738,31 @@ def export_vtu_series(
         or maximum_bytes <= 0
     ):
         raise ValueError("Portable field budget must be a positive integer number of bytes.")
+    source_iterator = iter(vtu_files)
+    try:
+        first_path = Path(next(source_iterator))
+    except StopIteration as error:
+        raise ValueError("At least one VTU frame is required.") from error
+    if expected_times is None:
+        files = (first_path, *(Path(path) for path in source_iterator))
+        times = tuple(_time_from_vtu(path) for path in files)
+        frame_paths: Iterable[Path] = files
+        if any(not math.isfinite(value) for value in times):
+            raise ValueError("VTU frame times must be finite.")
+        if any(right <= left for left, right in zip(times, times[1:])):
+            raise ValueError("VTU frames must have strictly increasing time values.")
+    else:
+        times = expected_times
+        frame_paths = itertools.chain(
+            (first_path,),
+            (Path(path) for path in source_iterator),
+        )
     write_npz = "npz" in selected_formats
-    source_root = Path(case_directory) if case_directory is not None else files[0].parents[2]
+    source_root = (
+        Path(case_directory)
+        if case_directory is not None
+        else first_path.parents[2]
+    )
     axis_record = dict(axis or _axis_from_result(source_root))
     source_record = {**_source_context(source_root), **dict(source or {})}
     source_mesh_sha256 = source_record.get("mesh_sha256")
@@ -684,7 +777,7 @@ def export_vtu_series(
     if not isinstance(axis_record["physical_time"], bool):
         raise ValueError("Field-axis physical_time must be a boolean.")
 
-    first = meshio.read(files[0])
+    first = meshio.read(first_path)
     points = np.asarray(first.points)
     if points.ndim != 2 or not 1 <= points.shape[1] <= 3 or points.shape[0] == 0:
         raise ValueError("Field bundle requires a non-empty 1-D, 2-D, or 3-D point geometry.")
@@ -711,10 +804,10 @@ def export_vtu_series(
     field_bytes_per_frame = _field_storage_bytes(first_point_data, first_cell_data)
     # Conservative uncompressed preflight including HDF5 metadata and XDMF.
     estimated_bytes = math.ceil(
-        1.10 * (geometry_bytes + len(files) * field_bytes_per_frame) + 1024**2
+        1.10 * (geometry_bytes + len(times) * field_bytes_per_frame) + 1024**2
     )
     if write_npz:
-        estimated_bytes += geometry_bytes + len(files) * field_bytes_per_frame
+        estimated_bytes += geometry_bytes + len(times) * field_bytes_per_frame
     if maximum_bytes is not None and estimated_bytes > maximum_bytes:
         raise AgentCFDError(
             "Portable field output exceeds its declared storage budget: "
@@ -746,7 +839,18 @@ def export_vtu_series(
     )
     try:
         writer.write_points_cells(points, cells)
-        for index, (time, path) in enumerate(zip(times, files)):
+        for index, (time, path) in enumerate(zip(times, frame_paths, strict=True)):
+            actual_time = _time_from_vtu(path)
+            if not math.isclose(
+                actual_time,
+                time,
+                rel_tol=0.0,
+                abs_tol=1.0e-12,
+            ):
+                raise ValueError(
+                    "Converted VTU frame does not match its expected OpenFOAM time: "
+                    f"expected {time:g}, received {actual_time:g}."
+                )
             mesh = first if index == 0 else meshio.read(path)
             if not np.array_equal(points, np.asarray(mesh.points)):
                 raise ValueError("XDMF time series requires one unchanged point geometry.")
@@ -906,6 +1010,26 @@ def export_vtu_series(
                 "delete-after-frame" if _consume_source_files else "preserve"
             ),
             "consumed_source_vtu_bytes": consumed_source_vtu_bytes,
+            **(
+                {"source_vtu_pipeline": _source_vtu_pipeline}
+                if _source_vtu_pipeline is not None
+                else {}
+            ),
+            **(
+                {
+                    "maximum_managed_source_vtu_frames": (
+                        _maximum_managed_source_vtu_frames
+                    )
+                }
+                if _maximum_managed_source_vtu_frames is not None
+                else {}
+            ),
+            "conversion_invocation_count": _conversion_invocation_count,
+            **(
+                {"bundle_publication_strategy": _bundle_publication_strategy}
+                if _bundle_publication_strategy is not None
+                else {}
+            ),
         },
     }
     if write_npz:
@@ -978,84 +1102,117 @@ def export_openfoam_case(
             raise ValueError("OpenFOAM export time_interval must be positive and finite.")
 
     case = Path(case_directory)
-    selected_time_names = (
-        _openfoam_time_names(
-            case,
-            include_initial=include_initial,
-            time_interval=time_interval,
-            latest_only=latest_only,
-        )
-        if convert and (time_interval is not None or latest_only or not include_initial)
-        else None
+    target = Path(output_directory)
+    if target.is_symlink():
+        raise ValueError("Field-bundle destination must not be a symlink.")
+    if target.exists() and (
+        not target.is_dir() or any(target.iterdir())
+    ):
+        raise FileExistsError(f"Field-bundle directory is not empty: {target}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    publication = tempfile.TemporaryDirectory(
+        prefix=f".{target.name}.agentcfd-publish-",
+        dir=target.parent,
     )
-    staging: tempfile.TemporaryDirectory[str] | None = None
+    publication_directory = Path(publication.name)
+    native_fields = _openfoam_native_fields(fields)
+    selected_time_names: tuple[str, ...] | None = None
+    expected_times: tuple[float, ...] | None = None
+    files: Iterable[Path] | None = None
     try:
         if convert:
-            staging = tempfile.TemporaryDirectory(
-                prefix=".agentcfd-vtk-",
-                dir=case,
+            if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+                raise ValueError(
+                    "Field-export timeout must be a positive finite number."
+                )
+            selected_time_names = _openfoam_time_names(
+                case,
+                include_initial=include_initial,
+                time_interval=time_interval,
+                latest_only=latest_only,
             )
-            output_name = Path(staging.name).name
-            files = convert_openfoam_fields(
+            if not selected_time_names:
+                raise ValueError(
+                    "No native OpenFOAM time directories match the requested "
+                    "field-frame selection."
+                )
+            expected_times = tuple(float(value) for value in selected_time_names)
+            files = _converted_openfoam_frame_stream(
                 case,
                 container_image=container_image,
                 timeout_seconds=timeout_seconds,
                 include_initial=include_initial,
-                times=selected_time_names,
-                fields=_openfoam_native_fields(fields),
-                output_name=output_name,
+                time_names=selected_time_names,
+                fields=native_fields,
             )
         else:
             files = openfoam_vtu_series(case)
-        if not include_initial:
-            files = tuple(
-                path
-                for path in files
-                if not math.isclose(_time_from_vtu(path), 0.0)
-            )
-            if not files:
-                raise ValueError(
-                    "No non-initial OpenFOAM field frames are available for export."
+            if not include_initial:
+                files = tuple(
+                    path
+                    for path in files
+                    if not math.isclose(_time_from_vtu(path), 0.0)
                 )
-        if time_interval is not None:
-            files = tuple(
-                path
-                for path in files
-                if math.isclose(
-                    _time_from_vtu(path), 0.0, rel_tol=0.0, abs_tol=1.0e-12
+                if not files:
+                    raise ValueError(
+                        "No non-initial OpenFOAM field frames are available for export."
+                    )
+            if time_interval is not None:
+                files = tuple(
+                    path
+                    for path in files
+                    if math.isclose(
+                        _time_from_vtu(path), 0.0, rel_tol=0.0, abs_tol=1.0e-12
+                    )
+                    or math.isclose(
+                        _time_from_vtu(path) / time_interval,
+                        round(_time_from_vtu(path) / time_interval),
+                        rel_tol=0.0,
+                        abs_tol=1.0e-8,
+                    )
                 )
-                or math.isclose(
-                    _time_from_vtu(path) / time_interval,
-                    round(_time_from_vtu(path) / time_interval),
-                    rel_tol=0.0,
-                    abs_tol=1.0e-8,
-                )
-            )
-            if not files:
-                raise ValueError(
-                    "No OpenFOAM times match the requested field-frame interval."
-                )
-        if latest_only:
-            files = (max(files, key=_time_from_vtu),)
+                if not files:
+                    raise ValueError(
+                        "No OpenFOAM times match the requested field-frame interval."
+                    )
+            if latest_only:
+                files = (max(files, key=_time_from_vtu),)
         selected_density = density if density is not None else _density_from_result(case)
         conversion_record = {
-            "staging": "isolated-streamed-vtu" if convert else "preconverted-vtu",
+            "staging": (
+                "bounded-batch-isolated-vtu" if convert else "preconverted-vtu"
+            ),
             "native_times": (
                 "all" if selected_time_names is None else list(selected_time_names)
             ),
             "native_fields": (
-                "all"
-                if _openfoam_native_fields(fields) is None
-                else list(_openfoam_native_fields(fields) or ())
+                "all" if native_fields is None else list(native_fields)
             ),
             "boundary_fields_included": False,
             "temporary_vtk_policy": (
-                "delete-after-frame" if convert else "preserve-preconverted"
+                "bounded-convert-write-release"
+                if convert
+                else "preserve-preconverted"
+            ),
+            "conversion_invocation_count": (
+                math.ceil(
+                    len(selected_time_names) / OPENFOAM_CONVERSION_BATCH_FRAMES
+                )
+                if selected_time_names is not None
+                else 0
+            ),
+            "maximum_managed_vtu_frames": (
+                min(
+                    len(selected_time_names),
+                    OPENFOAM_CONVERSION_BATCH_FRAMES,
+                )
+                if selected_time_names is not None
+                else 0
             ),
         }
-        return export_vtu_series(
+        bundle = export_vtu_series(
             files,
-            output_directory,
+            publication_directory,
             case_directory=case,
             density=selected_density,
             axis=axis,
@@ -1066,10 +1223,46 @@ def export_openfoam_case(
             compression=compression,
             maximum_bytes=maximum_bytes,
             _consume_source_files=convert,
+            _expected_times=expected_times,
+            _source_vtu_pipeline=(
+                "bounded-convert-write-release"
+                if convert
+                else "preserve-preconverted"
+            ),
+            _maximum_managed_source_vtu_frames=(
+                min(
+                    len(selected_time_names),
+                    OPENFOAM_CONVERSION_BATCH_FRAMES,
+                )
+                if selected_time_names is not None
+                else 0
+            ),
+            _conversion_invocation_count=(
+                math.ceil(
+                    len(selected_time_names) / OPENFOAM_CONVERSION_BATCH_FRAMES
+                )
+                if selected_time_names is not None
+                else 0
+            ),
+            _bundle_publication_strategy="same-parent-atomic-rename",
+        )
+        if target.exists():
+            target.rmdir()
+        publication_directory.replace(target)
+        return FieldBundle(
+            directory=target,
+            xdmf=target / bundle.xdmf.name,
+            hdf5=target / bundle.hdf5.name,
+            npz=None if bundle.npz is None else target / bundle.npz.name,
+            manifest=target / bundle.manifest.name,
+            frame_count=bundle.frame_count,
+            times=bundle.times,
         )
     finally:
-        if staging is not None:
-            staging.cleanup()
+        close = getattr(files, "close", None)
+        if callable(close):
+            close()
+        publication.cleanup()
 
 
 def export_agentfem_field_sample(

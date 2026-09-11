@@ -508,6 +508,14 @@ default. They can be regenerated from `case.py`; selected logs and content
 manifests are copied to `output/evidence/` first. Validation is attached
 evidence; it does not replace the engineering workflow.
 
+Portable field conversion is bounded by construction: AgentCFD converts at most
+four selected OpenFOAM times in an isolated micro-batch, appends them directly
+to compressed HDF5, releases the batch, and only then starts the next conversion.
+Animation length therefore no longer multiplies temporary VTK peak storage,
+while short animations avoid a process startup for every frame. The completed
+bundle is atomically renamed into `output/fields`; a failed conversion leaves
+the public destination absent or empty instead of exposing half-written data.
+
 Every published `output/` is self-explaining: its `README.md` points humans to
 the visualization and evidence, while `status --json` and versioned JSON
 schemas give agents the same state, next action, and repair path. During a long

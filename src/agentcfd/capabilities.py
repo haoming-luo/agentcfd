@@ -305,12 +305,12 @@ _CAPABILITIES = (
         evidence=(
             "XDMF/HDF5 and NPZ cross-format round-trip tests",
             "field-unit, association, axis, and artifact-hash contract tests",
-            "isolated foamToVTK staging with per-frame source consumption",
+            "observed bounded four-frame OpenCFD v2606 conversion pipeline",
             "16-frame OpenCFD v2606 turbulent-pipe export",
         ),
         limitations=(
             "The first exporter consumes foamToVTK fixed-mesh volume fields.",
-            "foamToVTK still creates all selected VTU frames before HDF5 consumption.",
+            "Each four-frame micro-batch currently incurs a foamToVTK process startup.",
             "Moving meshes, decomposed parallel fields, and conservative CFD-to-FEM mapping remain open.",
         ),
     ),

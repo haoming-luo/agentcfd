@@ -425,6 +425,45 @@ def test_container_conversion_uses_argument_list_and_writes_log(tmp_path, monkey
     assert (case / "log.foamToVTK").read_text() == "converted\n"
 
 
+def test_conversion_log_accumulates_bounded_batches(tmp_path, monkeypatch):
+    case = tmp_path / "case"
+    case.mkdir()
+    _write_frame(case, 0, 1.0)
+    calls = 0
+
+    def fake_run(argv, **_kwargs):
+        nonlocal calls
+        calls += 1
+        return subprocess.CompletedProcess(
+            argv,
+            0,
+            stdout=f"converted batch {calls}\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("agentcfd.data_exchange.shutil.which", lambda name: "/docker")
+    monkeypatch.setattr("agentcfd.data_exchange.subprocess.run", fake_run)
+
+    data_exchange.convert_openfoam_fields(
+        case,
+        container_image="opencfd/openfoam-run:2606",
+        _log_header="native times 0,1,2,3",
+    )
+    data_exchange.convert_openfoam_fields(
+        case,
+        container_image="opencfd/openfoam-run:2606",
+        _append_log=True,
+        _log_header="native times 4,5",
+    )
+
+    assert (case / "log.foamToVTK").read_text() == (
+        "=== native times 0,1,2,3 ===\n"
+        "converted batch 1\n"
+        "=== native times 4,5 ===\n"
+        "converted batch 2\n"
+    )
+
+
 def test_conversion_limits_temporary_vtk_to_requested_times_and_fields(
     tmp_path, monkeypatch
 ):
@@ -500,6 +539,7 @@ def test_isolated_conversion_staging_is_removed_when_bundle_export_fails(
 ):
     case = tmp_path / "case"
     case.mkdir()
+    (case / "1").mkdir()
     existing = _write_frame(case, 99, 9.0)
     staged_roots = []
 
@@ -511,7 +551,8 @@ def test_isolated_conversion_staging_is_removed_when_bundle_export_fails(
         )
         return (frame,)
 
-    def fail_export(*_args, **_kwargs):
+    def fail_export(vtu_files, *_args, **_kwargs):
+        next(iter(vtu_files))
         raise RuntimeError("synthetic portable publication failure")
 
     monkeypatch.setattr(
@@ -524,6 +565,8 @@ def test_isolated_conversion_staging_is_removed_when_bundle_export_fails(
 
     assert len(staged_roots) == 1
     assert not staged_roots[0].exists()
+    assert not (tmp_path / "bundle").exists()
+    assert not list(tmp_path.glob(".bundle.agentcfd-publish-*"))
     assert existing.is_file()
 
 
@@ -539,8 +582,13 @@ def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monk
     def fake_convert(*args, **kwargs):
         calls.append(kwargs)
         output_name = kwargs["output_name"]
-        _write_frame(case, 0, 1.0, vtk_directory=output_name)
-        _write_frame(case, 0.2, 2.0, vtk_directory=output_name)
+        selected_time = float(kwargs["times"][0])
+        _write_frame(
+            case,
+            selected_time,
+            1.0 + selected_time,
+            vtk_directory=output_name,
+        )
         return data_exchange.openfoam_vtu_series(case, directory=output_name)
 
     monkeypatch.setattr("agentcfd.data_exchange.convert_openfoam_fields", fake_convert)
@@ -554,21 +602,125 @@ def test_native_time_selection_happens_before_openfoam_conversion(tmp_path, monk
         fields=("fluid.velocity", "fluid.pressure"),
     )
 
-    assert calls[0]["times"] == ("0.2",)
+    assert [call["times"] for call in calls] == [("0.2",)]
     assert calls[0]["fields"] == ("U", "p")
     manifest = json.loads(bundle.manifest.read_text())
     assert manifest["source"]["field_conversion"] == {
-        "staging": "isolated-streamed-vtu",
+        "staging": "bounded-batch-isolated-vtu",
         "native_times": ["0.2"],
         "native_fields": ["U", "p"],
         "boundary_fields_included": False,
-        "temporary_vtk_policy": "delete-after-frame",
+        "temporary_vtk_policy": "bounded-convert-write-release",
+        "conversion_invocation_count": 1,
+        "maximum_managed_vtu_frames": 1,
     }
     assert manifest["storage"]["source_vtu_policy"] == "delete-after-frame"
+    assert manifest["storage"]["source_vtu_pipeline"] == (
+        "bounded-convert-write-release"
+    )
+    assert manifest["storage"]["maximum_managed_source_vtu_frames"] == 1
+    assert manifest["storage"]["conversion_invocation_count"] == 1
+    assert manifest["storage"]["bundle_publication_strategy"] == (
+        "same-parent-atomic-rename"
+    )
     assert manifest["storage"]["consumed_source_vtu_bytes"] > 0
     assert not list(case.glob(".agentcfd-vtk-*"))
     assert (case / "VTK" / "case_0" / "internal.vtu").is_file()
     assert (case / "VTK" / "case_0.2" / "internal.vtu").is_file()
+
+
+def test_openfoam_conversion_uses_bounded_vtu_micro_batches(tmp_path, monkeypatch):
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("0.1", "0.2", "0.3", "0.4", "0.5", "0.6"):
+        (case / name).mkdir()
+    calls: list[tuple[str, ...]] = []
+    simultaneous_staging_counts: list[int] = []
+    generated_frame_counts: list[int] = []
+
+    def fake_convert(*_args, **kwargs):
+        time_names = kwargs["times"]
+        calls.append(time_names)
+        simultaneous_staging_counts.append(
+            len(list(case.glob(".agentcfd-vtk-frame-*")))
+        )
+        output_name = kwargs["output_name"]
+        for time_name in time_names:
+            _write_frame(
+                case,
+                float(time_name),
+                1.0 + float(time_name),
+                vtk_directory=output_name,
+            )
+        generated_frame_counts.append(
+            len(list((case / output_name).glob("case_*/internal.vtu")))
+        )
+        return data_exchange.openfoam_vtu_series(case, directory=output_name)
+
+    monkeypatch.setattr("agentcfd.data_exchange.convert_openfoam_fields", fake_convert)
+
+    bundle = data_exchange.export_openfoam_case(
+        case,
+        tmp_path / "bundle",
+        density=1000.0,
+        include_initial=False,
+    )
+
+    assert calls == [
+        ("0.1", "0.2", "0.3", "0.4"),
+        ("0.5", "0.6"),
+    ]
+    assert simultaneous_staging_counts == [1, 1]
+    assert generated_frame_counts == [4, 2]
+    assert bundle.times == (0.1, 0.2, 0.3, 0.4, 0.5, 0.6)
+    assert not list(case.glob(".agentcfd-vtk-frame-*"))
+    manifest = json.loads(bundle.manifest.read_text())
+    assert manifest["storage"]["maximum_managed_source_vtu_frames"] == 4
+    assert manifest["storage"]["conversion_invocation_count"] == 2
+    assert not list(tmp_path.glob(".bundle.agentcfd-publish-*"))
+
+
+def test_openfoam_frame_pipeline_uses_one_total_conversion_timeout(
+    tmp_path, monkeypatch
+):
+    case = tmp_path / "case"
+    case.mkdir()
+    for name in ("0.1", "0.2", "0.3", "0.4", "0.5"):
+        (case / name).mkdir()
+    calls: list[tuple[str, ...]] = []
+
+    def fake_convert(*_args, **kwargs):
+        time_names = kwargs["times"]
+        calls.append(time_names)
+        frames = tuple(
+            _write_frame(
+                case,
+                float(time_name),
+                1.0,
+                vtk_directory=kwargs["output_name"],
+            )
+            for time_name in time_names
+        )
+        return frames
+
+    clock = iter((0.0, 0.1, 2.0))
+    monkeypatch.setattr("agentcfd.data_exchange.convert_openfoam_fields", fake_convert)
+    monkeypatch.setattr(
+        "agentcfd.data_exchange.time.monotonic",
+        lambda: next(clock),
+    )
+
+    with pytest.raises(data_exchange.AgentCFDError, match="total timeout"):
+        data_exchange.export_openfoam_case(
+            case,
+            tmp_path / "bundle",
+            density=1000.0,
+            include_initial=False,
+            timeout_seconds=1.0,
+        )
+
+    assert calls == [("0.1", "0.2", "0.3", "0.4")]
+    assert not list(case.glob(".agentcfd-vtk-frame-*"))
 
 
 def test_field_export_honors_excluded_initial_frame(tmp_path):
@@ -605,6 +757,12 @@ def test_export_rejects_nonfinite_training_fields(tmp_path):
     mesh = meshio.read(frame)
     mesh.point_data["p"][0] = np.nan
     meshio.write(frame, mesh)
+    output = tmp_path / "bundle"
+    output.mkdir()
 
     with pytest.raises(ValueError, match="non-finite"):
-        data_exchange.export_openfoam_case(case, tmp_path / "bundle", convert=False)
+        data_exchange.export_openfoam_case(case, output, convert=False)
+
+    assert output.is_dir()
+    assert not list(output.iterdir())
+    assert not list(tmp_path.glob(".bundle.agentcfd-publish-*"))

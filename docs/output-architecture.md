@@ -84,25 +84,28 @@ deletion policy; rerun normally when full fields are needed.
 - compression and budget decisions;
 - an addressable `OUTPUT_POLICY_INVALID` or `OUTPUT_BUDGET_EXCEEDED` issue.
 
-The temporary estimate includes a measured 1.25 headroom factor over native,
-VTK, and portable staging. A 23,880-cell, 20-frame OpenCFD v2606 baffled-channel
-run occupied 122.05 MiB with its workspace deliberately retained, versus a
-101.84 MiB raw staging estimate; the calibrated preflight is 127.30 MiB. The
-factor and evidence are visible in `estimate_calibration`, rather than hidden
+The temporary estimate includes native solver frames, the growing portable
+bundle, at most four maximum-size VTU frames, and a measured 1.25 headroom factor. A
+23,880-cell, 20-frame OpenCFD v2606 baffled-channel run supports the overall
+headroom; a fresh four-frame v2606 run independently observed exactly one
+managed four-frame batch and one staging directory at conversion peak. The components,
+factor, and evidence are visible in `estimate_calibration`, rather than hidden
 as an unexplained constant.
 
 The adapter passes requested time directories and native field names directly
 to `foamToVTK`, avoiding VTK copies for unused checkpoints and variables. Each
-managed conversion uses a unique `-name` directory inside the disposable case,
-so an old or user-owned `VTK/` tree cannot enter a new bundle. The exporter reads
-one frame, writes it to HDF5, then removes that VTU before reading the next; its
-manifest records the reclaimed byte count. Preconverted VTU inputs remain
-untouched. Each numeric HDF5 dataset is created with its final chunking and
-gzip/lzf filter, so no uncompressed HDF5 file or `.repack` copy coexists with
-the result. Native OpenFOAM data and all selected temporary VTUs still coexist
-at the beginning of conversion; later in-situ adapters can remove that remaining
-amplification without changing the public output contract. Generated channel
-cases use binary native fields. OpenCFD v2606 explicitly disables
+managed batch is converted in its own unique `-name` directory inside the
+disposable case, so an old or user-owned `VTK/` tree cannot enter a new bundle.
+The exporter writes that at-most-four-frame batch to HDF5, removes it, and only
+then invokes `foamToVTK` for the next batch. Its manifest records invocation
+count, reclaimed bytes, and the managed peak. Preconverted VTU inputs remain
+untouched.
+Each numeric HDF5 dataset is created with its final chunking and gzip/lzf filter,
+so no uncompressed HDF5 file or `.repack` copy coexists with the result. Native
+OpenFOAM frames still coexist with the growing portable bundle; later in-situ
+adapters can reduce native solver I/O and per-frame process startup without
+changing the public output contract. Generated channel cases use binary native
+fields. OpenCFD v2606 explicitly disables
 `writeCompression` for non-ASCII format, so requesting compression there only
 adds a warning and no savings; compression is applied to the durable HDF5
 product instead.
@@ -141,8 +144,10 @@ Implemented now:
   temporary HDF5-copy bytes;
 - binary OpenFOAM native output for generated cases;
 - selected-time and selected-field conversion before temporary VTK creation;
-- isolated `foamToVTK` output with per-frame VTU consumption and failure-safe
-  staging cleanup, preserving any user-owned `VTK/` tree;
+- four-frame-bounded `foamToVTK` micro-batches with measured peak, a
+  total-pipeline timeout, failure-safe cleanup, and preservation of user VTK;
+- same-parent atomic directory publication that keeps a partial XDMF/H5 bundle
+  out of the requested destination on conversion or validation failure;
 - multi-view ParaView overview scripts and derived slice-vector projections
   that continue to reference one portable XDMF/H5 field payload;
 - project storage inventory plus preview-first cleanup that protects active
@@ -162,9 +167,9 @@ the published archive, hashes the exact streamed bytes, writes the index, then
 atomically replaces the previous good copy. A host failure can still lose work
 after the most recently published checkpoint, but cannot expose a half-written
 archive as the current recovery state on a filesystem that provides atomic
-same-directory replacement. The next provider milestone is an in-situ
-extraction adapter that avoids producing every selected VTU before consumption.
-This remains an execution optimization, not a new user concept; existing
+same-directory replacement. The next provider optimization is a persistent
+in-situ extraction adapter that reduces native solver I/O and per-frame process
+startup. It remains an execution optimization, not a new user concept; existing
 `case.py` files keep the same API.
 
 The compact-monitoring direction follows OpenFOAM's function-object model,

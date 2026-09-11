@@ -1237,6 +1237,71 @@ def test_failed_openfoam_result_retains_workspace_and_guides_to_logs(
     assert diagnosis["next_action"]["command"].startswith("agentcfd logs ")
 
 
+def test_successful_project_preserves_bounded_field_conversion_log(
+    tmp_path, monkeypatch
+):
+    _mock_openfoam_runtime(monkeypatch)
+    monkeypatch.setattr("agentcfd.projects.data_exchange.io_available", lambda: True)
+    project = projects.init_project(
+        tmp_path / "wake", template="baffle-channel", provider="openfoam"
+    )
+
+    def complete(provider, _step, **_kwargs):
+        provider.case_directory.mkdir(parents=True)
+        return projects.SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam",
+            quantities={},
+            checks=(Check("execution", True, kind="runtime"),),
+        )
+
+    def export(case_directory, output_directory, **_kwargs):
+        case_directory = Path(case_directory)
+        output_directory = Path(output_directory)
+        output_directory.mkdir(parents=True)
+        xdmf = output_directory / "fields.xdmf"
+        hdf5 = output_directory / "fields.h5"
+        manifest = output_directory / "manifest.json"
+        xdmf.write_text("<Xdmf/>\n")
+        hdf5.write_bytes(b"portable-fields")
+        manifest.write_text(json.dumps({"fields": []}) + "\n")
+        (case_directory / "log.foamToVTK").write_text(
+            "=== native times 0.5,1 ===\nconverted\n"
+        )
+        return projects.data_exchange.FieldBundle(
+            directory=output_directory,
+            xdmf=xdmf,
+            hdf5=hdf5,
+            npz=None,
+            manifest=manifest,
+            frame_count=2,
+            times=(0.5, 1.0),
+        )
+
+    def recipes(run_directory, *_args, **_kwargs):
+        manifest = Path(run_directory) / "postprocess" / "manifest.json"
+        manifest.parent.mkdir()
+        manifest.write_text("{}\n")
+        return manifest, ()
+
+    monkeypatch.setattr("agentcfd.projects.OpenFOAMChannelProvider.run", complete)
+    monkeypatch.setattr("agentcfd.projects.data_exchange.export_openfoam_case", export)
+    monkeypatch.setattr(
+        "agentcfd.projects.postprocessing.publish_paraview_recipes",
+        recipes,
+    )
+
+    completed = project.run()
+
+    published = project.run_root / "evidence" / "foamToVTK.log"
+    assert published.read_text().endswith("converted\n")
+    artifact = completed.result.artifacts["log_foamToVTK"]
+    assert Path(artifact.path) == published
+    assert artifact.role == "field-conversion-log"
+    assert completed.solver_workspace is None
+
+
 def test_keep_workspace_persists_cleanup_protection_from_real_run_path(
     tmp_path, monkeypatch
 ):
@@ -2937,10 +3002,17 @@ def test_baffle_channel_template_selects_openfoam_and_plans_cleanly(tmp_path, ca
     assert plan["decisions"]["solver"] == "pimpleFoam"
     output_plan = plan["decisions"]["output_plan"]
     assert output_plan["estimated_mesh_cells"] == 23880
-    assert output_plan["estimate_calibration"]["safety_factor"] == 1.25
+    calibration = output_plan["estimate_calibration"]
+    assert calibration["safety_factor"] == 1.25
+    assert calibration["maximum_managed_vtu_frames"] == 4
+    assert calibration["raw_staging_bytes"] == (
+        output_plan["estimated_portable_bytes"]
+        + calibration["native_solver_field_bytes"]
+        + calibration["maximum_vtu_batch_bytes"]
+    )
     assert (
         output_plan["estimated_temporary_peak_bytes"]
-        >= 1.25 * output_plan["estimate_calibration"]["raw_staging_bytes"]
+        >= 1.25 * calibration["raw_staging_bytes"]
     )
     assert [
         item["name"]

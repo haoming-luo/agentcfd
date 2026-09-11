@@ -157,14 +157,17 @@ evidence, not a claim against loss of the storage device or physical validation
 of the flow.
 
 The low-storage conversion path is separately exercised in
-`docs/openfoam-v2606-streamed-field-export-validation.json`. Without rerunning
-the solver, OpenCFD v2606 converted two existing baffled-flow frames containing
-U, p, vorticity, and Q into a verified 0.74 MiB XDMF/HDF5 bundle. AgentCFD used
-an isolated `foamToVTK -name` directory, consumed 2.33 MiB of intermediate VTU
-files frame by frame, wrote the final gzip datasets directly with zero temporary
-HDF5-copy bytes, preserved a pre-existing user-owned `VTK/` directory, and left
-no staging or repack file. This is integration and storage evidence only; it
-does not upgrade the physical-validation status of the source solution.
+`docs/openfoam-v2606-streamed-field-export-validation.json`. A fresh 3,020-cell
+OpenCFD v2606 baffled-channel result supplied four U/p/vorticity frames. One
+bounded conversion produced a verified 0.66 MiB XDMF/HDF5 bundle; an external
+observer measured one staging directory and four VTU frames at peak, equal to
+the fixed micro-batch ceiling.
+AgentCFD consumed 1.84 MiB of intermediate VTU data, wrote gzip datasets directly
+with zero temporary HDF5-copy bytes, preserved user VTK, and left no staging or
+repack file. The verified bundle was published by same-parent atomic rename;
+failure tests leave the requested destination absent or empty. This is
+integration and peak-storage evidence only; it does not upgrade the
+physical-validation status of the source solution.
 
 ## Grid convergence
 

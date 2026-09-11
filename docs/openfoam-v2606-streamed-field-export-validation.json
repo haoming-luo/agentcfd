@@ -1,42 +1,48 @@
 {
   "schema": "agentcfd.integration-evidence/0.1",
-  "capability": "openfoam.isolated-streamed-portable-field-export",
-  "evidence_kind": "real-case-data-pipeline-and-storage-smoke",
+  "capability": "openfoam.per-frame-streamed-portable-field-export",
+  "evidence_kind": "real-case-data-pipeline-and-peak-storage-smoke",
   "runtime": "OpenCFD 2606",
   "validation_claim": false,
   "source": {
-    "case": "existing-baffle-vortex-output",
-    "solver_rerun": false,
-    "native_times_seconds": [34.8, 35.0],
-    "native_fields": ["U", "p", "vorticity", "Q"]
+    "case": "fresh-bottom-baffle-wake-output",
+    "solver_rerun": true,
+    "cell_count": 3020,
+    "native_times_seconds": [0.5, 1.0, 1.5, 2.0],
+    "native_fields": ["U", "p", "vorticity"]
   },
   "portable_fields": {
-    "frame_count": 2,
-    "point_count": 11818,
-    "cell_count": 5712,
+    "frame_count": 4,
+    "point_count": 4092,
+    "cell_count": 3020,
     "cell_block_count": 1,
     "names": [
       "fluid.velocity",
-      "fluid.kinematic_pressure",
-      "fluid.vorticity",
-      "fluid.q_criterion"
+      "fluid.pressure",
+      "fluid.vorticity"
     ],
     "formats": ["XDMF", "HDF5"],
-    "actual_bytes": 773845,
-    "hdf5_sha256": "b3b711050d11c4a5950f2ec5db17e12f40ef67e5e855245ee7165328e2f2f915",
-    "xdmf_sha256": "893b424bdacd4a3bab6d4bb330eb8a7b64ace4994e33968a421e908192d3f970",
+    "actual_bytes": 694002,
+    "hdf5_sha256": "b1fede79ce3b6459e2c8e4449d8890ee530ae181db74d5d961e972db34e4c9c7",
+    "xdmf_sha256": "c7bd25ed96d0b7a4ee7b90dd97cf4a92da5b6c4f4cffea841f52d40959ac3e8b",
     "verified": true
   },
   "temporary_conversion": {
-    "staging": "isolated-streamed-vtu",
+    "staging": "bounded-batch-isolated-vtu",
+    "source_vtu_pipeline": "bounded-convert-write-release",
     "source_vtu_policy": "delete-after-frame",
-    "consumed_source_vtu_bytes": 2441378,
+    "conversion_invocation_count": 1,
+    "maximum_managed_source_vtu_frames": 4,
+    "observed_peak_staging_directories": 1,
+    "observed_peak_vtu_frames": 4,
+    "consumed_source_vtu_bytes": 1926600,
     "hdf5_write_strategy": "single-pass-direct",
     "temporary_hdf5_copy_bytes": 0,
+    "bundle_publication_strategy": "same-parent-atomic-rename",
     "hdf5_dataset_compression": "gzip",
     "repack_file_created": false,
     "preexisting_vtk_directory_preserved": true,
     "temporary_directories_remaining": 0
   },
-  "interpretation": "A real two-frame OpenFOAM field set was converted without rerunning the solver. AgentCFD isolated foamToVTK output from the user's VTK directory, consumed each generated VTU after writing it into the portable time series, compressed every HDF5 dataset on its first write without a repack file, removed staging, and verified the resulting XDMF/HDF5 bundle. This is data-pipeline and storage evidence, not physical or numerical validation of the flow solution."
+  "interpretation": "A fresh four-frame OpenFOAM v2606 field set was converted by one bounded foamToVTK invocation. An external observer measured one staging directory and four VTU frames at peak, matching the fixed micro-batch ceiling. AgentCFD wrote the batch directly into compressed HDF5, removed staging before any later batch could begin, preserved user VTK output, and verified the resulting XDMF/HDF5 bundle. The total timeout covers the complete conversion pipeline rather than restarting per batch. Unit coverage confirms longer selections are split into successive batches of at most four. This is data-pipeline and peak-storage evidence, not physical or numerical validation of the flow solution."
 }

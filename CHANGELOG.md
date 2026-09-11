@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Convert selected OpenFOAM times as a bounded four-frame micro-batch pipeline:
+  one isolated `foamToVTK -time` invocation, direct HDF5 writes, then immediate
+  batch release. The total timeout covers the complete pipeline, per-batch logs
+  are accumulated and preserved as project evidence, storage planning has a
+  fixed VTU ceiling independent of animation length, and manifests record the
+  measured strategy. The bundle is
+  built in a same-parent hidden directory and atomically renamed into place, so
+  a failed conversion cannot expose a partial public XDMF/H5 destination.
 - Publish transient baffled-channel restart state while `pimpleFoam` is still
   running. Stable checkpoint directories are detected without reading them into
   the status path, streamed into a bounded-memory ZIP, and atomically replace

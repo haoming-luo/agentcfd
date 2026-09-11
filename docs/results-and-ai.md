@@ -177,11 +177,14 @@ one by name, and call `agentcfd view . --recipe NAME --batch` or
 ParaView trace or duplicate the HDF5 payload.
 
 Managed OpenFOAM conversion never reuses the case's generic `VTK/` directory.
-AgentCFD requests an isolated temporary output from `foamToVTK`, consumes each
-selected frame into the standard HDF5 series, and deletes that temporary VTU
-immediately. The manifest reports `source_vtu_policy` and
-`consumed_source_vtu_bytes`; an explicit preconverted-VTU export preserves every
-source file instead.
+AgentCFD invokes `foamToVTK` for at most four selected times in an isolated
+directory, consumes that micro-batch into the standard HDF5 series, deletes it,
+and only then starts the next batch. The manifest reports the pipeline,
+invocation count, bounded peak, policy, and reclaimed bytes; an explicit
+preconverted-VTU export preserves every source file instead.
+The XDMF/H5 bundle itself is assembled in a same-parent hidden directory and
+renamed into the requested destination only after hashes, metadata, and storage
+budget checks complete. Failed publication therefore exposes no partial bundle.
 
 Campaign runs copy their compact scalar quantity map into `run.json`.
 `agentcfd campaigns . --json` can therefore compare accepted design points,

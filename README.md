@@ -391,6 +391,7 @@ agentcfd geometry-normalize equipment.stl  # preview region-name mapping only
 agentcfd geometry-normalize equipment.stl fluid.stl  # write a new safe copy
 agentcfd geometry-check fluid.stl --unit mm --roles roles.json \
   --internal-flow --output geometry/inspection.json
+# Add --accept-multiple-components only after reviewing all reported shells.
 agentcfd mesh . --plan-only     # imported-surface cell/refinement/quality budget
 agentcfd mesh . --output mesh-case # native dry-run + snappy + checkMesh gates
 agentcfd run .                      # bounded imported laminar flow + XDMF/H5
@@ -417,6 +418,10 @@ not change coordinates or face records. The normalized copy is not approved
 geometry by itself: run `geometry-check` again to confirm units, topology,
 boundary roles, and inlet direction. Binary STL has no dependable named-region
 text and must be re-exported as named ASCII STL or OBJ for this operation.
+Disconnected surface components fail closed by default. Review their area
+fractions and region membership, remove accidental debris, or make the
+intentional-shell decision explicit with `--accept-multiple-components`; the
+flag records acceptance and never edits the surface.
 
 This boundary follows OpenFOAM's own surface model: a triangulated surface may
 contain several regions that become separate patches, and per-region patch

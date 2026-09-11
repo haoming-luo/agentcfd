@@ -26,6 +26,8 @@ class ImportedSurface:
     enclosed_volume_m3: float | None = None
     merge_tolerance_native: float = 0.0
     interior_point_m: tuple[float, float, float] | None = None
+    connected_component_count: int | None = None
+    multiple_components_accepted: bool = False
     name: str = "imported-fluid"
 
     def __post_init__(self) -> None:
@@ -103,6 +105,34 @@ class ImportedSurface:
                 self.merge_tolerance_native, name="Geometry merge tolerance"
             ),
         )
+        if self.connected_component_count is not None:
+            if (
+                isinstance(self.connected_component_count, bool)
+                or not isinstance(self.connected_component_count, int)
+                or self.connected_component_count < 1
+            ):
+                raise ValueError(
+                    "Imported surface connected_component_count must be a positive integer."
+                )
+        if not isinstance(self.multiple_components_accepted, bool):
+            raise ValueError(
+                "Imported surface multiple_components_accepted must be boolean."
+            )
+        if self.multiple_components_accepted and (
+            self.connected_component_count is None
+            or self.connected_component_count <= 1
+        ):
+            raise ValueError(
+                "Multiple-component acceptance requires a component count above one."
+            )
+        if (
+            self.connected_component_count is not None
+            and self.connected_component_count > 1
+            and not self.multiple_components_accepted
+        ):
+            raise ValueError(
+                "Imported surface with multiple components requires explicit acceptance."
+            )
         if not isinstance(self.name, str) or not self.name.strip():
             raise ValueError("Imported surface name must be a non-empty string.")
         object.__setattr__(self, "name", self.name.strip())
@@ -128,6 +158,8 @@ class ImportedSurface:
             "unit": self.unit,
             "scale_to_m": self.scale_to_m,
             "merge_tolerance_native": self.merge_tolerance_native,
+            "connected_component_count": self.connected_component_count,
+            "multiple_components_accepted": self.multiple_components_accepted,
             "bounds_m": [list(point) for point in self.bounds_m],
             "enclosed_volume_m3": self.enclosed_volume_m3,
             "interior_point_m": (
@@ -181,6 +213,11 @@ def imported_surface_from_inspection(
     maximum = bounds.get("maximum")
     if not isinstance(minimum, list) or not isinstance(maximum, list):
         raise ValueError("Geometry inspection SI bounds are malformed.")
+    raw_component_count = surface_record.get("connected_component_count")
+    if isinstance(raw_component_count, bool) or (
+        raw_component_count is not None and not isinstance(raw_component_count, int)
+    ):
+        raise ValueError("Geometry inspection connected-component count is malformed.")
     return ImportedSurface(
         asset=asset,
         source_sha256=str(source.get("sha256")),
@@ -193,6 +230,14 @@ def imported_surface_from_inspection(
         bounds_m=(tuple(minimum), tuple(maximum)),
         enclosed_volume_m3=surface_record.get("enclosed_volume_m3"),
         merge_tolerance_native=float(policy.get("merge_tolerance_native", 0.0)),
+        connected_component_count=(
+            int(raw_component_count) if raw_component_count is not None else None
+        ),
+        multiple_components_accepted=(
+            raw_component_count is not None
+            and raw_component_count > 1
+            and policy.get("accept_multiple_components") is True
+        ),
         interior_point_m=interior_point_m,
         name=name,
     )

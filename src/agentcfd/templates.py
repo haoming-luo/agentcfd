@@ -204,6 +204,7 @@ _TEMPLATES = (
             "closed named STL/OBJ fluid volume",
             "geometry unit",
             "confirmed boundary roles",
+            "explicit component review when more than one surface shell exists",
             "interior point",
             "exactly one inlet control",
             "base cell size",

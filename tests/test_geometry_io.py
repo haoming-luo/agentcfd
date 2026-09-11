@@ -114,6 +114,7 @@ def test_geometry_region_normalization_is_previewed_atomic_and_verified(
         output,
         unit="m",
         require_watertight=False,
+        accept_multiple_components=True,
     )
     assert inspected["readiness"]["geometry_ready"] is True
     assert set(inspected["surface"]["region_names"]) == set(mapping.values())
@@ -244,7 +245,7 @@ def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys
     assert cli["boundary_roles"]["confirmed"] == {"fluid": "wall"}
 
 
-def test_disconnected_surface_components_are_quantified_for_review(tmp_path):
+def test_disconnected_surface_components_are_quantified_for_review(tmp_path, capsys):
     a = (0.0, 0.0, 0.0)
     b = (1.0, 0.0, 0.0)
     c = (0.0, 1.0, 0.0)
@@ -264,7 +265,20 @@ def test_disconnected_surface_components_are_quantified_for_review(tmp_path):
         )
     )
 
-    report = geometry_io.inspect_geometry(surface, unit="mm")
+    blocked = geometry_io.inspect_geometry(surface, unit="mm")
+
+    assert blocked["readiness"]["geometry_ready"] is False
+    assert any(
+        issue["code"] == "DISCONNECTED_SURFACE_COMPONENTS_UNCONFIRMED"
+        and issue["severity"] == "error"
+        for issue in blocked["issues"]
+    )
+
+    report = geometry_io.inspect_geometry(
+        surface,
+        unit="mm",
+        accept_multiple_components=True,
+    )
 
     jsonschema.Draft202012Validator(
         contracts.load("geometry-inspection.schema.json")
@@ -280,11 +294,42 @@ def test_disconnected_surface_components_are_quantified_for_review(tmp_path):
     assert sum(component["area_fraction"] for component in components) == pytest.approx(1.0)
     assert all(component["area_m2"] > 0.0 for component in components)
     assert any(
-        issue["code"] == "DISCONNECTED_SURFACE_COMPONENTS"
-        and issue["severity"] == "warning"
+        issue["code"] == "DISCONNECTED_SURFACE_COMPONENTS_ACCEPTED"
+        and issue["severity"] == "info"
         for issue in report["issues"]
     )
     assert report["readiness"]["geometry_ready"] is True
+    assert report["policy"]["accept_multiple_components"] is True
+    assert (
+        entrypoint(
+            [
+                "geometry-check",
+                str(surface),
+                "--unit",
+                "mm",
+                "--accept-multiple-components",
+            ]
+        )
+        == 0
+    )
+    human = capsys.readouterr().out
+    assert "component-0001: 4 triangles | area 50%" in human
+    assert "region walls: suggested wall | confirmation required" in human
+    assert (
+        entrypoint(
+            [
+                "geometry-check",
+                str(surface),
+                "--unit",
+                "mm",
+                "--accept-multiple-components",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["policy"]["accept_multiple_components"] is True
 
 
 def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys):
@@ -339,6 +384,8 @@ def test_confirmed_closed_surface_becomes_portable_model_intent(tmp_path, capsys
     assert domain.asset == "geometry/fluid.stl"
     assert domain.to_dict()["boundary_roles"] == roles
     assert domain.to_dict()["interior_point_m"] == [0.0001, 0.0001, 0.0001]
+    assert domain.connected_component_count == 1
+    assert domain.multiple_components_accepted is False
     assert str(surface) not in str(domain.to_dict())
     assert len(model.fingerprint()) == 64
 
@@ -424,6 +471,7 @@ def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_pat
         require_watertight=False,
         internal_flow=True,
         boundary_roles={"inlet_main": "inlet", "outlet_main": "outlet"},
+        accept_multiple_components=True,
     )
     assert incomplete["readiness"]["geometry_ready"] is True
     assert incomplete["readiness"]["boundary_roles_ready"] is False
@@ -440,6 +488,7 @@ def test_internal_flow_role_map_requires_exact_complete_inlet_and_outlet(tmp_pat
             "outlet_main": "outlet",
             "walls": "wall",
         },
+        accept_multiple_components=True,
     )
     assert complete["readiness"]["boundary_roles_ready"] is True
     assert complete["boundary_roles"]["suggestions"]["inlet_main"]["role"] == "inlet"

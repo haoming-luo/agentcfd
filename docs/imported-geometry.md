@@ -10,6 +10,8 @@ meshing an ambiguous file.
 agentcfd geometry-check valve-fluid.stl --unit mm
 agentcfd geometry-check intentional-open-plate.obj --unit m --allow-open
 agentcfd geometry-check large.stl --unit mm --max-topology-triangles 2000000 --json
+# Only after inspecting every component listed by the previous command:
+agentcfd geometry-check equipment.stl --unit mm --accept-multiple-components
 ```
 
 Name-based roles are suggestions only. Confirm every discovered region through
@@ -75,12 +77,16 @@ for `surfaceCheck`, meshing, or post-mesh patch integration.
 The bounded topology pass also partitions faces into edge-connected surface
 components. Each component has a stable inspection-local identifier, triangle
 count, area and area fraction, signed-volume contribution, and the exact
-region names it contains. Multiple components produce an explicit review
-warning, not an automatic repair or failure: a tiny detached shell may be CAD
-debris, while a disconnected internal baffle may be intentional. If the
-topology memory guard is reached, component count and details become `null`
-rather than a partial answer. This makes the ambiguity visible before
-`locationInMesh` selects the connected volume that OpenFOAM keeps.
+region names it contains. More than one component blocks setup until it is
+reviewed: a tiny detached shell may be CAD debris, while a disconnected
+internal baffle may be intentional. `--accept-multiple-components` is the
+explicit confirmation for the second case; it records the decision but never
+deletes or repairs geometry. Project creation exposes the same flag, and JSON
+requests place `"accept_multiple_components": true` inside `geometry`. The
+accepted count and decision enter public model identity. If the topology
+memory guard is reached, component count and details become `null` rather than
+a partial answer. This makes the ambiguity visible before `locationInMesh`
+selects the connected volume that OpenFOAM keeps.
 
 For a Cartesian velocity inlet, AgentCFD combines the consistently oriented
 inlet normal with the sign of the enclosed volume to determine the outward
@@ -137,6 +143,7 @@ that bridge and create the complete owned project in one command:
 ```bash
 agentcfd init my-duct --template imported-internal-flow \
   --geometry duct.obj --unit mm --roles boundary-roles.json \
+  --accept-multiple-components \
   --interior-point-m 0.15 0.03 0.03 \
   --inlet-velocity-m-s 1 0 0 --base-size-m 0.005 \
   --maximum-cells 500000

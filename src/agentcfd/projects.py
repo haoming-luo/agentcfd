@@ -6961,7 +6961,14 @@ def init_project_from_request(
     ):
         raise ProjectError("Project creation flow_distribution must be an object.")
     geometry_unknown = sorted(
-        set(geometry_record) - {"path", "unit", "boundary_roles", "role_confirmation"}
+        set(geometry_record)
+        - {
+            "path",
+            "unit",
+            "boundary_roles",
+            "role_confirmation",
+            "accept_multiple_components",
+        }
     )
     mesh_unknown = sorted(set(mesh_record) - {"base_size_m", "maximum_cells"})
     if geometry_unknown:
@@ -7007,6 +7014,9 @@ def init_project_from_request(
     geometry_unit = geometry_record["unit"]
     boundary_roles = geometry_record.get("boundary_roles")
     role_confirmation = geometry_record.get("role_confirmation")
+    accept_multiple_components = geometry_record.get(
+        "accept_multiple_components", False
+    )
     if not isinstance(geometry_path, str) or not geometry_path.strip():
         raise ProjectError("Project creation geometry.path must be a non-empty string.")
     if not isinstance(geometry_unit, str):
@@ -7025,6 +7035,10 @@ def init_project_from_request(
             "Project creation geometry.role_confirmation must be "
             "'accept-name-suggestions'."
         )
+    if not isinstance(accept_multiple_components, bool):
+        raise ProjectError(
+            "Project creation geometry.accept_multiple_components must be boolean."
+        )
     source = Path(geometry_path).expanduser()
     if not source.is_absolute():
         base = (
@@ -7039,6 +7053,7 @@ def init_project_from_request(
         geometry_unit=geometry_unit,
         boundary_roles=boundary_roles,
         accept_name_roles=role_confirmation == "accept-name-suggestions",
+        accept_multiple_components=accept_multiple_components,
         interior_point_m=payload["interior_point_m"],
         inlet_velocity_m_s=payload.get("inlet_velocity_m_s"),
         inlet_mass_flow_kg_s=payload.get("inlet_mass_flow_kg_s"),
@@ -7067,6 +7082,7 @@ def init_project(
     geometry_unit: str | None = None,
     boundary_roles: Mapping[str, str] | None = None,
     accept_name_roles: bool = False,
+    accept_multiple_components: bool = False,
     interior_point_m: tuple[float, float, float] | None = None,
     inlet_velocity_m_s: tuple[float, float, float] | None = None,
     inlet_mass_flow_kg_s: float | None = None,
@@ -7097,6 +7113,7 @@ def init_project(
         geometry_unit,
         boundary_roles,
         accept_name_roles,
+        accept_multiple_components,
         interior_point_m,
         inlet_velocity_m_s,
         inlet_mass_flow_kg_s,
@@ -7123,6 +7140,8 @@ def init_project(
     if template == "imported-internal-flow":
         if not isinstance(accept_name_roles, bool):
             raise ValueError("accept_name_roles must be a boolean.")
+        if not isinstance(accept_multiple_components, bool):
+            raise ValueError("accept_multiple_components must be a boolean.")
         if boundary_roles is not None and accept_name_roles:
             raise ValueError(
                 "Choose either explicit boundary_roles or accept_name_roles, not both."
@@ -7193,6 +7212,7 @@ def init_project(
                 imported_source,
                 unit=geometry_unit,
                 internal_flow=True,
+                accept_multiple_components=accept_multiple_components,
             )
             normalized_roles = geometry_io.accept_name_role_suggestions(
                 preliminary_report
@@ -7209,6 +7229,7 @@ def init_project(
             unit=geometry_unit,
             boundary_roles=normalized_roles,
             internal_flow=True,
+            accept_multiple_components=accept_multiple_components,
         )
         if not imported_report["readiness"]["ready_for_import_setup"]:
             repairs = [

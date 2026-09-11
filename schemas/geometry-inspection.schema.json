@@ -120,7 +120,8 @@
         "require_watertight": {"type": "boolean"},
         "topology_triangle_limit": {"type": "integer", "minimum": 1},
         "merge_tolerance_native": {"type": "number", "minimum": 0},
-        "internal_flow": {"type": "boolean"}
+        "internal_flow": {"type": "boolean"},
+        "accept_multiple_components": {"type": "boolean"}
       },
       "additionalProperties": false
     },

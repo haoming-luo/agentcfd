@@ -848,6 +848,7 @@ def inspect_geometry(
     merge_tolerance: float = 0.0,
     boundary_roles: Mapping[str, str] | None = None,
     internal_flow: bool = False,
+    accept_multiple_components: bool = False,
 ) -> dict[str, object]:
     """Inspect STL/OBJ geometry without modifying or tessellating the source."""
 
@@ -870,6 +871,10 @@ def inspect_geometry(
             "Vertex merge tolerance must be a finite non-negative source-unit value."
         )
     merge_tolerance = float(merge_tolerance)
+    if not isinstance(accept_multiple_components, bool):
+        raise GeometryInspectionError(
+            "Multiple-component acceptance must be a boolean confirmation."
+        )
     normalized_unit = None if unit is None else str(unit).strip().lower()
     if normalized_unit is not None and normalized_unit not in _UNIT_SCALE_TO_M:
         raise GeometryInspectionError(
@@ -997,15 +1002,22 @@ def inspect_geometry(
             f"Found {metrics['orientation_conflict_count']} same-direction shared edges.",
             "Orient connected faces consistently before using inside/outside meshing controls.",
         )
-    if (
-        isinstance(metrics["connected_component_count"], int)
-        and metrics["connected_component_count"] > 1
-    ):
+    if isinstance(metrics["connected_component_count"], int) and metrics[
+        "connected_component_count"
+    ] > 1:
         issue(
-            "DISCONNECTED_SURFACE_COMPONENTS",
-            "warning",
+            (
+                "DISCONNECTED_SURFACE_COMPONENTS_ACCEPTED"
+                if accept_multiple_components
+                else "DISCONNECTED_SURFACE_COMPONENTS_UNCONFIRMED"
+            ),
+            "info" if accept_multiple_components else "error",
             f"Found {metrics['connected_component_count']} edge-connected surface components.",
-            "Review component sizes and regions; remove accidental debris or explicitly confirm intentional internal shells and baffles.",
+            (
+                "The explicit multiple-component review is recorded; continue with ordinary role and mesh checks."
+                if accept_multiple_components
+                else "Review component sizes and regions, remove accidental debris, or rerun with explicit multiple-component acceptance for intentional internal shells and baffles."
+            ),
         )
     if format_name in {"stl", "obj"} and not regions:
         issue(
@@ -1251,6 +1263,7 @@ def inspect_geometry(
             "topology_triangle_limit": topology_triangle_limit,
             "merge_tolerance_native": merge_tolerance,
             "internal_flow": internal_flow,
+            "accept_multiple_components": accept_multiple_components,
         },
         "boundary_roles": {
             "allowed_roles": sorted(_BOUNDARY_ROLES),

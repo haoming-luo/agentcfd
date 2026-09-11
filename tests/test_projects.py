@@ -221,6 +221,87 @@ def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):
     assert project.plan()["readiness"]["input_assets_ready"] is True
 
 
+def test_imported_init_requires_explicit_multiple_component_review(tmp_path):
+    def solid(name, triangles):
+        lines = [f"solid {name}"]
+        for triangle in triangles:
+            lines.extend(("facet normal 0 0 0", "outer loop"))
+            lines.extend(
+                f"vertex {point[0]} {point[1]} {point[2]}" for point in triangle
+            )
+            lines.extend(("endloop", "endfacet"))
+        lines.append(f"endsolid {name}")
+        return "\n".join(lines) + "\n"
+
+    a = (0.0, 0.0, 0.0)
+    b = (1.0, 0.0, 0.0)
+    c = (0.0, 1.0, 0.0)
+    d = (0.0, 0.0, 1.0)
+    shift = lambda point: (point[0] + 3.0, point[1], point[2])
+    source = tmp_path / "equipment.stl"
+    source.write_text(
+        solid("inlet", ((a, c, b),))
+        + solid("outlet", ((a, b, d),))
+        + solid("walls", ((a, d, c), (b, c, d)))
+        + solid(
+            "baffle",
+            tuple(
+                tuple(shift(point) for point in triangle)
+                for triangle in ((a, c, b), (a, b, d), (a, d, c), (b, c, d))
+            ),
+        ),
+        encoding="utf-8",
+    )
+    common = {
+        "provider": "openfoam",
+        "template": "imported-internal-flow",
+        "geometry_path": source,
+        "geometry_unit": "m",
+        "boundary_roles": {
+            "inlet": "inlet",
+            "outlet": "outlet",
+            "walls": "wall",
+            "baffle": "wall",
+        },
+        "interior_point_m": (0.1, 0.1, 0.1),
+        "inlet_velocity_m_s": (0.0, 0.0, 0.5),
+        "base_size_m": 0.1,
+        "maximum_cells": 100_000,
+    }
+
+    blocked_root = tmp_path / "blocked"
+    with pytest.raises(ProjectError, match="explicit multiple-component acceptance"):
+        projects.init_project(blocked_root, **common)
+    assert not blocked_root.exists()
+
+    request = {
+        "schema": "agentcfd.project-creation-request/0.1",
+        "template": "imported-internal-flow",
+        "provider": "openfoam",
+        "geometry": {
+            "path": str(source),
+            "unit": "m",
+            "boundary_roles": common["boundary_roles"],
+            "accept_multiple_components": True,
+        },
+        "interior_point_m": list(common["interior_point_m"]),
+        "inlet_velocity_m_s": list(common["inlet_velocity_m_s"]),
+        "mesh": {
+            "base_size_m": common["base_size_m"],
+            "maximum_cells": common["maximum_cells"],
+        },
+    }
+    jsonschema.Draft202012Validator(
+        contracts.load("project-creation-request.schema.json")
+    ).validate(request)
+    project = projects.init_project_from_request(tmp_path / "accepted", request)
+    inspection = json.loads((project.root / "geometry/inspection.json").read_text())
+    domain = project.load_step().model.domain
+    assert inspection["policy"]["accept_multiple_components"] is True
+    assert domain.connected_component_count == 2
+    assert domain.multiple_components_accepted is True
+
+
 def test_imported_internal_flow_init_fails_before_writing_unsupported_intent(
     tmp_path,
 ):

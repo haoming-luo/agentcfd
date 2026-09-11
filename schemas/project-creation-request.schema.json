@@ -25,7 +25,8 @@
             "enum": ["inlet", "outlet", "wall", "symmetry", "empty"]
           }
         },
-        "role_confirmation": {"const": "accept-name-suggestions"}
+        "role_confirmation": {"const": "accept-name-suggestions"},
+        "accept_multiple_components": {"type": "boolean"}
       },
       "oneOf": [
         {"required": ["boundary_roles"]},

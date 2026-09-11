@@ -1529,6 +1529,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     init.add_argument(
+        "--accept-multiple-components",
+        action="store_true",
+        help=(
+            "Confirm that disconnected surface shells/baffles were reviewed; "
+            "otherwise imported setup fails closed."
+        ),
+    )
+    init.add_argument(
         "--interior-point-m",
         nargs=3,
         type=float,
@@ -1670,6 +1678,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--internal-flow",
         action="store_true",
         help="Require at least one explicitly confirmed inlet and outlet.",
+    )
+    geometry_check.add_argument(
+        "--accept-multiple-components",
+        action="store_true",
+        help=(
+            "Confirm reviewed disconnected surface shells/baffles; never removes them."
+        ),
     )
     geometry_check.add_argument(
         "--output",
@@ -2920,6 +2935,7 @@ def main(argv: list[str] | None = None) -> int:
             args.unit,
             args.roles,
             True if args.accept_name_roles else None,
+            True if args.accept_multiple_components else None,
             args.interior_point_m,
             args.inlet_velocity_m_s,
             args.inlet_mass_flow_kg_s,
@@ -2962,6 +2978,7 @@ def main(argv: list[str] | None = None) -> int:
                 geometry_unit=args.unit,
                 boundary_roles=_boundary_role_map(args.roles),
                 accept_name_roles=args.accept_name_roles,
+                accept_multiple_components=args.accept_multiple_components,
                 interior_point_m=(
                     tuple(args.interior_point_m)
                     if args.interior_point_m is not None
@@ -3072,6 +3089,7 @@ def main(argv: list[str] | None = None) -> int:
             merge_tolerance=args.merge_tolerance,
             boundary_roles=_boundary_role_map(args.roles),
             internal_flow=args.internal_flow,
+            accept_multiple_components=args.accept_multiple_components,
         )
         if args.output is not None:
             _write_json_atomic(args.output, report)
@@ -3091,8 +3109,33 @@ def main(argv: list[str] | None = None) -> int:
                     f"{float(value):.6g}" for value in surface["dimensions_m"]
                 )
                 print(f"size: {dimensions} m")
+            components = surface.get("connected_components")
+            if isinstance(components, list) and len(components) > 1:
+                for component in components[:20]:
+                    fraction = component.get("area_fraction")
+                    fraction_text = (
+                        "unknown"
+                        if not isinstance(fraction, (int, float))
+                        else f"{100.0 * float(fraction):.4g}%"
+                    )
+                    names = ", ".join(component.get("region_names", [])) or "unnamed"
+                    print(
+                        f"{component['id']}: {component['triangle_count']} triangles | "
+                        f"area {fraction_text} | regions {names}"
+                    )
+                if len(components) > 20:
+                    print(
+                        f"components: {len(components) - 20} more; use --json for all"
+                    )
             confirmed_roles = report["boundary_roles"]["confirmed"]
             region_metrics = surface["region_metrics"]
+            suggestions = report["boundary_roles"]["suggestions"]
+            if confirmed_roles is None and isinstance(suggestions, dict):
+                for name, suggestion in list(sorted(suggestions.items()))[:40]:
+                    role = suggestion.get("role") or "unresolved"
+                    print(f"region {name}: suggested {role} | confirmation required")
+                if len(suggestions) > 40:
+                    print(f"regions: {len(suggestions) - 40} more; use --json for all")
             if isinstance(confirmed_roles, dict) and isinstance(region_metrics, dict):
                 for name, role in sorted(confirmed_roles.items()):
                     metric = region_metrics.get(name)

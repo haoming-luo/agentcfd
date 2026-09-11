@@ -149,6 +149,17 @@ full-field frame request. `Project.plan()` embeds this catalog under
 `agentcfd contracts --json`. Catalog construction opens no XDMF/H5 payload and
 starts no solver.
 
+From a project directory, the equivalent direct views are:
+
+```bash
+agentcfd observations .
+agentcfd observations . --json
+```
+
+The command accepts the same validated `--param` and `--param-file` operating-
+point overrides as planning, so geometry- or output-dependent factories expose
+the selected intent rather than only their defaults.
+
 `pressure_loss` returns `report.system-loss.total_pressure_loss` in Pa and
 `report.system-loss.loss_coefficient` as a dimensionless scalar, using the
 actual inlet bulk velocity:

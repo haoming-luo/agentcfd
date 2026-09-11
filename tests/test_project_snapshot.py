@@ -135,6 +135,8 @@ def test_project_actions_publish_state_cost_and_side_effect_contracts(
     assert by_operation["run"]["mutates_project"] is True
     assert by_operation["run"]["starts_solver"] is True
     assert by_operation["run"]["approval"] == "solver-execution"
+    assert by_operation["observations"]["available"] is True
+    assert by_operation["observations"]["cost"] == "bounded-io"
     assert by_operation["verify"]["available"] is False
     assert by_operation["clean"]["mutates_project"] is False
     assert by_operation["clean"]["command"].endswith(" --json")

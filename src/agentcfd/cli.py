@@ -1664,6 +1664,24 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--output", type=Path)
     plan.add_argument("--json", action="store_true", dest="as_json")
 
+    observations = subparsers.add_parser(
+        "observations",
+        help="List report targets and field retention without reading result payloads.",
+    )
+    observations.add_argument("project", nargs="?", type=Path, default=Path("."))
+    observations.add_argument(
+        "--param",
+        action="append",
+        type=_project_parameter,
+        help="Pass NAME=JSON_SCALAR to the case.py build() factory; repeat as needed.",
+    )
+    observations.add_argument(
+        "--param-file",
+        type=Path,
+        help="Load agentcfd.parameter-set/0.1; explicit --param values take precedence.",
+    )
+    observations.add_argument("--json", action="store_true", dest="as_json")
+
     inspect = subparsers.add_parser(
         "inspect",
         help="Inspect project readiness and its latest structured run.",
@@ -3107,6 +3125,32 @@ def main(argv: list[str] | None = None) -> int:
             if args.output is not None:
                 print(args.output)
         return 0 if report["readiness"]["ready_to_run"] else 3
+    if args.command == "observations":
+        report = projects.Project.discover(args.project).observations(
+            _project_parameters(args.param, args.param_file)
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Observations | {len(report['reports'])} compact reports | "
+                f"{len(report['targets'])} targets"
+            )
+            for target in report["targets"]:
+                used_by = ", ".join(target["used_by"])
+                role = f"/{target['role']}" if target["role"] else ""
+                print(
+                    f"  {target['id']} | {target['kind']}{role} | "
+                    f"used by {used_by}"
+                )
+            frames = report["full_field_frames"]
+            fields = ", ".join(frames["fields"]) or "none"
+            print(
+                f"full fields: {fields} | {frames['definition']['mode']} | "
+                f"{frames['portable_profile']}"
+            )
+            print("storage: compact reports do not add full-field frames")
+        return 0
     if args.command == "inspect":
         report = projects.Project(args.project).inspect()
         if args.as_json:

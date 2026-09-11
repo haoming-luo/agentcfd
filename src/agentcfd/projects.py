@@ -391,6 +391,7 @@ _PROJECT_ACTION_POLICIES = {
     "clean": ("maintain", False, False),
     "diagnose": ("observe", False, False),
     "logs": ("observe", False, False),
+    "observations": ("observe", False, False),
     "performance": ("observe", False, False),
     "plan": ("observe", False, False),
     "project": ("observe", False, False),
@@ -1598,6 +1599,14 @@ class Project:
         if not isinstance(step, Step):
             raise ProjectError("Project factory must return an AgentCFD Step.")
         return step
+
+    def observations(
+        self,
+        parameters: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Resolve the output target catalog without starting a solver."""
+
+        return self.load_step(parameters).observation_catalog()
 
     def _openfoam_settings(self) -> dict[str, object]:
         settings = dict(self.manifest.openfoam)
@@ -4971,6 +4980,17 @@ class Project:
             f"agentcfd project {project_argument} --json",
             available=True,
             availability_reason="The unified compact project view is always available.",
+            cost="bounded-io",
+        )
+        add(
+            "observations",
+            f"agentcfd observations {project_argument} --json",
+            available=state != "running",
+            availability_reason=(
+                "Readable output intent can be resolved without opening field data."
+                if state != "running"
+                else "Use the frozen run plan while execution is active."
+            ),
             cost="bounded-io",
         )
         add(

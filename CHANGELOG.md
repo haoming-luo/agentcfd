@@ -7,6 +7,8 @@
   reports to physical surfaces, internal sections, or inline probe points;
   inspect roles, cadence, and reuse; and distinguish scalar-history retention
   from full-field frames without opening XDMF/H5 or parsing `case.py`.
+  `Project.observations()` and `agentcfd observations` expose the same bounded
+  read path directly, and the state-aware action catalog advertises it.
 - Add reusable solver-neutral `regions.plane()` measurement sections. A model
   declares upstream/downstream planes once in SI coordinates, then pressure-
   loss, flow-uniformity, and scalar surface reports reuse their names. Imported

@@ -109,6 +109,7 @@ agentcfd doctor .       # project/runtime/resource audit; no solve or field read
 agentcfd status .       # one state, one recommended next action
 agentcfd project .      # unified project/result/output view; no HDF5 read
 agentcfd actions .      # state-aware operations, costs, and side effects for AI
+agentcfd observations . # compact reports, shared targets, and field retention
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5
 agentcfd verify project . # hash result artifacts and verify XDMF/H5 consistency

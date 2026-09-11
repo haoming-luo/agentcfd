@@ -122,6 +122,27 @@ def test_cli_result_payload_exposes_failed_decision_gates_to_agents():
     assert "do not promote" in decision["guidance"]
 
 
+def test_observations_cli_is_bounded_and_machine_readable(capsys):
+    project = "examples/channel_baffle_project"
+
+    assert entrypoint(["observations", project, "--json"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    jsonschema.Draft202012Validator(
+        contracts.load("observation-catalog.schema.json")
+    ).validate(report)
+    assert len(report["reports"]) == 4
+    assert {item["id"] for item in report["targets"]} == {
+        "probe/near-wake",
+        "region/baffle",
+        "region/outlet",
+    }
+
+    assert entrypoint(["observations", project]) == 0
+    human = capsys.readouterr().out
+    assert "4 compact reports | 3 targets" in human
+    assert "compact reports do not add full-field frames" in human
+
+
 def test_cli_groups_compact_reports_as_engineering_results():
     assert (
         _result_quantity_group(

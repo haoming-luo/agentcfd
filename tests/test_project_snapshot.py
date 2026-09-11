@@ -53,6 +53,7 @@ def test_project_snapshot_is_one_safe_surface_before_and_after_run(tmp_path) -> 
         "guide",
         "plan",
         "run",
+        "summary",
         "result",
     }
     assert published["result"]["accepted"] is True
@@ -92,9 +93,7 @@ def test_project_snapshot_is_one_safe_surface_before_and_after_run(tmp_path) -> 
     )
     portable = project.snapshot(include_result=False)
     _validate(portable)
-    assert portable["output"]["fields"]["xdmf"] == str(
-        fields / "fields.xdmf"
-    )
+    assert portable["output"]["fields"]["xdmf"] == str(fields / "fields.xdmf")
     assert portable["output"]["fields"]["h5"] == str(fields / "fields.h5")
     assert portable["output"]["fields"]["summary"]["frame_count"] == 2
     assert portable["observation_cost"]["field_payloads_opened"] == 0

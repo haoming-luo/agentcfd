@@ -1,19 +1,30 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/result-summary.schema.json",
-  "title": "AgentCFD lightweight project result summary 0.1",
+  "title": "AgentCFD materialized lightweight project result summary 0.2",
   "type": "object",
   "required": [
-    "schema", "root", "run_id", "result", "status", "converged",
+    "schema", "root", "run_id", "summary", "result", "source_result", "status", "converged",
     "accepted", "trust_level", "provider", "parameters", "quantities",
-    "histories", "fields", "available", "failed_checks", "provenance",
+    "histories", "fields", "available", "check_count", "failed_checks", "provenance",
     "artifact_integrity", "observation_cost", "next_action"
   ],
   "properties": {
-    "schema": {"const": "agentcfd.result-summary/0.1"},
+    "schema": {"const": "agentcfd.result-summary/0.2"},
     "root": {"type": "string"},
     "run_id": {"type": ["string", "null"]},
+    "summary": {"type": "string"},
     "result": {"type": "string"},
+    "source_result": {
+      "type": "object",
+      "required": ["path", "bytes", "sha256"],
+      "properties": {
+        "path": {"type": "string"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
+    },
     "status": {"type": "string"},
     "converged": {"type": "boolean"},
     "accepted": {"type": "boolean"},
@@ -36,6 +47,7 @@
     },
     "histories": {"type": "object"},
     "fields": {"type": "object"},
+    "check_count": {"type": "integer", "minimum": 0},
     "available": {
       "type": "object",
       "required": ["quantities", "histories", "fields"],
@@ -61,9 +73,10 @@
     },
     "observation_cost": {
       "type": "object",
-      "required": ["result_json_bytes_read", "field_payloads_opened", "artifacts_hashed"],
+      "required": ["summary_json_bytes_read", "result_json_bytes_read", "field_payloads_opened", "artifacts_hashed"],
       "properties": {
-        "result_json_bytes_read": {"type": "integer", "minimum": 1},
+        "summary_json_bytes_read": {"type": "integer", "minimum": 0},
+        "result_json_bytes_read": {"type": "integer", "minimum": 0},
         "field_payloads_opened": {"const": 0},
         "artifacts_hashed": {"const": 0}
       },

@@ -82,12 +82,18 @@ available field bundle internally. Its report keeps `verified`, `accepted`, and
 therefore cannot turn byte integrity into a scientific validation claim.
 
 `agentcfd result PROJECT --json` is the matching lightweight result surface.
-It validates the internal result record and returns canonical quantities,
+New runs materialize it as `output/summary.json`; the command normally reads
+that bounded artifact rather than reparsing all scalar samples in
+`result.json`. It returns canonical quantities,
 failed checks, history metadata, field metadata, provenance, and available
 names without opening HDF5 or hashing external artifacts. Repeat `--quantity`
 to request only the scalar values needed by a decision. The response states
 that artifact integrity is deferred and provides the exact `verify result`
 command for workflows that require a full byte-level audit.
+Project verification also compares every summary quantity, check, history/field
+descriptor, provenance record, source byte count, and source SHA-256 with the
+verified full result, so the convenient AI surface cannot silently diverge at
+a handoff boundary.
 
 Industrial component decisions should use compact semantic quantities instead
 of reopening fields. An `outputs.pressure_loss("system-loss", ...)` report

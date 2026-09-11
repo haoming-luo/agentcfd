@@ -97,6 +97,8 @@ python -m pytest -q
     the preview first and use `--apply` only when full fields are reproducible
     and no downstream consumer still needs that exact stored field payload.
 25. Use `verify project --json` before archive, coupling, or dataset admission.
+26. Read `output/summary.json` or `agentcfd result --json` for routine decisions;
+    open full `result.json` histories and HDF5 fields only when the task needs them.
     Keep byte integrity, scientific acceptance, and trust level separate; a
     verified artifact set does not repair a failed physical check.
 26. Use `performance --json` only for scheduling and ETA. Its bounded comparable

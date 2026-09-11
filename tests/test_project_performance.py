@@ -151,15 +151,16 @@ def test_runtime_history_is_bounded_to_fifty_samples(tmp_path) -> None:
     assert raw["samples"][0]["run_id"] == "run-05"
 
 
-def test_runtime_history_write_failure_is_advisory(
-    tmp_path, monkeypatch
-) -> None:
+def test_runtime_history_write_failure_is_advisory(tmp_path, monkeypatch) -> None:
     project = projects.init_project(tmp_path / "pipe")
+    original_write = projects._write_json_atomic
 
-    def fail_write(*_args, **_kwargs):
-        raise OSError("read-only calibration store")
+    def fail_performance_write(path, payload):
+        if path.name == "performance.json":
+            raise OSError("read-only calibration store")
+        return original_write(path, payload)
 
-    monkeypatch.setattr(projects, "_write_json_atomic", fail_write)
+    monkeypatch.setattr(projects, "_write_json_atomic", fail_performance_write)
 
     completed = project.run()
 

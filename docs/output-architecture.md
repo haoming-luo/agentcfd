@@ -11,6 +11,12 @@ solver timesteps       dense, normally never retained
 └── checkpoints        sparse native states, rolling retention
 ```
 
+Completed output has a matching control/data split: `summary.json` is the
+bounded decision plane, `result.json` retains complete scalar histories and
+evidence metadata, and `fields/fields.h5` is the optional large spatial payload.
+Normal agent polling touches only the first layer; explicit inspection and
+verification opt into the deeper layers.
+
 This mirrors mature solver practice without exposing backend vocabulary:
 
 - OpenFOAM function objects calculate and write requested derived data at

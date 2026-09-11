@@ -55,13 +55,16 @@
     "observation_cost": {
       "type": "object",
       "required": [
-        "run_json_bytes_read", "plan_json_bytes_read", "result_json_bytes_read", "artifacts_hashed",
+        "run_json_bytes_read", "plan_json_bytes_read", "result_json_bytes_read",
+        "summary_json_bytes_read", "control_files_hashed", "artifacts_hashed",
         "field_payloads_opened", "recursive_storage_scan"
       ],
       "properties": {
         "run_json_bytes_read": {"type": "integer", "minimum": 0},
         "plan_json_bytes_read": {"type": "integer", "minimum": 0},
         "result_json_bytes_read": {"type": "integer", "minimum": 0},
+        "summary_json_bytes_read": {"type": "integer", "minimum": 0},
+        "control_files_hashed": {"type": "integer", "minimum": 0},
         "artifacts_hashed": {"type": "integer", "minimum": 0},
         "field_payloads_opened": {"type": "boolean"},
         "recursive_storage_scan": {"const": false}

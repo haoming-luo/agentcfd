@@ -155,6 +155,7 @@ class ProjectRun:
             "mode": self.mode,
             "directory": str(self.directory),
             "result": str(self.result_path),
+            "summary": str(self.directory / "summary.json"),
             "plan": str(self.plan_path),
             "status": self.result.status,
             "converged": self.result.converged,
@@ -288,9 +289,7 @@ def _thermal_preflight(step: Step) -> dict[str, object]:
             "calculation": None,
         }
     if isinstance(inlet, boundaries.MassFlowInlet):
-        mean_velocity = inlet.mass_flow_rate / (
-            step.model.fluid.density * domain.area
-        )
+        mean_velocity = inlet.mass_flow_rate / (step.model.fluid.density * domain.area)
     elif isinstance(
         inlet,
         (
@@ -315,10 +314,7 @@ def _thermal_preflight(step: Step) -> dict[str, object]:
         heat_rate = 0.0
     elif isinstance(thermal, boundaries.HeatFluxWall):
         heat_rate = (
-            thermal.heat_flux_into_fluid
-            * math.pi
-            * domain.diameter
-            * domain.length
+            thermal.heat_flux_into_fluid * math.pi * domain.diameter * domain.length
         )
     else:
         return {
@@ -460,7 +456,10 @@ def _windows_process_is_alive(pid: int) -> bool:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     kernel32.OpenProcess.restype = wintypes.HANDLE
-    kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    kernel32.GetExitCodeProcess.argtypes = (
+        wintypes.HANDLE,
+        ctypes.POINTER(wintypes.DWORD),
+    )
     kernel32.GetExitCodeProcess.restype = wintypes.BOOL
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     kernel32.CloseHandle.restype = wintypes.BOOL
@@ -545,9 +544,7 @@ def _performance_key(
     )
     boundary_types = {
         str(name): {
-            key: value
-            for key, value in record.items()
-            if key in {"type", "thermal"}
+            key: value for key, value in record.items() if key in {"type", "thermal"}
         }
         for name, record in (
             boundary_records.items() if isinstance(boundary_records, Mapping) else ()
@@ -625,8 +622,7 @@ def _read_performance_history(root: Path) -> tuple[list[dict[str, object]], str]
         if (
             record.get("schema") != "agentcfd.performance-history/0.1"
             or not isinstance(samples, list)
-            or set(record)
-            != {"schema", "updated_at", "maximum_samples", "samples"}
+            or set(record) != {"schema", "updated_at", "maximum_samples", "samples"}
             or record.get("maximum_samples") != _PERFORMANCE_HISTORY_LIMIT
             or len(samples) > _PERFORMANCE_HISTORY_LIMIT
             or (
@@ -1084,7 +1080,8 @@ def _write_output_guide(run: ProjectRun, *, model_name: str) -> Path:
         )
     lines.extend(
         (
-            "Read `result.json` for quantities, checks, histories, provenance, and artifacts.",
+            "Read `summary.json` first for compact quantities, decisions, and available data.",
+            "Read `result.json` only when complete histories and evidence metadata are needed.",
             "Read `plan.json` for the resolved modeling and output decisions.",
             "Read `run.json` for lifecycle state and machine automation.",
             "Run `agentcfd verify project .` before archive, coupling, or dataset handoff.",
@@ -1421,9 +1418,7 @@ class Project:
                     "Project parameter names must be valid non-keyword Python identifiers."
                 )
             if not isinstance(value, (str, int, float, bool, type(None))):
-                raise ProjectError(
-                    f"Project parameter {name!r} must be a JSON scalar."
-                )
+                raise ProjectError(f"Project parameter {name!r} must be a JSON scalar.")
             if isinstance(value, float) and not math.isfinite(value):
                 raise ProjectError(f"Project parameter {name!r} must be finite.")
             selected[name] = value
@@ -1494,7 +1489,9 @@ class Project:
             default_is_scalar = isinstance(
                 default, (str, int, float, bool, type(None))
             ) and not (isinstance(default, float) and not math.isfinite(default))
-            overrideable = keyword_overrideable and (not has_default or default_is_scalar)
+            overrideable = keyword_overrideable and (
+                not has_default or default_is_scalar
+            )
             selected_here = parameter.name in selected_parameters
             current = (
                 selected_parameters[parameter.name]
@@ -1767,8 +1764,7 @@ class Project:
             required_capability = (
                 "openfoam.steady-laminar-heated-circular-pipe"
                 if study.energy
-                else
-                "openfoam.steady-laminar-circular-pipe"
+                else "openfoam.steady-laminar-circular-pipe"
                 if study.laminar
                 else "openfoam.steady-rans-smooth-circular-pipe"
             )
@@ -2047,9 +2043,7 @@ class Project:
         )
         return runs
 
-    def _select_run_record(
-        self, run_id: str | None = None
-    ) -> dict[str, object] | None:
+    def _select_run_record(self, run_id: str | None = None) -> dict[str, object] | None:
         """Select the latest run or one immutable run without opening result payloads."""
 
         runs = self._run_records()
@@ -2075,9 +2069,7 @@ class Project:
         rows: list[dict[str, object]] = []
         plan_files_opened = 0
         markers = (
-            sorted(campaign_root.glob("*/run.json"))
-            if campaign_root.is_dir()
-            else []
+            sorted(campaign_root.glob("*/run.json")) if campaign_root.is_dir() else []
         )
         for marker in markers:
             try:
@@ -2163,9 +2155,7 @@ class Project:
             "failed_count": sum(row["status"] == "failed" for row in rows),
             "include_storage": include_storage,
             "total_bytes": total_bytes,
-            "total_display": None
-            if total_bytes is None
-            else _human_bytes(total_bytes),
+            "total_display": None if total_bytes is None else _human_bytes(total_bytes),
             "exported_csv": None,
             "runs": rows,
             "observation_cost": {
@@ -2196,7 +2186,45 @@ class Project:
             raise ProjectError(
                 "The selected run has no compact result.json; rerun or diagnose it."
             )
-        record = read_result_record(result_path, verify_artifacts=False)
+        summary_path = run_directory / "summary.json"
+        record: dict[str, object] | None = None
+        summary_bytes_read = 0
+        if summary_path.is_file():
+            summary_bytes_read = summary_path.stat().st_size
+            candidate = strict_json_object(
+                summary_path.read_text(encoding="utf-8"),
+                label=f"AgentCFD result summary {summary_path}",
+            )
+            source = candidate.get("source_result")
+            recorded_result_sha256 = selected_run.get("result_sha256")
+            if (
+                candidate.get("schema") == "agentcfd.result-summary/0.2"
+                and candidate.get("root") == str(self.root)
+                and candidate.get("run_id") == selected_run.get("run_id")
+                and candidate.get("result") == str(result_path)
+                and isinstance(source, dict)
+                and source.get("path") == str(result_path)
+                and source.get("bytes") == result_path.stat().st_size
+                and isinstance(source.get("sha256"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", str(source["sha256"]))
+                and (
+                    recorded_result_sha256 is None
+                    or source.get("sha256") == recorded_result_sha256
+                )
+                and isinstance(candidate.get("quantities"), dict)
+                and isinstance(candidate.get("available"), dict)
+                and isinstance(candidate.get("observation_cost"), dict)
+            ):
+                record = candidate
+        if record is None:
+            result_record = read_result_record(result_path, verify_artifacts=False)
+            record = self._result_summary_payload(
+                selected_run,
+                result_path=result_path,
+                record=result_record,
+                result_json_bytes_read=result_path.stat().st_size,
+            )
+            summary_bytes_read = 0
         available_quantities = record["quantities"]
         requested = tuple(dict.fromkeys(str(name).strip() for name in quantities))
         if any(not name for name in requested):
@@ -2214,39 +2242,79 @@ class Project:
             if requested
             else dict(available_quantities)
         )
+        report = dict(record)
+        report["quantities"] = selected_quantities
+        observation_cost = dict(report["observation_cost"])
+        observation_cost["summary_json_bytes_read"] = summary_bytes_read
+        report["observation_cost"] = observation_cost
+        if run_id is not None:
+            report["next_action"] = {
+                "command": f"agentcfd verify result {shlex.quote(str(result_path))}",
+                "reason": "Verify this immutable run before an external handoff.",
+            }
+        return report
+
+    def _result_summary_payload(
+        self,
+        selected_run: Mapping[str, object],
+        *,
+        result_path: Path,
+        record: Mapping[str, object],
+        result_json_bytes_read: int,
+    ) -> dict[str, object]:
+        """Build the bounded, field-free result decision artifact."""
+
+        available_quantities = record.get("quantities", {})
         fields = record.get("fields", {})
         histories = record.get("histories", {})
         checks = record.get("checks", [])
+        if not isinstance(available_quantities, Mapping):
+            raise ProjectError("Result quantities are malformed.")
+        if not isinstance(fields, Mapping) or not isinstance(histories, Mapping):
+            raise ProjectError("Result field or history metadata is malformed.")
+        if not isinstance(checks, Sequence):
+            raise ProjectError("Result checks are malformed.")
         requirements = [
-            check for check in checks if check.get("kind") == "requirement"
+            check
+            for check in checks
+            if isinstance(check, Mapping) and check.get("kind") == "requirement"
         ]
-        failed_checks = [check for check in checks if not check["passed"]]
+        failed_checks = [
+            check
+            for check in checks
+            if isinstance(check, Mapping) and check.get("passed") is False
+        ]
         failed_scientific_checks = [
             check for check in failed_checks if check.get("kind") != "requirement"
         ]
-        project_argument = self._cli_project_argument()
-        verification_command = (
-            f"agentcfd verify result {shlex.quote(str(result_path))}"
-        )
+        verification_command = f"agentcfd verify result {shlex.quote(str(result_path))}"
+        accepted = record.get("accepted") is True
         return {
-            "schema": "agentcfd.result-summary/0.1",
+            "schema": "agentcfd.result-summary/0.2",
             "root": str(self.root),
             "run_id": selected_run.get("run_id"),
+            "summary": str(result_path.with_name("summary.json")),
             "result": str(result_path),
-            "status": record["status"],
-            "converged": record["converged"],
-            "accepted": record["accepted"],
-            "trust_level": record["trust_level"],
-            "provider": record["provider"],
+            "source_result": {
+                "path": str(result_path),
+                "bytes": result_path.stat().st_size,
+                "sha256": file_sha256(result_path),
+            },
+            "status": record.get("status"),
+            "converged": record.get("converged"),
+            "accepted": accepted,
+            "trust_level": record.get("trust_level"),
+            "provider": record.get("provider"),
             "parameters": selected_run.get("parameters", {}),
-            "quantities": selected_quantities,
-            "histories": histories,
-            "fields": fields,
+            "quantities": dict(available_quantities),
+            "histories": dict(histories),
+            "fields": dict(fields),
             "available": {
                 "quantities": sorted(available_quantities),
                 "histories": sorted(histories),
                 "fields": sorted(fields),
             },
+            "check_count": len(checks),
             "requirements": requirements,
             "failed_checks": failed_checks,
             "provenance": record.get("provenance", {}),
@@ -2256,19 +2324,16 @@ class Project:
                 "command": verification_command,
             },
             "observation_cost": {
-                "result_json_bytes_read": result_path.stat().st_size,
+                "summary_json_bytes_read": 0,
+                "result_json_bytes_read": result_json_bytes_read,
                 "field_payloads_opened": 0,
                 "artifacts_hashed": 0,
             },
             "next_action": {
-                "command": (
-                    f"agentcfd view {project_argument}"
-                    if run_id is None
-                    else verification_command
-                ),
+                "command": f"agentcfd view {self._cli_project_argument()}",
                 "reason": (
                     "Open the accepted result for spatial review."
-                    if record["accepted"]
+                    if accepted
                     else "Review the unmet design requirements before selecting or changing the design."
                     if requirements and not failed_scientific_checks
                     else "Review the failed checks before using this result."
@@ -2606,15 +2671,21 @@ class Project:
 
         target = Path(path)
         if target.suffix.lower() != ".svg":
-            raise ProjectError("Campaign operating-map output must use the .svg suffix.")
+            raise ProjectError(
+                "Campaign operating-map output must use the .svg suffix."
+            )
         report = self.campaign_operating_map(
             x_parameter=x_parameter,
             y_quantity=y_quantity,
             accepted_only=accepted_only,
         )
         if title is not None and (not isinstance(title, str) or not title.strip()):
-            raise ProjectError("Operating-map title must be a non-empty string or None.")
-        selected_title = title.strip() if title is not None else "AgentCFD operating map"
+            raise ProjectError(
+                "Operating-map title must be a non-empty string or None."
+            )
+        selected_title = (
+            title.strip() if title is not None else "AgentCFD operating map"
+        )
         svg = campaign_plotting.render_operating_map_svg(
             report,
             title=selected_title,
@@ -2815,10 +2886,7 @@ class Project:
                 if identity not in reusable
             }
         )
-        if (
-            maximum_solver_runs is not None
-            and planned_new_runs > maximum_solver_runs
-        ):
+        if maximum_solver_runs is not None and planned_new_runs > maximum_solver_runs:
             raise ProjectError(
                 f"Campaign would start {planned_new_runs} solver processes, exceeding "
                 f"the explicit --max-runs {maximum_solver_runs} budget. No design "
@@ -2944,31 +3012,29 @@ class Project:
                     failed_directory = self._record_directory(failed_record)
                     project_argument = self._cli_project_argument()
                     row = {
-                            "name": name,
-                            "parameters": parameters,
-                            "plan_sha256": plan["plan_sha256"],
-                            "result_execution_sha256": identity,
-                            "execution": "executed",
-                            "outcome": "failed",
-                            "run_id": failed_run_id,
-                            "directory": (
-                                None
-                                if failed_directory is None
-                                else str(failed_directory)
-                            ),
-                            "accepted": False,
-                            "diagnose_command": (
-                                None
-                                if not isinstance(failed_run_id, str)
-                                else "agentcfd diagnose "
-                                f"{project_argument} --run-id "
-                                f"{shlex.quote(failed_run_id)}"
-                            ),
-                            "error": {
-                                "type": type(error).__name__,
-                                "message": str(error),
-                            },
-                        }
+                        "name": name,
+                        "parameters": parameters,
+                        "plan_sha256": plan["plan_sha256"],
+                        "result_execution_sha256": identity,
+                        "execution": "executed",
+                        "outcome": "failed",
+                        "run_id": failed_run_id,
+                        "directory": (
+                            None if failed_directory is None else str(failed_directory)
+                        ),
+                        "accepted": False,
+                        "diagnose_command": (
+                            None
+                            if not isinstance(failed_run_id, str)
+                            else "agentcfd diagnose "
+                            f"{project_argument} --run-id "
+                            f"{shlex.quote(failed_run_id)}"
+                        ),
+                        "error": {
+                            "type": type(error).__name__,
+                            "message": str(error),
+                        },
+                    }
                     rows.append(row)
                     request_results[identity] = row
                     write_progress()
@@ -3133,11 +3199,15 @@ class Project:
         if source.get("mode") != "campaign":
             raise ProjectError("Only immutable campaign runs can be compacted.")
         if source.get("status") != "completed" or source.get("accepted") is not True:
-            raise ProjectError("Only completed, accepted campaign runs can be compacted.")
+            raise ProjectError(
+                "Only completed, accepted campaign runs can be compacted."
+            )
         if source.get("result_profile", "full-fields") != "full-fields":
             raise ProjectError(f"Run {run_id!r} is already summary-only.")
         if self.manifest.default_provider != "openfoam":
-            raise ProjectError("Field compaction currently requires an OpenFOAM project.")
+            raise ProjectError(
+                "Field compaction currently requires an OpenFOAM project."
+            )
         run_directory = self._record_directory(source)
         if run_directory is None or not run_directory.is_dir():
             raise ProjectError("Campaign run directory is missing.")
@@ -3248,6 +3318,7 @@ class Project:
             "reclaimed_bytes": candidate_bytes if apply else 0,
             "result_execution_sha256": summary_identity,
             "preserved": [
+                "summary.json",
                 "result.json",
                 "run.json",
                 "plan.json",
@@ -3299,6 +3370,14 @@ class Project:
         updated_source["result_profile"] = "summary-only"
         updated_source["result_execution_sha256"] = summary_identity
         updated_source["compaction"] = provenance["compaction"]
+        compact_summary = self._result_summary_payload(
+            updated_source,
+            result_path=result_path,
+            record=result,
+            result_json_bytes_read=0,
+        )
+        _write_json_atomic(run_directory / "summary.json", compact_summary)
+        updated_source["result_sha256"] = compact_summary["source_result"]["sha256"]
         _write_json_atomic(run_directory / "run.json", updated_source)
         guide = run_directory / "README.md"
         guide_text = guide.read_text(encoding="utf-8") if guide.is_file() else ""
@@ -3337,9 +3416,11 @@ class Project:
             return set()
         run_id = latest.get("run_id")
         status = str(latest.get("status", "unknown"))
-        interrupted = status in {"preparing", "running", "exporting"} and not _process_is_alive(
-            latest.get("pid")
-        )
+        interrupted = status in {
+            "preparing",
+            "running",
+            "exporting",
+        } and not _process_is_alive(latest.get("pid"))
         if not isinstance(run_id, str) or (status != "failed" and not interrupted):
             return set()
         run_directory = self._record_directory(latest)
@@ -3480,9 +3561,11 @@ class Project:
             return unavailable
         run_id = latest.get("run_id")
         native_status = str(latest.get("status", "unknown"))
-        interrupted = native_status in {"preparing", "running", "exporting"} and not _process_is_alive(
-            latest.get("pid")
-        )
+        interrupted = native_status in {
+            "preparing",
+            "running",
+            "exporting",
+        } and not _process_is_alive(latest.get("pid"))
         if native_status != "failed" and not interrupted:
             return unavailable
         if (
@@ -3508,13 +3591,10 @@ class Project:
             provider="openfoam",
         )
         source_resume_execution = latest.get("resume_execution_sha256")
-        identity_match = (
-            latest.get("analysis_sha256") == analysis_sha256
-            and (
-                source_resume_execution == expected_resume_execution
-                if isinstance(source_resume_execution, str)
-                else latest.get("execution_sha256") == expected_execution
-            )
+        identity_match = latest.get("analysis_sha256") == analysis_sha256 and (
+            source_resume_execution == expected_resume_execution
+            if isinstance(source_resume_execution, str)
+            else latest.get("execution_sha256") == expected_execution
         )
         if not identity_match:
             return {
@@ -3551,9 +3631,7 @@ class Project:
             except (KeyError, OSError, TypeError, ValueError, zipfile.BadZipFile):
                 latest_time = None
         if latest_time is None:
-            workspace_case = (
-                self.root / ".agentcfd" / "work" / run_id / "openfoam"
-            )
+            workspace_case = self.root / ".agentcfd" / "work" / run_id / "openfoam"
             interval = step.output.checkpoints.every
             assert interval is not None
             times = []
@@ -3604,9 +3682,7 @@ class Project:
         """Report checkpoint-resume eligibility without opening field payloads."""
 
         selected = self._select_run_record(run_id)
-        parameters = (
-            selected.get("parameters", {}) if selected is not None else {}
-        )
+        parameters = selected.get("parameters", {}) if selected is not None else {}
         if not isinstance(parameters, Mapping):
             parameters = {}
         step = self.load_step(parameters)
@@ -3622,7 +3698,11 @@ class Project:
     ) -> dict[str, object]:
         """Return a bounded tail from the selected workspace or published log."""
 
-        if isinstance(lines, bool) or not isinstance(lines, int) or not 1 <= lines <= 1000:
+        if (
+            isinstance(lines, bool)
+            or not isinstance(lines, int)
+            or not 1 <= lines <= 1000
+        ):
             raise ValueError("Log line count must be an integer from 1 through 1000.")
         selected_run = self._select_run_record(run_id)
         run_directory = self._record_directory(selected_run)
@@ -3725,7 +3805,9 @@ class Project:
                 }
             )
         if not observations:
-            raise ProjectError("Solver logs disappeared before they could be diagnosed.")
+            raise ProjectError(
+                "Solver logs disappeared before they could be diagnosed."
+            )
 
         findings = [dict(item) for item in diagnostics.diagnose(observations)]
         primary = findings[0] if findings else None
@@ -3826,9 +3908,7 @@ class Project:
             return
         decisions = plan.get("decisions", {})
         output_plan = (
-            decisions.get("output_plan", {})
-            if isinstance(decisions, Mapping)
-            else {}
+            decisions.get("output_plan", {}) if isinstance(decisions, Mapping) else {}
         )
         samples.append(
             {
@@ -3842,9 +3922,7 @@ class Project:
                 "result_profile": run_record.get("result_profile"),
                 "model_name": run_record.get("model_name"),
                 "solver": (
-                    decisions.get("solver")
-                    if isinstance(decisions, Mapping)
-                    else None
+                    decisions.get("solver") if isinstance(decisions, Mapping) else None
                 ),
                 "estimated_mesh_cells": (
                     output_plan.get("estimated_mesh_cells")
@@ -4056,9 +4134,7 @@ class Project:
                 protected_active = path.name in active_run_ids
                 protected_recovery = path.name in recovery_run_ids
                 protected_retained = path.name in retained_run_ids
-                protected = (
-                    protected_active or protected_recovery or protected_retained
-                )
+                protected = protected_active or protected_recovery or protected_retained
                 targets.append(
                     {
                         "path": str(path),
@@ -4092,9 +4168,11 @@ class Project:
             file_count += files
         if apply:
             for target in targets:
-                if target["protected_active_run"] or target[
-                    "protected_recovery_checkpoint"
-                ] or target["protected_retained_workspace"]:
+                if (
+                    target["protected_active_run"]
+                    or target["protected_recovery_checkpoint"]
+                    or target["protected_retained_workspace"]
+                ):
                     continue
                 path = Path(str(target["path"]))
                 if path.is_dir() and not path.is_symlink():
@@ -4204,9 +4282,7 @@ class Project:
                     except (OSError, KeyError, TypeError, json.JSONDecodeError):
                         pass
                 if isinstance(latest_result_execution, str):
-                    changed = (
-                        latest_result_execution != current_result_execution_sha256
-                    )
+                    changed = latest_result_execution != current_result_execution_sha256
                 elif isinstance(latest_execution, str):
                     changed = latest_execution != current_execution_sha256
                 elif isinstance(latest_analysis, str):
@@ -4403,6 +4479,11 @@ class Project:
                 ("guide", "human-start-here", run_directory / "README.md"),
                 ("plan", "resolved-analysis-plan", run_directory / "plan.json"),
                 ("run", "execution-record", run_directory / "run.json"),
+                (
+                    "summary",
+                    "lightweight-decision-result",
+                    run_directory / "summary.json",
+                ),
                 ("result", "scientific-result", run_directory / "result.json"),
             )
             published_files = [
@@ -4460,8 +4541,9 @@ class Project:
             result_path = run_directory / "result.json"
             if include_result and result_path.is_file():
                 compact_result = self.result_summary()
-                result_bytes = int(
-                    compact_result["observation_cost"]["result_json_bytes_read"]
+                observation_cost = compact_result["observation_cost"]
+                result_bytes = int(observation_cost["result_json_bytes_read"]) + int(
+                    observation_cost["summary_json_bytes_read"]
                 )
 
         storage = self.storage() if include_storage else None
@@ -4535,6 +4617,7 @@ class Project:
         run_path = run_directory / "run.json"
         plan_path = run_directory / "plan.json"
         result_path = run_directory / "result.json"
+        summary_path = run_directory / "summary.json"
         checks: list[dict[str, object]] = []
 
         def add_check(
@@ -4563,7 +4646,9 @@ class Project:
             if run_record.get("schema") != "agentcfd.project-run/0.1":
                 raise ValueError("Unsupported AgentCFD project-run schema.")
             if run_record.get("run_id") != selected.get("run_id"):
-                raise ValueError("Run marker identity disagrees with project discovery.")
+                raise ValueError(
+                    "Run marker identity disagrees with project discovery."
+                )
         except (OSError, TypeError, ValueError) as error:
             add_check(
                 "RUN_RECORD_INTEGRITY",
@@ -4664,6 +4749,91 @@ class Project:
                 result_path,
                 "",
             )
+
+        summary_record = None
+        summary_expected = summary_path.is_file() or (
+            isinstance(run_record, Mapping)
+            and isinstance(run_record.get("summary"), str)
+        )
+        if summary_expected:
+            try:
+                summary_record = strict_json_object(
+                    summary_path.read_text(encoding="utf-8"),
+                    label=f"AgentCFD result summary {summary_path}",
+                )
+                if summary_record.get("schema") != "agentcfd.result-summary/0.2":
+                    raise ValueError("Unsupported AgentCFD result-summary schema.")
+                if result_record is None or run_record is None:
+                    raise ValueError("Summary source records are unavailable.")
+                source_result = summary_record.get("source_result")
+                if not isinstance(source_result, Mapping):
+                    raise ValueError("Summary source result identity is missing.")
+                computed_result_sha256 = file_sha256(result_path)
+                expected_failed_checks = [
+                    check
+                    for check in result_record["checks"]
+                    if check.get("passed") is False
+                ]
+                expected_requirements = [
+                    check
+                    for check in result_record["checks"]
+                    if check.get("kind") == "requirement"
+                ]
+                comparisons = {
+                    "root": str(self.root),
+                    "run_id": run_record.get("run_id"),
+                    "result": str(result_path),
+                    "status": result_record.get("status"),
+                    "converged": result_record.get("converged"),
+                    "accepted": result_record.get("accepted"),
+                    "trust_level": result_record.get("trust_level"),
+                    "provider": result_record.get("provider"),
+                    "quantities": result_record.get("quantities"),
+                    "histories": result_record.get("histories"),
+                    "fields": result_record.get("fields"),
+                    "check_count": len(result_record["checks"]),
+                    "failed_checks": expected_failed_checks,
+                    "requirements": expected_requirements,
+                    "provenance": result_record.get("provenance"),
+                }
+                disagreements = [
+                    name
+                    for name, expected in comparisons.items()
+                    if summary_record.get(name) != expected
+                ]
+                if source_result.get("path") != str(result_path):
+                    disagreements.append("source_result.path")
+                if source_result.get("bytes") != result_path.stat().st_size:
+                    disagreements.append("source_result.bytes")
+                if source_result.get("sha256") != computed_result_sha256:
+                    disagreements.append("source_result.sha256")
+                if run_record.get("result_sha256") not in {
+                    None,
+                    computed_result_sha256,
+                }:
+                    disagreements.append("run.result_sha256")
+                if disagreements:
+                    raise ValueError(
+                        "Summary and verified result disagree: "
+                        + ", ".join(disagreements)
+                        + "."
+                    )
+            except (OSError, KeyError, TypeError, ValueError) as error:
+                add_check(
+                    "SUMMARY_INTEGRITY",
+                    False,
+                    str(error),
+                    summary_path,
+                    "Regenerate the managed summary from case.py with `agentcfd run .`.",
+                )
+            else:
+                add_check(
+                    "SUMMARY_INTEGRITY",
+                    True,
+                    "The lightweight decision artifact exactly matches the verified result.",
+                    summary_path,
+                    "",
+                )
 
         consistency_errors = []
         legacy_identity = False
@@ -4814,6 +4984,10 @@ class Project:
                 "result_json_bytes_read": result_path.stat().st_size
                 if result_path.is_file()
                 else 0,
+                "summary_json_bytes_read": summary_path.stat().st_size
+                if summary_path.is_file()
+                else 0,
+                "control_files_hashed": 1 if summary_record is not None else 0,
                 "artifacts_hashed": artifact_count,
                 "field_payloads_opened": field_payloads_opened,
                 "recursive_storage_scan": False,
@@ -4920,9 +5094,7 @@ class Project:
             step_basis = "minimum steps at declared maximum time step"
             correctors = step.procedure.pressure_velocity_correctors
         cell_updates = (
-            int(cells) * nominal_steps * correctors
-            if isinstance(cells, int)
-            else None
+            int(cells) * nominal_steps * correctors if isinstance(cells, int) else None
         )
         peak_ratio = (
             float(estimated_peak) / free_bytes
@@ -4944,9 +5116,7 @@ class Project:
                 "solver_step_basis": step_basis,
                 "pressure_velocity_correctors": correctors,
                 "cell_updates_proxy": cell_updates,
-                "estimated_portable_bytes": output_plan.get(
-                    "estimated_portable_bytes"
-                ),
+                "estimated_portable_bytes": output_plan.get("estimated_portable_bytes"),
                 "estimated_temporary_peak_bytes": estimated_peak,
                 "filesystem_free_bytes": free_bytes,
                 "temporary_peak_to_free_ratio": peak_ratio,
@@ -4982,9 +5152,10 @@ class Project:
         _promotion_source_run_id: str | None = None,
     ) -> ProjectRun:
         selected_name = provider or self.manifest.default_provider
-        if design_point_name is not None and re.fullmatch(
-            r"[A-Za-z][A-Za-z0-9_-]*", design_point_name
-        ) is None:
+        if (
+            design_point_name is not None
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", design_point_name) is None
+        ):
             raise ProjectError("Invalid campaign design-point name.")
         selected_parameters = self._parameters(parameters)
         step = self.load_step(selected_parameters)
@@ -5133,9 +5304,7 @@ class Project:
         workspace_root = self.root / ".agentcfd" / "work" / run_id
         case_directory = workspace_root / "openfoam"
 
-        def write_workspace_marker(
-            *, retention_reason: str, protected: bool
-        ) -> None:
+        def write_workspace_marker(*, retention_reason: str, protected: bool) -> None:
             if selected_name != "openfoam":
                 return
             workspace_root.mkdir(parents=True, exist_ok=True)
@@ -5176,9 +5345,7 @@ class Project:
                     step,
                     restart_archive=_resume_archive,
                     source_run_id=_resume_source_run_id,
-                    expected_analysis_sha256=str(
-                        plan["model"]["analysis_sha256"]
-                    ),
+                    expected_analysis_sha256=str(plan["model"]["analysis_sha256"]),
                 )
             else:
                 result = selected.run(step)
@@ -5261,7 +5428,9 @@ class Project:
                         "trust_level": result.trust_level,
                         "accepted": result.accepted,
                         "case_directory": (
-                            str(case_directory.resolve()) if retained_workspace else None
+                            str(case_directory.resolve())
+                            if retained_workspace
+                            else None
                         ),
                         "case_directory_retained": retained_workspace,
                     },
@@ -5435,6 +5604,16 @@ class Project:
             run_record["resume"] = marker_record["resume"]
         if _promotion_source_run_id is not None:
             run_record["promotion"] = marker_record["promotion"]
+        result_record = result.summary()
+        result_record["checks"] = [check.as_dict() for check in result.checks]
+        result_summary = self._result_summary_payload(
+            run_record,
+            result_path=result_path,
+            record=result_record,
+            result_json_bytes_read=0,
+        )
+        _write_json_atomic(run_directory / "summary.json", result_summary)
+        run_record["result_sha256"] = result_summary["source_result"]["sha256"]
         _write_output_guide(completed, model_name=step.model.name)
         (run_directory / "run.json").write_text(
             json.dumps(run_record, indent=2, sort_keys=True) + "\n",
@@ -5451,9 +5630,7 @@ class Project:
             and result.status == "completed"
             and not keep_workspace
         ):
-            source_workspace = (
-                self.root / ".agentcfd" / "work" / _resume_source_run_id
-            )
+            source_workspace = self.root / ".agentcfd" / "work" / _resume_source_run_id
             if source_workspace.is_dir() and source_workspace != workspace_root:
                 shutil.rmtree(source_workspace)
         return completed
@@ -5500,11 +5677,15 @@ class Project:
             _step=step,
         )
         if plan["readiness"]["ready_to_run"] is not True:
-            raise ProjectError("The current project is not ready for checkpoint resume.")
+            raise ProjectError(
+                "The current project is not ready for checkpoint resume."
+            )
         native_status = str(latest.get("status", "unknown"))
-        interrupted = native_status in {"preparing", "running", "exporting"} and not _process_is_alive(
-            latest.get("pid")
-        )
+        interrupted = native_status in {
+            "preparing",
+            "running",
+            "exporting",
+        } and not _process_is_alive(latest.get("pid"))
         if native_status != "failed" and not interrupted:
             raise ProjectError(
                 "Only a failed or interrupted inactive run can be resumed."
@@ -5845,7 +6026,7 @@ def _imported_internal_flow_template(
     )
     criteria_block = ""
     if maximum_fraction_error is not None:
-        criteria_block = f'''
+        criteria_block = f"""
             criteria=(
                 outputs.require(
                     "flow-split-target",
@@ -5853,7 +6034,7 @@ def _imported_internal_flow_template(
                     unit="1",
                     maximum={maximum_fraction_error!r},
                 ),
-            ),'''
+            ),"""
     conditions = []
     for name, role in sorted(roles.items()):
         constructor = {
@@ -6093,7 +6274,9 @@ def init_project_from_request(
     template = payload.get("template")
     provider = payload.get("provider")
     if not isinstance(template, str) or not isinstance(provider, str):
-        raise ProjectError("Project creation request requires template and provider strings.")
+        raise ProjectError(
+            "Project creation request requires template and provider strings."
+        )
     if template == "heated-pipe":
         unexpected = sorted(
             key
@@ -6152,15 +6335,11 @@ def init_project_from_request(
         return init_project(directory, provider=provider, template=template)
 
     missing = sorted(
-        key
-        for key in ("geometry", "interior_point_m", "mesh")
-        if key not in payload
+        key for key in ("geometry", "interior_point_m", "mesh") if key not in payload
     )
     if missing:
         raise ProjectError(
-            "Imported project creation request is missing: "
-            + ", ".join(missing)
-            + "."
+            "Imported project creation request is missing: " + ", ".join(missing) + "."
         )
     inlet_controls = sum(
         key in payload
@@ -6188,8 +6367,7 @@ def init_project_from_request(
     ):
         raise ProjectError("Project creation flow_distribution must be an object.")
     geometry_unknown = sorted(
-        set(geometry_record)
-        - {"path", "unit", "boundary_roles", "role_confirmation"}
+        set(geometry_record) - {"path", "unit", "boundary_roles", "role_confirmation"}
     )
     mesh_unknown = sorted(set(mesh_record) - {"base_size_m", "maximum_cells"})
     if geometry_unknown:
@@ -6200,9 +6378,7 @@ def init_project_from_request(
         )
     if mesh_unknown:
         raise ProjectError(
-            "Unknown project creation mesh keys: "
-            + ", ".join(mesh_unknown)
-            + "."
+            "Unknown project creation mesh keys: " + ", ".join(mesh_unknown) + "."
         )
     if flow_distribution_record is not None:
         flow_distribution_unknown = sorted(
@@ -6247,7 +6423,9 @@ def init_project_from_request(
             "role_confirmation."
         )
     if boundary_roles is not None and not isinstance(boundary_roles, Mapping):
-        raise ProjectError("Project creation geometry.boundary_roles must be an object.")
+        raise ProjectError(
+            "Project creation geometry.boundary_roles must be an object."
+        )
     if role_confirmation is not None and role_confirmation != "accept-name-suggestions":
         raise ProjectError(
             "Project creation geometry.role_confirmation must be "
@@ -6256,9 +6434,7 @@ def init_project_from_request(
     source = Path(geometry_path).expanduser()
     if not source.is_absolute():
         base = (
-            Path.cwd()
-            if base_directory is None
-            else Path(base_directory).expanduser()
+            Path.cwd() if base_directory is None else Path(base_directory).expanduser()
         )
         source = base.resolve() / source
     return init_project(
@@ -6272,9 +6448,7 @@ def init_project_from_request(
         interior_point_m=payload["interior_point_m"],
         inlet_velocity_m_s=payload.get("inlet_velocity_m_s"),
         inlet_mass_flow_kg_s=payload.get("inlet_mass_flow_kg_s"),
-        inlet_total_gauge_pressure_pa=payload.get(
-            "inlet_total_gauge_pressure_pa"
-        ),
+        inlet_total_gauge_pressure_pa=payload.get("inlet_total_gauge_pressure_pa"),
         base_size_m=mesh_record["base_size_m"],
         maximum_cells=mesh_record["maximum_cells"],
         outlet_target_fractions=(
@@ -6323,11 +6497,15 @@ def init_project(
             "Project template must be 'industrial-pipe', 'heated-pipe', "
             "'baffle-channel', or 'imported-internal-flow'."
         )
-    if template in {
-        "heated-pipe",
-        "baffle-channel",
-        "imported-internal-flow",
-    } and provider != "openfoam":
+    if (
+        template
+        in {
+            "heated-pipe",
+            "baffle-channel",
+            "imported-internal-flow",
+        }
+        and provider != "openfoam"
+    ):
         raise ValueError(f"The {template} template requires provider='openfoam'.")
     imported_options = (
         geometry_path,
@@ -6350,9 +6528,7 @@ def init_project(
             "Imported geometry options require template='imported-internal-flow'."
         )
     if template != "heated-pipe" and parameter_defaults is not None:
-        raise ValueError(
-            "parameter_defaults currently require template='heated-pipe'."
-        )
+        raise ValueError("parameter_defaults currently require template='heated-pipe'.")
 
     imported_report: dict[str, object] | None = None
     imported_source: Path | None = None
@@ -6371,7 +6547,10 @@ def init_project(
             for name, value in (
                 ("geometry_path", geometry_path),
                 ("geometry_unit", geometry_unit),
-                ("boundary_roles or accept_name_roles", boundary_roles or accept_name_roles),
+                (
+                    "boundary_roles or accept_name_roles",
+                    boundary_roles or accept_name_roles,
+                ),
                 ("interior_point_m", interior_point_m),
                 ("base_size_m", base_size_m),
                 ("maximum_cells", maximum_cells),
@@ -6409,9 +6588,7 @@ def init_project(
             else None
         )
         selected_total_pressure = (
-            boundaries.PressureInlet(
-                inlet_total_gauge_pressure_pa
-            ).total_gauge_pressure
+            boundaries.PressureInlet(inlet_total_gauge_pressure_pa).total_gauge_pressure
             if inlet_total_gauge_pressure_pa is not None
             else None
         )
@@ -6454,11 +6631,11 @@ def init_project(
                 for issue in imported_report["issues"]
                 if issue["severity"] == "error"
             ]
-            raise ProjectError(
-                "Imported geometry is not ready: " + " ".join(repairs)
-            )
+            raise ProjectError("Imported geometry is not ready: " + " ".join(repairs))
         role_values = tuple(normalized_roles.values())
-        unsupported = sorted(set(role_values) - {"inlet", "outlet", "wall", "symmetry", "empty"})
+        unsupported = sorted(
+            set(role_values) - {"inlet", "outlet", "wall", "symmetry", "empty"}
+        )
         if unsupported:
             raise ProjectError(
                 "The released imported internal-flow template does not support roles: "

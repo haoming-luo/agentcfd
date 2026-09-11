@@ -127,9 +127,9 @@ def build():
         expected_heat
     )
     assert preflight["calculation"]["mass_flow_rate"] == pytest.approx(expected_flow)
-    assert preflight["calculation"]["estimated_bulk_temperature_change"] == pytest.approx(
-        expected_heat / (expected_flow * 4000.0)
-    )
+    assert preflight["calculation"][
+        "estimated_bulk_temperature_change"
+    ] == pytest.approx(expected_heat / (expected_flow * 4000.0))
     jsonschema.Draft202012Validator(
         contracts.load("solution-plan.schema.json")
     ).validate(plan)
@@ -140,10 +140,7 @@ def test_heated_pipe_template_is_ready_and_exposes_editable_operating_point(
     capsys,
 ):
     root = tmp_path / "heated-template"
-    assert (
-        entrypoint(["init", str(root), "--template", "heated-pipe", "--json"])
-        == 0
-    )
+    assert entrypoint(["init", str(root), "--template", "heated-pipe", "--json"]) == 0
     initialization = json.loads(capsys.readouterr().out)
     project = projects.Project(root)
     plan = project.plan()
@@ -166,8 +163,7 @@ def test_heated_pipe_template_is_ready_and_exposes_editable_operating_point(
 
 def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):
     original = (
-        Path(__file__).parents[1]
-        / "examples/imported_duct_mesh/geometry/fluid.stl"
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     )
     source = tmp_path / "input.stl"
     shutil.copyfile(original, source)
@@ -186,9 +182,7 @@ def test_imported_internal_flow_init_owns_inputs_and_is_ready_to_plan(tmp_path):
     )
 
     copied = project.root / "geometry/input.stl"
-    inspection = json.loads(
-        (project.root / "geometry/inspection.json").read_text()
-    )
+    inspection = json.loads((project.root / "geometry/inspection.json").read_text())
     role_record = json.loads(
         (project.root / "geometry/boundary-roles.json").read_text()
     )
@@ -222,8 +216,7 @@ def test_imported_internal_flow_init_fails_before_writing_unsupported_intent(
     tmp_path,
 ):
     source = (
-        Path(__file__).parents[1]
-        / "examples/imported_duct_mesh/geometry/fluid.stl"
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     )
     root = tmp_path / "unsupported"
 
@@ -250,8 +243,7 @@ def test_imported_internal_flow_init_fails_before_writing_unsupported_intent(
 
 def test_imported_internal_flow_rejects_reversed_velocity_before_writing(tmp_path):
     source = (
-        Path(__file__).parents[1]
-        / "examples/imported_duct_mesh/geometry/fluid.stl"
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     )
     root = tmp_path / "reversed-inlet"
 
@@ -331,9 +323,7 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         "region": "outlet",
         "every": 1,
     }
-    mass_flow_plan = project.plan(
-        parameters={"mass_flow_rate": 49.91}
-    )
+    mass_flow_plan = project.plan(parameters={"mass_flow_rate": 49.91})
     assert mass_flow_plan["readiness"]["provider_compatible"] is True
     assert mass_flow_plan["model"]["summary"]["boundaries"]["inlet"] == {
         "type": "mass-flow-inlet",
@@ -369,8 +359,7 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
 
 def test_imported_project_initializes_multi_outlet_decision_reports(tmp_path):
     original = (
-        Path(__file__).parents[1]
-        / "examples/imported_duct_mesh/geometry/fluid.stl"
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     ).read_text()
     old_outlet = """solid outlet
   facet normal 1 0 0
@@ -444,45 +433,46 @@ endsolid branch_b
     assert [report.name for report in step.output.reports] == ["flow-split"]
 
 
-def test_cli_materializes_multi_outlet_targets_and_design_limit(
-    tmp_path, capsys
-):
+def test_cli_materializes_multi_outlet_targets_and_design_limit(tmp_path, capsys):
     example = Path(__file__).parents[1] / "examples/imported_split_duct_geometry"
     root = tmp_path / "targeted-split"
 
-    assert entrypoint(
-        [
-            "init",
-            str(root),
-            "--template",
-            "imported-internal-flow",
-            "--geometry",
-            str(example / "fluid.stl"),
-            "--unit",
-            "m",
-            "--roles",
-            str(example / "boundary-roles.json"),
-            "--interior-point-m",
-            "0.5",
-            "0.25",
-            "0.1",
-            "--inlet-velocity-m-s",
-            "0.5",
-            "0",
-            "0",
-            "--base-size-m",
-            "0.05",
-            "--maximum-cells",
-            "200000",
-            "--outlet-target",
-            "branch_b=0.6",
-            "--outlet-target",
-            "branch_a=0.4",
-            "--maximum-fraction-error",
-            "0.02",
-            "--json",
-        ]
-    ) == 0
+    assert (
+        entrypoint(
+            [
+                "init",
+                str(root),
+                "--template",
+                "imported-internal-flow",
+                "--geometry",
+                str(example / "fluid.stl"),
+                "--unit",
+                "m",
+                "--roles",
+                str(example / "boundary-roles.json"),
+                "--interior-point-m",
+                "0.5",
+                "0.25",
+                "0.1",
+                "--inlet-velocity-m-s",
+                "0.5",
+                "0",
+                "0",
+                "--base-size-m",
+                "0.05",
+                "--maximum-cells",
+                "200000",
+                "--outlet-target",
+                "branch_b=0.6",
+                "--outlet-target",
+                "branch_a=0.4",
+                "--maximum-fraction-error",
+                "0.02",
+                "--json",
+            ]
+        )
+        == 0
+    )
     json.loads(capsys.readouterr().out)
 
     step = projects.Project(root).load_step()
@@ -645,8 +635,7 @@ def test_imported_init_rejects_missing_or_conflicting_inlet_control_before_write
     tmp_path,
 ):
     source = (
-        Path(__file__).parents[1]
-        / "examples/imported_duct_mesh/geometry/fluid.stl"
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     )
     common = {
         "provider": "openfoam",
@@ -710,7 +699,9 @@ def test_cli_can_explicitly_accept_unambiguous_name_roles(tmp_path, capsys):
     )
     report = json.loads(capsys.readouterr().out)
     assert report["template"] == "imported-internal-flow"
-    assert json.loads((root / "geometry/boundary-roles.json").read_text())["regions"] == {
+    assert json.loads((root / "geometry/boundary-roles.json").read_text())[
+        "regions"
+    ] == {
         "inlet": "inlet",
         "outlet": "outlet",
         "walls": "wall",
@@ -748,8 +739,7 @@ def test_versioned_creation_request_resolves_owned_geometry_beside_request(
 ):
     _mock_openfoam_runtime(monkeypatch)
     source = (
-        Path(__file__).parents[1]
-        / "examples/imported_duct_mesh/geometry/fluid.stl"
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
     )
     request_directory = tmp_path / "request"
     request_directory.mkdir()
@@ -779,10 +769,7 @@ def test_versioned_creation_request_resolves_owned_geometry_beside_request(
     root = tmp_path / "owned"
 
     assert (
-        entrypoint(
-            ["init", str(root), "--request", str(request_path), "--json"]
-        )
-        == 0
+        entrypoint(["init", str(root), "--request", str(request_path), "--json"]) == 0
     )
 
     report = json.loads(capsys.readouterr().out)
@@ -795,7 +782,9 @@ def test_versioned_creation_request_resolves_owned_geometry_beside_request(
 
 
 def test_creation_request_can_confirm_unambiguous_name_roles(tmp_path):
-    source = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
+    source = (
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
     request = {
         "schema": "agentcfd.project-creation-request/0.1",
         "template": "imported-internal-flow",
@@ -815,9 +804,9 @@ def test_creation_request_can_confirm_unambiguous_name_roles(tmp_path):
 
     project = projects.init_project_from_request(tmp_path / "request-project", request)
 
-    assert json.loads(
-        (project.root / "geometry/boundary-roles.json").read_text()
-    )["regions"] == {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
+    assert json.loads((project.root / "geometry/boundary-roles.json").read_text())[
+        "regions"
+    ] == {"inlet": "inlet", "outlet": "outlet", "walls": "wall"}
 
 
 def test_creation_request_materializes_multi_outlet_decision_intent(tmp_path):
@@ -866,10 +855,9 @@ def test_creation_request_materializes_heated_pipe_defaults(tmp_path):
     assert step.model.domain.diameter == pytest.approx(0.2)
     assert step.model.boundary_conditions["inlet"].velocity == pytest.approx(0.015)
     assert step.model.boundary_conditions["inlet"].temperature == pytest.approx(310.0)
-    assert (
-        step.model.boundary_conditions["wall"].thermal.heat_flux_into_fluid
-        == pytest.approx(-75.0)
-    )
+    assert step.model.boundary_conditions[
+        "wall"
+    ].thermal.heat_flux_into_fluid == pytest.approx(-75.0)
     assert project.plan()["decisions"]["thermal_preflight"]["status"] == "calculated"
     assert "length=1.25" in project.entrypoint.read_text()
 
@@ -895,7 +883,9 @@ def test_creation_request_rejects_invalid_heated_pipe_defaults_before_writing(
 
 
 def test_creation_request_accepts_mass_flow_and_rejects_ambiguous_controls(tmp_path):
-    source = Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
+    source = (
+        Path(__file__).parents[1] / "examples/imported_duct_mesh/geometry/fluid.stl"
+    )
     request = {
         "schema": "agentcfd.project-creation-request/0.1",
         "template": "imported-internal-flow",
@@ -935,7 +925,9 @@ def test_creation_request_accepts_mass_flow_and_rejects_ambiguous_controls(tmp_p
         tmp_path / "pressure-request",
         pressure_request,
     )
-    assert pressure_project.load_step().model.boundary_conditions["inlet"].to_dict() == {
+    assert pressure_project.load_step().model.boundary_conditions[
+        "inlet"
+    ].to_dict() == {
         "type": "pressure-inlet",
         "total_gauge_pressure": 10.0,
         "temperature": None,
@@ -1093,9 +1085,7 @@ def test_project_refuses_to_publish_a_result_for_another_analysis(
         result.provenance["analysis_sha256"] = "0" * 64
         return result
 
-    monkeypatch.setattr(
-        "agentcfd.projects.ReferencePipeProvider.run", wrong_identity
-    )
+    monkeypatch.setattr("agentcfd.projects.ReferencePipeProvider.run", wrong_identity)
 
     with pytest.raises(ProjectError, match="different analysis identity"):
         project.run()
@@ -1251,21 +1241,11 @@ def test_summary_only_campaign_skips_portable_fields_and_removes_native_bulk(
         summary_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
         < full_plan["decisions"]["output_plan"]["estimated_temporary_peak_bytes"]
     )
-    assert (
-        entrypoint(
-            ["plan", str(project.root), "--summary-only", "--json"]
-        )
-        == 0
-    )
+    assert entrypoint(["plan", str(project.root), "--summary-only", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["decisions"]["result_profile"] == (
         "summary-only"
     )
-    assert (
-        entrypoint(
-            ["run", str(project.root), "--summary-only", "--json"]
-        )
-        == 0
-    )
+    assert entrypoint(["run", str(project.root), "--summary-only", "--json"]) == 0
     capsys.readouterr()
     single_marker = json.loads((project.root / "output" / "run.json").read_text())
     assert single_marker["result_profile"] == "summary-only"
@@ -1815,9 +1795,10 @@ def test_params_command_exports_a_complete_validated_operating_point(tmp_path, c
         "diameter": 0.05,
         "mean_velocity": 0.015,
     }
-    assert project.plan(parameters=payload["parameters"])["readiness"][
-        "ready_to_run"
-    ] is True
+    assert (
+        project.plan(parameters=payload["parameters"])["readiness"]["ready_to_run"]
+        is True
+    )
 
     assert entrypoint(["params", str(project.root)]) == 0
     human = capsys.readouterr().out
@@ -1825,9 +1806,7 @@ def test_params_command_exports_a_complete_validated_operating_point(tmp_path, c
     assert "mean_velocity=0.02 m/s" in human
 
     assert (
-        entrypoint(
-            ["params", str(project.root), "--output", str(output), "--json"]
-        )
+        entrypoint(["params", str(project.root), "--output", str(output), "--json"])
         == 2
     )
     error = json.loads(capsys.readouterr().out)
@@ -1893,9 +1872,7 @@ def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     assert cli_report["observation_cost"]["field_payloads_opened"] == 0
 
 
-def test_campaign_operating_map_is_unit_aware_accepted_and_field_free(
-    tmp_path, capsys
-):
+def test_campaign_operating_map_is_unit_aware_accepted_and_field_free(tmp_path, capsys):
     project = projects.init_project(tmp_path / "pipe")
     project.run(
         campaign=True,
@@ -2567,21 +2544,29 @@ def test_project_status_guides_ready_complete_and_modified_workflows(tmp_path):
     assert "Inputs changed" in modified["next_action"]["reason"]
 
 
-def test_result_summary_is_lightweight_filterable_and_cli_visible(
-    tmp_path, capsys
-):
+def test_result_summary_is_lightweight_filterable_and_cli_visible(tmp_path, capsys):
     project = projects.init_project(tmp_path / "pipe")
     completed = project.run()
 
     report = project.result_summary(quantities=("flow.pressure_drop",))
 
+    summary_path = completed.directory / "summary.json"
+    assert summary_path.is_file()
+    assert summary_path.stat().st_size < completed.result_path.stat().st_size
     jsonschema.Draft202012Validator(
         contracts.load("result-summary.schema.json")
     ).validate(report)
+    assert report["schema"] == "agentcfd.result-summary/0.2"
+    assert report["summary"] == str(summary_path)
+    assert report["source_result"]["bytes"] == completed.result_path.stat().st_size
     assert report["run_id"] == completed.run_id
     assert set(report["quantities"]) == {"flow.pressure_drop"}
     assert "flow.mass_flow_rate" in report["available"]["quantities"]
     assert report["observation_cost"]["field_payloads_opened"] == 0
+    assert report["observation_cost"]["result_json_bytes_read"] == 0
+    assert report["observation_cost"]["summary_json_bytes_read"] == (
+        summary_path.stat().st_size
+    )
     assert report["artifact_integrity"]["verified"] is False
 
     assert (
@@ -2610,16 +2595,14 @@ def test_result_summary_is_lightweight_filterable_and_cli_visible(
         project.result_summary(quantities=("flow.misspelled",))
 
 
-def test_result_summary_and_human_cli_distinguish_design_requirements(
-    tmp_path, capsys
-):
+def test_result_summary_and_human_cli_distinguish_design_requirements(tmp_path, capsys):
     project = projects.init_project(tmp_path / "constrained-pipe")
     case = project.entrypoint
     source = case.read_text()
     case.write_text(
         source.replace(
             "output=outputs.standard(),",
-            '''output=outputs.standard(
+            """output=outputs.standard(
             criteria=(
                 outputs.require(
                     "pressure-budget",
@@ -2628,7 +2611,7 @@ def test_result_summary_and_human_cli_distinguish_design_requirements(
                     maximum=0.0,
                 ),
             ),
-        ),''',
+        ),""",
         )
     )
 

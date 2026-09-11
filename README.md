@@ -391,7 +391,7 @@ The ordinary project surface stays small:
 case.py             readable scientific model and outputs
 agentcfd.toml       operational provider/runtime settings
 input/              optional user-owned geometry and data
-output/             current plan, result, fields, and compact evidence
+output/             current summary, full result, fields, and compact evidence
 campaigns/<run-id>/ explicitly preserved runs only
 .agentcfd/          hidden disposable solver workspace
 ```
@@ -411,6 +411,13 @@ residuals, Courant number, mass imbalance, pressure drop, elapsed time, and a
 wide transient ETA range. Add `--storage` when recursive workspace size is
 worth the extra I/O. A dead process becomes `interrupted`, and the next replace
 run can recover without manual folder surgery.
+
+Completed runs publish `summary.json` beside `result.json`. The first is the
+small default decision surface for people, CLIs, GUIs, and AI agents; the
+second retains complete scalar histories and the evidence index. Summary reads
+do not open HDF5 and report their own I/O cost. The recorded result SHA-256
+preserves traceability, while `agentcfd verify project .` remains the deliberate
+full-integrity boundary before coupling, training, or archive handoff.
 
 For Python, GUI, and agent integration, `agentcfd project . --json` combines
 that state with the compact result, published file roles, standard XDMF/H5

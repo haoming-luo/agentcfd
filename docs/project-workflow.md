@@ -11,7 +11,8 @@ my-flow/
 ├── input/                         optional user-owned inputs
 ├── output/                        current published run
 │   ├── plan.json
-│   ├── result.json
+│   ├── summary.json               small default decision/result surface
+│   ├── result.json                full scalar histories and evidence index
 │   ├── run.json
 │   ├── README.md                  human start-here guide
 │   ├── fields/
@@ -50,11 +51,20 @@ snapshot = open_project(".").snapshot(include_storage=False)
 Snapshots do not execute the returned action, open field payloads, launch a
 viewer, or expose an ordinary user to generated OpenFOAM dictionaries.
 
+Every completed run materializes the same bounded result view as
+`output/summary.json`. Normal `result` and `project` reads use that small file
+and leave the much larger complete history in `result.json` closed. The summary
+records the source result's byte count and SHA-256, but honestly marks external
+artifact integrity as unverified; `verify` remains the explicit expensive trust
+boundary. Older projects without `summary.json` continue to work by deriving
+the view from `result.json`.
+
 Use `agentcfd verify project .` at an explicit trust boundary such as handoff,
 archive, coupling, or training-data admission. It verifies the atomic run
-record and content-addressed `plan.json` against `result.json`, hashes every
-registered result artifact, and—if present—opens XDMF/H5 to compare hashes,
-schema identity, mesh identity, and frame axes. A legacy 0.1.0a3 OpenFOAM
+record and content-addressed `plan.json` against `result.json`, proves that
+`summary.json` exactly matches that full record, hashes every registered result
+artifact, and—if present—opens XDMF/H5 to compare hashes, schema identity, mesh
+identity, and frame axes. A legacy 0.1.0a3 OpenFOAM
 analysis identity is accepted only when it can be recomputed from that verified
 plan. Verification reports integrity separately from `accepted` and
 `trust_level`; it never upgrades the scientific evidence.

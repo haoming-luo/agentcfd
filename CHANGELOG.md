@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Materialize every completed run's bounded decision view as `summary.json`.
+  Normal `result` and unified `project` reads now consume this small artifact
+  instead of reparsing complete scalar histories, while `result.json` remains
+  the authoritative full record. The summary records its source result's
+  byte count and SHA-256, keeps field payloads closed, exposes observation
+  cost, and continues to direct trust-boundary workflows to explicit
+  verification. Project verification proves the decision artifact exactly
+  matches the full result; legacy runs without the artifact remain readable.
 - Add solver-neutral `outputs.flow_distribution()` for one-inlet/multi-outlet
   equipment. One compact request now publishes per-branch volume and mass flow,
   outlet fractions, coefficient of variation, inlet/outlet imbalance, and

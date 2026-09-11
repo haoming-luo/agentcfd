@@ -118,7 +118,7 @@ agentcfd archive . result-decision.zip     # evidence without field payload
 agentcfd archive . result-portable.zip --profile portable # include XDMF/H5
 agentcfd verify archive result-decision.zip
 agentcfd restore result-decision.zip restored-flow # verified atomic restore
-agentcfd run .          # full portable fields for spatial review
+agentcfd run .          # run with bounded progress in this terminal
 agentcfd run . --summary-only  # compact evidence, no permanent field bundle
 agentcfd watch .        # follow a long active run, then stop automatically
 agentcfd performance .  # bounded comparable-run timing and ETA calibration
@@ -581,6 +581,9 @@ engineering decision.
 stops by itself at `complete`, `review`, `failed`, or `interrupted`. Use
 `watch --json` for one complete JSON object per line; add `--storage` only when
 live disk growth matters enough to justify a recursive scan on every poll.
+Interactive `agentcfd run .` follows the same bounded status contract on stderr
+while the solver remains attached to the main terminal. Use `--no-progress` for
+a quiet human run; `--json` is always quiet so stdout remains one stable object.
 
 Failed runs retain their generated solver workspace automatically, even when
 ordinary successful runs would clean it. `agentcfd status .` then recommends

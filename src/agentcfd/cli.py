@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -66,6 +67,9 @@ from .verification import (
     grid_convergence_from_result_records,
     time_step_sensitivity_from_result_records,
 )
+
+
+_FOREGROUND_PROGRESS_INTERVAL_SECONDS = 1.0
 
 
 def _paraview_executable() -> str | None:
@@ -351,6 +355,31 @@ def _watch_summary(report: dict[str, object]) -> str:
     if isinstance(workspace, dict) and workspace.get("display") is not None:
         parts.append(str(workspace["display"]))
     return " | ".join(parts)
+
+
+def _follow_foreground_project_run(
+    project: projects.Project,
+    stop: threading.Event,
+) -> None:
+    """Print changed, bounded project progress while the main thread runs.
+
+    Observation is deliberately advisory: a transient status read must never
+    interrupt the simulation it is observing. The solver remains on the main
+    thread so normal terminal interrupts retain their expected behavior.
+    """
+
+    previous: str | None = None
+    while not stop.wait(_FOREGROUND_PROGRESS_INTERVAL_SECONDS):
+        try:
+            report = project.status()
+        except Exception:
+            continue
+        if report.get("state") != "running":
+            continue
+        summary = _watch_summary(report)
+        if summary != previous:
+            print(summary, file=sys.stderr, flush=True)
+            previous = summary
 
 
 def _field_export_cli_summary(record: dict[str, object]) -> str:
@@ -2774,6 +2803,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Retain the hidden generated OpenFOAM workspace for expert debugging.",
     )
+    project_run.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Suppress bounded human progress lines written to stderr.",
+    )
     project_run.add_argument("--json", action="store_true", dest="as_json")
     run_openfoam = run_subparsers.add_parser(
         "openfoam-pipe",
@@ -4987,14 +5021,36 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return 1 if result.status != "completed" else 3
     if args.command == "run" and args.provider == "project":
-        completed = projects.Project(args.project).run(
-            provider=args.project_provider,
-            container_image=args.container_image,
-            campaign=args.campaign,
-            keep_workspace=args.keep_workspace,
-            parameters=_project_parameters(args.param, args.param_file),
-            portable_fields=False if args.summary_only else None,
-        )
+        project = projects.Project(args.project)
+        follow = not args.as_json and not args.no_progress
+        stop = threading.Event()
+        observer: threading.Thread | None = None
+        if follow:
+            print(
+                "Starting project run | bounded progress follows on stderr",
+                file=sys.stderr,
+                flush=True,
+            )
+            observer = threading.Thread(
+                target=_follow_foreground_project_run,
+                args=(project, stop),
+                name="agentcfd-project-progress",
+                daemon=True,
+            )
+            observer.start()
+        try:
+            completed = project.run(
+                provider=args.project_provider,
+                container_image=args.container_image,
+                campaign=args.campaign,
+                keep_workspace=args.keep_workspace,
+                parameters=_project_parameters(args.param, args.param_file),
+                portable_fields=False if args.summary_only else None,
+            )
+        finally:
+            stop.set()
+            if observer is not None:
+                observer.join(timeout=_FOREGROUND_PROGRESS_INTERVAL_SECONDS + 0.1)
         report = completed.to_dict()
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))

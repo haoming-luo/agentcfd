@@ -3030,6 +3030,63 @@ def test_project_cli_init_check_run_and_inspect(tmp_path, capsys):
     assert inspection["run_count"] == 1
 
 
+def test_human_project_run_streams_changed_bounded_progress(
+    tmp_path, monkeypatch, capsys
+):
+    project = projects.init_project(tmp_path / "progress")
+    completed = project.run()
+    calls = 0
+
+    def slow_run(self, **kwargs):
+        time.sleep(0.04)
+        return completed
+
+    def running_status(self):
+        nonlocal calls
+        calls += 1
+        return {
+            "state": "running",
+            "progress": {
+                "current_command": "simpleFoam",
+                "coordinate": {
+                    "current": min(calls, 2),
+                    "target": 2,
+                    "unit": "iteration",
+                    "fraction": min(calls, 2) / 2,
+                },
+                "elapsed_display": f"{calls}s",
+            },
+        }
+
+    monkeypatch.setattr(projects.Project, "run", slow_run)
+    monkeypatch.setattr(projects.Project, "status", running_status)
+    monkeypatch.setattr("agentcfd.cli._FOREGROUND_PROGRESS_INTERVAL_SECONDS", 0.01)
+
+    assert entrypoint(["run", "project", str(project.root)]) == 0
+
+    captured = capsys.readouterr()
+    assert "Project run completed" in captured.out
+    assert "Starting project run" in captured.err
+    assert "RUNNING | simpleFoam" in captured.err
+    assert calls >= 1
+
+
+@pytest.mark.parametrize("quiet_option", [("--json",), ("--no-progress",)])
+def test_project_run_progress_can_be_machine_quiet(
+    tmp_path, quiet_option, capsys
+):
+    project = projects.init_project(tmp_path / quiet_option[0].removeprefix("--"))
+
+    assert entrypoint(["run", "project", str(project.root), *quiet_option]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    if quiet_option == ("--json",):
+        assert json.loads(captured.out)["accepted"] is True
+    else:
+        assert "Project run completed" in captured.out
+
+
 def test_human_status_parameter_hint_targets_selected_project(tmp_path, capsys):
     root = tmp_path / "pipe with spaces"
     projects.init_project(root)

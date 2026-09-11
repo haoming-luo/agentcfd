@@ -41,6 +41,10 @@ agentcfd run .
 agentcfd view .
 ```
 
+The interactive run prints changed, bounded progress in the same terminal on
+stderr. The solver stays on the main thread, preserving ordinary Ctrl-C
+behavior. Use `--no-progress` to suppress these lines; `--json` is always quiet.
+
 Before a project exists, `agentcfd templates` is the discovery surface. It
 states provider compatibility, generated versus imported geometry, physics,
 default outputs, required user decisions, scientific limitations, and a

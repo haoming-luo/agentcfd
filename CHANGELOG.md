@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Stream changed, bounded project status in the same terminal during human
+  `agentcfd run .` calls. The simulation stays on the main thread for normal
+  Ctrl-C behavior, while `--json` and the new `--no-progress` mode remain quiet.
 - Report bounded portable-field progress through `status` and `watch`: phase,
   completed/total frames, batch position, and fraction are written atomically
   once per micro-batch without opening field payloads. Human watch lines and the

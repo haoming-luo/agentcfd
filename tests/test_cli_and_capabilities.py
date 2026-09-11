@@ -1415,6 +1415,8 @@ def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
                 "2",
                 "--latest-only",
                 "--exclude-initial",
+                "--maximum-frames",
+                "12",
             ]
         )
         == 0
@@ -1443,9 +1445,11 @@ def test_direct_openfoam_export_reports_bounded_progress_only_for_humans(
     assert requests[0]["time_interval"] == 2.0
     assert requests[0]["latest_only"] is True
     assert requests[0]["include_initial"] is False
+    assert requests[0]["maximum_frames"] == 12
     assert requests[1]["time_interval"] is None
     assert requests[1]["latest_only"] is False
     assert requests[1]["include_initial"] is True
+    assert requests[1]["maximum_frames"] is None
 
 
 def test_grid_study_cli_rejects_ambiguous_json_plan(tmp_path, capsys):

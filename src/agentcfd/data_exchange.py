@@ -1135,6 +1135,7 @@ def export_openfoam_case(
     include_initial: bool = True,
     time_interval: float | None = None,
     latest_only: bool = False,
+    maximum_frames: int | None = None,
     _progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> FieldBundle:
     """Export selected OpenFOAM times to the standard field bundle.
@@ -1142,12 +1143,19 @@ def export_openfoam_case(
     ``time_interval`` separates public field frames from denser native time
     directories written for restart. ``latest_only`` implements final-state
     output without retaining every native checkpoint in XDMF/HDF5.
+    ``maximum_frames`` is a fail-closed output guard, never an implicit sampler.
     """
 
     if time_interval is not None:
         time_interval = float(time_interval)
         if not math.isfinite(time_interval) or time_interval <= 0.0:
             raise ValueError("OpenFOAM export time_interval must be positive and finite.")
+    if maximum_frames is not None and (
+        isinstance(maximum_frames, bool)
+        or not isinstance(maximum_frames, int)
+        or maximum_frames <= 0
+    ):
+        raise ValueError("OpenFOAM export maximum_frames must be a positive integer.")
 
     case = Path(case_directory)
     target = Path(output_directory)
@@ -1231,6 +1239,13 @@ def export_openfoam_case(
             if selected_time_names is not None
             else len(tuple(files or ()))
         )
+        if maximum_frames is not None and total_frames > maximum_frames:
+            raise AgentCFDError(
+                "OpenFOAM field export selected "
+                f"{total_frames} frames, exceeding maximum_frames={maximum_frames}. "
+                "Choose a larger time interval, use latest-only, or raise the "
+                "explicit frame ceiling."
+            )
         batch_count = (
             math.ceil(total_frames / OPENFOAM_CONVERSION_BATCH_FRAMES)
             if convert

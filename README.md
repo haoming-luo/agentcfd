@@ -750,7 +750,7 @@ agentcfd export openfoam OPENFOAM_CASE fields \
   --container-image opencfd/openfoam-run:2606 \
   --profile visualization \
   --field fluid.velocity --field fluid.pressure \
-  --time-interval 0.1 --exclude-initial \
+  --time-interval 0.1 --exclude-initial --maximum-frames 240 \
   --compression gzip --storage-budget "2 GiB" --json
 agentcfd verify field-bundle fields --json
 agentcfd export openfoam OPENFOAM_CASE fields-with-arrays --with-npz
@@ -777,6 +777,8 @@ stdout summary stable. Machine-readable `--json` stays progress-free; project
 runs expose the same work through `agentcfd watch` and the status schema.
 Use `--time-interval SECONDS`, `--latest-only`, and `--exclude-initial` to
 filter native time directories before any temporary VTU is created.
+`--maximum-frames N` adds a fail-closed ceiling before portable writing; it
+never silently discards selected frames.
 
 Portable output is intentionally profiled instead of dumping every array:
 `visualization` writes selected interpolated point fields, `native` writes

@@ -372,7 +372,8 @@ stdout remains a single document for agents; managed projects expose identical
 progress through `status` and `watch` without opening XDMF/H5.
 Direct exports can also select `--time-interval`, `--latest-only`, and
 `--exclude-initial`; filtering occurs before `foamToVTK`, so omitted times do
-not consume temporary conversion space.
+not consume temporary conversion space. Add `--maximum-frames N` for an
+explicit fail-closed ceiling; exceeding it never triggers silent subsampling.
 
 The NPZ layout does not require object deserialization:
 

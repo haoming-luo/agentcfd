@@ -7,6 +7,7 @@ import jsonschema
 import pytest
 
 from agentcfd import contracts, data_exchange
+from agentcfd.errors import AgentCFDError
 
 
 meshio = pytest.importorskip("meshio")
@@ -173,6 +174,30 @@ def test_openfoam_export_filters_restart_times_from_public_frames(tmp_path):
 
     assert interval.times == (2.0, 4.0)
     assert final.times == (4.0,)
+
+
+def test_openfoam_export_enforces_frame_ceiling_before_portable_write(tmp_path):
+    case = tmp_path / "case"
+    for time in range(5):
+        _write_frame(case, time, float(time + 1))
+    target = tmp_path / "too-many"
+
+    with pytest.raises(AgentCFDError, match="exceeding maximum_frames=2"):
+        data_exchange.export_openfoam_case(
+            case,
+            target,
+            convert=False,
+            maximum_frames=2,
+        )
+
+    assert not target.exists()
+    with pytest.raises(ValueError, match="positive integer"):
+        data_exchange.export_openfoam_case(
+            case,
+            tmp_path / "invalid-limit",
+            convert=False,
+            maximum_frames=0,
+        )
 
 
 def test_agentfem_field_sample_bridge_is_pickle_free(tmp_path):

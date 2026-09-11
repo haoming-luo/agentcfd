@@ -2367,6 +2367,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Do not include the OpenFOAM initial time in the portable series.",
     )
     field_bundle.add_argument(
+        "--maximum-frames",
+        type=int,
+        help=(
+            "Fail before portable writing when the filtered selection exceeds this "
+            "explicit frame ceiling."
+        ),
+    )
+    field_bundle.add_argument(
         "--with-npz",
         action="store_true",
         help="Also write a pickle-free NPZ mirror for NumPy and ML workflows.",
@@ -4585,6 +4593,7 @@ def main(argv: list[str] | None = None) -> int:
             include_initial=not args.exclude_initial,
             time_interval=args.time_interval,
             latest_only=args.latest_only,
+            maximum_frames=args.maximum_frames,
             _progress_callback=None if args.as_json else direct_export_progress,
         )
         report = bundle.to_dict()

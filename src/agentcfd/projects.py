@@ -6975,6 +6975,7 @@ class Project:
                         else None
                     ),
                     latest_only=step.output.frames.mode == "final",
+                    maximum_frames=step.output.frames.maximum,
                     _progress_callback=update_field_export_progress,
                 )
             except Exception as error:

@@ -240,6 +240,22 @@ def test_reusable_measurement_sections_are_solver_neutral_report_targets():
     jsonschema.Draft202012Validator(
         contracts.load("analysis-request.schema.json")
     ).validate(step.to_dict())
+    catalog = step.observation_catalog()
+    jsonschema.Draft202012Validator(
+        contracts.load("observation-catalog.schema.json")
+    ).validate(catalog)
+    assert [item["id"] for item in catalog["targets"]] == [
+        "region/downstream",
+        "region/upstream",
+    ]
+    assert catalog["targets"][0]["used_by"] == [
+        "fitting-loss",
+        "wake-quality",
+    ]
+    assert all(
+        report["requires_full_field_frame"] is False
+        for report in catalog["reports"]
+    )
 
     with pytest.raises(ValueError, match="zero vector"):
         regions.plane("invalid", origin=(0.0, 0.0, 0.0), normal=(0.0, 0.0, 0.0))
@@ -324,6 +340,16 @@ def test_baffle_example_produces_executable_inspectable_plan():
     assert (
         plan["decisions"]["output_plan"]["channels"]["reports"]["retention"]
         == "all compact samples"
+    )
+    catalog = plan["decisions"]["output_plan"]["observation_catalog"]
+    assert catalog["schema"] == "agentcfd.observation-catalog/0.1"
+    assert {target["kind"] for target in catalog["targets"]} == {
+        "point",
+        "surface",
+    }
+    assert all(
+        report["retention"] == "compact-history"
+        for report in catalog["reports"]
     )
     assert plan["decisions"]["output_plan"]["channels"]["criteria"][
         "evaluation"

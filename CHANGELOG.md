@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add `Step.observation_catalog()` and embed its versioned, installed-schema
+  contract in every project output plan. Agents and GUIs can now join compact
+  reports to physical surfaces, internal sections, or inline probe points;
+  inspect roles, cadence, and reuse; and distinguish scalar-history retention
+  from full-field frames without opening XDMF/H5 or parsing `case.py`.
 - Add reusable solver-neutral `regions.plane()` measurement sections. A model
   declares upstream/downstream planes once in SI coordinates, then pressure-
   loss, flow-uniformity, and scalar surface reports reuse their names. Imported

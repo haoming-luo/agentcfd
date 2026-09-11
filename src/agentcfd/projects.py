@@ -1332,6 +1332,7 @@ def _resolved_output_plan(
         }
 
     return {
+        "observation_catalog": step.observation_catalog(),
         "channels": {
             "histories": {
                 "names": list(step.output.histories),

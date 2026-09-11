@@ -151,6 +151,9 @@ python -m pytest -q
     declare them once with `model.sections(regions.plane(...), ...)` and reuse
     those names. Do not split CAD merely to create report patches, and do not
     substitute the global inlet flow for a section's own reference flow.
+    Read `step.observation_catalog()` or the copy embedded in `plan --json`
+    before inventing post-processing: it resolves shared targets and explicitly
+    marks compact reports as independent from full-field frames.
 28. Use `verify component-loss` only when the equipment and straight-run results
     have equivalent distributed length, section and measurement planes, walls,
     roughness, fluid, and operating point. Pass

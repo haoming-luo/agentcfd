@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/observation-catalog.schema.json",
+  "title": "AgentCFD output observation catalog 0.1",
+  "type": "object",
+  "required": [
+    "schema", "targets", "reports", "full_field_frames", "storage_guidance"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.observation-catalog/0.1"},
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "kind", "role", "definition", "used_by"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "name": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["surface", "section", "point"]},
+          "role": {"type": "string"},
+          "definition": {"type": "object"},
+          "used_by": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "reports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "type", "every", "target_ids", "retention",
+          "requires_full_field_frame"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "type": {"type": "string", "minLength": 1},
+          "every": {"type": "integer", "minimum": 1},
+          "target_ids": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "retention": {"const": "compact-history"},
+          "requires_full_field_frame": {"const": false}
+        },
+        "additionalProperties": false
+      }
+    },
+    "full_field_frames": {
+      "type": "object",
+      "required": ["fields", "definition", "portable_profile", "portable_formats"],
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "definition": {"type": "object"},
+        "portable_profile": {"enum": ["visualization", "native", "both"]},
+        "portable_formats": {
+          "type": "array",
+          "items": {"enum": ["xdmf", "npz"]},
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "storage_guidance": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

@@ -451,6 +451,85 @@ class Step:
             record["mesh"] = self.mesh.to_dict()
         return record
 
+    def observation_catalog(self) -> dict[str, object]:
+        """Describe report targets and storage behavior without reading fields."""
+
+        named_regions = {
+            item.name: item for item in self.model.domain.regions
+        } | self.model.section_definitions
+        target_records: dict[str, dict[str, object]] = {}
+        report_records: list[dict[str, object]] = []
+        for report in self.output.reports:
+            if isinstance(report, output_types.PointProbe):
+                target_ids = (f"probe/{report.name}",)
+                target_records[target_ids[0]] = {
+                    "id": target_ids[0],
+                    "name": report.name,
+                    "kind": "point",
+                    "role": "observation",
+                    "definition": {
+                        "location": list(report.location),
+                        "fields": list(report.fields),
+                    },
+                    "used_by": [report.name],
+                }
+            else:
+                names = (
+                    (report.region,)
+                    if isinstance(
+                        report,
+                        (output_types.SurfaceReport, output_types.FlowUniformityReport),
+                    )
+                    else (report.inlet, *report.outlets)
+                    if isinstance(report, output_types.FlowDistributionReport)
+                    else (report.inlet, report.outlet)
+                    if isinstance(report, output_types.PressureLossReport)
+                    else report.regions
+                )
+                target_ids = tuple(f"region/{name}" for name in names)
+                for name, target_id in zip(names, target_ids):
+                    target = named_regions[name]
+                    record = target_records.setdefault(
+                        target_id,
+                        {
+                            "id": target_id,
+                            "name": name,
+                            "kind": target.kind,
+                            "role": target.role,
+                            "definition": target.to_dict(),
+                            "used_by": [],
+                        },
+                    )
+                    used_by = record["used_by"]
+                    assert isinstance(used_by, list)
+                    if report.name not in used_by:
+                        used_by.append(report.name)
+            report_records.append(
+                {
+                    "name": report.name,
+                    "type": report.to_dict()["type"],
+                    "every": report.every,
+                    "target_ids": list(target_ids),
+                    "retention": "compact-history",
+                    "requires_full_field_frame": False,
+                }
+            )
+        return {
+            "schema": "agentcfd.observation-catalog/0.1",
+            "targets": [target_records[name] for name in sorted(target_records)],
+            "reports": report_records,
+            "full_field_frames": {
+                "fields": list(self.output.fields),
+                "definition": self.output.frames.to_dict(),
+                "portable_profile": self.output.portable_profile,
+                "portable_formats": list(self.output.portable_formats),
+            },
+            "storage_guidance": (
+                "Compact reports are independent from full-field frame cadence; "
+                "measurement sections do not duplicate XDMF/H5 fields."
+            ),
+        }
+
     def fingerprint(self) -> str:
         """Content identity for the complete solver-neutral analysis request."""
 

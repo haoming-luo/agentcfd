@@ -36,7 +36,9 @@ histories now support flow-distribution screening without another field frame.
 Reusable SI measurement planes now give pressure-loss, uniformity, and scalar
 reports a shared internal-section vocabulary; imported and baffled-channel
 OpenFOAM routes lower them to sampled cutting planes without retaining another
-volume field.
+volume field. A versioned observation catalog now resolves report-to-target
+reuse and compact-versus-field retention directly in project plans for agents
+and future GUIs.
 One-inlet/multi-outlet reports now add per-branch flow, fractions, conservation,
 variation, and optional target errors; imported projects can expose multiple
 pressure outlets without leaking OpenFOAM patch-monitor setup into `case.py`.

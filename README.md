@@ -596,7 +596,11 @@ to CSV. Reusable `regions.plane(...)` measurement sections let pressure-loss,
 flow-uniformity, and scalar surface reports share stable internal locations
 without adding CAD patches or full-field frames. Current imported-volume and
 baffled-channel OpenFOAM routes lower them to sampled cutting planes; port
-balance and wall force remain physical-boundary operations. See the
+balance and wall force remain physical-boundary operations.
+`Step.observation_catalog()` and the matching installed JSON schema expose
+report-to-target reuse, cadence, retention, and full-field separation to agents
+and GUIs without reading XDMF/H5. The same catalog is embedded in every project
+plan. See the
 [common workflow API](docs/common-workflow-api.md) and the readable
 [bottom-baffle project](examples/channel_baffle_project/case.py). New intent is
 checked against provider capabilities before execution and is never silently

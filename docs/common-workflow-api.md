@@ -133,6 +133,22 @@ surface to consume OpenFOAM's face-only `phi` field. Plane normals should point
 consistently from upstream to downstream. The generated OpenCFD v2606 syntax is
 covered by an actual solver dry-run, not only string tests.
 
+People can read the declarations above directly. Agents and future GUIs can
+inspect the same relationships without parsing Python or touching field data:
+
+```python
+catalog = step.observation_catalog()
+```
+
+The versioned `agentcfd.observation-catalog/0.1` record lists each physical
+surface, internal section, and inline probe point once, records every report
+that reuses it, and states cadence and retention. It separately describes the
+full-field frame request. `Project.plan()` embeds this catalog under
+`decisions.output_plan.observation_catalog`, and the installed
+`observation-catalog.schema.json` contract is available through
+`agentcfd contracts --json`. Catalog construction opens no XDMF/H5 payload and
+starts no solver.
+
 `pressure_loss` returns `report.system-loss.total_pressure_loss` in Pa and
 `report.system-loss.loss_coefficient` as a dimensionless scalar, using the
 actual inlet bulk velocity:

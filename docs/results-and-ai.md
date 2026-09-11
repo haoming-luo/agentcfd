@@ -98,6 +98,28 @@ can rank valve, elbow, or manifold variants through `result` or campaign tables
 without loading XDMF/H5. The value covers the declared inlet-to-outlet system;
 AgentCFD does not silently subtract distributed straight-run friction.
 
+When a fitting-only value is required, solve a second straight-run baseline
+whose distributed path length, section and measurement planes, wall treatment,
+roughness, fluid, and operating point are genuinely equivalent, then make that
+engineering assertion explicit:
+
+```bash
+agentcfd verify component-loss \
+  campaigns/equipment/result.json \
+  campaigns/equivalent-straight-run/result.json \
+  --confirm-equivalent-baseline \
+  --output output/local-loss.json
+```
+
+The verifier hashes and validates both native results, requires verified or
+validated accepted sources, and checks provider/runtime capability, fluid,
+study, numerical procedure, wall conditions, reference area, bulk velocity,
+dynamic pressure, units, and each reported `K = Δp_t/q` identity. It reports
+`K_local = K_candidate - K_baseline` and dimensionalizes it
+with the candidate dynamic pressure. Candidate and baseline must be distinct
+model identities. A mismatch or negative local K produces a
+completed-but-unaccepted assessment; baseline equivalence is never inferred.
+
 Without `--json`, the same scalar values are grouped as flow results, inputs,
 mesh quality, verification, runtime, and other results. This presentation layer
 does not rename or nest canonical quantities in the machine response; unit `1`

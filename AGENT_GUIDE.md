@@ -109,6 +109,12 @@ python -m pytest -q
     the complete loss between the declared planes; never silently relabel it as
     a fitting-only K value or subtract straight-run friction without explicit
     baseline evidence.
+28. Use `verify component-loss` only when the equipment and straight-run results
+    have equivalent distributed length, section and measurement planes, walls,
+    roughness, fluid, and operating point. Pass
+    `--confirm-equivalent-baseline` only after checking that study design. Treat
+    provider/runtime/reference mismatches, inconsistent reported coefficients,
+    negative local K, or unaccepted sources as an unaccepted comparison.
 
 ## Current boundary
 

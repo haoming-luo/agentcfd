@@ -161,6 +161,27 @@ The same calculation is available as `agentcfd verify validation-point`; its
 versioned contract is installed with the package and an outside-uncertainty
 comparison returns the completed-but-unaccepted exit status `3`.
 
+## Component-loss baseline subtraction
+
+`agentcfd verify component-loss` converts two accepted total-pressure-loss
+reports into an explicit local equipment-loss assessment. The candidate and
+straight-run baseline must share provider/runtime capability, fluid, study,
+procedure, and wall conditions, and agree within the declared tolerance on
+reference area, bulk velocity, and dynamic pressure.
+Both reports must independently satisfy `K = Δp_t/q`. The local coefficient is
+the difference of the two dimensionless coefficients and is dimensionalized
+with the candidate dynamic pressure; the raw pressure-loss difference remains a
+separate diagnostic. Candidate and baseline must have distinct model identities,
+so one result cannot accidentally validate itself as a zero-loss comparison.
+
+The command deliberately requires `--confirm-equivalent-baseline`. That flag is
+an engineering assertion that distributed flow-path length, cross-section and
+measurement planes, walls and roughness, fluid, and operating point are
+equivalent. Scalar result files cannot prove those geometric facts. A negative
+local coefficient, source rejection, or compatibility failure is retained as
+unaccepted evidence. This subtraction is neither experimental validation nor a
+numerical-uncertainty estimate.
+
 For the pipe benchmark, a uniform inlet and a fully developed analytical inlet
 are different scientific problems. Total inlet-to-outlet static pressure from
 the uniform case includes an entrance contribution and is not promoted as a

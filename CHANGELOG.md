@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add solver-neutral `assess_component_loss()` and `agentcfd verify
+  component-loss` for explicit straight-run baseline subtraction. The
+  content-addressed assessment checks accepted source results, provider/runtime,
+  fluid/study/procedure/walls, inlet area, bulk velocity, dynamic pressure,
+  units, and reported K identity;
+  equivalent geometry and measurement planes require a deliberate confirmation.
+  Imported and baffled OpenFOAM results now expose canonical provider version
+  and container-image provenance for future comparisons.
 - Add `Project.campaign_operating_map()` and dependency-free SVG export for
   accepted campaign quantities. The CLI turns an explicit numeric `case.py`
   parameter and one canonical scalar result into a unit-labelled engineering

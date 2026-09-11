@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/component-loss-assessment.schema.json",
+  "title": "AgentCFD equivalent-baseline component-loss assessment 0.1",
+  "type": "object",
+  "required": [
+    "schema", "report_name", "claim", "baseline_assumption", "policy",
+    "candidate", "baseline", "compatibility", "result", "acceptance",
+    "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.component-loss-assessment/0.1"},
+    "report_name": {"type": "string", "minLength": 1},
+    "claim": {"const": "explicit-equivalent-baseline-subtraction"},
+    "baseline_assumption": {
+      "type": "object",
+      "required": ["confirmed", "required_equivalence"],
+      "properties": {
+        "confirmed": {"const": true},
+        "required_equivalence": {
+          "type": "array",
+          "minItems": 4,
+          "items": {"type": "string", "minLength": 1}
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "maximum_reference_relative_difference",
+        "maximum_coefficient_relative_difference"
+      ],
+      "properties": {
+        "maximum_reference_relative_difference": {
+          "type": "number", "exclusiveMinimum": 0
+        },
+        "maximum_coefficient_relative_difference": {
+          "type": "number", "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "candidate": {"$ref": "#/$defs/source"},
+    "baseline": {"$ref": "#/$defs/source"},
+    "compatibility": {
+      "type": "object",
+      "required": [
+        "distinct_model_identities", "same_provider", "same_provider_version", "same_provider_capability",
+        "same_container_image", "same_fluid", "same_study", "same_procedure",
+        "same_wall_boundaries",
+        "reference_relative_differences", "references_matched",
+        "coefficient_relative_differences", "coefficients_consistent"
+      ],
+      "properties": {
+        "distinct_model_identities": {"type": "boolean"},
+        "same_provider": {"type": "boolean"},
+        "same_provider_version": {"type": "boolean"},
+        "same_provider_capability": {"type": "boolean"},
+        "same_container_image": {"type": "boolean"},
+        "same_fluid": {"type": "boolean"},
+        "same_study": {"type": "boolean"},
+        "same_procedure": {"type": "boolean"},
+        "same_wall_boundaries": {"type": "boolean"},
+        "reference_relative_differences": {
+          "type": "object",
+          "required": ["area", "bulk_velocity", "dynamic_pressure"],
+          "properties": {
+            "area": {"type": "number", "minimum": 0},
+            "bulk_velocity": {"type": "number", "minimum": 0},
+            "dynamic_pressure": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "references_matched": {"type": "boolean"},
+        "coefficient_relative_differences": {
+          "type": "object",
+          "required": ["candidate", "baseline"],
+          "properties": {
+            "candidate": {"type": "number", "minimum": 0},
+            "baseline": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "coefficients_consistent": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "local_loss_coefficient", "local_pressure_loss",
+        "local_pressure_loss_unit", "direct_total_pressure_loss_difference",
+        "direct_total_pressure_loss_difference_unit"
+      ],
+      "properties": {
+        "local_loss_coefficient": {"type": "number"},
+        "local_pressure_loss": {"type": "number"},
+        "local_pressure_loss_unit": {"const": "Pa"},
+        "direct_total_pressure_loss_difference": {"type": "number"},
+        "direct_total_pressure_loss_difference_unit": {"const": "Pa"}
+      },
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "required": [
+        "source_results_accepted", "distinct_model_identities", "provider_matched",
+        "provider_version_matched", "provider_capability_matched",
+        "container_image_matched", "fluid_matched", "study_matched",
+        "procedure_matched", "wall_boundaries_matched",
+        "references_matched", "reported_coefficients_consistent",
+        "nonnegative_local_loss", "accepted"
+      ],
+      "properties": {
+        "source_results_accepted": {"type": "boolean"},
+        "distinct_model_identities": {"type": "boolean"},
+        "provider_matched": {"type": "boolean"},
+        "provider_version_matched": {"type": "boolean"},
+        "provider_capability_matched": {"type": "boolean"},
+        "container_image_matched": {"type": "boolean"},
+        "fluid_matched": {"type": "boolean"},
+        "study_matched": {"type": "boolean"},
+        "procedure_matched": {"type": "boolean"},
+        "wall_boundaries_matched": {"type": "boolean"},
+        "references_matched": {"type": "boolean"},
+        "reported_coefficients_consistent": {"type": "boolean"},
+        "nonnegative_local_loss": {"type": "boolean"},
+        "accepted": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["role", "path", "sha256"],
+        "properties": {
+          "role": {"enum": ["candidate", "baseline"]},
+          "path": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": [
+        "role", "provider", "model_sha256", "provider_version", "provider_capability",
+        "container_image", "status",
+        "converged", "accepted", "trust_level", "loss_coefficient",
+        "total_pressure_loss", "reference_area", "reference_bulk_velocity",
+        "reference_dynamic_pressure"
+      ],
+      "properties": {
+        "role": {"enum": ["candidate", "baseline"]},
+        "provider": {"type": "string", "minLength": 1},
+        "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "provider_version": {"type": ["string", "null"]},
+        "provider_capability": {"type": ["string", "null"]},
+        "container_image": {"type": ["string", "null"]},
+        "status": {"type": ["string", "null"]},
+        "converged": {"type": ["boolean", "null"]},
+        "accepted": {"type": ["boolean", "null"]},
+        "trust_level": {"type": ["string", "null"]},
+        "loss_coefficient": {"type": "number", "minimum": 0},
+        "total_pressure_loss": {"type": "number", "minimum": 0},
+        "reference_area": {"type": "number", "exclusiveMinimum": 0},
+        "reference_bulk_velocity": {"type": "number", "exclusiveMinimum": 0},
+        "reference_dynamic_pressure": {"type": "number", "exclusiveMinimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

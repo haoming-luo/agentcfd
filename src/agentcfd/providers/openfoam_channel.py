@@ -1444,6 +1444,8 @@ class OpenFOAMChannelProvider:
                 "case_sha256": prepared.case_sha256,
                 "provider_capability": _CAPABILITY,
                 "runtime_version": runtime_version,
+                "provider_version": runtime_version,
+                "container_image": self.container_image,
             },
             messages=("Experimental low-Re transient baffled-channel capability; no physical validation claim is made.",),
             name=step.model.name,

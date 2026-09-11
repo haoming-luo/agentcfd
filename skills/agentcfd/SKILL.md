@@ -40,6 +40,13 @@ model.
     `report.system-loss.loss_coefficient` values through `result` or campaign
     tables; do not open XDMF/H5 for a scalar decision and do not call the value
     a fitting-only K unless a straight-run baseline was explicitly removed.
+15. For a one-parameter campaign decision, use `campaigns --plot-svg` with a
+    declared numeric x parameter and canonical scalar y quantity. Keep the
+    accepted-only default; showing unaccepted evidence must remain explicit.
+16. Use `verify component-loss --confirm-equivalent-baseline` only after
+    confirming equivalent distributed length, section/measurement planes,
+    walls/roughness, fluid, and operating point. Provider/runtime/physics or
+    reference mismatches and negative local K remain unaccepted evidence.
 
 ## Current capability boundary
 

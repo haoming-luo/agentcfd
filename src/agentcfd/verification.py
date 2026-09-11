@@ -609,6 +609,344 @@ def _record_quantity_value(
     return value
 
 
+def assess_component_loss(
+    candidate: Mapping[str, object],
+    baseline: Mapping[str, object],
+    *,
+    report_name: str = "system-loss",
+    equivalent_baseline_confirmed: bool = False,
+    maximum_reference_relative_difference: float = 0.01,
+    maximum_coefficient_relative_difference: float = 1.0e-6,
+) -> dict[str, object]:
+    """Subtract an explicitly equivalent straight-run baseline from equipment loss.
+
+    The calculation uses the two dimensionless total-loss coefficients and then
+    dimensionalizes their difference with the candidate reference dynamic
+    pressure. It does not infer that the baseline has equivalent distributed
+    length, roughness, wall treatment, or measurement planes; the caller must
+    confirm that study-design fact explicitly.
+    """
+
+    if not isinstance(candidate, Mapping) or not isinstance(baseline, Mapping):
+        raise ValueError("Component-loss candidate and baseline must be result mappings.")
+    if not isinstance(report_name, str) or not report_name.strip():
+        raise ValueError("Component-loss report_name must be a non-empty string.")
+    if not isinstance(equivalent_baseline_confirmed, bool):
+        raise ValueError("equivalent_baseline_confirmed must be a boolean.")
+    if not equivalent_baseline_confirmed:
+        raise ValueError(
+            "Component-loss subtraction requires explicit confirmation that the "
+            "baseline has equivalent distributed length, walls, roughness, and "
+            "measurement planes."
+        )
+    difference_limit = positive_float(
+        maximum_reference_relative_difference,
+        name="maximum_reference_relative_difference",
+    )
+    coefficient_limit = positive_float(
+        maximum_coefficient_relative_difference,
+        name="maximum_coefficient_relative_difference",
+    )
+    report_name = report_name.strip()
+    prefix = f"report.{report_name}."
+    required = {
+        "loss_coefficient": "1",
+        "total_pressure_loss": "Pa",
+        "reference_area": "m^2",
+        "reference_bulk_velocity": "m/s",
+        "reference_dynamic_pressure": "Pa",
+    }
+    rows: list[dict[str, object]] = []
+    for index, (role, record) in enumerate(
+        (("candidate", candidate), ("baseline", baseline)),
+        start=1,
+    ):
+        quantities = record.get("quantities")
+        if not isinstance(quantities, Mapping):
+            raise ValueError(f"Component-loss {role} result is missing quantities.")
+        values: dict[str, float] = {}
+        for suffix, unit in required.items():
+            name = prefix + suffix
+            values[suffix] = _record_quantity_value(quantities, name, index=index)
+            entry = quantities[name]
+            assert isinstance(entry, Mapping)
+            if entry.get("unit") != unit:
+                raise ValueError(
+                    f"Component-loss {role} quantity {name!r} must use unit {unit!r}."
+                )
+        for name in ("loss_coefficient", "total_pressure_loss"):
+            if values[name] < 0.0:
+                raise ValueError(
+                    f"Component-loss {role} quantity {name!r} must be non-negative."
+                )
+        for name in (
+            "reference_area",
+            "reference_bulk_velocity",
+            "reference_dynamic_pressure",
+        ):
+            if values[name] <= 0.0:
+                raise ValueError(
+                    f"Component-loss {role} quantity {name!r} must be positive."
+                )
+        provenance = record.get("provenance")
+        if not isinstance(provenance, Mapping):
+            raise ValueError(f"Component-loss {role} result is missing provenance.")
+        provider = record.get("provider")
+        if not isinstance(provider, str) or not provider.strip():
+            raise ValueError(f"Component-loss {role} result is missing its provider.")
+        provider_version = provenance.get("provider_version")
+        if provider_version is None:
+            provider_version = provenance.get("runtime_version")
+        provider_capability = provenance.get("provider_capability")
+        container_image = provenance.get("container_image")
+        model_sha256 = provenance.get("model_sha256")
+        if (
+            not isinstance(model_sha256, str)
+            or len(model_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in model_sha256.lower()
+            )
+        ):
+            raise ValueError(
+                f"Component-loss {role} result is missing a model SHA-256 identity."
+            )
+        if provider_version is not None and not isinstance(provider_version, str):
+            raise ValueError(
+                f"Component-loss {role} provider version must be a string or null."
+            )
+        if container_image is not None and not isinstance(container_image, str):
+            raise ValueError(
+                f"Component-loss {role} container image must be a string or null."
+            )
+        if provider_capability is not None and not isinstance(
+            provider_capability, str
+        ):
+            raise ValueError(
+                f"Component-loss {role} provider capability must be a string or null."
+            )
+        scientific = record.get("scientific_inputs")
+        public = scientific.get("record") if isinstance(scientific, Mapping) else None
+        model = public.get("model") if isinstance(public, Mapping) else None
+        if not isinstance(model, Mapping):
+            raise ValueError(
+                f"Component-loss {role} result has no complete scientific input record."
+            )
+        fluid = model.get("fluid")
+        study = model.get("study")
+        boundaries = model.get("boundaries")
+        domain = model.get("domain")
+        procedure = public.get("procedure")
+        if not all(
+            isinstance(value, Mapping)
+            for value in (fluid, study, procedure, boundaries, domain)
+        ):
+            raise ValueError(
+                f"Component-loss {role} scientific fluid, study, procedure, or wall "
+                "record is incomplete."
+            )
+        role_map = domain.get("boundary_roles")
+        role_map = role_map if isinstance(role_map, Mapping) else {}
+        wall_records = []
+        for name, boundary in boundaries.items():
+            if not isinstance(name, str) or not isinstance(boundary, Mapping):
+                continue
+            boundary_type = boundary.get("type")
+            has_wall_role = role_map.get(name) == "wall"
+            looks_like_wall = (
+                "wall" in name.lower()
+                or isinstance(boundary_type, str)
+                and "wall" in boundary_type
+            )
+            if has_wall_role or looks_like_wall:
+                wall_records.append(json.dumps(boundary, sort_keys=True))
+        if not wall_records:
+            raise ValueError(
+                f"Component-loss {role} scientific wall-boundary record is missing."
+            )
+        rows.append(
+            {
+                "role": role,
+                "provider": provider,
+                "model_sha256": model_sha256,
+                "provider_version": provider_version,
+                "provider_capability": provider_capability,
+                "container_image": container_image,
+                "status": record.get("status"),
+                "converged": record.get("converged"),
+                "accepted": record.get("accepted"),
+                "trust_level": record.get("trust_level"),
+                "_fluid": dict(fluid),
+                "_study": dict(study),
+                "_procedure": dict(procedure),
+                "_walls": sorted(wall_records),
+                **values,
+            }
+        )
+
+    candidate_row, baseline_row = rows
+    distinct_models = (
+        candidate_row["model_sha256"] != baseline_row["model_sha256"]
+    )
+
+    def relative_difference(name: str) -> float:
+        candidate_value = float(candidate_row[name])
+        baseline_value = float(baseline_row[name])
+        return abs(candidate_value - baseline_value) / max(
+            abs(candidate_value),
+            abs(baseline_value),
+            1.0e-300,
+        )
+
+    reference_differences = {
+        "area": relative_difference("reference_area"),
+        "bulk_velocity": relative_difference("reference_bulk_velocity"),
+        "dynamic_pressure": relative_difference("reference_dynamic_pressure"),
+    }
+    same_provider = candidate_row["provider"] == baseline_row["provider"]
+    same_provider_version = (
+        candidate_row["provider_version"] == baseline_row["provider_version"]
+    )
+    same_provider_capability = (
+        candidate_row["provider_capability"]
+        == baseline_row["provider_capability"]
+    )
+    same_container_image = (
+        candidate_row["container_image"] == baseline_row["container_image"]
+    )
+    same_fluid = candidate_row["_fluid"] == baseline_row["_fluid"]
+    same_study = candidate_row["_study"] == baseline_row["_study"]
+    same_procedure = candidate_row["_procedure"] == baseline_row["_procedure"]
+    same_walls = candidate_row["_walls"] == baseline_row["_walls"]
+    references_matched = all(
+        difference <= difference_limit for difference in reference_differences.values()
+    )
+    coefficient_relative_differences = {
+        str(row["role"]): abs(
+            float(row["loss_coefficient"])
+            - float(row["total_pressure_loss"])
+            / float(row["reference_dynamic_pressure"])
+        )
+        / max(
+            abs(float(row["loss_coefficient"])),
+            abs(
+                float(row["total_pressure_loss"])
+                / float(row["reference_dynamic_pressure"])
+            ),
+            1.0e-300,
+        )
+        for row in rows
+    }
+    coefficients_consistent = all(
+        difference <= coefficient_limit
+        for difference in coefficient_relative_differences.values()
+    )
+    source_results_accepted = all(
+        row["status"] == "completed"
+        and row["converged"] is True
+        and row["accepted"] is True
+        and row["trust_level"] in {"verified", "validated"}
+        for row in rows
+    )
+    local_loss_coefficient = float(candidate_row["loss_coefficient"]) - float(
+        baseline_row["loss_coefficient"]
+    )
+    local_pressure_loss = local_loss_coefficient * float(
+        candidate_row["reference_dynamic_pressure"]
+    )
+    direct_pressure_difference = float(
+        candidate_row["total_pressure_loss"]
+    ) - float(baseline_row["total_pressure_loss"])
+    nonnegative_local_loss = local_loss_coefficient >= 0.0
+    accepted = bool(
+        source_results_accepted
+        and distinct_models
+        and same_provider
+        and same_provider_version
+        and same_provider_capability
+        and same_container_image
+        and same_fluid
+        and same_study
+        and same_procedure
+        and same_walls
+        and references_matched
+        and coefficients_consistent
+        and nonnegative_local_loss
+    )
+    return {
+        "schema": "agentcfd.component-loss-assessment/0.1",
+        "report_name": report_name,
+        "claim": "explicit-equivalent-baseline-subtraction",
+        "baseline_assumption": {
+            "confirmed": True,
+            "required_equivalence": [
+                "distributed flow-path length",
+                "cross-section and measurement planes",
+                "wall treatment and roughness",
+                "fluid and operating point",
+            ],
+        },
+        "policy": {
+            "maximum_reference_relative_difference": difference_limit,
+            "maximum_coefficient_relative_difference": coefficient_limit,
+        },
+        "candidate": {
+            key: value
+            for key, value in candidate_row.items()
+            if not str(key).startswith("_")
+        },
+        "baseline": {
+            key: value
+            for key, value in baseline_row.items()
+            if not str(key).startswith("_")
+        },
+        "compatibility": {
+            "same_provider": same_provider,
+            "distinct_model_identities": distinct_models,
+            "same_provider_version": same_provider_version,
+            "same_provider_capability": same_provider_capability,
+            "same_container_image": same_container_image,
+            "same_fluid": same_fluid,
+            "same_study": same_study,
+            "same_procedure": same_procedure,
+            "same_wall_boundaries": same_walls,
+            "reference_relative_differences": reference_differences,
+            "references_matched": references_matched,
+            "coefficient_relative_differences": coefficient_relative_differences,
+            "coefficients_consistent": coefficients_consistent,
+        },
+        "result": {
+            "local_loss_coefficient": local_loss_coefficient,
+            "local_pressure_loss": local_pressure_loss,
+            "local_pressure_loss_unit": "Pa",
+            "direct_total_pressure_loss_difference": direct_pressure_difference,
+            "direct_total_pressure_loss_difference_unit": "Pa",
+        },
+        "acceptance": {
+            "source_results_accepted": source_results_accepted,
+            "distinct_model_identities": distinct_models,
+            "provider_matched": same_provider,
+            "provider_version_matched": same_provider_version,
+            "provider_capability_matched": same_provider_capability,
+            "container_image_matched": same_container_image,
+            "fluid_matched": same_fluid,
+            "study_matched": same_study,
+            "procedure_matched": same_procedure,
+            "wall_boundaries_matched": same_walls,
+            "references_matched": references_matched,
+            "reported_coefficients_consistent": coefficients_consistent,
+            "nonnegative_local_loss": nonnegative_local_loss,
+            "accepted": accepted,
+        },
+        "limitations": [
+            "Candidate and baseline must have distinct model identities; a result cannot serve as its own baseline.",
+            "Equivalent distributed geometry and measurement-plane placement are a user-confirmed study-design input, not inferred from scalar results.",
+            "Baseline subtraction is not experimental validation and does not quantify mesh, iterative, model-form, or measurement uncertainty.",
+            "The local pressure loss is dimensionalized with the candidate reference dynamic pressure; the direct pressure difference is retained separately as a diagnostic.",
+        ],
+    }
+
+
 def assess_turbulent_wall_study(
     records: Iterable[Mapping[str, object]],
     *,
@@ -1898,6 +2236,7 @@ __all__ = [
     "TimeStepSensitivityResult",
     "TimeStepSolution",
     "ValidationPointAssessment",
+    "assess_component_loss",
     "assess_validation_point",
     "assess_grid_convergence",
     "assess_turbulent_wall_study",

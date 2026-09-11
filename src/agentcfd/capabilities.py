@@ -286,6 +286,23 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="verification.component-loss-baseline",
+        maturity="experimental",
+        scope=(
+            "Solver-neutral local loss coefficient from two accepted total-pressure-loss "
+            "reports with an explicitly equivalent straight-run baseline."
+        ),
+        evidence=(
+            "unit and coefficient-identity tests",
+            "provider/runtime and operating-reference compatibility gates",
+            "content-addressed two-result CLI evidence contract",
+        ),
+        limitations=(
+            "The caller must confirm equivalent distributed length, cross-section, measurement planes, walls, roughness, fluid, and operating point.",
+            "Baseline subtraction does not establish experimental validation or numerical uncertainty.",
+        ),
+    ),
+    Capability(
         name="verification.turbulent-model-reynolds-sweep",
         maturity="experimental",
         scope=(

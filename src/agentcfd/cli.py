@@ -51,6 +51,7 @@ from .providers import (
 )
 from .results import SimulationResult, read_result_record
 from .verification import (
+    assess_component_loss,
     assess_grid_convergence,
     assess_turbulent_model_study,
     assess_turbulent_model_sweep,
@@ -844,6 +845,40 @@ def _time_step_sensitivity_payload(
         **study.to_dict(),
         "quantity": quantity,
         "sources": [{"path": str(path), "sha256": file_sha256(path)} for path in paths],
+    }
+
+
+def _component_loss_payload(
+    candidate_path: Path,
+    baseline_path: Path,
+    *,
+    report_name: str,
+    equivalent_baseline_confirmed: bool,
+    maximum_reference_relative_difference: float,
+) -> dict[str, object]:
+    candidate = read_result_record(candidate_path)
+    baseline = read_result_record(baseline_path)
+    assessment = assess_component_loss(
+        candidate,
+        baseline,
+        report_name=report_name,
+        equivalent_baseline_confirmed=equivalent_baseline_confirmed,
+        maximum_reference_relative_difference=maximum_reference_relative_difference,
+    )
+    return {
+        **assessment,
+        "sources": [
+            {
+                "role": "candidate",
+                "path": str(candidate_path),
+                "sha256": file_sha256(candidate_path),
+            },
+            {
+                "role": "baseline",
+                "path": str(baseline_path),
+                "sha256": file_sha256(baseline_path),
+            },
+        ],
     }
 
 
@@ -2429,6 +2464,28 @@ def build_parser() -> argparse.ArgumentParser:
     )
     time_step.add_argument("--output", type=Path)
     time_step.add_argument("--json", action="store_true", dest="as_json")
+    component_loss = verify_subparsers.add_parser(
+        "component-loss",
+        help="Subtract an explicitly equivalent straight-run total-loss baseline.",
+    )
+    component_loss.add_argument("candidate", type=Path)
+    component_loss.add_argument("baseline", type=Path)
+    component_loss.add_argument("--report-name", default="system-loss")
+    component_loss.add_argument(
+        "--confirm-equivalent-baseline",
+        action="store_true",
+        help=(
+            "Confirm equivalent distributed length, section/planes, walls/roughness, "
+            "fluid, and operating point."
+        ),
+    )
+    component_loss.add_argument(
+        "--maximum-reference-relative-difference",
+        type=float,
+        default=0.01,
+    )
+    component_loss.add_argument("--output", type=Path)
+    component_loss.add_argument("--json", action="store_true", dest="as_json")
     wall_study = verify_subparsers.add_parser(
         "turbulent-wall-study",
         help="Assess fixed-wall-cell precursor results without misusing GCI.",
@@ -4238,6 +4295,31 @@ def main(argv: list[str] | None = None) -> int:
             if args.output is not None:
                 print(args.output)
         return 0 if payload["accepted"] else 3
+    if args.command == "verify" and args.verification == "component-loss":
+        payload = _component_loss_payload(
+            args.candidate,
+            args.baseline,
+            report_name=args.report_name,
+            equivalent_baseline_confirmed=args.confirm_equivalent_baseline,
+            maximum_reference_relative_difference=(
+                args.maximum_reference_relative_difference
+            ),
+        )
+        if args.output is not None:
+            _write_json_atomic(args.output, payload)
+        if args.as_json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            local = payload["result"]
+            print(
+                f"Component loss {args.report_name} | K_local "
+                f"{local['local_loss_coefficient']:.6g} | "
+                f"{local['local_pressure_loss']:.6g} Pa | accepted "
+                f"{str(payload['acceptance']['accepted']).lower()}"
+            )
+            if args.output is not None:
+                print(args.output)
+        return 0 if payload["acceptance"]["accepted"] else 3
     if args.command == "verify" and args.verification == "turbulent-wall-study":
         payload = _turbulent_wall_study_payload(args.results)
         if args.output is not None:

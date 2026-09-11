@@ -22,6 +22,7 @@ _SCHEMAS = (
     "campaign-request.schema.json",
     "campaign-sweep.schema.json",
     "capability-catalog.schema.json",
+    "component-loss-assessment.schema.json",
     "coupling-manifest.schema.json",
     "error.schema.json",
     "field-bundle.schema.json",

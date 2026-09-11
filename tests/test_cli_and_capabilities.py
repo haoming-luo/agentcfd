@@ -25,6 +25,7 @@ def test_capability_catalog_is_truthful():
     )
     assert maturity["engineering.gas-screening"] == "experimental"
     assert maturity["validation.single-observable-uncertainty"] == "experimental"
+    assert maturity["verification.component-loss-baseline"] == "experimental"
     report = capabilities.as_dict()
     jsonschema.Draft202012Validator(
         contracts.load("capability-catalog.schema.json")
@@ -110,6 +111,8 @@ def test_installed_contract_catalog_is_loadable_and_cli_visible(capsys):
     assert "turbulent-model-sweep.schema.json" in contracts.available()
     assert "openfoam-turbulent-model-sweep.schema.json" in contracts.available()
     assert "time-step-sensitivity.schema.json" in contracts.available()
+    assert "campaign-operating-map.schema.json" in contracts.available()
+    assert "component-loss-assessment.schema.json" in contracts.available()
     assert "inlet-direction-assessment.schema.json" in contracts.available()
     assert "project-status.schema.json" in contracts.available()
     assert "project-storage.schema.json" in contracts.available()
@@ -1096,6 +1099,85 @@ def test_cli_writes_content_addressed_time_step_sensitivity(tmp_path, capsys):
     assert json.loads(output.read_text()) == payload
     jsonschema.Draft202012Validator(
         contracts.load("time-step-sensitivity.schema.json")
+    ).validate(payload)
+
+
+def test_cli_writes_content_addressed_component_loss_assessment(tmp_path, capsys):
+    paths = []
+    prefix = "report.system-loss."
+    for role, coefficient in (("candidate", 0.7), ("baseline", 0.2)):
+        path = tmp_path / f"{role}.json"
+        SimulationResult(
+            status="completed",
+            converged=True,
+            provider="openfoam-imported",
+            quantities={
+                prefix + "loss_coefficient": Quantity(coefficient, "1"),
+                prefix + "total_pressure_loss": Quantity(coefficient * 100.0, "Pa"),
+                prefix + "reference_area": Quantity(0.01, "m^2"),
+                prefix + "reference_bulk_velocity": Quantity(2.0, "m/s"),
+                prefix + "reference_dynamic_pressure": Quantity(100.0, "Pa"),
+            },
+            checks=(Check("synthetic-verification", True, kind="verification"),),
+            provenance={
+                "model_sha256": ("a" if role == "candidate" else "b") * 64,
+                "provider_version": "v2606",
+                "provider_capability": "steady-imported-internal-flow",
+                "container_image": "opencfd/openfoam-run:2606",
+            },
+            scientific_inputs={
+                "model": {
+                    "fluid": {"type": "newtonian", "density": 50.0},
+                    "study": {"family": "internal-flow", "steady": True},
+                    "domain": {"type": "imported-surface"},
+                    "boundaries": {"wall": {"type": "no-slip-wall"}},
+                },
+                "procedure": {"type": "steady", "relative_tolerance": 1.0e-8},
+            },
+        ).write(path)
+        paths.append(path)
+    output = tmp_path / "component-loss.json"
+
+    assert (
+        entrypoint(
+            [
+                "verify",
+                "component-loss",
+                *(str(path) for path in paths),
+                "--json",
+            ]
+        )
+        == 2
+    )
+    missing_confirmation = json.loads(capsys.readouterr().out)
+    assert "explicit confirmation" in missing_confirmation["error"]["message"]
+
+    assert (
+        main(
+            [
+                "verify",
+                "component-loss",
+                *(str(path) for path in paths),
+                "--confirm-equivalent-baseline",
+                "--output",
+                str(output),
+                "--json",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["result"]["local_loss_coefficient"] == pytest.approx(0.5)
+    assert payload["result"]["local_pressure_loss"] == pytest.approx(50.0)
+    assert payload["acceptance"]["accepted"] is True
+    assert [source["role"] for source in payload["sources"]] == [
+        "candidate",
+        "baseline",
+    ]
+    assert all(len(source["sha256"]) == 64 for source in payload["sources"])
+    assert json.loads(output.read_text()) == payload
+    jsonschema.Draft202012Validator(
+        contracts.load("component-loss-assessment.schema.json")
     ).validate(payload)
 
 

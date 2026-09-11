@@ -1910,6 +1910,8 @@ class OpenFOAMImportedProvider:
                 "mesh_plan_sha256": prepared.mesh_plan.to_dict()["plan_sha256"],
                 "provider_capability": flow_capability,
                 "runtime_version": runtime_version,
+                "provider_version": runtime_version,
+                "container_image": self.container_image,
                 "turbulence_model": step.model.study.turbulence,
             },
             messages=(

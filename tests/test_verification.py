@@ -7,6 +7,7 @@ from agentcfd.verification import (
     GridConvergenceResult,
     GridSolution,
     TimeStepSolution,
+    assess_component_loss,
     assess_turbulent_model_study,
     assess_turbulent_model_sweep,
     assess_turbulent_precursor_grid_study,
@@ -19,6 +20,144 @@ from agentcfd.verification import (
     time_step_sensitivity,
     time_step_sensitivity_from_result_records,
 )
+
+
+def _component_loss_record(
+    *,
+    loss_coefficient: float,
+    dynamic_pressure: float = 100.0,
+    area: float = 0.01,
+    velocity: float = 2.0,
+    provider: str = "openfoam-imported",
+    provider_version: str = "v2606",
+    accepted: bool = True,
+    model_sha256: str = "a" * 64,
+):
+    prefix = "report.system-loss."
+    return {
+        "status": "completed",
+        "converged": True,
+        "accepted": accepted,
+        "trust_level": "verified",
+        "provider": provider,
+        "provenance": {
+            "model_sha256": model_sha256,
+            "provider_version": provider_version,
+            "provider_capability": "steady-imported-internal-flow",
+            "container_image": "opencfd/openfoam-run:2606",
+        },
+        "scientific_inputs": {
+            "record": {
+                "model": {
+                    "fluid": {"type": "newtonian", "density": 50.0},
+                    "study": {"family": "internal-flow", "steady": True},
+                    "domain": {"type": "imported-surface"},
+                    "boundaries": {"wall": {"type": "no-slip-wall"}},
+                },
+                "procedure": {"type": "steady", "relative_tolerance": 1.0e-8},
+            }
+        },
+        "quantities": {
+            prefix + "loss_coefficient": {
+                "value": loss_coefficient,
+                "unit": "1",
+            },
+            prefix + "total_pressure_loss": {
+                "value": loss_coefficient * dynamic_pressure,
+                "unit": "Pa",
+            },
+            prefix + "reference_area": {"value": area, "unit": "m^2"},
+            prefix + "reference_bulk_velocity": {
+                "value": velocity,
+                "unit": "m/s",
+            },
+            prefix + "reference_dynamic_pressure": {
+                "value": dynamic_pressure,
+                "unit": "Pa",
+            },
+        },
+    }
+
+
+def test_component_loss_requires_explicit_equivalent_baseline_and_reports_local_k():
+    candidate = _component_loss_record(loss_coefficient=0.7)
+    baseline = _component_loss_record(loss_coefficient=0.2, model_sha256="b" * 64)
+
+    with pytest.raises(ValueError, match="explicit confirmation"):
+        assess_component_loss(candidate, baseline)
+
+    result = assess_component_loss(
+        candidate,
+        baseline,
+        equivalent_baseline_confirmed=True,
+    )
+    assert result["result"]["local_loss_coefficient"] == pytest.approx(0.5)
+    assert result["result"]["local_pressure_loss"] == pytest.approx(50.0)
+    assert result["result"]["direct_total_pressure_loss_difference"] == pytest.approx(
+        50.0
+    )
+    assert result["compatibility"]["references_matched"] is True
+    assert result["acceptance"]["accepted"] is True
+    assert result["claim"] == "explicit-equivalent-baseline-subtraction"
+
+    self_comparison = assess_component_loss(
+        candidate,
+        candidate,
+        equivalent_baseline_confirmed=True,
+    )
+    assert self_comparison["compatibility"]["distinct_model_identities"] is False
+    assert self_comparison["acceptance"]["accepted"] is False
+
+
+def test_component_loss_fails_acceptance_for_mismatched_reference_or_provider():
+    candidate = _component_loss_record(loss_coefficient=0.7)
+    mismatched = _component_loss_record(
+        loss_coefficient=0.2,
+        velocity=1.8,
+        provider="another-provider",
+        model_sha256="b" * 64,
+    )
+    mismatched["scientific_inputs"]["record"]["model"]["fluid"]["density"] = 60.0
+
+    result = assess_component_loss(
+        candidate,
+        mismatched,
+        equivalent_baseline_confirmed=True,
+    )
+    assert result["compatibility"]["same_provider"] is False
+    assert result["compatibility"]["same_fluid"] is False
+    assert result["compatibility"]["references_matched"] is False
+    assert result["acceptance"]["accepted"] is False
+
+
+def test_component_loss_rejects_wrong_units_and_negative_local_loss():
+    candidate = _component_loss_record(loss_coefficient=0.1)
+    baseline = _component_loss_record(loss_coefficient=0.2, model_sha256="b" * 64)
+    result = assess_component_loss(
+        candidate,
+        baseline,
+        equivalent_baseline_confirmed=True,
+    )
+    assert result["acceptance"]["nonnegative_local_loss"] is False
+    assert result["acceptance"]["accepted"] is False
+
+    candidate["quantities"]["report.system-loss.reference_area"]["unit"] = "cm^2"
+    with pytest.raises(ValueError, match="must use unit 'm\\^2'"):
+        assess_component_loss(
+            candidate,
+            baseline,
+            equivalent_baseline_confirmed=True,
+        )
+
+    candidate = _component_loss_record(loss_coefficient=0.7)
+    candidate["quantities"]["report.system-loss.total_pressure_loss"]["value"] = 1.0
+    inconsistent = assess_component_loss(
+        candidate,
+        baseline,
+        equivalent_baseline_confirmed=True,
+    )
+    assert inconsistent["compatibility"]["coefficients_consistent"] is False
+    assert inconsistent["acceptance"]["accepted"] is False
 
 
 def test_validation_point_combines_declared_uncertainties_transparently():

@@ -123,6 +123,8 @@ agentcfd campaigns . --export-csv design-points.csv   # compact comparison
 agentcfd campaigns . --plot-svg loss-map.svg \
   --x-parameter mean_velocity \
   --y-quantity report.system-loss.loss_coefficient    # accepted operating map
+agentcfd verify component-loss equipment/result.json straight-run/result.json \
+  --confirm-equivalent-baseline --output local-loss.json
 ```
 
 For the first bounded heat-transfer workflow:

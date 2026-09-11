@@ -36,6 +36,33 @@ work acceptable. These rules apply to humans and coding agents.
 9. A documentation record cites the already-tested code SHA and run URL. Never
    create a validation loop in which writing down a green result launches the
    same expensive validation again.
+10. Before pushing, classify the batch as documentation-only, ordinary,
+    platform-sensitive, or release and select exactly the corresponding tier
+    from the trigger map. Do not create empty commits, cosmetic follow-up
+    commits, or partial pushes merely to obtain a new hosted status.
+11. macOS and Windows runners are scarce acceptance resources. They are never
+    part of ordinary push or pull-request validation, even when a public-repo
+    billing plan currently prices those runs at zero to the project.
+12. Treat a hosted failure by cause. Fix and repush a reproducible code failure
+    only after the corrected local gate passes. For billing, quota, unavailable
+    runner, or service-infrastructure failures, make zero rerun attempts until
+    the external state is known to have changed.
+
+## Enforced workflow invariants
+
+`tests/test_ci_resource_policy.py` guards the minimum resource contract:
+
+- the fast workflow has one Ubuntu job, no matrix, documentation path filters,
+  concurrency cancellation, bounded runtime, one build, and one wheel smoke;
+- cross-platform acceptance has no automatic push or pull-request trigger and
+  contains only the approved five-combination manual matrix;
+- release builds the distribution once, retains it briefly, tests that exact
+  artifact on the declared 3 OS × 3 Python matrix, and publishes only after
+  acceptance succeeds.
+
+Workflow changes must pass this guard locally. Weakening the guard or expanding
+a hosted matrix requires explicit human approval and a written reason. A free
+runner allowance changes the bill, not this engineering discipline.
 
 ## Trigger map
 
@@ -49,3 +76,10 @@ work acceptable. These rules apply to humans and coding agents.
 
 The target is a 70–90% reduction in avoidable hosted usage relative to the
 former per-push 3×3 matrix, without weakening release claims.
+
+## Required handoff record
+
+Every pushed feature handoff states: the change classification, local commands
+that passed, the single expected remote workflow, and any remote gate still
+pending or blocked. This keeps scientific and packaging claims auditable without
+manufacturing extra runs solely to document earlier runs.

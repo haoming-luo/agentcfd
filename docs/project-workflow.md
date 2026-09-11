@@ -44,6 +44,9 @@ agentcfd view .
 The interactive run prints changed, bounded progress in the same terminal on
 stderr. The solver stays on the main thread, preserving ordinary Ctrl-C
 behavior. Use `--no-progress` to suppress these lines; `--json` is always quiet.
+After completion, human mode prints no more than four prioritized engineering
+quantities and one state-appropriate next command. The complete result remains
+available through `agentcfd result .` and the unchanged JSON contract.
 
 Before a project exists, `agentcfd templates` is the discovery surface. It
 states provider compatibility, generated versus imported geometry, physics,

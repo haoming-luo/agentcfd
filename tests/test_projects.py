@@ -3030,6 +3030,23 @@ def test_project_cli_init_check_run_and_inspect(tmp_path, capsys):
     assert inspection["run_count"] == 1
 
 
+def test_human_project_run_ends_with_bounded_decision_summary(tmp_path, capsys):
+    root = tmp_path / "human result with spaces"
+    projects.init_project(root)
+
+    assert entrypoint(["run", str(root), "--no-progress"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert "Key results:" in captured.out
+    assert "flow.pressure_drop = 2.56512 Pa" in captured.out
+    assert "flow.mass_flow_rate = 0.0391992 kg/s" in captured.out
+    assert "flow.volumetric_flow_rate = 3.92699e-05 m^3/s" in captured.out
+    assert "flow.darcy_friction_factor = 0.0642436" in captured.out
+    assert f"next: agentcfd view {shlex.quote(str(root))}" in captured.out
+    assert captured.out.count("\n  ") == 4
+
+
 def test_human_project_run_streams_changed_bounded_progress(
     tmp_path, monkeypatch, capsys
 ):
@@ -3085,6 +3102,7 @@ def test_project_run_progress_can_be_machine_quiet(
         assert json.loads(captured.out)["accepted"] is True
     else:
         assert "Project run completed" in captured.out
+        assert "Key results:" in captured.out
 
 
 def test_human_status_parameter_hint_targets_selected_project(tmp_path, capsys):

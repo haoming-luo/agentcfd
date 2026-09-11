@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- End human project runs with a bounded four-quantity engineering summary and
+  one state-appropriate next command, while leaving machine JSON unchanged.
 - Stream changed, bounded project status in the same terminal during human
   `agentcfd run .` calls. The simulation stays on the main thread for normal
   Ctrl-C behavior, while `--json` and the new `--no-progress` mode remain quiet.

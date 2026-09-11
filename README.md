@@ -584,6 +584,8 @@ live disk growth matters enough to justify a recursive scan on every poll.
 Interactive `agentcfd run .` follows the same bounded status contract on stderr
 while the solver remains attached to the main terminal. Use `--no-progress` for
 a quiet human run; `--json` is always quiet so stdout remains one stable object.
+Human runs end with at most four prioritized engineering quantities and exactly
+one next command, avoiding a second discovery step without dumping every field.
 
 Failed runs retain their generated solver workspace automatically, even when
 ordinary successful runs would clean it. `agentcfd status .` then recommends

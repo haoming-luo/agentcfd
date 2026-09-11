@@ -70,6 +70,15 @@ from .verification import (
 
 
 _FOREGROUND_PROGRESS_INTERVAL_SECONDS = 1.0
+_DECISION_QUANTITY_PRIORITY = {
+    "flow.pressure_drop": 0,
+    "flow.mass_flow_rate": 1,
+    "flow.volumetric_flow_rate": 2,
+    "thermal.outlet_bulk_temperature": 3,
+    "thermal.heat_rate": 4,
+    "flow.darcy_friction_factor": 5,
+    "flow.relative_mass_imbalance": 6,
+}
 
 
 def _paraview_executable() -> str | None:
@@ -380,6 +389,34 @@ def _follow_foreground_project_run(
         if summary != previous:
             print(summary, file=sys.stderr, flush=True)
             previous = summary
+
+
+def _project_decision_quantities(
+    result: SimulationResult,
+    *,
+    maximum: int = 4,
+) -> tuple[tuple[str, float, str | None], ...]:
+    """Select a short, deterministic engineering summary for a completed run."""
+
+    candidates = [
+        (name, quantity)
+        for name, quantity in result.quantities.items()
+        if quantity.kind not in {"scientific_input", "runtime_metric", "verification_metric"}
+        and not name.startswith(("reference.", "runtime.", "mesh."))
+    ]
+
+    def priority(item: tuple[str, object]) -> tuple[int, int, str]:
+        name = item[0]
+        return (
+            0 if name.startswith("report.") else 1,
+            _DECISION_QUANTITY_PRIORITY.get(name, len(_DECISION_QUANTITY_PRIORITY)),
+            name,
+        )
+
+    return tuple(
+        (name, quantity.value, quantity.unit)
+        for name, quantity in sorted(candidates, key=priority)[:maximum]
+    )
 
 
 def _field_export_cli_summary(record: dict[str, object]) -> str:
@@ -5060,7 +5097,15 @@ def main(argv: list[str] | None = None) -> int:
                 f"{completed.result.trust_level} | accepted "
                 f"{str(completed.result.accepted).lower()}"
             )
+            quantities = _project_decision_quantities(completed.result)
+            if quantities:
+                print("Key results:")
+                for name, value, unit in quantities:
+                    suffix = "" if unit in {None, "1"} else f" {unit}"
+                    print(f"  {name} = {value:.6g}{suffix}")
             print(completed.directory)
+            operation = "view" if completed.result.accepted else "result"
+            print(f"next: agentcfd {operation} {shlex.quote(str(project.root))}")
         if completed.result.accepted:
             return 0
         return 1 if completed.result.status != "completed" else 3

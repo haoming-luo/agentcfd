@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/geometry-region-normalization.schema.json",
+  "title": "AgentCFD geometry region normalization 0.1",
+  "type": "object",
+  "required": [
+    "schema", "source", "region_count", "changed_count", "regions",
+    "output", "source_modified", "geometry_coordinates_modified", "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.geometry-region-normalization/0.1"},
+    "source": {
+      "type": "object",
+      "required": ["path", "sha256", "bytes", "format", "encoding"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1},
+        "format": {"enum": ["stl", "obj"]},
+        "encoding": {"enum": ["ascii", "text"]}
+      },
+      "additionalProperties": false
+    },
+    "region_count": {"type": "integer", "minimum": 1},
+    "changed_count": {"type": "integer", "minimum": 0},
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["source", "normalized", "changed", "collision_resolved"],
+        "properties": {
+          "source": {"type": "string", "minLength": 1},
+          "normalized": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "changed": {"type": "boolean"},
+          "collision_resolved": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "output": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["path", "sha256", "bytes", "region_names"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+            "bytes": {"type": "integer", "minimum": 1},
+            "region_names": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "source_modified": {"const": false},
+    "geometry_coordinates_modified": {"const": false},
+    "next_action": {
+      "type": "object",
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": {"enum": ["write-normalized-copy", "geometry-check"]},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

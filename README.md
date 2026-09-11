@@ -387,6 +387,8 @@ agentcfd sweep . sweep.json --max-runs 4 # hard pre-execution compute limit
 agentcfd sweep . sweep.json --summary-only # metrics/evidence, no permanent H5
 agentcfd promote . <run-id>      # publish full fields for one screened point
 agentcfd compact . <run-id>      # preview full-field bulk removal; add --apply
+agentcfd geometry-normalize equipment.stl  # preview region-name mapping only
+agentcfd geometry-normalize equipment.stl fluid.stl  # write a new safe copy
 agentcfd geometry-check fluid.stl --unit mm --roles roles.json \
   --internal-flow --output geometry/inspection.json
 agentcfd mesh . --plan-only     # imported-surface cell/refinement/quality budget
@@ -405,6 +407,24 @@ agentcfd storage .               # output/campaign/workspace inventory
 agentcfd clean .                 # safe preview; add --apply to reclaim workspace
 # agentcfd clean . --include-retained --apply  # release expert copies
 ```
+
+CAD exports often contain region names with spaces, punctuation, non-ASCII
+characters, or leading digits. Preview `geometry-normalize` before importing
+such an ASCII STL or OBJ. The operation deterministically converts names to
+OpenFOAM-safe words, adds stable hash suffixes when two names would collide,
+and refuses to overwrite either the source or an existing destination. It does
+not change coordinates or face records. The normalized copy is not approved
+geometry by itself: run `geometry-check` again to confirm units, topology,
+boundary roles, and inlet direction. Binary STL has no dependable named-region
+text and must be re-exported as named ASCII STL or OBJ for this operation.
+
+This boundary follows OpenFOAM's own surface model: a triangulated surface may
+contain several regions that become separate patches, and per-region patch
+configuration is expressed using OpenFOAM `word` values. See the official
+[geometry](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/snappyhexmesh/geometry/),
+[triSurfaceMesh](https://doc.openfoam.com/2306/tools/pre-processing/mesh/generation/snappyhexmesh/triSurfaceMeshes/trisurfacemesh/),
+and [castellation](https://doc.openfoam.com/2606/tools/pre-processing/mesh/generation/snappyhexmesh/castellation/)
+references.
 
 Python and learning tools can open the same verified dataset without importing
 OpenFOAM, AgentFEM, pandas, or NumPy:

@@ -28,6 +28,7 @@ from . import (
 )
 from ._version import __version__
 from .archives import restore_project_archive, verify_project_archive
+from .geometry_io import normalize_geometry_regions, plan_region_normalization
 from .model import Model, Step
 from .interoperability import ScientificDatasetReader, open_scientific_dataset
 from .projects import open_project
@@ -65,11 +66,13 @@ __all__ = [
     "initialization",
     "interoperability",
     "meshing",
+    "normalize_geometry_regions",
     "outputs",
     "open_project",
     "open_scientific_dataset",
     "parameters",
     "postprocessing",
+    "plan_region_normalization",
     "procedures",
     "properties",
     "projects",

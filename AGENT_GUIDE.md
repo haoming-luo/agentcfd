@@ -35,6 +35,11 @@ python -m pytest -q
 8. Prefer the project lifecycle over case-specific CLI commands for new work.
    Query `templates --json` before selecting a starting point; preserve its
    stated required inputs and limitations rather than guessing a nearby model.
+   For imported ASCII STL or OBJ with unsafe region names, call
+   `geometry-normalize SOURCE --json` first to preview the exact mapping. Write
+   only to a new destination, retain the original, then rerun `geometry-check`
+   on the copy and explicitly confirm roles. Normalization changes names only;
+   it never establishes units, topology, role correctness, or mesh readiness.
 9. Preserve XDMF, HDF5, NPZ, manifest, result, and plan as one field bundle;
    never infer physical time or point/cell association from shape alone.
 10. Treat `status.next_action` as the default control loop. Use `check`, `plan`,

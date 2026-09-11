@@ -1678,6 +1678,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     geometry_check.add_argument("--json", action="store_true", dest="as_json")
 
+    geometry_normalize = subparsers.add_parser(
+        "geometry-normalize",
+        help="Preview or write an ASCII STL/OBJ copy with OpenFOAM-safe region names.",
+    )
+    geometry_normalize.add_argument("path", type=Path)
+    geometry_normalize.add_argument(
+        "output",
+        nargs="?",
+        type=Path,
+        help="New geometry path; omit to preview the deterministic name mapping.",
+    )
+    geometry_normalize.add_argument("--json", action="store_true", dest="as_json")
+
     mesh = subparsers.add_parser(
         "mesh",
         help="Plan, prepare, and verify an imported-surface OpenFOAM mesh.",
@@ -3098,6 +3111,26 @@ def main(argv: list[str] | None = None) -> int:
             args.roles is None or report["readiness"]["boundary_roles_ready"]
         )
         return 0 if ready else 3
+    if args.command == "geometry-normalize":
+        if args.output is None:
+            report = geometry_io.plan_region_normalization(args.path)
+        else:
+            _, report = geometry_io.normalize_geometry_regions(args.path, args.output)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            action = "Region normalization plan" if args.output is None else "Normalized geometry"
+            print(
+                f"{action} | {report['source']['format']} | "
+                f"{report['region_count']} regions | {report['changed_count']} changed"
+            )
+            for record in report["regions"]:
+                marker = "collision" if record["collision_resolved"] else "rename"
+                print(f"  {record['source']} -> {record['normalized']} | {marker}")
+            if report["output"] is not None:
+                print(report["output"]["path"])
+            print(f"next: {report['next_action']['reason']}")
+        return 0
     if args.command == "mesh":
         project = projects.Project.discover(args.project)
         step = project.load_step(_project_parameters(args.param, args.param_file))

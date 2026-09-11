@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import shutil
 import struct
-import re
+import tempfile
+import unicodedata
 from pathlib import Path
 from typing import Iterable, Iterator, Mapping
 
@@ -47,10 +49,163 @@ _ROLE_HINTS = {
     "opening": {"opening", "vent"},
     "empty": {"empty", "frontback"},
 }
+_FOAM_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class GeometryInspectionError(ValueError):
     """Raised when an imported geometry cannot be inspected safely."""
+
+
+def _foam_region_base(name: str) -> str:
+    ascii_name = (
+        unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    )
+    normalized = re.sub(r"[^A-Za-z0-9_]+", "_", ascii_name)
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    if not normalized:
+        normalized = "region_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+    if normalized[0].isdigit():
+        normalized = "region_" + normalized
+    return normalized
+
+
+def plan_region_normalization(path: str | Path) -> dict[str, object]:
+    """Plan deterministic OpenFOAM-safe STL/OBJ region names without writing."""
+
+    source = Path(path).expanduser().resolve()
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    suffix = source.suffix.lower()
+    if suffix == ".stl":
+        binary, _ = _binary_stl(source)
+        if binary:
+            raise GeometryInspectionError(
+                "Binary STL does not carry stable named regions; export ASCII STL or OBJ."
+            )
+        encoding = "ascii"
+        regions = _ascii_stl_regions(source)
+        format_name = "stl"
+    elif suffix == ".obj":
+        encoding = "text"
+        _, regions, _ = _obj_metadata(source)
+        format_name = "obj"
+    else:
+        raise GeometryInspectionError(
+            "Region normalization supports ASCII STL and OBJ only."
+        )
+    if not regions:
+        raise GeometryInspectionError(
+            "Geometry has no named regions to normalize; export named surfaces first."
+        )
+    bases = {name: _foam_region_base(name) for name in regions}
+    base_counts = {
+        base: sum(candidate == base for candidate in bases.values())
+        for base in set(bases.values())
+    }
+    normalized = {
+        name: (
+            base
+            if base_counts[base] == 1
+            else base + "_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
+        )
+        for name, base in bases.items()
+    }
+    records = [
+        {
+            "source": name,
+            "normalized": normalized[name],
+            "changed": name != normalized[name],
+            "collision_resolved": base_counts[bases[name]] > 1,
+        }
+        for name in sorted(regions)
+    ]
+    return {
+        "schema": "agentcfd.geometry-region-normalization/0.1",
+        "source": {
+            "path": str(source),
+            "sha256": _sha256(source),
+            "bytes": source.stat().st_size,
+            "format": format_name,
+            "encoding": encoding,
+        },
+        "region_count": len(records),
+        "changed_count": sum(record["changed"] is True for record in records),
+        "regions": records,
+        "output": None,
+        "source_modified": False,
+        "geometry_coordinates_modified": False,
+        "next_action": {
+            "kind": "write-normalized-copy",
+            "reason": "Review the exact region mapping, then choose a new output path.",
+        },
+    }
+
+
+def normalize_geometry_regions(
+    path: str | Path,
+    destination: str | Path,
+) -> tuple[Path, dict[str, object]]:
+    """Write an atomic geometry copy with only named-region tokens changed."""
+
+    report = plan_region_normalization(path)
+    source = Path(str(report["source"]["path"]))
+    target = Path(destination).expanduser().resolve()
+    if target == source:
+        raise GeometryInspectionError("Normalized geometry must use a new output path.")
+    if target.exists():
+        raise FileExistsError(f"Normalized geometry output already exists: {target}")
+    if target.suffix.lower() != source.suffix.lower():
+        raise GeometryInspectionError("Normalized geometry must preserve its file suffix.")
+    mapping = {
+        str(record["source"]): str(record["normalized"])
+        for record in report["regions"]
+    }
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{target.stem}.", suffix=target.suffix, dir=target.parent
+    )
+    try:
+        with source.open("r", encoding="utf-8", newline="") as input_stream, open(
+            descriptor, "w", encoding="utf-8", newline="", closefd=True
+        ) as output_stream:
+            for line in input_stream:
+                if source.suffix.lower() == ".stl":
+                    match = re.match(
+                        r"^(\s*)(solid|endsolid)(?:\s+(.*?))?(\r?\n)?$",
+                        line,
+                        flags=re.IGNORECASE,
+                    )
+                else:
+                    match = re.match(r"^(\s*)([og])(?:\s+(.*?))?(\r?\n)?$", line)
+                if match and match.group(3) in mapping:
+                    newline = match.group(4) or ""
+                    line = f"{match.group(1)}{match.group(2)} {mapping[match.group(3)]}{newline}"
+                output_stream.write(line)
+        temporary = Path(temporary_name)
+        if source.suffix.lower() == ".stl":
+            observed = _ascii_stl_regions(temporary)
+        else:
+            _, observed, _ = _obj_metadata(temporary)
+        if set(observed) != set(mapping.values()):
+            raise GeometryInspectionError(
+                "Normalized geometry region verification disagrees with the plan."
+            )
+        temporary.replace(target)
+    except Exception:
+        Path(temporary_name).unlink(missing_ok=True)
+        raise
+    result = dict(report)
+    result["output"] = {
+        "path": str(target),
+        "sha256": _sha256(target),
+        "bytes": target.stat().st_size,
+        "region_names": list(observed),
+    }
+    result["next_action"] = {
+        "kind": "geometry-check",
+        "reason": "Inspect units, topology, roles, and inlet direction on the normalized copy.",
+    }
+    return target, result
 
 
 def _role_suggestions(regions: tuple[str, ...]) -> dict[str, dict[str, object]]:
@@ -754,6 +909,16 @@ def inspect_geometry(
             "No stable surface region names were discovered.",
             "Export named inlet, outlet, wall, symmetry, and interface regions.",
         )
+    unsafe_regions = sorted(name for name in regions if _FOAM_WORD.fullmatch(name) is None)
+    if unsafe_regions:
+        issue(
+            "BOUNDARY_REGION_NAMES_UNSAFE",
+            "error",
+            "Surface region names are not safe OpenFOAM words: "
+            + ", ".join(unsafe_regions)
+            + ".",
+            "Preview `agentcfd geometry-normalize SOURCE`, then write and inspect a new normalized copy.",
+        )
     if polygon_faces:
         issue(
             "OBJ_POLYGONS_TRIANGULATED",
@@ -1019,5 +1184,7 @@ __all__ = [
     "accept_name_role_suggestions",
     "assess_inlet_velocity_direction",
     "inspect_geometry",
+    "normalize_geometry_regions",
+    "plan_region_normalization",
     "validate_inlet_velocity_direction",
 ]

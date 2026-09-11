@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add preview-first `geometry-normalize` for named ASCII STL and OBJ imports.
+  Unsafe region tokens become deterministic OpenFOAM-safe words, collisions
+  receive stable content-derived suffixes, and an atomic apply always writes a
+  new copy while preserving source bytes, coordinates, and face records. The
+  versioned report directs users and agents back through geometry, unit,
+  topology, boundary-role, and inlet-direction preflight instead of treating
+  name cleanup as mesh approval.
 - Add `Project.actions()` and `agentcfd actions` as a read-only, state-aware
   operation catalog for AI agents and future GUIs. Each exact argv publishes
   availability, recommendation, I/O cost, mutation, solver-start, external-app,

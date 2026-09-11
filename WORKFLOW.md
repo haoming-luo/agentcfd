@@ -72,6 +72,11 @@ disposable project workspace. Parametric and imported geometry both receive a
 content-addressed case and mesh manifest; imported setup can start with
 `init --template imported-internal-flow` so units, roles, interior seed,
 velocity direction, mesh size, and cell budget are explicit before execution.
+If an ASCII STL or OBJ carries names that cannot become stable OpenFOAM region
+identifiers, `geometry-normalize` first publishes a deterministic preview and
+can then write a new name-only copy. The original is never overwritten and the
+copy must pass the ordinary geometry and role preflight; normalization is not
+a mesh-readiness claim.
 AgentCFD invokes the declared local/container runtime, recovers conservation,
 mesh, convergence, and output evidence, and publishes XDMF/H5 only through the
 same acceptance workflow. A zero solver exit never becomes acceptance by

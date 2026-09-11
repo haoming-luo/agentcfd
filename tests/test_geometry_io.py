@@ -43,6 +43,128 @@ def _named_tetra_stl():
     )
 
 
+def test_geometry_region_normalization_is_previewed_atomic_and_verified(
+    tmp_path, capsys
+):
+    source = tmp_path / "equipment.stl"
+    source_text = "".join(
+        (
+            _ascii_stl(
+                "inlet-main",
+                (((0, 0, 0), (0, 1, 0), (0, 0, 1)),),
+            ),
+            _ascii_stl(
+                "inlet main",
+                (((1, 0, 0), (1, 0, 1), (1, 1, 0)),),
+            ),
+            _ascii_stl(
+                "2 outlet face",
+                (((0, 0, 0), (1, 0, 0), (0, 0, 1)),),
+            ),
+        )
+    )
+    source.write_text(source_text, encoding="utf-8")
+
+    blocked = geometry_io.inspect_geometry(
+        source,
+        unit="m",
+        require_watertight=False,
+    )
+    assert blocked["readiness"]["geometry_ready"] is False
+    assert any(
+        issue["code"] == "BOUNDARY_REGION_NAMES_UNSAFE"
+        for issue in blocked["issues"]
+    )
+
+    plan = geometry_io.plan_region_normalization(source)
+    jsonschema.Draft202012Validator(
+        contracts.load("geometry-region-normalization.schema.json")
+    ).validate(plan)
+    mapping = {
+        record["source"]: record["normalized"] for record in plan["regions"]
+    }
+    assert plan["output"] is None
+    assert plan["changed_count"] == 3
+    assert mapping["2 outlet face"].startswith("region_2_outlet_face")
+    assert mapping["inlet-main"] != mapping["inlet main"]
+    assert all(
+        record["collision_resolved"]
+        for record in plan["regions"]
+        if record["source"] in {"inlet-main", "inlet main"}
+    )
+
+    output, report = geometry_io.normalize_geometry_regions(
+        source, tmp_path / "equipment-normalized.stl"
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("geometry-region-normalization.schema.json")
+    ).validate(report)
+    assert source.read_text(encoding="utf-8") == source_text
+    assert report["source_modified"] is False
+    assert report["geometry_coordinates_modified"] is False
+    assert set(report["output"]["region_names"]) == set(mapping.values())
+    source_vertices = [
+        line.strip() for line in source_text.splitlines() if "vertex" in line
+    ]
+    output_vertices = [
+        line.strip() for line in output.read_text().splitlines() if "vertex" in line
+    ]
+    assert output_vertices == source_vertices
+    inspected = geometry_io.inspect_geometry(
+        output,
+        unit="m",
+        require_watertight=False,
+    )
+    assert inspected["readiness"]["geometry_ready"] is True
+    assert set(inspected["surface"]["region_names"]) == set(mapping.values())
+
+    assert entrypoint(["geometry-normalize", str(source), "--json"]) == 0
+    cli_plan = json.loads(capsys.readouterr().out)
+    assert cli_plan["regions"] == plan["regions"]
+    cli_output = tmp_path / "cli-normalized.stl"
+    assert (
+        entrypoint(
+            ["geometry-normalize", str(source), str(cli_output), "--json"]
+        )
+        == 0
+    )
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["output"]["path"] == str(cli_output)
+    assert "geometry-region-normalization.schema.json" in contracts.available()
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        geometry_io.normalize_geometry_regions(source, output)
+    with pytest.raises(geometry_io.GeometryInspectionError, match="new output path"):
+        geometry_io.normalize_geometry_regions(source, source)
+
+
+def test_obj_region_normalization_preserves_geometry_records(tmp_path):
+    source = tmp_path / "duct.obj"
+    source.write_text(
+        "o supply-air\n"
+        "v 0 0 0\n"
+        "v 0 1 0\n"
+        "v 0 0 1\n"
+        "f 1 2 3\n"
+        "g return air\n"
+        "f 1 3 2\n",
+        encoding="utf-8",
+    )
+    output, report = geometry_io.normalize_geometry_regions(
+        source, tmp_path / "duct-normalized.obj"
+    )
+
+    assert {record["normalized"] for record in report["regions"]} == {
+        "return_air",
+        "supply_air",
+    }
+    lines = output.read_text(encoding="utf-8").splitlines()
+    assert "o supply_air" in lines
+    assert "g return_air" in lines
+    assert lines.count("f 1 2 3") == 1
+    assert lines.count("f 1 3 2") == 1
+
+
 def test_closed_ascii_stl_reports_si_bounds_topology_and_volume(tmp_path, capsys):
     a = (0.0, 0.0, 0.0)
     b = (1.0, 0.0, 0.0)

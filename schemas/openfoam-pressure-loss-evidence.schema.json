@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-pressure-loss-evidence.schema.json",
+  "title": "AgentCFD OpenFOAM pressure-loss report evidence 0.1",
+  "type": "object",
+  "required": [
+    "schema", "runtime", "case", "source_sha256", "model_sha256",
+    "analysis_sha256", "solver_iterations", "mesh_sha256", "flow",
+    "pressure_loss_report", "portable_fields", "accepted", "trust_level",
+    "claim"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-pressure-loss-evidence/0.1"},
+    "runtime": {"type": "string", "minLength": 1},
+    "case": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "solver_iterations": {"type": "integer", "minimum": 1},
+    "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "flow": {
+      "type": "object",
+      "required": ["relative_mass_imbalance", "static_pressure_drop_pa"],
+      "properties": {
+        "relative_mass_imbalance": {"type": "number", "minimum": 0},
+        "static_pressure_drop_pa": {"type": "number"}
+      },
+      "additionalProperties": false
+    },
+    "pressure_loss_report": {
+      "type": "object",
+      "required": [
+        "averaging", "inlet_total_pressure_pa", "outlet_total_pressure_pa",
+        "total_pressure_loss_pa", "reference_area_m2",
+        "reference_bulk_velocity_m_s", "reference_dynamic_pressure_pa",
+        "loss_coefficient"
+      ],
+      "properties": {
+        "averaging": {"const": "mass-flow"},
+        "inlet_total_pressure_pa": {"type": "number"},
+        "outlet_total_pressure_pa": {"type": "number"},
+        "total_pressure_loss_pa": {"type": "number", "minimum": 0},
+        "reference_area_m2": {"type": "number", "exclusiveMinimum": 0},
+        "reference_bulk_velocity_m_s": {"type": "number", "exclusiveMinimum": 0},
+        "reference_dynamic_pressure_pa": {"type": "number", "exclusiveMinimum": 0},
+        "loss_coefficient": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "portable_fields": {
+      "type": "object",
+      "required": ["formats", "frames", "field_count", "bytes"],
+      "properties": {
+        "formats": {
+          "type": "array",
+          "prefixItems": [{"const": "xdmf"}, {"const": "hdf5"}],
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "frames": {"const": 1},
+        "field_count": {"const": 2},
+        "bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "accepted": {"const": true},
+    "trust_level": {"const": "verified"},
+    "claim": {"const": "workflow-and-numerical-gates-not-component-validation"}
+  },
+  "additionalProperties": false
+}

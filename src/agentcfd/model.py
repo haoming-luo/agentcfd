@@ -366,6 +366,8 @@ class Step:
             names = (
                 (report.region,)
                 if isinstance(report, output_types.SurfaceReport)
+                else (report.inlet, report.outlet)
+                if isinstance(report, output_types.PressureLossReport)
                 else report.regions
             )
             unknown = sorted(set(names) - regions.keys())

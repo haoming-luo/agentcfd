@@ -47,9 +47,9 @@ from .openfoam import (
 from .openfoam_reports import (
     REPORT_OPERATIONS,
     RESERVED_REPORT_NAMES,
-    foam_name,
     recover_reports,
     render_report_functions,
+    report_function_names,
     report_recovered,
 )
 
@@ -1268,7 +1268,11 @@ class OpenFOAMImportedProvider:
                 "Imported flow received fields or histories outside its declared "
                 "laminar/RANS output contract."
             )
-        lowered_report_names = [foam_name(report.name) for report in step.output.reports]
+        lowered_report_names = [
+            name
+            for report in step.output.reports
+            for name in report_function_names(report)
+        ]
         if (
             len(set(lowered_report_names)) != len(lowered_report_names)
             or set(lowered_report_names) & RESERVED_REPORT_NAMES
@@ -1307,6 +1311,20 @@ class OpenFOAMImportedProvider:
                 if report.operation not in REPORT_OPERATIONS:
                     raise UnsupportedCaseError(
                         f"Surface report {report.name!r} requests an unsupported operation."
+                    )
+            elif isinstance(report, outputs.PressureLossReport):
+                unknown = {report.inlet, report.outlet} - set(domain.surface_names)
+                if unknown:
+                    raise UnsupportedCaseError(
+                        f"Pressure-loss report {report.name!r} references unknown regions."
+                    )
+                if (
+                    roles.get(report.inlet) != "inlet"
+                    or roles.get(report.outlet) != "outlet"
+                ):
+                    raise UnsupportedCaseError(
+                        f"Pressure-loss report {report.name!r} requires inlet-role and "
+                        "outlet-role surfaces."
                     )
             elif isinstance(report, outputs.ForceReport):
                 unknown = set(report.regions) - set(domain.surface_names)

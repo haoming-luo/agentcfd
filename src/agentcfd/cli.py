@@ -310,6 +310,8 @@ def _result_quantity_group(name: str, quantity: dict[str, object]) -> str:
 
     if name.startswith("thermal."):
         return "Thermal results"
+    if name.startswith(("report.", "probe.")):
+        return "Engineering reports"
     kind = quantity.get("kind")
     if kind == "scientific_input" or name.startswith("reference."):
         return "Inputs"
@@ -3124,6 +3126,7 @@ def main(argv: list[str] | None = None) -> int:
                 group = _result_quantity_group(name, quantity)
                 grouped.setdefault(group, []).append((name, quantity))
             for group in (
+                "Engineering reports",
                 "Flow results",
                 "Thermal results",
                 "Inputs",

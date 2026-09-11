@@ -1,9 +1,9 @@
-"""Imported closed duct: mesh workflow example, not yet a flow-solver claim."""
+"""Imported closed duct with compact engineering decision outputs."""
 
 import json
 from pathlib import Path
 
-from agentcfd import Model, boundaries, fluids, geometry, meshing, studies
+from agentcfd import Model, boundaries, fluids, geometry, meshing, outputs, studies
 
 
 def build(*, base_size=0.05):
@@ -33,5 +33,12 @@ def build(*, base_size=0.05):
             base_size=base_size,
             local_sizing=(meshing.refine("inlet", "outlet", size=base_size / 2),),
             maximum_cells=200_000,
-        )
+        ),
+        output=outputs.standard(
+            reports=(
+                outputs.pressure_loss(
+                    "system-loss", inlet="inlet", outlet="outlet"
+                ),
+            )
+        ),
     )

@@ -35,15 +35,23 @@ model.
     `project-creation-request.schema.json` plus `init --request`; treat that JSON
     as an ephemeral creation envelope and `case.py` as the continuing source of
     truth.
+14. Keep the generated `outputs.pressure_loss("system-loss", ...)` report for
+    one-inlet/one-outlet component studies. Rank designs from compact
+    `report.system-loss.loss_coefficient` values through `result` or campaign
+    tables; do not open XDMF/H5 for a scalar decision and do not call the value
+    a fitting-only K unless a straight-run baseline was explicitly removed.
 
 ## Current capability boundary
 
 The released in-process scientific path is the steady incompressible Newtonian
 laminar circular-pipe reference workflow. The external OpenCFD v2606 provider
 also has experimental, evidence-gated laminar and smooth-pipe RANS slices.
-Its released imported-volume slice is steady, incompressible, isothermal, and
-laminar with exactly one vector-velocity inlet and one pressure outlet; reject
-requests outside that boundary instead of editing generated dictionaries.
+Its released imported-volume slices are steady, incompressible, and isothermal,
+with exactly one inlet and one pressure outlet. Laminar flow accepts an explicit
+Cartesian velocity, constant-density mass flow, or total gauge pressure; the
+experimental k-omega SST slice requires Cartesian velocity, intensity, length
+scale, and blended wall treatment. Reject requests outside those boundaries
+instead of editing generated dictionaries.
 
 For turbulent fully developed inlet evidence:
 

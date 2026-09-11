@@ -8,7 +8,15 @@ import zipfile
 
 import pytest
 
-from agentcfd import Artifact, Check, SimulationResult, fluids, initialization, procedures
+from agentcfd import (
+    Artifact,
+    Check,
+    SimulationResult,
+    fluids,
+    initialization,
+    outputs,
+    procedures,
+)
 from agentcfd.errors import CaseIntegrityError, UnsupportedCaseError
 from agentcfd.projects import Project
 from agentcfd.providers.openfoam_channel import (
@@ -86,6 +94,29 @@ def test_channel_report_names_are_lowered_without_leaking_backend_constraints(tm
     assert "near_wake" in control
     assert "outlet_pressure" in control
     assert "baffle_drag" in control
+
+
+def test_channel_accepts_shared_pressure_loss_report(tmp_path):
+    step = Project(EXAMPLE).load_step()
+    step = replace(
+        step,
+        output=replace(
+            step.output,
+            reports=(
+                *step.output.reports,
+                outputs.pressure_loss(
+                    "channel-loss", inlet="inlet", outlet="outlet"
+                ),
+            ),
+        ),
+    )
+
+    OpenFOAMChannelProvider(case_directory=tmp_path).prepare(step)
+    control = (tmp_path / "system" / "controlDict").read_text()
+
+    assert "agentcfd_total_pressure" in control
+    assert "agentcfd_loss_channel_loss_inlet" in control
+    assert "agentcfd_loss_channel_loss_outlet" in control
 
 
 def test_channel_provider_recovers_compact_reports_with_si_units(tmp_path):

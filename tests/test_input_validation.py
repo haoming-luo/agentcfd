@@ -163,6 +163,32 @@ def test_turbulent_output_request_tracks_model_specific_dissipation_field():
         outputs.turbulent_internal_flow(turbulence_model="invented")
 
 
+def test_pressure_loss_report_is_explicit_and_runtime_validated():
+    report = outputs.pressure_loss(
+        "elbow-loss",
+        inlet="inlet",
+        outlet="outlet",
+        reference_area=0.01,
+        every=5,
+    )
+
+    assert report.to_dict() == {
+        "type": "pressure-loss-report",
+        "name": "elbow-loss",
+        "inlet": "inlet",
+        "outlet": "outlet",
+        "reference_area": 0.01,
+        "averaging": "mass-flow",
+        "every": 5,
+    }
+    with pytest.raises(ValueError, match="must be different"):
+        outputs.pressure_loss("bad", inlet="port", outlet="port")
+    with pytest.raises(ValueError, match="reference area"):
+        outputs.pressure_loss(
+            "bad-area", inlet="inlet", outlet="outlet", reference_area=0.0
+        )
+
+
 def test_energy_intent_requires_complete_properties_boundaries_and_output():
     domain = geometry.circular_pipe(length=1.0, diameter=0.1)
     incomplete_fluid = fluids.newtonian(

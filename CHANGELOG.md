@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `outputs.pressure_loss()` for compact mass-flow-averaged total-pressure
+  loss and inlet-bulk loss coefficient reporting across imported and baffled
+  internal-flow providers. Generated imported projects enable it by default;
+  the derived total-pressure field is not retained, human results group the
+  scalars as engineering reports, and OpenCFD v2606 integration evidence keeps
+  static pressure drop distinct from irreversible total-pressure loss.
 - Add `outputs.render_layout()` and `agentcfd view --layout` for reproducible
   multi-panel ParaView overviews that read one XDMF/H5 payload. Slice recipes
   can now select explicit Cartesian, magnitude, plane-normal, or tangential

@@ -28,6 +28,7 @@ RESERVED_REPORT_NAMES = {
     "agentcfd_inlet_pressure",
     "agentcfd_outlet_pressure",
     "agentcfd_vorticity",
+    "agentcfd_total_pressure",
 }
 
 
@@ -46,6 +47,18 @@ def _foam_scalar(value: float) -> str:
     return f"{value:.17g}"
 
 
+def report_function_names(report: outputs.Report) -> tuple[str, ...]:
+    """Return every OpenFOAM function-object name owned by a public report."""
+
+    if isinstance(report, outputs.PressureLossReport):
+        stem = foam_name(report.name)
+        return (
+            f"agentcfd_loss_{stem}_inlet",
+            f"agentcfd_loss_{stem}_outlet",
+        )
+    return (foam_name(report.name),)
+
+
 def render_report_functions(step, *, include_vorticity: bool = False) -> str:
     """Render validated compact reports without retaining volume fields."""
 
@@ -60,6 +73,29 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
         executeInterval 1;
         writeControl outputTime;
     }
+""")
+    pressure_loss_reports = tuple(
+        report
+        for report in step.output.reports
+        if isinstance(report, outputs.PressureLossReport)
+    )
+    if pressure_loss_reports:
+        definitions.append(f"""
+    agentcfd_total_pressure
+    {{
+        type pressure;
+        libs (fieldFunctionObjects);
+        mode total;
+        p p;
+        U U;
+        rho rhoInf;
+        rhoInf {_foam_scalar(step.model.fluid.density)};
+        pRef 0;
+        result agentcfd_total_pressure;
+        executeControl timeStep;
+        executeInterval 1;
+        writeControl none;
+    }}
 """)
     for report in step.output.reports:
         if isinstance(report, outputs.PointProbe):
@@ -91,6 +127,30 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
         name {report.region};
         operation {REPORT_OPERATIONS[report.operation]};
         fields ({FIELD_NAMES[report.field]});
+        writeFields false;
+        executeControl timeStep;
+        executeInterval {report.every};
+        writeControl timeStep;
+        writeInterval {report.every};
+    }}
+""")
+        elif isinstance(report, outputs.PressureLossReport):
+            inlet_function, outlet_function = report_function_names(report)
+            for function_name, region in (
+                (inlet_function, report.inlet),
+                (outlet_function, report.outlet),
+            ):
+                definitions.append(f"""
+    {function_name}
+    {{
+        type surfaceFieldValue;
+        libs (fieldFunctionObjects);
+        regionType patch;
+        name {region};
+        operation weightedAverage;
+        weightField phi;
+        fields (agentcfd_total_pressure);
+        writeArea true;
         writeFields false;
         executeControl timeStep;
         executeInterval {report.every};
@@ -161,6 +221,61 @@ def read_segmented_rows(root: Path, filename: str) -> list[tuple[float, ...]]:
     return [by_time[time_value] for time_value in sorted(by_time)]
 
 
+def read_surface_area(
+    root: Path, filename: str = "surfaceFieldValue.dat"
+) -> float | None:
+    """Recover the constant patch area recorded in a surface report header."""
+
+    if not root.is_dir():
+        return None
+    candidates: list[tuple[float, Path]] = []
+    for path in root.glob(f"*/{filename}"):
+        try:
+            segment_start = float(path.parent.name)
+        except ValueError:
+            continue
+        candidates.append((segment_start, path))
+    for _, path in sorted(candidates, reverse=True):
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            match = re.match(
+                r"^\s*#\s*Area\s*:\s*([0-9.eE+-]+)\s*$",
+                line,
+                flags=re.IGNORECASE,
+            )
+            if match is None:
+                continue
+            try:
+                area = float(match.group(1))
+            except ValueError:
+                continue
+            if math.isfinite(area) and area > 0.0:
+                return area
+    return None
+
+
+def _store_scalar_history(
+    name: str,
+    samples: list[tuple[float, float]],
+    *,
+    unit: str,
+    quantities: dict[str, Quantity],
+    histories: dict[str, History],
+    coordinate: dict[str, str],
+    description: str,
+) -> None:
+    if not samples:
+        return
+    values = tuple(value for _, value in samples)
+    histories[name] = History(
+        tuple(time_value for time_value, _ in samples),
+        values,
+        unit=unit,
+        description=description,
+        **coordinate,
+    )
+    quantities[name] = Quantity(values[-1], unit, description=description)
+
+
 def recover_reports(
     step,
     case: Path,
@@ -180,6 +295,7 @@ def recover_reports(
     for report in step.output.reports:
         function_name = foam_name(report.name)
         root = case / "postProcessing" / function_name
+        artifact_roots = (root,)
         if isinstance(report, outputs.SurfaceReport):
             rows = read_segmented_rows(root, "surfaceFieldValue.dat")
             selected = [(row[0], row[1]) for row in rows if len(row) >= 2]
@@ -205,6 +321,105 @@ def recover_reports(
                     **coordinate,
                 )
                 quantities[name] = Quantity(values[-1], unit)
+        elif isinstance(report, outputs.PressureLossReport):
+            inlet_function, outlet_function = report_function_names(report)
+            inlet_root = case / "postProcessing" / inlet_function
+            outlet_root = case / "postProcessing" / outlet_function
+            artifact_roots = (inlet_root, outlet_root)
+            inlet_rows = read_segmented_rows(inlet_root, "surfaceFieldValue.dat")
+            outlet_rows = read_segmented_rows(outlet_root, "surfaceFieldValue.dat")
+            flow_rows = read_segmented_rows(
+                case / "postProcessing" / "agentcfd_inlet_flow",
+                "surfaceFieldValue.dat",
+            )
+            # ``writeArea true`` inserts Area between Time and the reduced field.
+            # The final column also supports runtimes that keep area in the header.
+            inlet_values = {row[0]: row[-1] for row in inlet_rows if len(row) >= 2}
+            outlet_values = {
+                row[0]: row[-1] for row in outlet_rows if len(row) >= 2
+            }
+            flow_values = {row[0]: row[1] for row in flow_rows if len(row) >= 2}
+            shared = sorted(set(inlet_values) & set(outlet_values) & set(flow_values))
+            area = report.reference_area or read_surface_area(inlet_root)
+            prefix = f"report.{report.name}"
+            if shared and area is not None:
+                inlet_total = [(time, inlet_values[time]) for time in shared]
+                outlet_total = [(time, outlet_values[time]) for time in shared]
+                losses = [
+                    (time, inlet_values[time] - outlet_values[time])
+                    for time in shared
+                ]
+                velocities = [
+                    (time, abs(flow_values[time]) / area) for time in shared
+                ]
+                dynamic_pressures = [
+                    (time, 0.5 * density * velocity**2)
+                    for time, velocity in velocities
+                ]
+                coefficients = [
+                    (time, loss / dynamic_pressure)
+                    for (time, loss), (_, dynamic_pressure) in zip(
+                        losses, dynamic_pressures
+                    )
+                    if dynamic_pressure > 0.0
+                ]
+                for suffix, samples, unit, description in (
+                    (
+                        "inlet_total_pressure",
+                        inlet_total,
+                        "Pa",
+                        "Mass-flow-averaged physical total pressure at the inlet.",
+                    ),
+                    (
+                        "outlet_total_pressure",
+                        outlet_total,
+                        "Pa",
+                        "Mass-flow-averaged physical total pressure at the outlet.",
+                    ),
+                    (
+                        "total_pressure_loss",
+                        losses,
+                        "Pa",
+                        "Inlet minus outlet mass-flow-averaged total pressure.",
+                    ),
+                    (
+                        "reference_bulk_velocity",
+                        velocities,
+                        "m/s",
+                        "Actual inlet volume flow divided by the reference area.",
+                    ),
+                    (
+                        "reference_dynamic_pressure",
+                        dynamic_pressures,
+                        "Pa",
+                        "Dynamic pressure from fluid density and inlet bulk velocity.",
+                    ),
+                    (
+                        "loss_coefficient",
+                        coefficients,
+                        "1",
+                        "Total-pressure loss divided by inlet reference dynamic pressure.",
+                    ),
+                ):
+                    _store_scalar_history(
+                        f"{prefix}.{suffix}",
+                        samples,
+                        unit=unit,
+                        quantities=quantities,
+                        histories=histories,
+                        coordinate=coordinate,
+                        description=description,
+                    )
+                quantities[f"{prefix}.reference_area"] = Quantity(
+                    area,
+                    "m^2",
+                    kind="scientific_input" if report.reference_area else "diagnostic",
+                    description=(
+                        "Explicit loss-coefficient reference area."
+                        if report.reference_area
+                        else "Inlet patch area recovered from the OpenFOAM report."
+                    ),
+                )
         elif isinstance(report, outputs.PointProbe):
             for field_name in report.fields:
                 rows = read_segmented_rows(root, FIELD_NAMES[field_name])
@@ -266,12 +481,14 @@ def recover_reports(
                     **coordinate,
                 )
                 quantities[name] = Quantity(selected[-1][1], "N")
-        if root.is_dir():
-            for path in sorted(root.rglob("*")):
+        for artifact_root in artifact_roots:
+            if not artifact_root.is_dir():
+                continue
+            for path in sorted(artifact_root.rglob("*")):
                 if path.is_file():
-                    relative = path.relative_to(root).as_posix()
+                    relative = path.relative_to(artifact_root).as_posix()
                     artifact_name = foam_name(
-                        f"report_{function_name}_{relative.replace('/', '_')}"
+                        f"report_{artifact_root.name}_{relative.replace('/', '_')}"
                     )
                     artifacts[artifact_name] = Artifact.from_path(
                         path,
@@ -286,6 +503,8 @@ def report_recovered(report, histories: dict[str, History]) -> bool:
             any(name.startswith(f"probe.{report.name}.{field}.") for name in histories)
             for field in report.fields
         )
+    if isinstance(report, outputs.PressureLossReport):
+        return f"report.{report.name}.loss_coefficient" in histories
     return f"report.{report.name}" in histories
 
 
@@ -295,7 +514,9 @@ __all__ = [
     "RESERVED_REPORT_NAMES",
     "foam_name",
     "read_segmented_rows",
+    "read_surface_area",
     "recover_reports",
     "render_report_functions",
     "report_recovered",
+    "report_function_names",
 ]

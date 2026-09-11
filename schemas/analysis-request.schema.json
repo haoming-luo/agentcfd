@@ -67,7 +67,7 @@
       "type": "object",
       "required": [
         "fields", "histories", "portable_profile", "portable_formats",
-        "frames", "checkpoints", "storage", "reports", "views"
+        "frames", "checkpoints", "storage", "reports", "views", "layouts"
       ],
       "properties": {
         "fields": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
@@ -85,13 +85,88 @@
         "reports": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["type", "name", "every"],
-            "properties": {
-              "type": {"enum": ["point-probe", "surface-report", "force-report"]},
-              "name": {"type": "string", "minLength": 1},
-              "every": {"type": "integer", "minimum": 1}
-            }
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["type", "name", "location", "fields", "every"],
+                "properties": {
+                  "type": {"const": "point-probe"},
+                  "name": {"type": "string", "minLength": 1},
+                  "location": {"$ref": "#/$defs/vector3"},
+                  "fields": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                    "uniqueItems": true
+                  },
+                  "every": {"type": "integer", "minimum": 1}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": ["type", "name", "region", "field", "operation", "every"],
+                "properties": {
+                  "type": {"const": "surface-report"},
+                  "name": {"type": "string", "minLength": 1},
+                  "region": {"type": "string", "minLength": 1},
+                  "field": {"type": "string", "minLength": 1},
+                  "operation": {
+                    "enum": [
+                      "minimum", "maximum", "area-average", "area-integral",
+                      "mass-flow-average", "flow-rate", "uniformity"
+                    ]
+                  },
+                  "every": {"type": "integer", "minimum": 1}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type", "name", "inlet", "outlet", "reference_area",
+                  "averaging", "every"
+                ],
+                "properties": {
+                  "type": {"const": "pressure-loss-report"},
+                  "name": {"type": "string", "minLength": 1},
+                  "inlet": {"type": "string", "minLength": 1},
+                  "outlet": {"type": "string", "minLength": 1},
+                  "reference_area": {
+                    "type": ["number", "null"],
+                    "exclusiveMinimum": 0
+                  },
+                  "averaging": {"const": "mass-flow"},
+                  "every": {"type": "integer", "minimum": 1}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
+                  "type", "name", "regions", "direction", "center", "every"
+                ],
+                "properties": {
+                  "type": {"const": "force-report"},
+                  "name": {"type": "string", "minLength": 1},
+                  "regions": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                    "uniqueItems": true
+                  },
+                  "direction": {"$ref": "#/$defs/vector3"},
+                  "center": {
+                    "oneOf": [
+                      {"type": "null"},
+                      {"$ref": "#/$defs/vector3"}
+                    ]
+                  },
+                  "every": {"type": "integer", "minimum": 1}
+                },
+                "additionalProperties": false
+              }
+            ]
           }
         },
         "views": {

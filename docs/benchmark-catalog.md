@@ -13,7 +13,7 @@ is not called validated merely because a solver tutorial exists.
 | Benchmark | Laminar cylinder, Re 150 | drag, lift amplitude, Strouhal number | experimental comparison and temporal/spatial studies | planned |
 | Benchmark | FDA benchmark nozzle | pressure, velocity, wall shear | FDA experimental dataset plus spatial/model studies | planned |
 | Component | Conical diffuser | pressure recovery, separation | experimental data and model sensitivity | planned |
-| Component | Bend, tee, and manifold | loss coefficient, branch balance, uniformity | published data plus conservation | planned |
+| Component | Bend, tee, and manifold | total-pressure loss coefficient, branch balance, uniformity | published data plus conservation | report API released; geometries and validation planned |
 | Thermal | Heated pipe / conjugate wall | bulk temperature, Nusselt number, heat balance | analytical correlation and mesh/time studies | planned |
 | Steam | Single-phase steam pipe | pressure and enthalpy loss | property uncertainty plus experiment | planned |
 | Thermal mixing | IAEA tee junction | temperature mean, fluctuations, wall response | IAEA benchmark plus temporal/model studies | planned |

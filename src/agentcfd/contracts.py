@@ -34,6 +34,7 @@ _SCHEMAS = (
     "openfoam-imported-mesh-plan.schema.json",
     "openfoam-imported-mesh-result.schema.json",
     "openfoam-mesh.schema.json",
+    "openfoam-pressure-loss-evidence.schema.json",
     "openfoam-precursor-map.schema.json",
     "openfoam-turbulent-wall-study.schema.json",
     "openfoam-turbulent-wall-function-study.schema.json",

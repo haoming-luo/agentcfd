@@ -4,7 +4,13 @@ import jsonschema
 import pytest
 
 from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing, properties
-from agentcfd.cli import _result_cli_payload, build_parser, entrypoint, main
+from agentcfd.cli import (
+    _result_cli_payload,
+    _result_quantity_group,
+    build_parser,
+    entrypoint,
+    main,
+)
 from agentcfd.providers import OpenFOAMProvider, OpenFOAMTurbulentPrecursorProvider
 
 
@@ -47,6 +53,16 @@ def test_cli_result_payload_exposes_failed_decision_gates_to_agents():
     assert decision["failed_check_count"] == 1
     assert decision["failed_checks"][0]["name"] == "reference-applicability"
     assert "do not promote" in decision["guidance"]
+
+
+def test_cli_groups_compact_reports_as_engineering_results():
+    assert (
+        _result_quantity_group(
+            "report.valve-loss.loss_coefficient",
+            {"kind": "quantity_of_interest"},
+        )
+        == "Engineering reports"
+    )
 
 
 def test_cli_demo_writes_accepted_result(tmp_path, capsys):

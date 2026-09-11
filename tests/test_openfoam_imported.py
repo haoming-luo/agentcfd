@@ -240,6 +240,88 @@ def test_imported_flow_lowers_validated_compact_reports(tmp_path):
     assert "type forces;" in control
 
 
+def test_imported_flow_lowers_total_pressure_loss_report_without_field_frames(tmp_path):
+    payload = b"solid placeholder\nendsolid placeholder\n"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    base = _step(payload)
+    report = outputs.pressure_loss(
+        "valve loss",
+        inlet="inlet",
+        outlet="outlet",
+        every=5,
+    )
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=(report,)),
+    )
+
+    prepared = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    ).prepare(step)
+    control = (prepared.directory / "system/controlDict").read_text()
+
+    assert control.count("type pressure;") == 1
+    assert "mode total;" in control
+    assert "result agentcfd_total_pressure;" in control
+    assert control.count("operation weightedAverage;") == 2
+    assert control.count("weightField phi;") == 2
+    assert control.count("writeArea true;") == 2
+    assert "agentcfd_loss_valve_loss_inlet" in control
+    assert "agentcfd_loss_valve_loss_outlet" in control
+    assert "writeControl none;" in control
+
+
+def test_pressure_loss_report_recovers_compact_engineering_quantities(tmp_path):
+    payload = b"surface"
+    base = _step(payload)
+    report = outputs.pressure_loss(
+        "device-loss",
+        inlet="inlet",
+        outlet="outlet",
+    )
+    step = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(reports=(report,)),
+    )
+    files = {
+        "agentcfd_inlet_flow/0/surfaceFieldValue.dat": "10 -0.002\n20 -0.002\n",
+        "agentcfd_loss_device_loss_inlet/0/surfaceFieldValue.dat": (
+            "# Area : 0.001\n# Time Area weightedAverage(p)\n"
+            "10 0.001 1120\n20 0.001 1110\n"
+        ),
+        "agentcfd_loss_device_loss_outlet/0/surfaceFieldValue.dat": (
+            "# Area : 0.001\n# Time Area weightedAverage(p)\n"
+            "10 0.001 1000\n20 0.001 1010\n"
+        ),
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    quantities, histories, artifacts = {}, {}, {}
+
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    prefix = "report.device-loss"
+    assert quantities[f"{prefix}.total_pressure_loss"].value == pytest.approx(100.0)
+    assert quantities[f"{prefix}.reference_area"].value == pytest.approx(0.001)
+    assert quantities[f"{prefix}.reference_bulk_velocity"].value == pytest.approx(2.0)
+    assert quantities[f"{prefix}.reference_dynamic_pressure"].value == pytest.approx(
+        1996.4
+    )
+    assert quantities[f"{prefix}.loss_coefficient"].value == pytest.approx(
+        100.0 / 1996.4
+    )
+    assert "Total-pressure loss divided" in quantities[
+        f"{prefix}.loss_coefficient"
+    ].description
+    assert histories[f"{prefix}.loss_coefficient"].unit == "1"
+    assert report_recovered(report, histories) is True
+    assert len(artifacts) == 2
+
+
 def test_imported_flow_recovers_reports_with_units_and_total_force(tmp_path):
     payload = b"surface"
     base = _step(payload)
@@ -315,12 +397,41 @@ def test_imported_flow_rejects_unsafe_or_unsupported_report_intent(tmp_path):
             )
         ),
     )
+    reversed_loss = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(
+            reports=(
+                outputs.pressure_loss(
+                    "reversed-loss", inlet="outlet", outlet="inlet"
+                ),
+            )
+        ),
+    )
+    internal_name_collision = base.model.step(
+        mesh=base.mesh,
+        output=outputs.standard(
+            reports=(
+                outputs.pressure_loss(
+                    "device", inlet="inlet", outlet="outlet"
+                ),
+                outputs.surface_report(
+                    "agentcfd-loss-device-inlet",
+                    region="inlet",
+                    field="fluid.pressure",
+                ),
+            )
+        ),
+    )
     provider = OpenFOAMImportedProvider(source=source)
 
     with pytest.raises(UnsupportedCaseError, match="strictly inside"):
         provider.validate(outside)
     with pytest.raises(UnsupportedCaseError, match="scalar pressure"):
         provider.validate(vector_surface)
+    with pytest.raises(UnsupportedCaseError, match="inlet-role"):
+        provider.validate(reversed_loss)
+    with pytest.raises(UnsupportedCaseError, match="names collide"):
+        provider.validate(internal_name_collision)
 
 
 def test_imported_mesh_fails_closed_on_unsupported_or_unsafe_intent(tmp_path):
@@ -460,6 +571,14 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid(monkeypatch):
     jsonschema.Draft202012Validator(
         contracts.load("openfoam-imported-flow-evidence.schema.json")
     ).validate(flow_record)
+    pressure_loss_record = json.loads(
+        (repository / "docs" / "openfoam-v2606-pressure-loss-report.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-pressure-loss-evidence.schema.json")
+    ).validate(pressure_loss_record)
+    assert pressure_loss_record["pressure_loss_report"]["loss_coefficient"] > 0.0
+    assert pressure_loss_record["portable_fields"]["frames"] == 1
     rans_record = json.loads(
         (repository / "docs" / "openfoam-v2606-imported-duct-rans.json").read_text()
     )

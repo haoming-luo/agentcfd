@@ -36,8 +36,8 @@ This follows mature CFD workflow boundaries without copying a backend API:
   trusted previous result;
 - mesh intent separates global size, local refinement, wall layers, and quality
   gates;
-- probes and surface/force reports are compact histories, independent from the
-  much more expensive full-field frame cadence;
+- probes, surface/force reports, and total-pressure-loss reports are compact
+  histories, independent from the much more expensive full-field frame cadence;
 - `outputs.line_profile(...)` samples one declared field on the final portable
   frame and publishes only distance plus that value to CSV; vector fields
   require an explicit Cartesian component or magnitude;
@@ -54,11 +54,13 @@ or explicitly parameterized k-omega SST OpenFOAM execution. `init --request`
 exposes creation as strict JSON for agents and GUIs without replacing the
 generated Python source of truth. The imported provider consumes the same
 point, scalar pressure-surface, and wall-force report objects as the channel
-provider, producing small solver-iteration histories rather than more
-full-field frames. Cartesian RANS inlets carry velocity, turbulence intensity,
-and length scale in one typed boundary object. Laminar imported volumes also
-lower a typed SI mass-flow inlet into a patch-normal constant-density volume
-flow and verify the recovered target.
+provider. It also accepts a pressure-loss report that converts mass-flow-
+averaged total pressure and actual inlet flow into a directly usable loss
+coefficient. All of these produce small solver-iteration histories rather than
+more full-field frames. Cartesian RANS inlets carry velocity, turbulence
+intensity, and length scale in one typed boundary object. Laminar imported
+volumes also lower a typed SI mass-flow inlet into a patch-normal constant-
+density volume flow and verify the recovered target.
 
 ## Output and result ergonomics
 
@@ -74,8 +76,23 @@ reports = (
         field="fluid.pressure",
         operation="area-average",
     ),
+    outputs.pressure_loss(
+        "system-loss",
+        inlet="inlet",
+        outlet="outlet",
+    ),
 )
 ```
+
+`pressure_loss` returns `report.system-loss.total_pressure_loss` in Pa and
+`report.system-loss.loss_coefficient` as a dimensionless scalar, using the
+actual inlet bulk velocity:
+
+`K_loss = (p_t,in - p_t,out) / (0.5 * rho * (Q_in / A_ref)^2)`
+
+It is the complete loss between the selected planes, including distributed
+wall loss. A fitting-only K value requires a declared straight-run baseline
+rather than a hidden correction.
 
 After a run, inspect names without loading heavy files, then request a typed
 record:
@@ -127,8 +144,10 @@ solver's file syntax:
   for explicit k-omega SST and y-plus review requirements;
 - [OpenFOAM pressure-velocity boundary combinations](https://doc.openfoam.com/2606/tools/processing/boundary-conditions/common-combinations/)
   for the volume-flow inlet and static-pressure outlet pairing;
-- [OpenFOAM surfaceFieldValue](https://doc.openfoam.com/2312/tools/post-processing/function-objects/field/surfaceFieldValue/)
-  and [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
-  for area, mass-flow, integral, uniformity, and probe-style reports;
+- [OpenFOAM pressure](https://doc.openfoam.com/2306/tools/post-processing/function-objects/field/pressure/)
+  and [surfaceFieldValue](https://doc.openfoam.com/2312/tools/post-processing/function-objects/field/surfaceFieldValue/)
+  for physical total pressure, mass-flow weighting, area recovery, and compact
+  component-loss reports; [SU2 custom output](https://su2code.github.io/docs_v7/Custom-Output/)
+  informed the solver-neutral report vocabulary;
 - [PyFluent solver settings](https://fluent.docs.pyansys.com/version/stable/user_guide/solver_settings/solver_settings_contents.html)
   for discoverable group and named-object behavior.

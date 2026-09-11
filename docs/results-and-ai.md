@@ -89,6 +89,15 @@ to request only the scalar values needed by a decision. The response states
 that artifact integrity is deferred and provides the exact `verify result`
 command for workflows that require a full byte-level audit.
 
+Industrial component decisions should use compact semantic quantities instead
+of reopening fields. An `outputs.pressure_loss("system-loss", ...)` report
+publishes total-pressure loss, actual inlet bulk velocity and dynamic pressure,
+and `report.system-loss.loss_coefficient`. These names are stable across the
+supported OpenFOAM channel and imported-geometry providers, so an AI workflow
+can rank valve, elbow, or manifold variants through `result` or campaign tables
+without loading XDMF/H5. The value covers the declared inlet-to-outlet system;
+AgentCFD does not silently subtract distributed straight-run friction.
+
 Without `--json`, the same scalar values are grouped as flow results, inputs,
 mesh quality, verification, runtime, and other results. This presentation layer
 does not rename or nest canonical quantities in the machine response; unit `1`

@@ -1,0 +1,33 @@
+{
+  "accepted": true,
+  "analysis_sha256": "79ccfea6fb9c2ff84a36acbfb4dac3ab6b3cb6a578a0d94615de3512d55ef9f9",
+  "case": "examples/imported_duct_mesh with outputs.pressure_loss",
+  "claim": "workflow-and-numerical-gates-not-component-validation",
+  "flow": {
+    "relative_mass_imbalance": 1.799999011565658e-10,
+    "static_pressure_drop_pa": 1.17882659664056
+  },
+  "mesh_sha256": "95c46972dfb7d9c00b1fcd44bdd9b5a9b594a1fe2d6b01ce5ae94d4dcadfd0bb",
+  "model_sha256": "ddb7e815dfe6af17345972a031023c12eec7e3ead837ba22dbe5e5de90f5158f",
+  "portable_fields": {
+    "bytes": 194533,
+    "field_count": 2,
+    "formats": ["xdmf", "hdf5"],
+    "frames": 1
+  },
+  "pressure_loss_report": {
+    "averaging": "mass-flow",
+    "inlet_total_pressure_pa": 125.9538266,
+    "loss_coefficient": 0.0005070772991384512,
+    "outlet_total_pressure_pa": 125.89055603,
+    "reference_area_m2": 0.10000000149,
+    "reference_bulk_velocity_m_s": 0.5,
+    "reference_dynamic_pressure_pa": 124.775,
+    "total_pressure_loss_pa": 0.06327057000000025
+  },
+  "runtime": "OpenCFD v2606",
+  "schema": "agentcfd.openfoam-pressure-loss-evidence/0.1",
+  "solver_iterations": 344,
+  "source_sha256": "sha256:010c8a05cc5d0c16910ea12ef87add15cc81362790a31599411e596aff31c537",
+  "trust_level": "verified"
+}

@@ -115,6 +115,53 @@ class SurfaceReport:
 
 
 @dataclass(frozen=True, slots=True)
+class PressureLossReport:
+    """Report total-pressure loss and its inlet-bulk loss coefficient."""
+
+    name: str
+    inlet: str
+    outlet: str
+    reference_area: float | None = None
+    averaging: str = "mass-flow"
+    every: int = 1
+
+    def __post_init__(self) -> None:
+        for attribute, label in (
+            ("name", "Pressure-loss report name"),
+            ("inlet", "Pressure-loss inlet"),
+            ("outlet", "Pressure-loss outlet"),
+        ):
+            value = getattr(self, attribute)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{label} must be a non-empty string.")
+        if self.inlet == self.outlet:
+            raise ValueError(
+                "Pressure-loss inlet and outlet must be different regions."
+            )
+        if self.reference_area is not None:
+            object.__setattr__(
+                self,
+                "reference_area",
+                positive_float(
+                    self.reference_area,
+                    name="Pressure-loss reference area",
+                ),
+            )
+        if self.averaging != "mass-flow":
+            raise ValueError(
+                "Pressure-loss averaging currently supports only 'mass-flow'."
+            )
+        object.__setattr__(
+            self,
+            "every",
+            integer_at_least(self.every, name="Pressure-loss interval", minimum=1),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {"type": "pressure-loss-report", **asdict(self)}
+
+
+@dataclass(frozen=True, slots=True)
 class ForceReport:
     """Integrate pressure and viscous force over named wall surfaces."""
 
@@ -172,7 +219,7 @@ class ForceReport:
         }
 
 
-Report = PointProbe | SurfaceReport | ForceReport
+Report = PointProbe | SurfaceReport | PressureLossReport | ForceReport
 
 
 def _view_name(value: str) -> str:
@@ -690,7 +737,9 @@ class OutputRequest:
             raise TypeError("Output storage must be an AgentCFD StoragePolicy.")
         selected_reports = tuple(self.reports)
         if any(
-            not isinstance(item, (PointProbe, SurfaceReport, ForceReport))
+            not isinstance(
+                item, (PointProbe, SurfaceReport, PressureLossReport, ForceReport)
+            )
             for item in selected_reports
         ):
             raise TypeError("Output reports must be AgentCFD report definitions.")
@@ -779,6 +828,25 @@ def surface_report(
         region=region,
         field=field,
         operation=operation,
+        every=every,
+    )
+
+
+def pressure_loss(
+    name: str,
+    *,
+    inlet: str,
+    outlet: str,
+    reference_area: float | None = None,
+    every: int = 1,
+) -> PressureLossReport:
+    """Request compact total-pressure loss and inlet-bulk loss coefficient."""
+
+    return PressureLossReport(
+        name=name,
+        inlet=inlet,
+        outlet=outlet,
+        reference_area=reference_area,
         every=every,
     )
 
@@ -1112,6 +1180,7 @@ __all__ = [
     "LineProfile",
     "OutputRequest",
     "PointProbe",
+    "PressureLossReport",
     "RenderLayout",
     "Report",
     "StoragePolicy",
@@ -1128,6 +1197,7 @@ __all__ = [
     "force_report",
     "parse_storage_size",
     "probe",
+    "pressure_loss",
     "render",
     "render_layout",
     "slice_view",

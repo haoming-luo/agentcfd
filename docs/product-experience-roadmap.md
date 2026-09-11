@@ -144,6 +144,7 @@ files stay hidden and reproducible.
    prism layers, automatic y-plus correction, and thermal physics; promote
    RANS only after grid and physical evidence.
 2. Reusable industrial templates for bend, tee, manifold, valve/porous loss,
+   building on the released mass-flow-averaged total-pressure-loss report,
    fan/pump, heated pipe, and buoyant enclosure workflows.
 
 ### Then: scale without scaling attention

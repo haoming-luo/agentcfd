@@ -314,8 +314,18 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
     ).validate(report)
     assert report["template"] == "imported-internal-flow"
     assert report["provider"] == "openfoam"
-    assert projects.Project(root).plan()["readiness"]["provider_compatible"] is True
-    mass_flow_plan = projects.Project(root).plan(
+    project = projects.Project(root)
+    assert project.plan()["readiness"]["provider_compatible"] is True
+    assert project.load_step().output.reports[0].to_dict() == {
+        "type": "pressure-loss-report",
+        "name": "system-loss",
+        "inlet": "inlet",
+        "outlet": "outlet",
+        "reference_area": None,
+        "averaging": "mass-flow",
+        "every": 1,
+    }
+    mass_flow_plan = project.plan(
         parameters={"mass_flow_rate": 49.91}
     )
     assert mass_flow_plan["readiness"]["provider_compatible"] is True
@@ -328,7 +338,7 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         "turbulence_intensity": 0.05,
         "turbulence_length_scale": 0.025,
     }
-    turbulent_plan = projects.Project(root).plan(parameters=turbulent_parameters)
+    turbulent_plan = project.plan(parameters=turbulent_parameters)
     assert turbulent_plan["readiness"]["provider_compatible"] is True
     assert turbulent_plan["decisions"]["required_capability"] == (
         "openfoam.steady-rans-imported-surface"

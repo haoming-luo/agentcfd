@@ -30,5 +30,7 @@ for already well-named surfaces.
 The final command uses the configured OpenCFD v2606 container and accepts only
 an OpenFOAM-native geometry dry-run plus a budget- and quality-compliant
 `checkMesh`. A normal run also gates SIMPLE convergence and conservation, then
-publishes standard XDMF/H5 fields. The generated `mesh-case/` is disposable provider detail and is
+publishes standard XDMF/H5 fields plus the compact
+`report.system-loss.loss_coefficient` and its dimensional total-pressure-loss
+evidence. The generated `mesh-case/` is disposable provider detail and is
 ignored by Git.

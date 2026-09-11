@@ -256,10 +256,26 @@ provide an exact `boundary_roles` object or explicitly set
 fallback wall.
 
 Imported projects use the same compact decision-output API as parametric
-channels. Add `outputs.probe(...)`, a scalar-pressure
-`outputs.surface_report(...)`, or `outputs.force_report(...)` to `case.py` to
-publish small SI histories and final quantities without increasing XDMF/H5
-frame count.
+channels. Their generated `case.py` includes an `outputs.pressure_loss(...)`
+report by default. It publishes mass-flow-averaged inlet/outlet total pressure,
+total-pressure loss, inlet-bulk reference velocity and dynamic pressure, and a
+dimensionless system-loss coefficient. The inlet area is recovered from the
+post-mesh OpenFOAM patch unless `reference_area` is explicit. Add
+`outputs.probe(...)`, a scalar-pressure `outputs.surface_report(...)`, or
+`outputs.force_report(...)` for further engineering decisions. These reports
+are compact histories and do not increase XDMF/H5 frame count or retain the
+derived total-pressure field.
+
+```python
+outputs.pressure_loss("valve-loss", inlet="inlet", outlet="outlet")
+```
+
+The final coefficient is available as
+`report.valve-loss.loss_coefficient`; the corresponding dimensional value is
+`report.valve-loss.total_pressure_loss`. This is the complete loss between the
+declared measurement surfaces. Subtracting a separate straight-run friction
+baseline to claim a fitting-only minor-loss coefficient remains an explicit
+engineering decision.
 
 The same generated project can move from laminar screening to explicit
 k-omega SST without editing provider files. Supply all three RANS assumptions

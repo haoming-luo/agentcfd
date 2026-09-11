@@ -98,6 +98,13 @@ python -m pytest -q
 26. Use `performance --json` only for scheduling and ETA. Its bounded comparable
     runtime history is advisory and must never be treated as convergence,
     accuracy, acceptance, or permission to change the requested model.
+27. For one-inlet/one-outlet imported equipment, preserve the generated
+    `outputs.pressure_loss("system-loss", ...)` report. Use
+    `report.system-loss.loss_coefficient` for compact design comparison and
+    `report.system-loss.total_pressure_loss` for its dimensional value. This is
+    the complete loss between the declared planes; never silently relabel it as
+    a fitting-only K value or subtract straight-run friction without explicit
+    baseline evidence.
 
 ## Current boundary
 

@@ -5517,6 +5517,8 @@ def _imported_internal_flow_template(
     maximum_cells: int,
 ) -> str:
     default_velocity = inlet_velocity_m_s or (0.0, 0.0, 0.0)
+    inlet_name = next(name for name, role in roles.items() if role == "inlet")
+    outlet_name = next(name for name, role in roles.items() if role == "outlet")
     conditions = []
     for name, role in sorted(roles.items()):
         constructor = {
@@ -5651,7 +5653,13 @@ def build(
             inlet_condition = boundaries.pressure_inlet(inlet_total_gauge_pressure)
         else:
             inlet_condition = boundaries.velocity_inlet(velocity)
-        output_request = outputs.standard()
+        output_request = outputs.standard(
+            reports=(
+                outputs.pressure_loss(
+                    "system-loss", inlet={inlet_name!r}, outlet={outlet_name!r}
+                ),
+            ),
+        )
     else:
         if turbulence_model != "k-omega-sst":
             raise ValueError("Imported RANS currently supports k-omega-sst only.")
@@ -5681,6 +5689,11 @@ def build(
         )
         output_request = outputs.turbulent_internal_flow(
             turbulence_model=turbulence_model,
+            reports=(
+                outputs.pressure_loss(
+                    "system-loss", inlet={inlet_name!r}, outlet={outlet_name!r}
+                ),
+            ),
         )
     boundary_conditions = {{
 {boundary_block}

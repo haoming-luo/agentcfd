@@ -43,9 +43,9 @@ from .openfoam_reports import (
     FIELD_NAMES as _FIELD_NAMES,
     REPORT_OPERATIONS as _REPORT_OPERATIONS,
     RESERVED_REPORT_NAMES as _RESERVED_REPORT_NAMES,
-    foam_name as _foam_name,
     recover_reports as _recover_compact_reports,
     render_report_functions,
+    report_function_names as _report_function_names,
     report_recovered as _report_recovered,
 )
 
@@ -870,7 +870,11 @@ class OpenFOAMChannelProvider:
                 + ", ".join((*unsupported_fields, *unsupported_histories))
                 + "."
             )
-        lowered_report_names = [_foam_name(report.name) for report in step.output.reports]
+        lowered_report_names = [
+            name
+            for report in step.output.reports
+            for name in _report_function_names(report)
+        ]
         if (
             len(set(lowered_report_names)) != len(lowered_report_names)
             or set(lowered_report_names) & _RESERVED_REPORT_NAMES
@@ -898,6 +902,12 @@ class OpenFOAMChannelProvider:
                 if report.operation not in _REPORT_OPERATIONS:
                     raise UnsupportedCaseError(
                         f"Surface report {report.name!r} requests an unsupported operation."
+                    )
+            elif isinstance(report, outputs.PressureLossReport):
+                if report.inlet != "inlet" or report.outlet != "outlet":
+                    raise UnsupportedCaseError(
+                        f"Pressure-loss report {report.name!r} must use the channel "
+                        "inlet and outlet surfaces."
                     )
             elif not isinstance(report, outputs.ForceReport):
                 raise UnsupportedCaseError("The channel provider received an unknown report type.")

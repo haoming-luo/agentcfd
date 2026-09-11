@@ -1,0 +1,59 @@
+{
+  "accepted": true,
+  "analysis_sha256": "5408999f7d180cadb46b9ec1dd0a4858dd96d5df74fa014557e3ec911709b7f4",
+  "case": "examples/imported_split_duct_geometry initialized as a summary-only project",
+  "cell_count": 6400,
+  "claim": "workflow-and-runtime-evidence-not-physical-validation",
+  "converged": true,
+  "mesh_sha256": "28b9b36d47f339f4c5026bac4e201b237f35f3abf36d03492b80ce5a923cfd44",
+  "model_sha256": "aa743fc22ed8c9ca05c335dba6f4c0fb12f406f466a21a83f51ade370e620479",
+  "report": {
+    "branches": {
+      "branch_a": {
+        "fraction": 0.500184716807233,
+        "mass_flow_rate_kg_s": 24.964219589813002,
+        "volume_flow_rate_m3_s": 0.025009236215
+      },
+      "branch_b": {
+        "fraction": 0.499815283192767,
+        "mass_flow_rate_kg_s": 24.945781157838802,
+        "volume_flow_rate_m3_s": 0.024990764534
+      }
+    },
+    "coefficient_of_variation": 0.00036943361446592417,
+    "inlet": "inlet",
+    "inlet_volume_flow_rate_m3_s": 0.050000000745,
+    "name": "flow-split",
+    "maximum_fraction_error": 0.00018471680723297634,
+    "outlets": [
+      "branch_a",
+      "branch_b"
+    ],
+    "relative_imbalance": 8.000003317640479e-11,
+    "sample_count": 344,
+    "target_fractions": {
+      "branch_a": 0.5,
+      "branch_b": 0.5
+    },
+    "total_outlet_volume_flow_rate_m3_s": 0.050000000749000004
+  },
+  "requirement": {
+    "limit": 0.001,
+    "name": "flow-split-within-one-tenth-percent",
+    "passed": true,
+    "quantity": "report.flow-split.maximum_fraction_error",
+    "unit": "1"
+  },
+  "runtime": "OpenCFD v2606",
+  "schema": "agentcfd.openfoam-flow-distribution-evidence/0.1",
+  "solver_iterations": 344,
+  "source_sha256": "sha256:2a1c47e277bf4ed8fb4b0a3c4dfc0581b4a3ac19adf33abe68bc58e3cb55d806",
+  "storage": {
+    "all_compact_report_bytes": 37968,
+    "distribution_report_bytes": 37968,
+    "field_bundle_retained": false,
+    "published_output_bytes": 910008,
+    "result_profile": "summary-only"
+  },
+  "trust_level": "verified"
+}

@@ -3429,12 +3429,21 @@ def _control_dict(
     *,
     inlet: str,
     outlet: str,
+    outlets: tuple[str, ...] | None = None,
     turbulent: bool = False,
     thermal: bool = False,
     thermal_diffusivity: float | None = None,
     compress: bool = True,
     extra_functions: str = "",
 ) -> str:
+    selected_outlets = tuple(outlets) if outlets is not None else (outlet,)
+    if not selected_outlets:
+        raise ValueError("OpenFOAM controlDict requires at least one outlet.")
+    outlet_selector = (
+        f"name {selected_outlets[0]};"
+        if len(selected_outlets) == 1
+        else "names (" + " ".join(selected_outlets) + ");"
+    )
     y_plus = """
     agentcfd_y_plus
     {
@@ -3486,7 +3495,7 @@ def _control_dict(
         writeInterval 1;
         writeFields false;
         regionType patch;
-        name {outlet};
+        {outlet_selector}
         operation weightedAverage;
         weightField phi;
         fields (T);
@@ -3529,7 +3538,7 @@ functions
         writeInterval 1;
         writeFields false;
         regionType patch;
-        name {outlet};
+        {outlet_selector}
         operation sum;
         fields (phi);
     }}
@@ -3553,7 +3562,7 @@ functions
         writeInterval 1;
         writeFields false;
         regionType patch;
-        name {outlet};
+        {outlet_selector}
         operation areaAverage;
         fields (p);
     }}

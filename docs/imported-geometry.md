@@ -133,7 +133,8 @@ agentcfd init my-duct --template imported-internal-flow \
 ```
 
 Initialization runs the same bounded inspector before writing, rejects
-unsupported roles or ambiguous inlet/outlet count, and copies the source into
+unsupported roles or any setup without exactly one inlet and at least one
+outlet, and copies the source into
 `geometry/`. It writes a portable `inspection.json`, normalized
 `boundary-roles.json`, and a readable `case.py`; a later change to the original
 external file cannot silently change the project. Exactly one inlet control is
@@ -142,9 +143,13 @@ required: `--inlet-velocity-m-s UX UY UZ`, `--inlet-mass-flow-kg-s KG_S`, or
 constant-density laminar flow. SI mesh size, interior point, and the hard cell
 limit are also required rather than guessed.
 
-The generated output request includes `outputs.pressure_loss("system-loss",
-...)` and `outputs.flow_uniformity("outlet-quality", region=...)`. During the
-solve, AgentCFD derives physical total pressure, mass-flow
+For one outlet, the generated output request includes
+`outputs.pressure_loss("system-loss", ...)` and
+`outputs.flow_uniformity("outlet-quality", region=...)`. With multiple outlets
+it instead adds one `outputs.flow_distribution("flow-split", ...)`. Per-outlet
+loss and uniformity remain explicit opt-ins so a large manifold does not create
+O(N) histories that the current decision does not need. For a pressure-loss
+report, AgentCFD derives physical total pressure during the solve, mass-flow
 averages it at the declared inlet and outlet, recovers the post-mesh inlet area,
 and combines it with actual inlet flow. The compact result therefore contains
 `report.system-loss.total_pressure_loss`,
@@ -154,7 +159,13 @@ adding XDMF/H5 frames. The coefficient covers the full distance between the two
 patches; it must not be presented as a fitting-only K value unless a matching
 straight-run loss has been removed explicitly.
 
-The outlet report adds a vector-velocity uniformity index, signed normal mean
+The flow-split report monitors every declared patch independently and publishes
+branch fractions, mass/volume flows, coefficient of variation, and conservation
+under stable names. Users may add a complete `targets={...}` map and an explicit
+quantity criterion for maximum fraction error; no target or tolerance is
+invented from geometry names.
+
+The flow-uniformity report adds a vector-velocity uniformity index, signed normal mean
 velocity, and actual patch area as compact scalar histories. This makes flow
 distribution available to campaign and AI decisions by default without making
 every candidate retain a heavy field bundle.

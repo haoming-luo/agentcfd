@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 
 from ._validation import finite_float, integer_at_least, positive_float
@@ -190,6 +191,95 @@ class FlowUniformityReport:
 
 
 @dataclass(frozen=True, slots=True)
+class FlowDistributionReport:
+    """Report inlet-to-branch flow allocation without retaining field frames."""
+
+    name: str
+    inlet: str
+    outlets: tuple[str, ...]
+    target_fractions: tuple[tuple[str, float], ...] = ()
+    every: int = 1
+
+    def __post_init__(self) -> None:
+        for attribute, label in (
+            ("name", "Flow-distribution report name"),
+            ("inlet", "Flow-distribution inlet"),
+        ):
+            value = getattr(self, attribute)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{label} must be a non-empty string.")
+        if isinstance(self.outlets, (str, bytes)):
+            raise ValueError(
+                "Flow-distribution outlets must be a sequence of region names."
+            )
+        selected_outlets = _canonical_names(
+            tuple(self.outlets), label="Flow-distribution outlets"
+        )
+        if len(selected_outlets) < 2:
+            raise ValueError("Flow-distribution reports require at least two outlets.")
+        if self.inlet in selected_outlets:
+            raise ValueError("Flow-distribution inlet must not also be an outlet.")
+        object.__setattr__(self, "outlets", selected_outlets)
+
+        selected_targets: list[tuple[str, float]] = []
+        for item in tuple(self.target_fractions):
+            if not isinstance(item, (tuple, list)) or len(item) != 2:
+                raise ValueError(
+                    "Flow-distribution target fractions must contain (outlet, fraction) pairs."
+                )
+            outlet, value = item
+            if not isinstance(outlet, str) or not outlet.strip():
+                raise ValueError(
+                    "Flow-distribution target outlet must be a non-empty string."
+                )
+            selected_targets.append(
+                (
+                    outlet,
+                    positive_float(value, name=f"Target fraction for {outlet!r}"),
+                )
+            )
+        target_names = tuple(name for name, _ in selected_targets)
+        if len(set(target_names)) != len(target_names):
+            raise ValueError("Flow-distribution target outlets must be unique.")
+        if selected_targets and set(target_names) != set(selected_outlets):
+            raise ValueError(
+                "Flow-distribution targets must specify every declared outlet exactly once."
+            )
+        if selected_targets and not math.isclose(
+            sum(value for _, value in selected_targets),
+            1.0,
+            rel_tol=0.0,
+            abs_tol=1.0e-12,
+        ):
+            raise ValueError("Flow-distribution target fractions must sum to one.")
+        target_by_name = dict(selected_targets)
+        object.__setattr__(
+            self,
+            "target_fractions",
+            tuple((name, target_by_name[name]) for name in selected_outlets)
+            if selected_targets
+            else (),
+        )
+        object.__setattr__(
+            self,
+            "every",
+            integer_at_least(
+                self.every, name="Flow-distribution report interval", minimum=1
+            ),
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "type": "flow-distribution-report",
+            "name": self.name,
+            "inlet": self.inlet,
+            "outlets": list(self.outlets),
+            "target_fractions": dict(self.target_fractions),
+            "every": self.every,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ForceReport:
     """Integrate pressure and viscous force over named wall surfaces."""
 
@@ -248,7 +338,12 @@ class ForceReport:
 
 
 Report = (
-    PointProbe | SurfaceReport | PressureLossReport | FlowUniformityReport | ForceReport
+    PointProbe
+    | SurfaceReport
+    | PressureLossReport
+    | FlowUniformityReport
+    | FlowDistributionReport
+    | ForceReport
 )
 
 
@@ -819,6 +914,7 @@ class OutputRequest:
                     SurfaceReport,
                     PressureLossReport,
                     FlowUniformityReport,
+                    FlowDistributionReport,
                     ForceReport,
                 ),
             )
@@ -959,6 +1055,28 @@ def flow_uniformity(
     """Request compact outlet/section velocity distribution metrics."""
 
     return FlowUniformityReport(name=name, region=region, every=every)
+
+
+def flow_distribution(
+    name: str,
+    *,
+    inlet: str,
+    outlets: tuple[str, ...],
+    targets: Mapping[str, float] | None = None,
+    every: int = 1,
+) -> FlowDistributionReport:
+    """Request compact branch flows, fractions, balance, and target errors."""
+
+    if targets is not None and not isinstance(targets, Mapping):
+        raise TypeError("Flow-distribution targets must be a mapping by outlet name.")
+    target_fractions = () if targets is None else tuple(targets.items())
+    return FlowDistributionReport(
+        name=name,
+        inlet=inlet,
+        outlets=outlets,
+        target_fractions=target_fractions,
+        every=every,
+    )
 
 
 def require(
@@ -1316,6 +1434,7 @@ __all__ = [
     "ContourView",
     "FieldFrames",
     "FlowUniformityReport",
+    "FlowDistributionReport",
     "ForceReport",
     "LineProfile",
     "OutputRequest",
@@ -1337,6 +1456,7 @@ __all__ = [
     "contour_view",
     "force_report",
     "flow_uniformity",
+    "flow_distribution",
     "parse_storage_size",
     "probe",
     "pressure_loss",

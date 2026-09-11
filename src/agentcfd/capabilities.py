@@ -67,6 +67,26 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="output.flow-distribution",
+        maturity="experimental",
+        scope=(
+            "Solver-neutral inlet and branch mass/volume flow, outlet fractions, "
+            "coefficient of variation, conservation, and optional target errors as "
+            "compact histories."
+        ),
+        evidence=(
+            "analysis-request schema and public API tests",
+            "deterministic per-port OpenCFD function-object lowering tests",
+            "segmented SI recovery, direction, conservation, and target-error tests",
+            "accepted 6,400-cell two-outlet summary-only OpenCFD v2606 runtime evidence",
+        ),
+        limitations=(
+            "Current runtime lowering is constant-density and requires one inlet plus at least two pressure outlets.",
+            "The checked split outlet is integration evidence; a physical manifold benchmark is pending.",
+            "Target fractions are user engineering intent; AgentCFD does not invent a pass threshold.",
+        ),
+    ),
+    Capability(
         name="workflow.quantity-criteria",
         maturity="experimental",
         scope=(
@@ -167,7 +187,8 @@ _CAPABILITIES = (
             "Steady incompressible isothermal laminar simpleFoam solution on a "
             "content-addressed, role-confirmed imported fluid volume with compact "
             "point, pressure-surface, wall-force, total-pressure-loss coefficient, "
-            "outlet flow-uniformity, and bidirectional flow reports."
+            "outlet flow-uniformity, multi-outlet flow-distribution, and "
+            "bidirectional flow reports."
         ),
         evidence=(
             "explicit Cartesian velocity, constant-density mass flow, or total-pressure inlet lowering tests",
@@ -181,7 +202,7 @@ _CAPABILITIES = (
             "real mass-flow-averaged total-pressure-loss report with post-mesh inlet area",
         ),
         limitations=(
-            "Exactly one velocity, mass-flow, or total-pressure inlet and one static-pressure outlet are supported.",
+            "Exactly one velocity, mass-flow, or total-pressure inlet and one or more static-pressure outlets are supported.",
             "No turbulence, heat, compressibility, reactions, prism layers, or arbitrary vector surface reductions yet.",
             "Acceptance is workflow/numerical evidence and does not claim physical validation.",
         ),

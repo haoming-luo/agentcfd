@@ -36,8 +36,8 @@ This follows mature CFD workflow boundaries without copying a backend API:
   trusted previous result;
 - mesh intent separates global size, local refinement, wall layers, and quality
   gates;
-- probes, surface/force reports, total-pressure-loss reports, and
-  flow-uniformity reports are compact
+- probes, surface/force reports, total-pressure-loss, flow-uniformity, and
+  multi-outlet flow-distribution reports are compact
   histories, independent from the much more expensive full-field frame cadence;
 - `outputs.line_profile(...)` samples one declared field on the final portable
   frame and publishes only distance plus that value to CSV; vector fields
@@ -110,6 +110,27 @@ The uniformity definition is
 It deliberately evaluates the complete velocity vector, so swirl and
 cross-flow reduce the score rather than disappearing behind an axial-only
 average. The normal velocity provides the accompanying direction and scale.
+
+Manifolds and split ducts declare their ports once instead of assembling a
+spreadsheet from unrelated patch reports:
+
+```python
+split = outputs.flow_distribution(
+    "branch-split",
+    inlet="inlet",
+    outlets=("branch_a", "branch_b", "branch_c"),
+    targets={"branch_a": 0.25, "branch_b": 0.25, "branch_c": 0.50},
+)
+```
+
+The result contains positive role-directed volume and constant-density mass
+flow for every port, each outlet fraction, total outlet flow, relative
+inlet/outlet imbalance, outlet-flow coefficient of variation, signed
+actual-minus-target errors, and `report.branch-split.maximum_fraction_error`.
+Target fractions are optional but, when present, must cover every outlet and
+sum to one. A steady final state with inlet or branch reversal fails report
+recovery instead of turning a signed flux into a plausible-looking fraction.
+These are scalar histories only; no extra XDMF/H5 field frame is produced.
 
 Design limits belong in the same readable request rather than in a hidden
 spreadsheet or agent prompt:

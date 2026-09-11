@@ -123,6 +123,11 @@ python -m pytest -q
     exact canonical quantity, unit, and inclusive bound. Never invent a design
     threshold. A failed requirement blocks acceptance but does not erase the
     result's independently established convergence or scientific trust.
+31. For one-inlet/multi-outlet equipment, use one
+    `outputs.flow_distribution(...)` covering every outlet. Preserve signed
+    port direction, complete target fractions, and
+    `report.<name>.maximum_fraction_error`; do not rebuild the split by loading
+    fields or taking absolute values of reversed branches.
 
 ## Current boundary
 

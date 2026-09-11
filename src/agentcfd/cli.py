@@ -332,6 +332,92 @@ def _result_quantity_group(name: str, quantity: dict[str, object]) -> str:
     return "Other results"
 
 
+def _flow_distribution_groups(
+    quantities: dict[str, dict[str, object]],
+) -> dict[str, tuple[str, ...]]:
+    """Discover complete multi-outlet result families from canonical names."""
+
+    groups: dict[str, set[str]] = {}
+    for name in quantities:
+        if (
+            not name.startswith("report.")
+            or not name.endswith(".fraction")
+            or ".outlet." not in name
+        ):
+            continue
+        stem, outlet = name[: -len(".fraction")].split(".outlet.", maxsplit=1)
+        report_name = stem.removeprefix("report.")
+        if report_name and outlet:
+            groups.setdefault(report_name, set()).add(outlet)
+    return {
+        name: tuple(sorted(outlets))
+        for name, outlets in groups.items()
+        if len(outlets) >= 2
+    }
+
+
+def _flow_distribution_lines(
+    report_name: str,
+    outlets: tuple[str, ...],
+    quantities: dict[str, dict[str, object]],
+) -> tuple[str, ...]:
+    """Render one compact human table while leaving machine JSON untouched."""
+
+    prefix = f"report.{report_name}"
+
+    def value(name: str) -> float | None:
+        record = quantities.get(name)
+        raw = None if record is None else record.get("value")
+        return (
+            float(raw)
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool)
+            else None
+        )
+
+    lines = [f"Flow distribution {report_name}:"]
+    inlet_volume = value(f"{prefix}.inlet.volume_flow_rate")
+    inlet_mass = value(f"{prefix}.inlet.mass_flow_rate")
+    if inlet_volume is not None:
+        detail = f"{inlet_volume:.8g} m^3/s"
+        if inlet_mass is not None:
+            detail += f" | {inlet_mass:.8g} kg/s"
+        lines.append(f"  inlet: {detail}")
+    for outlet in outlets:
+        outlet_prefix = f"{prefix}.outlet.{outlet}"
+        fraction = value(f"{outlet_prefix}.fraction")
+        volume = value(f"{outlet_prefix}.volume_flow_rate")
+        mass = value(f"{outlet_prefix}.mass_flow_rate")
+        target = value(f"{outlet_prefix}.target_fraction")
+        error = value(f"{outlet_prefix}.fraction_error")
+        details = []
+        if fraction is not None:
+            details.append(f"{100.0 * fraction:.5g}%")
+        if volume is not None:
+            details.append(f"{volume:.8g} m^3/s")
+        if mass is not None:
+            details.append(f"{mass:.8g} kg/s")
+        if target is not None:
+            details.append(f"target {100.0 * target:.5g}%")
+        if error is not None:
+            details.append(f"error {100.0 * error:+.5g} percentage points")
+        lines.append(f"  {outlet}: " + " | ".join(details))
+    summary = []
+    imbalance = value(f"{prefix}.relative_imbalance")
+    variation = value(f"{prefix}.coefficient_of_variation")
+    maximum_error = value(f"{prefix}.maximum_fraction_error")
+    if imbalance is not None:
+        summary.append(f"imbalance {imbalance:.6g}")
+    if variation is not None:
+        summary.append(f"CoV {variation:.6g}")
+    if maximum_error is not None:
+        summary.append(
+            f"max target error {100.0 * maximum_error:.5g} percentage points"
+        )
+    if summary:
+        lines.append("  summary: " + " | ".join(summary))
+    return tuple(lines)
+
+
 def _error_cli_payload(error: Exception) -> dict[str, object]:
     repairs = {
         FileNotFoundError: "Check the project path or run `agentcfd init` to create one.",
@@ -3205,8 +3291,19 @@ def main(argv: list[str] | None = None) -> int:
                 f"accepted {str(report['accepted']).lower()} | "
                 f"trust {report['trust_level']}"
             )
+            distribution_groups = _flow_distribution_groups(report["quantities"])
+            distribution_prefixes = {
+                f"report.{name}." for name in distribution_groups
+            }
+            for name, outlets in distribution_groups.items():
+                for line in _flow_distribution_lines(
+                    name, outlets, report["quantities"]
+                ):
+                    print(line)
             grouped: dict[str, list[tuple[str, dict[str, object]]]] = {}
             for name, quantity in report["quantities"].items():
+                if any(name.startswith(prefix) for prefix in distribution_prefixes):
+                    continue
                 group = _result_quantity_group(name, quantity)
                 grouped.setdefault(group, []).append((name, quantity))
             for group in (

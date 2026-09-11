@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add solver-neutral `outputs.flow_distribution()` for one-inlet/multi-outlet
+  equipment. One compact request now publishes per-branch volume and mass flow,
+  outlet fractions, coefficient of variation, inlet/outlet imbalance, and
+  optional target-fraction errors. Imported OpenFOAM projects accept multiple
+  static-pressure outlets, generate the report by default, monitor every port,
+  and fail closed if final flow reverses or any branch is omitted.
 - Add provider-neutral `outputs.require()` design criteria over canonical
   scalar results. Inclusive bounds, missing values, and exact-unit mismatches
   become explicit `requirement.*` checks across every numerical provider;

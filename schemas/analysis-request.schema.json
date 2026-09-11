@@ -155,6 +155,32 @@
               {
                 "type": "object",
                 "required": [
+                  "type", "name", "inlet", "outlets", "target_fractions", "every"
+                ],
+                "properties": {
+                  "type": {"const": "flow-distribution-report"},
+                  "name": {"type": "string", "minLength": 1},
+                  "inlet": {"type": "string", "minLength": 1},
+                  "outlets": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 2,
+                    "uniqueItems": true
+                  },
+                  "target_fractions": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "number",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "every": {"type": "integer", "minimum": 1}
+                },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "required": [
                   "type", "name", "regions", "direction", "center", "every"
                 ],
                 "properties": {

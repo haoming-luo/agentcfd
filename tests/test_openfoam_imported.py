@@ -12,6 +12,7 @@ from agentcfd import (
     contracts,
     fluids,
     geometry,
+    geometry_io,
     meshing,
     outputs,
     projects,
@@ -119,6 +120,42 @@ def _pressure_driven_step(payload: bytes):
         walls=boundaries.no_slip_wall(),
     )
     return model.step(mesh=base.mesh, output=base.output)
+
+
+def _multi_outlet_step(payload: bytes, *, include_report: bool = True):
+    base = _step(
+        payload,
+        boundary_roles=(
+            ("inlet", "inlet"),
+            ("branch_a", "outlet"),
+            ("branch_b", "outlet"),
+            ("walls", "wall"),
+        ),
+    )
+    reports = (
+        (
+            outputs.flow_distribution(
+                "branch-split",
+                inlet="inlet",
+                outlets=("branch_a", "branch_b"),
+                targets={"branch_a": 0.25, "branch_b": 0.75},
+            ),
+        )
+        if include_report
+        else ()
+    )
+    model = Model(
+        name="imported-branch-duct",
+        study=studies.internal_flow(),
+        domain=base.model.domain,
+        fluid=base.model.fluid,
+    ).boundaries(
+        inlet=boundaries.velocity_inlet((0.5, 0.0, 0.0)),
+        branch_a=boundaries.pressure_outlet(),
+        branch_b=boundaries.pressure_outlet(),
+        walls=boundaries.no_slip_wall(),
+    )
+    return model.step(mesh=base.mesh, output=outputs.standard(reports=reports))
 
 
 def _imported_project(root, payload):
@@ -301,6 +338,106 @@ def test_imported_flow_lowers_velocity_uniformity_without_field_frames(tmp_path)
     assert "operation areaNormalAverage;" in control
     assert control.count("fields (U);") >= 2
     assert control.count("writeArea true;") >= 2
+
+
+def test_imported_multi_outlet_flow_lowers_aggregate_and_per_port_monitors(tmp_path):
+    payload = b"solid placeholder\nendsolid placeholder\n"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    step = _multi_outlet_step(payload)
+    jsonschema.Draft202012Validator(
+        contracts.load("analysis-request.schema.json")
+    ).validate(step.to_dict())
+
+    prepared = OpenFOAMImportedProvider(
+        source=source,
+        case_directory=tmp_path / "case",
+    ).prepare(step)
+    control = (prepared.directory / "system/controlDict").read_text()
+
+    assert control.count("names (branch_a branch_b);") == 2
+    for region in ("inlet", "branch_a", "branch_b"):
+        assert f"agentcfd_distribution_branch_split_{region}" in control
+        assert f"name {region};" in control
+    assert control.count("fields (phi);") >= 5
+
+
+def test_imported_multi_outlet_requires_a_complete_distribution_report(tmp_path):
+    payload = b"surface"
+    source = tmp_path / "source.stl"
+    source.write_bytes(payload)
+    provider = OpenFOAMImportedProvider(source=source)
+
+    with pytest.raises(UnsupportedCaseError, match="requires outputs.flow_distribution"):
+        provider.validate(_multi_outlet_step(payload, include_report=False))
+
+
+def test_flow_distribution_recovers_compact_branch_metrics_and_targets(tmp_path):
+    step = _multi_outlet_step(b"surface")
+    files = {
+        "agentcfd_distribution_branch_split_inlet/0/surfaceFieldValue.dat": (
+            "10 -0.004\n20 -0.004\n"
+        ),
+        "agentcfd_distribution_branch_split_branch_a/0/surfaceFieldValue.dat": (
+            "10 0.001\n20 0.0012\n"
+        ),
+        "agentcfd_distribution_branch_split_branch_b/0/surfaceFieldValue.dat": (
+            "10 0.003\n20 0.0028\n"
+        ),
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    quantities, histories, artifacts = {}, {}, {}
+
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    prefix = "report.branch-split"
+    assert quantities[f"{prefix}.inlet.volume_flow_rate"].value == pytest.approx(
+        0.004
+    )
+    assert quantities[f"{prefix}.inlet.mass_flow_rate"].value == pytest.approx(
+        3.9928
+    )
+    assert quantities[f"{prefix}.outlet.branch_a.fraction"].value == pytest.approx(
+        0.3
+    )
+    assert quantities[f"{prefix}.outlet.branch_b.fraction"].value == pytest.approx(
+        0.7
+    )
+    assert quantities[f"{prefix}.coefficient_of_variation"].value == pytest.approx(
+        0.4
+    )
+    assert quantities[f"{prefix}.relative_imbalance"].value == pytest.approx(0.0)
+    assert quantities[f"{prefix}.maximum_fraction_error"].value == pytest.approx(
+        0.05
+    )
+    assert quantities[f"{prefix}.outlet.branch_a.target_fraction"].value == 0.25
+    assert quantities[f"{prefix}.outlet.branch_a.fraction_error"].unit == "1"
+    assert report_recovered(step.output.reports[0], histories) is True
+    assert len(artifacts) == 3
+
+
+def test_flow_distribution_rejects_a_final_reversed_branch(tmp_path):
+    step = _multi_outlet_step(b"surface")
+    files = {
+        "agentcfd_distribution_branch_split_inlet/0/surfaceFieldValue.dat": "1 -0.004\n",
+        "agentcfd_distribution_branch_split_branch_a/0/surfaceFieldValue.dat": "1 -0.001\n",
+        "agentcfd_distribution_branch_split_branch_b/0/surfaceFieldValue.dat": "1 0.005\n",
+    }
+    for relative, content in files.items():
+        path = tmp_path / "postProcessing" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    quantities, histories, artifacts = {}, {}, {}
+
+    recover_reports(step, tmp_path, quantities, histories, artifacts)
+
+    assert not quantities
+    assert not histories
+    assert report_recovered(step.output.reports[0], histories) is False
+    assert len(artifacts) == 3
 
 
 def test_pressure_loss_report_recovers_compact_engineering_quantities(tmp_path):
@@ -694,6 +831,30 @@ def test_checked_in_imported_duct_example_and_evidence_are_valid(monkeypatch):
     ).validate(uniformity_record)
     assert uniformity_record["report"]["velocity_uniformity_index"] > 0.0
     assert uniformity_record["storage"]["field_bundle_retained"] is False
+    distribution_record = json.loads(
+        (repository / "docs" / "openfoam-v2606-flow-distribution.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("openfoam-flow-distribution-evidence.schema.json")
+    ).validate(distribution_record)
+    assert distribution_record["report"]["relative_imbalance"] < 1.0e-9
+    assert len(distribution_record["report"]["branches"]) == 2
+    assert distribution_record["storage"]["field_bundle_retained"] is False
+    split_root = repository / "examples" / "imported_split_duct_geometry"
+    split_roles = json.loads((split_root / "boundary-roles.json").read_text())[
+        "regions"
+    ]
+    split_inspection = geometry_io.inspect_geometry(
+        split_root / "fluid.stl",
+        unit="m",
+        boundary_roles=split_roles,
+        internal_flow=True,
+    )
+    assert split_inspection["readiness"]["ready_for_import_setup"] is True
+    assert (
+        split_inspection["source"]["sha256"]
+        == distribution_record["source_sha256"]
+    )
     rans_record = json.loads(
         (repository / "docs" / "openfoam-v2606-imported-duct-rans.json").read_text()
     )

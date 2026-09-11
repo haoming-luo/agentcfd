@@ -5,6 +5,8 @@ import pytest
 
 from agentcfd import Check, Quantity, SimulationResult, benchmarks, capabilities, contracts, licensing, properties
 from agentcfd.cli import (
+    _flow_distribution_groups,
+    _flow_distribution_lines,
     _result_cli_payload,
     _result_quantity_group,
     build_parser,
@@ -66,6 +68,34 @@ def test_cli_groups_compact_reports_as_engineering_results():
         )
         == "Engineering reports"
     )
+
+
+def test_cli_renders_flow_distribution_as_a_compact_human_table():
+    quantities = {
+        "report.split.inlet.volume_flow_rate": {"value": 0.04, "unit": "m^3/s"},
+        "report.split.inlet.mass_flow_rate": {"value": 40.0, "unit": "kg/s"},
+        "report.split.outlet.a.fraction": {"value": 0.3, "unit": "1"},
+        "report.split.outlet.a.volume_flow_rate": {
+            "value": 0.012,
+            "unit": "m^3/s",
+        },
+        "report.split.outlet.b.fraction": {"value": 0.7, "unit": "1"},
+        "report.split.outlet.b.volume_flow_rate": {
+            "value": 0.028,
+            "unit": "m^3/s",
+        },
+        "report.split.relative_imbalance": {"value": 1.0e-10, "unit": "1"},
+        "report.split.coefficient_of_variation": {"value": 0.4, "unit": "1"},
+    }
+
+    groups = _flow_distribution_groups(quantities)
+    lines = _flow_distribution_lines("split", groups["split"], quantities)
+
+    assert groups == {"split": ("a", "b")}
+    assert lines[0] == "Flow distribution split:"
+    assert lines[1] == "  inlet: 0.04 m^3/s | 40 kg/s"
+    assert "a: 30% | 0.012 m^3/s" in lines[2]
+    assert lines[-1] == "  summary: imbalance 1e-10 | CoV 0.4"
 
 
 def test_cli_demo_writes_accepted_result(tmp_path, capsys):

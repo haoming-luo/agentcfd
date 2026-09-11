@@ -1,0 +1,9 @@
+{
+  "schema": "agentcfd.boundary-role-map/0.1",
+  "regions": {
+    "inlet": "inlet",
+    "branch_a": "outlet",
+    "branch_b": "outlet",
+    "walls": "wall"
+  }
+}

@@ -5807,7 +5807,33 @@ def _imported_internal_flow_template(
 ) -> str:
     default_velocity = inlet_velocity_m_s or (0.0, 0.0, 0.0)
     inlet_name = next(name for name, role in roles.items() if role == "inlet")
-    outlet_name = next(name for name, role in roles.items() if role == "outlet")
+    outlet_names = tuple(
+        sorted(name for name, role in roles.items() if role == "outlet")
+    )
+    if len(outlet_names) == 1:
+        report_snippets = (
+            "outputs.pressure_loss(\n"
+            '    "system-loss",\n'
+            f"    inlet={inlet_name!r},\n"
+            f"    outlet={outlet_names[0]!r},\n"
+            "),",
+            "outputs.flow_uniformity(\n"
+            '    "outlet-quality",\n'
+            f"    region={outlet_names[0]!r},\n"
+            "),",
+        )
+    else:
+        report_snippets = (
+            "outputs.flow_distribution(\n"
+            '    "flow-split",\n'
+            f"    inlet={inlet_name!r},\n"
+            f"    outlets={outlet_names!r},\n"
+            "),",
+        )
+    report_block = "\n".join(
+        "                " + snippet.replace("\n", "\n                ")
+        for snippet in report_snippets
+    )
     conditions = []
     for name, role in sorted(roles.items()):
         constructor = {
@@ -5944,12 +5970,7 @@ def build(
             inlet_condition = boundaries.velocity_inlet(velocity)
         output_request = outputs.standard(
             reports=(
-                outputs.pressure_loss(
-                    "system-loss", inlet={inlet_name!r}, outlet={outlet_name!r}
-                ),
-                outputs.flow_uniformity(
-                    "outlet-quality", region={outlet_name!r}
-                ),
+{report_block}
             ),
         )
     else:
@@ -5982,12 +6003,7 @@ def build(
         output_request = outputs.turbulent_internal_flow(
             turbulence_model=turbulence_model,
             reports=(
-                outputs.pressure_loss(
-                    "system-loss", inlet={inlet_name!r}, outlet={outlet_name!r}
-                ),
-                outputs.flow_uniformity(
-                    "outlet-quality", region={outlet_name!r}
-                ),
+{report_block}
             ),
         )
     boundary_conditions = {{
@@ -6395,9 +6411,9 @@ def init_project(
                 + ", ".join(unsupported)
                 + "."
             )
-        if role_values.count("inlet") != 1 or role_values.count("outlet") != 1:
+        if role_values.count("inlet") != 1 or role_values.count("outlet") < 1:
             raise ProjectError(
-                "The released imported internal-flow template requires exactly one inlet and one outlet."
+                "The imported internal-flow template requires exactly one inlet and at least one outlet."
             )
         if selected_velocity is not None:
             geometry_io.validate_inlet_velocity_direction(

@@ -940,7 +940,6 @@ def _imported_turbulence_fields(step: Step) -> dict[str, str]:
     domain = step.model.domain
     assert isinstance(domain, ImportedSurface)
     inlet_name = next(name for name, role in domain.boundary_roles if role == "inlet")
-    outlet_name = next(name for name, role in domain.boundary_roles if role == "outlet")
     inlet = step.model.boundary_conditions[inlet_name]
     assert isinstance(inlet, boundaries.TurbulentVelocityInlet)
     estimate = engineering.turbulence_inlet_from_intensity(
@@ -1026,7 +1025,10 @@ def _write_imported_flow_files(
     domain = step.model.domain
     assert isinstance(domain, ImportedSurface)
     inlet = next(name for name, role in domain.boundary_roles if role == "inlet")
-    outlet = next(name for name, role in domain.boundary_roles if role == "outlet")
+    outlets = tuple(
+        name for name, role in domain.boundary_roles if role == "outlet"
+    )
+    outlet = outlets[0]
     turbulent = not step.model.study.laminar
     flow_capability = _RANS_FLOW_CAPABILITY if turbulent else _FLOW_CAPABILITY
     rendered = {
@@ -1043,6 +1045,7 @@ def _write_imported_flow_files(
             step.procedure.maximum_iterations,
             inlet=inlet,
             outlet=outlet,
+            outlets=outlets,
             turbulent=turbulent,
             compress=True,
             extra_functions=render_report_functions(step),
@@ -1172,9 +1175,9 @@ class OpenFOAMImportedProvider:
         roles = dict(domain.boundary_roles)
         inlet_names = [name for name, role in roles.items() if role == "inlet"]
         outlet_names = [name for name, role in roles.items() if role == "outlet"]
-        if len(inlet_names) != 1 or len(outlet_names) != 1:
+        if len(inlet_names) != 1 or not outlet_names:
             raise UnsupportedCaseError(
-                "First imported flow slice requires exactly one inlet and one outlet."
+                "Imported flow requires exactly one inlet and at least one outlet."
             )
         conditions = step.model.boundary_conditions
         expected_inlet = (
@@ -1209,18 +1212,36 @@ class OpenFOAMImportedProvider:
                 "Imported incompressible isothermal pressure inlet does not accept "
                 "an inlet temperature."
             )
-        if not isinstance(conditions[outlet_names[0]], boundaries.PressureOutlet):
+        invalid_outlets = [
+            name
+            for name in outlet_names
+            if not isinstance(conditions[name], boundaries.PressureOutlet)
+        ]
+        if invalid_outlets:
             raise UnsupportedCaseError(
-                "First imported flow slice requires a pressure_outlet."
+                "Imported flow requires pressure_outlet intent on every outlet: "
+                + ", ".join(invalid_outlets)
+                + "."
             )
         if isinstance(conditions[inlet_names[0]], boundaries.PressureInlet):
             inlet_pressure = conditions[inlet_names[0]].total_gauge_pressure
-            outlet_pressure = conditions[outlet_names[0]].gauge_pressure
-            if inlet_pressure <= outlet_pressure:
+            outlet_pressures = [conditions[name].gauge_pressure for name in outlet_names]
+            if any(inlet_pressure <= pressure for pressure in outlet_pressures):
                 raise UnsupportedCaseError(
                     "Imported pressure-driven flow requires inlet total gauge "
-                    "pressure above outlet static gauge pressure."
+                    "pressure above outlet static gauge pressure on every outlet."
                 )
+        if len(outlet_names) > 1 and not any(
+            isinstance(report, outputs.FlowDistributionReport)
+            and report.inlet == inlet_names[0]
+            and set(report.outlets) == set(outlet_names)
+            for report in step.output.reports
+        ):
+            raise UnsupportedCaseError(
+                "Multi-outlet imported flow requires outputs.flow_distribution(...) "
+                "covering the inlet and every outlet so branch direction and balance "
+                "remain auditable."
+            )
         for name, role in domain.boundary_roles:
             condition = conditions[name]
             if role == "wall" and not isinstance(
@@ -1338,6 +1359,19 @@ class OpenFOAMImportedProvider:
                         f"Flow-uniformity report {report.name!r} requires an inlet- "
                         "or outlet-role surface."
                     )
+            elif isinstance(report, outputs.FlowDistributionReport):
+                unknown = {report.inlet, *report.outlets} - set(domain.surface_names)
+                if unknown:
+                    raise UnsupportedCaseError(
+                        f"Flow-distribution report {report.name!r} references unknown regions."
+                    )
+                if roles.get(report.inlet) != "inlet" or any(
+                    roles.get(outlet) != "outlet" for outlet in report.outlets
+                ):
+                    raise UnsupportedCaseError(
+                        f"Flow-distribution report {report.name!r} requires one inlet-role "
+                        "surface and outlet-role branch surfaces."
+                    )
             elif isinstance(report, outputs.ForceReport):
                 unknown = set(report.regions) - set(domain.surface_names)
                 nonwalls = {
@@ -1448,11 +1482,13 @@ class OpenFOAMImportedProvider:
         inlet_name = next(
             name for name, role in step.model.domain.boundary_roles if role == "inlet"
         )
-        outlet_name = next(
+        outlet_names = tuple(
             name for name, role in step.model.domain.boundary_roles if role == "outlet"
         )
         inlet_condition = step.model.boundary_conditions[inlet_name]
-        outlet_condition = step.model.boundary_conditions[outlet_name]
+        outlet_conditions = {
+            name: step.model.boundary_conditions[name] for name in outlet_names
+        }
         mass_flow_times = sorted(inlet_flow)
         outlet_flow_times = sorted(outlet_flow)
         inlet_volume_flow = tuple(abs(inlet_flow[t]) for t in mass_flow_times)
@@ -1532,11 +1568,15 @@ class OpenFOAMImportedProvider:
                 kind="verification_metric",
             )
         if isinstance(inlet_condition, boundaries.PressureInlet):
-            assert isinstance(outlet_condition, boundaries.PressureOutlet)
-            quantities["reference.flow.total_to_static_pressure_difference"] = (
-                Quantity(
-                    inlet_condition.total_gauge_pressure
-                    - outlet_condition.gauge_pressure,
+            for outlet_name, outlet_condition in outlet_conditions.items():
+                assert isinstance(outlet_condition, boundaries.PressureOutlet)
+                quantity_name = (
+                    "reference.flow.total_to_static_pressure_difference"
+                    if len(outlet_names) == 1
+                    else f"reference.flow.outlet.{outlet_name}.total_to_static_pressure_difference"
+                )
+                quantities[quantity_name] = Quantity(
+                    inlet_condition.total_gauge_pressure - outlet_condition.gauge_pressure,
                     "Pa",
                     kind="scientific_input",
                     description=(
@@ -1544,7 +1584,6 @@ class OpenFOAMImportedProvider:
                         "pressure; this is not the area-averaged static pressure drop."
                     ),
                 )
-            )
         histories: dict[str, History] = {}
         if imbalance:
             histories["flow.relative_mass_imbalance"] = History(
@@ -1763,6 +1802,34 @@ class OpenFOAMImportedProvider:
             inlet_flow[mass_flow_times[-1]] < 0.0
             and outlet_flow[outlet_flow_times[-1]] > 0.0
         )
+        flow_direction_value: object = (
+            {
+                "inlet_m3_s": inlet_flow[mass_flow_times[-1]],
+                "total_outlet_m3_s": outlet_flow[outlet_flow_times[-1]],
+            }
+            if inlet_flow and outlet_flow
+            else None
+        )
+        if len(outlet_names) > 1:
+            distribution = next(
+                report
+                for report in step.output.reports
+                if isinstance(report, outputs.FlowDistributionReport)
+                and report.inlet == inlet_name
+                and set(report.outlets) == set(outlet_names)
+            )
+            prefix = f"report.{distribution.name}.outlet"
+            branch_flows = {
+                outlet: quantities.get(f"{prefix}.{outlet}.volume_flow_rate")
+                for outlet in outlet_names
+            }
+            branches_recovered = all(value is not None for value in branch_flows.values())
+            flow_direction_ok = flow_direction_ok and branches_recovered
+            if isinstance(flow_direction_value, dict):
+                flow_direction_value["outlets_m3_s"] = {
+                    outlet: None if value is None else value.value
+                    for outlet, value in branch_flows.items()
+                }
         requested_mass_flow_ok = (
             mass_flow_relative_error is not None
             and mass_flow_relative_error <= 1.0e-4
@@ -1806,15 +1873,8 @@ class OpenFOAMImportedProvider:
             Check(
                 "inlet-outlet-flow-direction",
                 flow_direction_ok,
-                value=(
-                    {
-                        "inlet_m3_s": inlet_flow[mass_flow_times[-1]],
-                        "outlet_m3_s": outlet_flow[outlet_flow_times[-1]],
-                    }
-                    if inlet_flow and outlet_flow
-                    else None
-                ),
-                limit="inlet flux into domain and outlet flux out of domain",
+                value=flow_direction_value,
+                limit="inlet flux into domain and every outlet flux out of domain",
                 observable="flow.direction",
                 message=(
                     "Signed patch flux must agree with confirmed inlet/outlet roles."

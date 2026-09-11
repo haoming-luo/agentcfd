@@ -31,6 +31,7 @@ _SCHEMAS = (
     "inlet-direction-assessment.schema.json",
     "license-catalog.schema.json",
     "openfoam-case.schema.json",
+    "openfoam-flow-distribution-evidence.schema.json",
     "openfoam-flow-uniformity-evidence.schema.json",
     "openfoam-grid-study.schema.json",
     "openfoam-imported-flow-evidence.schema.json",

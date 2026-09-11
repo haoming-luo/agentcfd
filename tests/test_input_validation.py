@@ -204,6 +204,63 @@ def test_flow_uniformity_report_has_one_unambiguous_surface_contract():
         outputs.flow_uniformity("bad", region="outlet", every=0)
 
 
+def test_flow_distribution_report_is_complete_ordered_and_target_aware():
+    report = outputs.flow_distribution(
+        "branch-split",
+        inlet="inlet",
+        outlets=("branch_b", "branch_a"),
+        targets={"branch_a": 0.4, "branch_b": 0.6},
+        every=3,
+    )
+
+    assert report.to_dict() == {
+        "type": "flow-distribution-report",
+        "name": "branch-split",
+        "inlet": "inlet",
+        "outlets": ["branch_b", "branch_a"],
+        "target_fractions": {"branch_b": 0.6, "branch_a": 0.4},
+        "every": 3,
+    }
+    with pytest.raises(ValueError, match="at least two outlets"):
+        outputs.flow_distribution(
+            "not-a-split", inlet="inlet", outlets=("outlet",)
+        )
+    with pytest.raises(ValueError, match="sequence of region names"):
+        outputs.flow_distribution("string-is-not-a-sequence", inlet="inlet", outlets="ab")
+    with pytest.raises(TypeError, match="mapping by outlet name"):
+        outputs.flow_distribution(
+            "targets-must-be-keyed",
+            inlet="inlet",
+            outlets=("a", "b"),
+            targets=(("a", 0.5), ("b", 0.5)),
+        )
+    with pytest.raises(ValueError, match="target outlet"):
+        outputs.flow_distribution(
+            "target-keys-must-be-names",
+            inlet="inlet",
+            outlets=("1", "b"),
+            targets={1: 0.5, "b": 0.5},
+        )
+    with pytest.raises(ValueError, match="must not also be an outlet"):
+        outputs.flow_distribution(
+            "loop", inlet="inlet", outlets=("inlet", "outlet")
+        )
+    with pytest.raises(ValueError, match="every declared outlet"):
+        outputs.flow_distribution(
+            "partial",
+            inlet="inlet",
+            outlets=("a", "b"),
+            targets={"a": 1.0},
+        )
+    with pytest.raises(ValueError, match="sum to one"):
+        outputs.flow_distribution(
+            "unnormalized",
+            inlet="inlet",
+            outlets=("a", "b"),
+            targets={"a": 0.7, "b": 0.4},
+        )
+
+
 def test_quantity_criterion_is_typed_bounded_and_report_aware():
     criterion = outputs.require(
         "uniform-enough",

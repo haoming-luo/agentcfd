@@ -369,6 +369,8 @@ class Step:
                     report,
                     (output_types.SurfaceReport, output_types.FlowUniformityReport),
                 )
+                else (report.inlet, *report.outlets)
+                if isinstance(report, output_types.FlowDistributionReport)
                 else (report.inlet, report.outlet)
                 if isinstance(report, output_types.PressureLossReport)
                 else report.regions

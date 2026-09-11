@@ -108,6 +108,16 @@ heat-exchanger inlets, or combustor-entry distributions before promoting only
 selected runs for spatial inspection. A high uniformity index is an observable,
 not an automatic scientific acceptance claim.
 
+For actual branch allocation, `outputs.flow_distribution(...)` publishes one
+coherent `report.<name>.*` result family: inlet and outlet mass/volume flow,
+per-outlet fractions, coefficient of variation, conservation error, and
+optional target-fraction errors. An agent can place an explicit
+`outputs.require(..., quantity="report.branch-split.maximum_fraction_error",
+unit="1", maximum=...)` beside it and screen summary-only campaigns without
+opening a field bundle. AgentCFD requires complete target coverage and verifies
+the final signed direction at every declared port; it never takes absolute
+values that could hide branch backflow.
+
 `outputs.require(...)` turns canonical quantities into explicit, versioned
 design gates. Each criterion carries its own name, exact unit, and inclusive
 minimum and/or maximum. All providers evaluate the same post-recovery logic;

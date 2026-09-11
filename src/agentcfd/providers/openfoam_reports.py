@@ -62,6 +62,12 @@ def report_function_names(report: outputs.Report) -> tuple[str, ...]:
             f"agentcfd_uniformity_{stem}",
             f"agentcfd_uniformity_{stem}_normal",
         )
+    if isinstance(report, outputs.FlowDistributionReport):
+        stem = foam_name(report.name)
+        return tuple(
+            f"agentcfd_distribution_{stem}_{foam_name(region)}"
+            for region in (report.inlet, *report.outlets)
+        )
     return (foam_name(report.name),)
 
 
@@ -180,6 +186,27 @@ def render_report_functions(step, *, include_vorticity: bool = False) -> str:
         operation {operation};
         fields (U);
         writeArea true;
+        writeFields false;
+        executeControl timeStep;
+        executeInterval {report.every};
+        writeControl timeStep;
+        writeInterval {report.every};
+    }}
+""")
+        elif isinstance(report, outputs.FlowDistributionReport):
+            for function_name, region in zip(
+                report_function_names(report),
+                (report.inlet, *report.outlets),
+            ):
+                definitions.append(f"""
+    {function_name}
+    {{
+        type surfaceFieldValue;
+        libs (fieldFunctionObjects);
+        regionType patch;
+        name {region};
+        operation sum;
+        fields (phi);
         writeFields false;
         executeControl timeStep;
         executeInterval {report.every};
@@ -530,6 +557,211 @@ def recover_reports(
                     kind="diagnostic",
                     description="Surface area used by the flow-uniformity reductions.",
                 )
+        elif isinstance(report, outputs.FlowDistributionReport):
+            regions = (report.inlet, *report.outlets)
+            function_names = report_function_names(report)
+            artifact_roots = tuple(
+                case / "postProcessing" / function_name
+                for function_name in function_names
+            )
+            series = {
+                region: {
+                    row[0]: row[-1]
+                    for row in read_segmented_rows(root, "surfaceFieldValue.dat")
+                    if len(row) >= 2
+                }
+                for region, root in zip(regions, artifact_roots)
+            }
+            shared = sorted(set.intersection(*(set(values) for values in series.values())))
+            role_flows = {
+                report.inlet: {
+                    time: -series[report.inlet][time] for time in shared
+                },
+                **{
+                    outlet: {time: series[outlet][time] for time in shared}
+                    for outlet in report.outlets
+                },
+            }
+            valid_times = [
+                time
+                for time in shared
+                if role_flows[report.inlet][time] > 0.0
+                and all(role_flows[outlet][time] >= 0.0 for outlet in report.outlets)
+                and sum(role_flows[outlet][time] for outlet in report.outlets) > 0.0
+            ]
+            # Do not silently publish an earlier valid split when the final state
+            # contains inlet/outlet reversal.
+            if shared and shared[-1] in valid_times:
+                prefix = f"report.{report.name}"
+                inlet_volume = [
+                    (time, role_flows[report.inlet][time]) for time in valid_times
+                ]
+                total_outlet = [
+                    (
+                        time,
+                        sum(role_flows[outlet][time] for outlet in report.outlets),
+                    )
+                    for time in valid_times
+                ]
+                relative_imbalance = [
+                    (
+                        time,
+                        abs(inlet_value - outlet_value)
+                        / max(abs(inlet_value), abs(outlet_value), 1.0e-300),
+                    )
+                    for (time, inlet_value), (_, outlet_value) in zip(
+                        inlet_volume, total_outlet
+                    )
+                ]
+                coefficient_of_variation: list[tuple[float, float]] = []
+                for time in valid_times:
+                    values = [role_flows[outlet][time] for outlet in report.outlets]
+                    mean = sum(values) / len(values)
+                    coefficient_of_variation.append(
+                        (
+                            time,
+                            math.sqrt(
+                                sum((value - mean) ** 2 for value in values)
+                                / len(values)
+                            )
+                            / mean,
+                        )
+                    )
+                for suffix, samples, unit, description in (
+                    (
+                        "inlet.volume_flow_rate",
+                        inlet_volume,
+                        "m^3/s",
+                        "Inlet flow into the domain, positive in the declared role direction.",
+                    ),
+                    (
+                        "inlet.mass_flow_rate",
+                        [(time, value * density) for time, value in inlet_volume],
+                        "kg/s",
+                        "Constant-density inlet mass flow into the domain.",
+                    ),
+                    (
+                        "total_outlet_volume_flow_rate",
+                        total_outlet,
+                        "m^3/s",
+                        "Sum of declared outlet volume-flow rates.",
+                    ),
+                    (
+                        "total_outlet_mass_flow_rate",
+                        [(time, value * density) for time, value in total_outlet],
+                        "kg/s",
+                        "Constant-density sum of declared outlet mass-flow rates.",
+                    ),
+                    (
+                        "relative_imbalance",
+                        relative_imbalance,
+                        "1",
+                        "Absolute inlet-versus-total-outlet flow imbalance.",
+                    ),
+                    (
+                        "coefficient_of_variation",
+                        coefficient_of_variation,
+                        "1",
+                        "Population standard deviation of outlet flows divided by their mean.",
+                    ),
+                ):
+                    _store_scalar_history(
+                        f"{prefix}.{suffix}",
+                        samples,
+                        unit=unit,
+                        quantities=quantities,
+                        histories=histories,
+                        coordinate=coordinate,
+                        description=description,
+                    )
+
+                target_by_outlet = dict(report.target_fractions)
+                maximum_errors: list[tuple[float, float]] = []
+                for outlet in report.outlets:
+                    outlet_volume = [
+                        (time, role_flows[outlet][time]) for time in valid_times
+                    ]
+                    fractions = [
+                        (time, value / total)
+                        for (time, value), (_, total) in zip(
+                            outlet_volume, total_outlet
+                        )
+                    ]
+                    for suffix, samples, unit, description in (
+                        (
+                            "volume_flow_rate",
+                            outlet_volume,
+                            "m^3/s",
+                            f"Flow through outlet {outlet!r}, positive out of the domain.",
+                        ),
+                        (
+                            "mass_flow_rate",
+                            [(time, value * density) for time, value in outlet_volume],
+                            "kg/s",
+                            f"Constant-density mass flow through outlet {outlet!r}.",
+                        ),
+                        (
+                            "fraction",
+                            fractions,
+                            "1",
+                            f"Outlet {outlet!r} share of total declared outlet flow.",
+                        ),
+                    ):
+                        _store_scalar_history(
+                            f"{prefix}.outlet.{outlet}.{suffix}",
+                            samples,
+                            unit=unit,
+                            quantities=quantities,
+                            histories=histories,
+                            coordinate=coordinate,
+                            description=description,
+                        )
+                    if outlet in target_by_outlet:
+                        target = target_by_outlet[outlet]
+                        quantities[f"{prefix}.outlet.{outlet}.target_fraction"] = Quantity(
+                            target,
+                            "1",
+                            kind="scientific_input",
+                            description=f"Declared target flow fraction for outlet {outlet!r}.",
+                        )
+                        errors = [
+                            (time, fraction - target) for time, fraction in fractions
+                        ]
+                        _store_scalar_history(
+                            f"{prefix}.outlet.{outlet}.fraction_error",
+                            errors,
+                            unit="1",
+                            quantities=quantities,
+                            histories=histories,
+                            coordinate=coordinate,
+                            description=(
+                                f"Actual minus target flow fraction for outlet {outlet!r}."
+                            ),
+                        )
+                if target_by_outlet:
+                    for index, time in enumerate(valid_times):
+                        maximum_errors.append(
+                            (
+                                time,
+                                max(
+                                    abs(
+                                        role_flows[outlet][time]
+                                        / total_outlet[index][1]
+                                        - target_by_outlet[outlet]
+                                    )
+                                    for outlet in report.outlets
+                                ),
+                            )
+                        )
+                    _store_scalar_history(
+                        f"{prefix}.maximum_fraction_error",
+                        maximum_errors,
+                        unit="1",
+                        quantities=quantities,
+                        histories=histories,
+                        coordinate=coordinate,
+                        description="Largest absolute outlet target-fraction error.",
+                    )
         elif isinstance(report, outputs.PointProbe):
             for field_name in report.fields:
                 rows = read_segmented_rows(root, FIELD_NAMES[field_name])
@@ -621,6 +853,16 @@ def report_recovered(report, histories: dict[str, History]) -> bool:
             f"{prefix}.{suffix}" in histories
             for suffix in ("velocity_uniformity_index", "area_normal_velocity")
         )
+    if isinstance(report, outputs.FlowDistributionReport):
+        prefix = f"report.{report.name}"
+        required = {
+            f"{prefix}.inlet.volume_flow_rate",
+            f"{prefix}.relative_imbalance",
+            *(f"{prefix}.outlet.{outlet}.fraction" for outlet in report.outlets),
+        }
+        if report.target_fractions:
+            required.add(f"{prefix}.maximum_fraction_error")
+        return required <= histories.keys()
     return f"report.{report.name}" in histories
 
 

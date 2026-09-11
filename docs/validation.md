@@ -64,6 +64,25 @@ was retained. This proves runtime lowering, parsing, SI publication, and the
 low-storage path; the index is not experimental validation or a universal
 quality threshold.
 
+The complementary multi-outlet `flow_distribution` contract keeps every port
+separate, assigns positive flow only in its declared inlet/outlet direction,
+and derives fractions only when the final inlet and all branches have valid
+directions. Its target fractions must cover the exact outlet set and sum to one.
+`docs/openfoam-v2606-flow-distribution.json` records an accepted 6,400-cell
+OpenCFD v2606 runtime test whose outlet plane is divided into two named patches.
+It converged in 344 iterations, recovered fractions 0.500185 and 0.499815,
+coefficient of variation 0.0003694, and relative port imbalance `8.0e-11`.
+An explicit 50/50 target produced a maximum fraction error of 0.0001847 and
+passed its declared inclusive 0.001 requirement without changing verified
+scientific trust.
+The three distribution source tables occupy 37,968 bytes, versus 185,382 bytes
+when four optional per-outlet loss and uniformity histories were also enabled.
+The lean default published 910,008 bytes in total and retained no field bundle.
+This proves multi-patch selection, per-port signed flux, aggregate conservation,
+SI recovery, project generation, and the summary-only storage path. The split
+coplanar outlet is integration evidence, not a physical manifold benchmark;
+real branched-geometry validation remains open.
+
 Numerical capabilities will add, as appropriate:
 
 - method of manufactured solutions;

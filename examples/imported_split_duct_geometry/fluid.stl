@@ -1,0 +1,92 @@
+solid inlet
+  facet normal -1 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 0 0.2
+      vertex 0 0.5 0.2
+    endloop
+  endfacet
+  facet normal -1 0 0
+    outer loop
+      vertex 0 0 0
+      vertex 0 0.5 0.2
+      vertex 0 0.5 0
+    endloop
+  endfacet
+endsolid inlet
+solid branch_a
+  facet normal 1 0 0
+    outer loop
+      vertex 1 0 0
+      vertex 1 0.5 0
+      vertex 1 0.5 0.2
+    endloop
+  endfacet
+endsolid branch_a
+solid branch_b
+  facet normal 1 0 0
+    outer loop
+      vertex 1 0 0
+      vertex 1 0.5 0.2
+      vertex 1 0 0.2
+    endloop
+  endfacet
+endsolid branch_b
+solid walls
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 0 0.5 0
+      vertex 1 0.5 0
+    endloop
+  endfacet
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 1 0.5 0
+      vertex 1 0 0
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex 0 0 0.2
+      vertex 1 0 0.2
+      vertex 1 0.5 0.2
+    endloop
+  endfacet
+  facet normal 0 0 1
+    outer loop
+      vertex 0 0 0.2
+      vertex 1 0.5 0.2
+      vertex 0 0.5 0.2
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 1 0 0
+      vertex 1 0 0.2
+    endloop
+  endfacet
+  facet normal 0 -1 0
+    outer loop
+      vertex 0 0 0
+      vertex 1 0 0.2
+      vertex 0 0 0.2
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0 0.5 0
+      vertex 0 0.5 0.2
+      vertex 1 0.5 0.2
+    endloop
+  endfacet
+  facet normal 0 1 0
+    outer loop
+      vertex 0 0.5 0
+      vertex 1 0.5 0.2
+      vertex 1 0.5 0
+    endloop
+  endfacet
+endsolid walls

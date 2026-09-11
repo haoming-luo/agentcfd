@@ -367,6 +367,83 @@ def test_cli_initializes_imported_internal_flow_without_manual_case_authoring(
         projects.Project(root).plan(parameters={"turbulence_model": "invented"})
 
 
+def test_imported_project_initializes_multi_outlet_decision_reports(tmp_path):
+    original = (
+        Path(__file__).parents[1]
+        / "examples/imported_duct_mesh/geometry/fluid.stl"
+    ).read_text()
+    old_outlet = """solid outlet
+  facet normal 1 0 0
+    outer loop
+      vertex 1 0 0
+      vertex 1 0.5 0
+      vertex 1 0.5 0.2
+    endloop
+  endfacet
+  facet normal 1 0 0
+    outer loop
+      vertex 1 0 0
+      vertex 1 0.5 0.2
+      vertex 1 0 0.2
+    endloop
+  endfacet
+endsolid outlet
+"""
+    split_outlet = """solid branch_a
+  facet normal 1 0 0
+    outer loop
+      vertex 1 0 0
+      vertex 1 0.5 0
+      vertex 1 0.5 0.2
+    endloop
+  endfacet
+endsolid branch_a
+solid branch_b
+  facet normal 1 0 0
+    outer loop
+      vertex 1 0 0
+      vertex 1 0.5 0.2
+      vertex 1 0 0.2
+    endloop
+  endfacet
+endsolid branch_b
+"""
+    assert old_outlet in original
+    source = tmp_path / "split-duct.stl"
+    source.write_text(original.replace(old_outlet, split_outlet))
+    root = tmp_path / "multi-outlet-project"
+
+    project = projects.init_project(
+        root,
+        provider="openfoam",
+        template="imported-internal-flow",
+        geometry_path=source,
+        geometry_unit="m",
+        boundary_roles={
+            "inlet": "inlet",
+            "branch_a": "outlet",
+            "branch_b": "outlet",
+            "walls": "wall",
+        },
+        interior_point_m=(0.5, 0.25, 0.1),
+        inlet_velocity_m_s=(0.5, 0.0, 0.0),
+        base_size_m=0.05,
+        maximum_cells=200_000,
+    )
+
+    step = project.load_step()
+    assert project.plan()["readiness"]["provider_compatible"] is True
+    assert step.output.reports[0].to_dict() == {
+        "type": "flow-distribution-report",
+        "name": "flow-split",
+        "inlet": "inlet",
+        "outlets": ["branch_a", "branch_b"],
+        "target_fractions": {},
+        "every": 1,
+    }
+    assert [report.name for report in step.output.reports] == ["flow-split"]
+
+
 def test_cli_initializes_imported_flow_with_mass_flow_as_primary_control(
     tmp_path, capsys
 ):

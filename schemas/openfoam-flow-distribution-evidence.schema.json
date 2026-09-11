@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/openfoam-flow-distribution-evidence.schema.json",
+  "title": "AgentCFD OpenFOAM flow-distribution evidence 0.1",
+  "type": "object",
+  "required": [
+    "schema", "runtime", "case", "source_sha256", "model_sha256",
+    "analysis_sha256", "mesh_sha256", "solver_iterations", "cell_count",
+    "report", "requirement", "storage", "accepted", "converged", "trust_level", "claim"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.openfoam-flow-distribution-evidence/0.1"},
+    "runtime": {"const": "OpenCFD v2606"},
+    "case": {"type": "string", "minLength": 1},
+    "source_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "model_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "mesh_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "solver_iterations": {"type": "integer", "minimum": 1},
+    "cell_count": {"type": "integer", "minimum": 1},
+    "report": {
+      "type": "object",
+      "required": [
+        "name", "inlet", "outlets", "inlet_volume_flow_rate_m3_s",
+        "total_outlet_volume_flow_rate_m3_s", "relative_imbalance",
+        "coefficient_of_variation", "maximum_fraction_error",
+        "target_fractions", "sample_count", "branches"
+      ],
+      "properties": {
+        "name": {"const": "flow-split"},
+        "inlet": {"type": "string", "minLength": 1},
+        "outlets": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "minItems": 2,
+          "uniqueItems": true
+        },
+        "inlet_volume_flow_rate_m3_s": {"type": "number", "exclusiveMinimum": 0},
+        "total_outlet_volume_flow_rate_m3_s": {"type": "number", "exclusiveMinimum": 0},
+        "relative_imbalance": {"type": "number", "minimum": 0},
+        "coefficient_of_variation": {"type": "number", "minimum": 0},
+        "maximum_fraction_error": {"type": "number", "minimum": 0, "maximum": 1},
+        "target_fractions": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}
+        },
+        "sample_count": {"type": "integer", "minimum": 1},
+        "branches": {
+          "type": "object",
+          "minProperties": 2,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["fraction", "mass_flow_rate_kg_s", "volume_flow_rate_m3_s"],
+            "properties": {
+              "fraction": {"type": "number", "minimum": 0, "maximum": 1},
+              "mass_flow_rate_kg_s": {"type": "number", "minimum": 0},
+              "volume_flow_rate_m3_s": {"type": "number", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "requirement": {
+      "type": "object",
+      "required": ["name", "quantity", "unit", "limit", "passed"],
+      "properties": {
+        "name": {"const": "flow-split-within-one-tenth-percent"},
+        "quantity": {"const": "report.flow-split.maximum_fraction_error"},
+        "unit": {"const": "1"},
+        "limit": {"type": "number", "minimum": 0, "maximum": 1},
+        "passed": {"const": true}
+      },
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "object",
+      "required": [
+        "result_profile", "field_bundle_retained", "distribution_report_bytes",
+        "all_compact_report_bytes", "published_output_bytes"
+      ],
+      "properties": {
+        "result_profile": {"const": "summary-only"},
+        "field_bundle_retained": {"const": false},
+        "distribution_report_bytes": {"type": "integer", "minimum": 1},
+        "all_compact_report_bytes": {"type": "integer", "minimum": 1},
+        "published_output_bytes": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "accepted": {"const": true},
+    "converged": {"const": true},
+    "trust_level": {"const": "verified"},
+    "claim": {"const": "workflow-and-runtime-evidence-not-physical-validation"}
+  },
+  "additionalProperties": false
+}

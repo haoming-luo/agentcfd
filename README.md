@@ -261,8 +261,9 @@ provide an exact `boundary_roles` object or explicitly set
 fallback wall.
 
 Imported projects use the same compact decision-output API as parametric
-channels. Their generated `case.py` includes `outputs.pressure_loss(...)` and
-`outputs.flow_uniformity(...)` reports by default. The first publishes
+channels. A single-outlet generated `case.py` includes
+`outputs.pressure_loss(...)` and `outputs.flow_uniformity(...)` reports by
+default. The first publishes
 mass-flow-averaged inlet/outlet total pressure,
 total-pressure loss, inlet-bulk reference velocity and dynamic pressure, and a
 dimensionless system-loss coefficient. The inlet area is recovered from the
@@ -279,7 +280,25 @@ outputs.pressure_loss("valve-loss", inlet="inlet", outlet="outlet")
 outputs.flow_uniformity("outlet-quality", region="outlet")
 ```
 
-The final coefficient is available as
+For two or more outlets, project generation instead adds one
+`outputs.flow_distribution(...)` report covering every branch. It publishes
+positive role-directed volume/mass flow, branch fractions, aggregate balance,
+and coefficient of variation without retaining field frames. Optional targets
+must name every outlet and sum to one; an explicit `outputs.require(...)` can
+then turn maximum fraction error into a machine-checkable design gate.
+Per-outlet loss and uniformity reports remain opt-in, avoiding O(N) histories
+when the current decision only needs the split.
+
+```python
+outputs.flow_distribution(
+    "flow-split",
+    inlet="inlet",
+    outlets=("branch_a", "branch_b"),
+    targets={"branch_a": 0.5, "branch_b": 0.5},
+)
+```
+
+For pressure-loss reports, the final coefficient is available as
 `report.valve-loss.loss_coefficient`; the corresponding dimensional value is
 `report.valve-loss.total_pressure_loss`. This is the complete loss between the
 declared measurement surfaces. Subtracting a separate straight-run friction

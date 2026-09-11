@@ -115,6 +115,7 @@ agentcfd archive . --plan-only             # preview exact compact handoff bytes
 agentcfd archive . result-decision.zip     # evidence without field payload
 agentcfd archive . result-portable.zip --profile portable # include XDMF/H5
 agentcfd verify archive result-decision.zip
+agentcfd restore result-decision.zip restored-flow # verified atomic restore
 agentcfd run .          # full portable fields for spatial review
 agentcfd run . --summary-only  # compact evidence, no permanent field bundle
 agentcfd watch .        # follow a long active run, then stop automatically
@@ -453,6 +454,21 @@ second retains complete scalar histories and the evidence index. Summary reads
 do not open HDF5 and report their own I/O cost. The recorded result SHA-256
 preserves traceability, while `agentcfd verify project .` remains the deliberate
 full-integrity boundary before coupling, training, or archive handoff.
+
+Project handoff is preview-first: `archive --plan-only` lists the exact files
+and bytes, `archive` streams them into a self-verified ZIP, and `restore`
+refuses an existing destination or any archive with unsafe paths, an incomplete
+index, or changed payloads. Restoration uses a same-parent staging directory
+and one atomic rename, preserves the source archive manifest and SHA-256 in
+`archive-source.json`, and materializes portable summary paths so the restored
+project can be moved and verified again. `decision` remains the space-saving
+default; when its source had fields, restore explicitly publishes a
+`summary-only` result, removes the omitted artifact references, and records the
+source result hash plus exact omission list. Use `portable` when the recipient
+needs the original XDMF/H5 fields.
+The dependency-free Python entry points are
+`agentcfd.verify_project_archive(path)` and
+`agentcfd.restore_project_archive(path, destination)`.
 
 For Python, GUI, and agent integration, `agentcfd project . --json` combines
 that state with the compact result, published file roles, standard XDMF/H5

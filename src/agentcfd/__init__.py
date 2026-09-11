@@ -27,6 +27,7 @@ from . import (
     verification,
 )
 from ._version import __version__
+from .archives import restore_project_archive, verify_project_archive
 from .model import Model, Step
 from .interoperability import ScientificDatasetReader, open_scientific_dataset
 from .projects import open_project
@@ -74,8 +75,10 @@ __all__ = [
     "projects",
     "providers",
     "regions",
+    "restore_project_archive",
     "studies",
     "templates",
     "verification",
+    "verify_project_archive",
     "read_result_record",
 ]

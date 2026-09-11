@@ -49,6 +49,7 @@ _SCHEMAS = (
     "postprocess-recipes.schema.json",
     "project-clean.schema.json",
     "project-archive-plan.schema.json",
+    "project-archive-restoration.schema.json",
     "project-archive-verification.schema.json",
     "project-archive.schema.json",
     "project-creation-request.schema.json",

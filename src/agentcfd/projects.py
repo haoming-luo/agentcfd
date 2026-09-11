@@ -59,6 +59,21 @@ from .providers.openfoam_channel import materialize_interrupted_restart
 from .results import Artifact, FieldRecord, SimulationResult, read_result_record
 
 
+def _project_record_path_matches(
+    value: object,
+    expected: Path,
+    *,
+    root: Path,
+) -> bool:
+    """Match legacy absolute and portable project-relative record paths."""
+
+    if not isinstance(value, str) or not value:
+        return False
+    recorded = Path(value)
+    candidate = recorded if recorded.is_absolute() else root / recorded
+    return candidate.resolve() == expected.resolve()
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectIssue:
     code: str
@@ -2201,11 +2216,17 @@ class Project:
             recorded_result_sha256 = selected_run.get("result_sha256")
             if (
                 candidate.get("schema") == "agentcfd.result-summary/0.3"
-                and candidate.get("root") == str(self.root)
+                and _project_record_path_matches(
+                    candidate.get("root"), self.root, root=self.root
+                )
                 and candidate.get("run_id") == selected_run.get("run_id")
-                and candidate.get("result") == str(result_path)
+                and _project_record_path_matches(
+                    candidate.get("result"), result_path, root=self.root
+                )
                 and isinstance(source, dict)
-                and source.get("path") == str(result_path)
+                and _project_record_path_matches(
+                    source.get("path"), result_path, root=self.root
+                )
                 and source.get("bytes") == result_path.stat().st_size
                 and isinstance(source.get("sha256"), str)
                 and re.fullmatch(r"[0-9a-f]{64}", str(source["sha256"]))
@@ -2245,6 +2266,18 @@ class Project:
             else dict(available_quantities)
         )
         report = dict(record)
+        # Materialized summaries may use project-relative paths so a restored
+        # handoff remains movable.  Public APIs always expose paths resolved in
+        # the currently opened project.
+        report["root"] = str(self.root)
+        report["summary"] = str(summary_path)
+        report["result"] = str(result_path)
+        source_result = report.get("source_result")
+        if isinstance(source_result, Mapping):
+            report["source_result"] = {
+                **source_result,
+                "path": str(result_path),
+            }
         report["quantities"] = selected_quantities
         observation_cost = dict(report["observation_cost"])
         observation_cost["summary_json_bytes_read"] = summary_bytes_read
@@ -5055,9 +5088,7 @@ class Project:
                     if check.get("kind") == "requirement"
                 ]
                 comparisons = {
-                    "root": str(self.root),
                     "run_id": run_record.get("run_id"),
-                    "result": str(result_path),
                     "status": result_record.get("status"),
                     "converged": result_record.get("converged"),
                     "accepted": result_record.get("accepted"),
@@ -5080,7 +5111,17 @@ class Project:
                     for name, expected in comparisons.items()
                     if summary_record.get(name) != expected
                 ]
-                if source_result.get("path") != str(result_path):
+                if not _project_record_path_matches(
+                    summary_record.get("root"), self.root, root=self.root
+                ):
+                    disagreements.append("root")
+                if not _project_record_path_matches(
+                    summary_record.get("result"), result_path, root=self.root
+                ):
+                    disagreements.append("result")
+                if not _project_record_path_matches(
+                    source_result.get("path"), result_path, root=self.root
+                ):
                     disagreements.append("source_result.path")
                 if source_result.get("bytes") != result_path.stat().st_size:
                     disagreements.append("source_result.bytes")

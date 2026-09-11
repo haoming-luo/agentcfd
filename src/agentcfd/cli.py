@@ -1980,6 +1980,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     archive.add_argument("--json", action="store_true", dest="as_json")
 
+    restore = subparsers.add_parser(
+        "restore",
+        help="Verify and atomically restore a project handoff archive.",
+    )
+    restore.add_argument("archive", type=Path)
+    restore.add_argument("directory", type=Path)
+    restore.add_argument("--json", action="store_true", dest="as_json")
+
     clean = subparsers.add_parser(
         "clean",
         help="Preview removal of temporary solver workspaces while preserving results.",
@@ -3743,6 +3751,26 @@ def main(argv: list[str] | None = None) -> int:
                 f"{len(manifest['files'])} files | {output.stat().st_size} bytes"
             )
             print(output)
+        return 0
+    if args.command == "restore":
+        output, report = archives.restore_project_archive(
+            args.archive,
+            args.directory,
+        )
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                f"Restored verified {report['profile']} archive | "
+                f"{report['file_count']} files | {report['restored_bytes']} bytes"
+            )
+            if report["omitted_artifacts"]:
+                print(
+                    "materialized summary-only result | omitted spatial artifacts "
+                    f"{len(report['omitted_artifacts'])}"
+                )
+            print(output)
+            print(f"next: agentcfd project {shlex.quote(str(output))}")
         return 0
     if args.command == "clean":
         report = projects.Project(args.project).clean(

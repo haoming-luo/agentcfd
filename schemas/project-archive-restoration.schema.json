@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-archive-restoration.schema.json",
+  "title": "AgentCFD project archive restoration 0.1",
+  "type": "object",
+  "required": [
+    "schema", "source_archive", "source_archive_sha256", "destination",
+    "profile", "run_id", "accepted", "archive_verified", "file_count",
+    "restored_bytes", "result_profile", "omitted_artifacts", "provenance"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-archive-restoration/0.1"},
+    "source_archive": {"type": "string", "minLength": 1},
+    "source_archive_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "destination": {"type": "string", "minLength": 1},
+    "profile": {"enum": ["decision", "portable"]},
+    "run_id": {"type": "string", "minLength": 1},
+    "accepted": {"type": "boolean"},
+    "archive_verified": {"const": true},
+    "file_count": {"type": "integer", "minimum": 1},
+    "restored_bytes": {"type": "integer", "minimum": 1},
+    "result_profile": {"enum": ["source", "summary-only"]},
+    "omitted_artifacts": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "provenance": {"const": "archive-source.json"}
+  },
+  "additionalProperties": false
+}

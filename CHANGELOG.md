@@ -7,7 +7,13 @@
   solver state or field payloads; `portable` explicitly adds XDMF/H5 and
   post-processing. Creation is streamed and atomic, while `verify archive`
   checks safe member paths, the exact manifest index, and every payload hash
-  without extraction.
+  without extraction. `agentcfd restore` now verifies before extraction,
+  streams into same-parent staging, refuses overwrite, records the source
+  archive identity, rewrites only navigation paths as project-relative, and
+  atomically publishes a project that remains verifiable after relocation. A
+  decision restore with source fields becomes an explicit `summary-only`
+  result: missing spatial references are removed while their names and source
+  result identity remain in restoration provenance.
 - Add the versioned `agentcfd templates` catalog. Every built-in starting point
   now publishes provider compatibility, geometry mode, physics, default
   outputs, required decisions, limitations, and a copyable creation command;

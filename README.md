@@ -133,7 +133,10 @@ agentcfd verify component-loss equipment/result.json straight-run/result.json \
 starting point's provider, geometry mode, physics, default outputs, required
 inputs, limitations, and executable creation command. The `init` parser and
 provider defaults consume the same catalog, so a new frontend or AI agent does
-not need its own hard-coded template list.
+not need its own hard-coded template list. Each entry also links the installed
+`project-creation-request` schema and declares template-specific required,
+optional, and exactly-one request fields; CI checks that the catalog and static
+schema enumerate the same templates and providers.
 
 For the first bounded heat-transfer workflow:
 

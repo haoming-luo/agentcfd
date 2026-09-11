@@ -3952,6 +3952,11 @@ def main(argv: list[str] | None = None) -> int:
             print(selected["purpose"])
             print(f"provider: {selected['default_provider']}")
             print(f"create: {selected['create_command']}")
+            print(f"request contract: {selected['request_contract']}")
+            print("required intent: " + ", ".join(selected["requires"]))
+            if selected["request_exactly_one"]:
+                for group in selected["request_exactly_one"]:
+                    print("choose exactly one request field: " + ", ".join(group))
             print("limitations:")
             for limitation in selected["limitations"]:
                 print(f"- {limitation}")

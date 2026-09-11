@@ -19,7 +19,8 @@
       "required": [
         "id", "title", "purpose", "maturity", "providers",
         "default_provider", "geometry_mode", "physics", "outputs",
-        "requires", "limitations", "create_command"
+        "requires", "limitations", "create_command", "request_contract",
+        "request_required", "request_optional", "request_exactly_one"
       ],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
@@ -39,6 +40,22 @@
         "requires": {"$ref": "#/$defs/nonEmptyStrings"},
         "limitations": {"$ref": "#/$defs/nonEmptyStrings"},
         "create_command": {"type": "string", "pattern": "^agentcfd init "}
+        ,"request_contract": {"const": "project-creation-request.schema.json"}
+        ,"request_required": {"$ref": "#/$defs/nonEmptyStrings"}
+        ,"request_optional": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        }
+        ,"request_exactly_one": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
       },
       "additionalProperties": false
     },

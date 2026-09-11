@@ -60,7 +60,25 @@ def test_template_catalog_is_single_source_for_cli_and_project_creation(capsys):
     assert imported.geometry_mode == "imported"
     assert imported.providers == ("openfoam",)
     assert "--maximum-cells COUNT" in imported.create_command
+    assert imported.request_contract == "project-creation-request.schema.json"
+    assert imported.request_required[-3:] == (
+        "geometry",
+        "interior_point_m",
+        "mesh",
+    )
+    assert imported.request_exactly_one == (
+        (
+            "inlet_velocity_m_s",
+            "inlet_mass_flow_kg_s",
+            "inlet_total_gauge_pressure_pa",
+        ),
+    )
     assert "template-catalog.schema.json" in contracts.available()
+    creation_contract = contracts.load("project-creation-request.schema.json")
+    assert tuple(creation_contract["properties"]["template"]["enum"]) == templates.ids()
+    assert set(creation_contract["properties"]["provider"]["enum"]) == {
+        provider for template in templates.all() for provider in template.providers
+    }
 
     parser = build_parser()
     parsed = parser.parse_args(["init", "project", "--template", "heated-pipe"])

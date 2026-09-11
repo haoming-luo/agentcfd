@@ -40,7 +40,10 @@ states provider compatibility, generated versus imported geometry, physics,
 default outputs, required user decisions, scientific limitations, and a
 copyable `init` command. `agentcfd templates --json` carries the same versioned
 catalog to agents and frontends; `init` derives its accepted names and default
-provider from that catalog rather than maintaining a second list.
+provider from that catalog rather than maintaining a second runtime list. Each
+template links the installed creation-request schema and declares its required,
+optional, and exactly-one fields; CI checks the unavoidable static JSON Schema
+enumerations against the runtime catalog.
 
 `agentcfd project . --json` is the unified integration view over the same
 lifecycle. It returns the status, compact current result, named published

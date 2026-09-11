@@ -21,6 +21,10 @@ class ProjectTemplate:
     requires: tuple[str, ...]
     limitations: tuple[str, ...]
     create_command: str
+    request_contract: str
+    request_required: tuple[str, ...]
+    request_optional: tuple[str, ...] = ()
+    request_exactly_one: tuple[tuple[str, ...], ...] = ()
 
     def __post_init__(self) -> None:
         if not self.id or not self.title or not self.purpose:
@@ -37,9 +41,20 @@ class ProjectTemplate:
             self.outputs,
             self.requires,
             self.limitations,
+            self.request_required,
+            self.request_optional,
         ):
             if any(not isinstance(value, str) or not value.strip() for value in values):
                 raise ValueError("Template string collections cannot contain blanks.")
+        if self.request_contract != "project-creation-request.schema.json":
+            raise ValueError("Templates must use the stable project creation contract.")
+        if len(set(self.request_required)) != len(self.request_required):
+            raise ValueError("Template required request fields must be unique.")
+        if set(self.request_required) & set(self.request_optional):
+            raise ValueError("Template request fields cannot be required and optional.")
+        for group in self.request_exactly_one:
+            if len(group) < 2 or any(not value.strip() for value in group):
+                raise ValueError("Exactly-one request groups require named alternatives.")
 
     def to_dict(self) -> dict[str, object]:
         record = asdict(self)
@@ -49,8 +64,13 @@ class ProjectTemplate:
             "outputs",
             "requires",
             "limitations",
+            "request_required",
+            "request_optional",
         ):
             record[name] = list(record[name])
+        record["request_exactly_one"] = [
+            list(group) for group in self.request_exactly_one
+        ]
         return record
 
 
@@ -79,6 +99,8 @@ _TEMPLATES = (
             "The OpenFOAM path is bounded to the validated laminar circular-pipe slice.",
         ),
         create_command="agentcfd init PROJECT --template industrial-pipe",
+        request_contract="project-creation-request.schema.json",
+        request_required=("schema", "template", "provider"),
     ),
     ProjectTemplate(
         id="heated-pipe",
@@ -120,6 +142,9 @@ _TEMPLATES = (
         create_command=(
             "agentcfd init PROJECT --template heated-pipe --provider openfoam"
         ),
+        request_contract="project-creation-request.schema.json",
+        request_required=("schema", "template", "provider"),
+        request_optional=("parameters",),
     ),
     ProjectTemplate(
         id="baffle-channel",
@@ -148,6 +173,8 @@ _TEMPLATES = (
         create_command=(
             "agentcfd init PROJECT --template baffle-channel --provider openfoam"
         ),
+        request_contract="project-creation-request.schema.json",
+        request_required=("schema", "template", "provider"),
     ),
     ProjectTemplate(
         id="imported-internal-flow",
@@ -191,6 +218,23 @@ _TEMPLATES = (
             "openfoam --geometry GEOMETRY --unit UNIT --roles ROLES_JSON "
             "--interior-point-m X Y Z --inlet-velocity-m-s UX UY UZ "
             "--base-size-m SIZE --maximum-cells COUNT"
+        ),
+        request_contract="project-creation-request.schema.json",
+        request_required=(
+            "schema",
+            "template",
+            "provider",
+            "geometry",
+            "interior_point_m",
+            "mesh",
+        ),
+        request_optional=("flow_distribution",),
+        request_exactly_one=(
+            (
+                "inlet_velocity_m_s",
+                "inlet_mass_flow_kg_s",
+                "inlet_total_gauge_pressure_pa",
+            ),
         ),
     ),
 )

@@ -120,6 +120,28 @@ logs or opening `result.json` histories and HDF5 fields. The optional CSV export
 flattens canonical quantity names and units for Pandas, spreadsheets, or
 surrogate-model ingestion.
 
+For the routine one-parameter decision, no plotting script or array dependency
+is required:
+
+```bash
+agentcfd campaigns . \
+  --plot-svg output/loss-map.svg \
+  --x-parameter mean_velocity \
+  --y-quantity report.system-loss.loss_coefficient
+```
+
+The matching Python API is `Project.campaign_operating_map()` for a versioned
+machine record and `Project.export_campaign_operating_map()` for the portable
+SVG. The horizontal axis must be a declared numeric project parameter, the
+vertical axis must be a canonical scalar quantity, and units must agree across
+all selected points. By default only scientifically accepted points enter the
+curve. Historical points lacking an explicit x value, missing quantities, and
+unaccepted results are listed under `exclusions`; none are guessed from current
+factory defaults. The report's `observation_cost` proves that no result manifest
+or volumetric field payload was opened. Consequently `artifact_integrity` stays
+explicitly unverified; run full result verification on the selected design
+before a high-consequence decision.
+
 Design-point inputs are explicit factory keyword arguments, not text edits.
 `check`, `plan`, and project `run` accept repeatable `--param NAME=VALUE`; the
 normalized JSON scalars are recorded beside the content-addressed analysis.

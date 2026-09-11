@@ -234,6 +234,14 @@ when per-run recursive size is worth the I/O. Use
 `--export-csv design-points.csv` for a flat table whose quantity headers retain
 units; no solver or HDF5 reader is invoked.
 
+For a direct operating curve, add `--plot-svg`, `--x-parameter`, and
+`--y-quantity`. AgentCFD reads the same compact markers, labels both axes with
+declared units, and connects only accepted points with distinct x values.
+Unaccepted points are omitted by default; `--include-unaccepted` shows them as
+separate warning markers without promoting them into the accepted curve. Runs
+that did not explicitly record the selected x parameter are reported as
+excluded rather than filled from today's `case.py` defaults.
+
 Projects may expose design variables directly in the readable factory:
 
 ```python

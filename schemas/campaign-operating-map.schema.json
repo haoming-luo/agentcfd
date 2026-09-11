@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/campaign-operating-map.schema.json",
+  "title": "AgentCFD compact campaign operating map 0.1",
+  "type": "object",
+  "required": [
+    "schema", "root", "accepted_only", "x_axis", "y_axis", "point_count",
+    "accepted_count", "connected_accepted_curve", "points", "exclusions",
+    "warnings", "artifact_integrity", "artifact", "observation_cost"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.campaign-operating-map/0.1"},
+    "root": {"type": "string"},
+    "accepted_only": {"type": "boolean"},
+    "x_axis": {"$ref": "#/$defs/axis"},
+    "y_axis": {"$ref": "#/$defs/axis"},
+    "point_count": {"type": "integer", "minimum": 1},
+    "accepted_count": {"type": "integer", "minimum": 0},
+    "connected_accepted_curve": {"type": "boolean"},
+    "points": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "run_id", "design_point_name", "x", "y", "accepted", "trust_level"
+        ],
+        "properties": {
+          "run_id": {"type": "string", "minLength": 1},
+          "design_point_name": {"type": ["string", "null"]},
+          "x": {"type": "number"},
+          "y": {"type": "number"},
+          "accepted": {"type": "boolean"},
+          "trust_level": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "exclusions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["run_id", "design_point_name", "reason"],
+        "properties": {
+          "run_id": {"type": "string", "minLength": 1},
+          "design_point_name": {"type": ["string", "null"]},
+          "reason": {
+            "enum": [
+              "result-not-accepted", "x-parameter-not-explicit",
+              "y-quantity-unavailable", "x-parameter-not-finite-numeric",
+              "y-quantity-not-finite-numeric", "y-unit-invalid"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "artifact_integrity": {
+      "type": "object",
+      "required": ["verified", "reason"],
+      "properties": {
+        "verified": {"const": false},
+        "reason": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["path", "media_type", "bytes", "sha256"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "media_type": {"const": "image/svg+xml"},
+            "bytes": {"type": "integer", "minimum": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "observation_cost": {
+      "type": "object",
+      "required": [
+        "run_markers_opened", "plan_files_opened", "result_manifests_opened",
+        "field_payloads_opened", "recursive_storage_scans"
+      ],
+      "properties": {
+        "run_markers_opened": {"type": "integer", "minimum": 0},
+        "plan_files_opened": {"type": "integer", "minimum": 0},
+        "result_manifests_opened": {"const": 0},
+        "field_payloads_opened": {"const": 0},
+        "recursive_storage_scans": {"const": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "axis": {
+      "type": "object",
+      "required": ["source", "name", "label", "unit"],
+      "properties": {
+        "source": {"enum": ["project-parameter", "result-quantity"]},
+        "name": {"type": "string", "minLength": 1},
+        "label": {"type": "string", "minLength": 1},
+        "unit": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

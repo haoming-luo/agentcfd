@@ -15,6 +15,7 @@ _SCHEMAS = (
     "benchmark-catalog.schema.json",
     "boundary-role-map.schema.json",
     "campaign-index.schema.json",
+    "campaign-operating-map.schema.json",
     "campaign-compaction.schema.json",
     "campaign-plan.schema.json",
     "campaign-promotion.schema.json",

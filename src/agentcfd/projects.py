@@ -26,6 +26,7 @@ from typing import Mapping, Sequence
 
 from . import (
     boundaries,
+    campaign_plotting,
     data_exchange,
     diagnostics,
     engineering,
@@ -2340,6 +2341,279 @@ class Project:
                 writer.writerow(flat)
         temporary.replace(target)
         report["exported_csv"] = str(target)
+        return target, report
+
+    def campaign_operating_map(
+        self,
+        *,
+        x_parameter: str,
+        y_quantity: str,
+        accepted_only: bool = True,
+    ) -> dict[str, object]:
+        """Build a field-free engineering curve from compact campaign markers.
+
+        The x axis is deliberately restricted to a declared numeric ``case.py``
+        parameter and the y axis to one canonical result quantity.  This keeps
+        design intent, units, and scientific acceptance visible without opening
+        result manifests or volumetric field payloads.
+        """
+
+        if not isinstance(x_parameter, str) or not x_parameter.strip():
+            raise ProjectError("Operating-map x parameter must be a non-empty string.")
+        if not isinstance(y_quantity, str) or not y_quantity.strip():
+            raise ProjectError("Operating-map y quantity must be a non-empty string.")
+        if not isinstance(accepted_only, bool):
+            raise ProjectError("Operating-map accepted_only must be a boolean.")
+        x_parameter = x_parameter.strip()
+        y_quantity = y_quantity.strip()
+
+        campaign = self.campaign_index()
+        points: list[dict[str, object]] = []
+        exclusions: list[dict[str, object]] = []
+        known_quantities: set[str] = set()
+        known_parameters: set[str] = set()
+        selected_units: set[str | None] = set()
+        x_axis_metadata: set[tuple[str, str | None]] = set()
+        plan_files_opened = 0
+        for row in campaign["runs"]:
+            quantities = row["quantities"]
+            parameters = row["parameters"]
+            known_parameters.update(
+                name for name in parameters if isinstance(name, str)
+            )
+            known_quantities.update(
+                name for name in quantities if isinstance(name, str)
+            )
+            reason = None
+            if accepted_only and row["accepted"] is not True:
+                reason = "result-not-accepted"
+            elif x_parameter not in parameters:
+                reason = "x-parameter-not-explicit"
+            elif y_quantity not in quantities:
+                reason = "y-quantity-unavailable"
+            else:
+                x_value = parameters[x_parameter]
+                y_record = quantities[y_quantity]
+                y_value = y_record.get("value") if isinstance(y_record, dict) else None
+                if (
+                    isinstance(x_value, bool)
+                    or not isinstance(x_value, (int, float))
+                    or not math.isfinite(float(x_value))
+                ):
+                    reason = "x-parameter-not-finite-numeric"
+                elif (
+                    isinstance(y_value, bool)
+                    or not isinstance(y_value, (int, float))
+                    or not math.isfinite(float(y_value))
+                ):
+                    reason = "y-quantity-not-finite-numeric"
+                else:
+                    unit = y_record.get("unit")
+                    if unit is not None and not isinstance(unit, str):
+                        reason = "y-unit-invalid"
+                    else:
+                        plan_path = Path(str(row["directory"])) / "plan.json"
+                        try:
+                            plan = strict_json_object(
+                                plan_path.read_text(encoding="utf-8"),
+                                label=f"campaign plan {plan_path}",
+                            )
+                        except (OSError, ValueError) as error:
+                            raise ProjectError(
+                                f"Cannot read immutable parameter metadata for run "
+                                f"{row['run_id']}: {error}"
+                            ) from error
+                        plan_files_opened += 1
+                        project_record = plan.get("project")
+                        factory_parameters = (
+                            project_record.get("factory_parameters")
+                            if isinstance(project_record, dict)
+                            else None
+                        )
+                        if not isinstance(factory_parameters, list):
+                            raise ProjectError(
+                                f"Campaign run {row['run_id']} has no immutable "
+                                "factory-parameter contract."
+                            )
+                        parameter = next(
+                            (
+                                record
+                                for record in factory_parameters
+                                if isinstance(record, dict)
+                                and record.get("name") == x_parameter
+                            ),
+                            None,
+                        )
+                        if parameter is None:
+                            raise ProjectError(
+                                f"Campaign run {row['run_id']} does not declare "
+                                f"parameter {x_parameter!r} in its saved plan."
+                            )
+                        planned_value = parameter.get("current")
+                        if (
+                            isinstance(planned_value, bool)
+                            or not isinstance(planned_value, (int, float))
+                            or not math.isfinite(float(planned_value))
+                            or float(planned_value) != float(x_value)
+                        ):
+                            raise ProjectError(
+                                f"Campaign run {row['run_id']} parameter {x_parameter!r} "
+                                "does not match its immutable plan."
+                            )
+                        metadata = parameter.get("metadata")
+                        if isinstance(metadata, dict) and metadata.get("kind") not in {
+                            "number",
+                            "integer",
+                        }:
+                            raise ProjectError(
+                                f"Campaign parameter {x_parameter!r} must be numeric."
+                            )
+                        x_label = (
+                            str(metadata.get("label"))
+                            if isinstance(metadata, dict) and metadata.get("label")
+                            else x_parameter
+                        )
+                        x_unit = (
+                            metadata.get("unit") if isinstance(metadata, dict) else None
+                        )
+                        if x_unit is not None and not isinstance(x_unit, str):
+                            raise ProjectError(
+                                f"Campaign parameter {x_parameter!r} has an invalid unit."
+                            )
+                        x_axis_metadata.add((x_label, x_unit))
+                        selected_units.add(unit)
+                        points.append(
+                            {
+                                "run_id": row["run_id"],
+                                "design_point_name": row["design_point_name"],
+                                "x": float(x_value),
+                                "y": float(y_value),
+                                "accepted": row["accepted"] is True,
+                                "trust_level": row["trust_level"],
+                            }
+                        )
+            if reason is not None:
+                exclusions.append(
+                    {
+                        "run_id": row["run_id"],
+                        "design_point_name": row["design_point_name"],
+                        "reason": reason,
+                    }
+                )
+
+        if y_quantity not in known_quantities:
+            available = ", ".join(sorted(known_quantities)) or "none"
+            raise ProjectError(
+                f"Unknown campaign quantity {y_quantity!r}. Available: {available}."
+            )
+        if x_parameter not in known_parameters:
+            available = ", ".join(sorted(known_parameters)) or "none"
+            raise ProjectError(
+                f"Unknown project parameter {x_parameter!r}. Available in campaign: "
+                f"{available}."
+            )
+        if not points:
+            scope = "accepted " if accepted_only else ""
+            raise ProjectError(
+                f"No {scope}campaign point has explicit numeric parameter "
+                f"{x_parameter!r} and quantity {y_quantity!r}."
+            )
+        if len(selected_units) != 1:
+            raise ProjectError(
+                f"Campaign quantity {y_quantity!r} does not use one consistent unit."
+            )
+        if len(x_axis_metadata) != 1:
+            raise ProjectError(
+                f"Campaign parameter {x_parameter!r} does not use one consistent label and unit."
+            )
+        points.sort(key=lambda point: (float(point["x"]), str(point["run_id"])))
+        accepted_x = [float(point["x"]) for point in points if point["accepted"]]
+        connected = len(accepted_x) >= 2 and len(set(accepted_x)) == len(accepted_x)
+        warnings: list[str] = []
+        if len(accepted_x) < 2:
+            warnings.append(
+                "Fewer than two accepted points are available; no decision curve is drawn."
+            )
+        elif len(set(accepted_x)) != len(accepted_x):
+            warnings.append(
+                "Accepted points repeat x values; markers are shown without a connecting curve."
+            )
+        y_unit = next(iter(selected_units))
+        x_label, x_unit = next(iter(x_axis_metadata))
+        observation_cost = dict(campaign["observation_cost"])
+        observation_cost["plan_files_opened"] = (
+            int(observation_cost["plan_files_opened"]) + plan_files_opened
+        )
+        return {
+            "schema": "agentcfd.campaign-operating-map/0.1",
+            "root": str(self.root),
+            "accepted_only": accepted_only,
+            "x_axis": {
+                "source": "project-parameter",
+                "name": x_parameter,
+                "label": x_label,
+                "unit": x_unit,
+            },
+            "y_axis": {
+                "source": "result-quantity",
+                "name": y_quantity,
+                "label": y_quantity.rsplit(".", 1)[-1].replace("_", " ").capitalize(),
+                "unit": y_unit,
+            },
+            "point_count": len(points),
+            "accepted_count": len(accepted_x),
+            "connected_accepted_curve": connected,
+            "points": points,
+            "exclusions": exclusions,
+            "warnings": warnings,
+            "artifact_integrity": {
+                "verified": False,
+                "reason": (
+                    "This fast map reads compact campaign markers and immutable plan "
+                    "summaries only; verify the selected run before a high-consequence "
+                    "decision."
+                ),
+            },
+            "artifact": None,
+            "observation_cost": observation_cost,
+        }
+
+    def export_campaign_operating_map(
+        self,
+        path: str | Path,
+        *,
+        x_parameter: str,
+        y_quantity: str,
+        accepted_only: bool = True,
+        title: str | None = None,
+    ) -> tuple[Path, dict[str, object]]:
+        """Write a deterministic, dependency-free SVG operating map."""
+
+        target = Path(path)
+        if target.suffix.lower() != ".svg":
+            raise ProjectError("Campaign operating-map output must use the .svg suffix.")
+        report = self.campaign_operating_map(
+            x_parameter=x_parameter,
+            y_quantity=y_quantity,
+            accepted_only=accepted_only,
+        )
+        if title is not None and (not isinstance(title, str) or not title.strip()):
+            raise ProjectError("Operating-map title must be a non-empty string or None.")
+        selected_title = title.strip() if title is not None else "AgentCFD operating map"
+        svg = campaign_plotting.render_operating_map_svg(
+            report,
+            title=selected_title,
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(target.suffix + ".tmp")
+        temporary.write_text(svg, encoding="utf-8")
+        temporary.replace(target)
+        report["artifact"] = {
+            "path": str(target),
+            "media_type": "image/svg+xml",
+            "bytes": target.stat().st_size,
+            "sha256": file_sha256(target),
+        }
         return target, report
 
     def _reusable_campaign_records(self) -> dict[str, dict[str, object]]:

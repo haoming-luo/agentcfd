@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Add `Project.campaign_operating_map()` and dependency-free SVG export for
+  accepted campaign quantities. The CLI turns an explicit numeric `case.py`
+  parameter and one canonical scalar result into a unit-labelled engineering
+  curve without opening `result.json`, XDMF, or HDF5; excluded and unaccepted
+  points remain explicit instead of silently influencing the decision line.
 - Add `outputs.pressure_loss()` for compact mass-flow-averaged total-pressure
   loss and inlet-bulk loss coefficient reporting across imported and baffled
   internal-flow providers. Generated imported projects enable it by default;

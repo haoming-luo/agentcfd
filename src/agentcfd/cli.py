@@ -1716,6 +1716,28 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Write a compact design-point table with canonical quantity columns.",
     )
+    campaigns.add_argument(
+        "--plot-svg",
+        type=Path,
+        help="Write a dependency-free SVG operating map from compact campaign data.",
+    )
+    campaigns.add_argument(
+        "--x-parameter",
+        help="Numeric project parameter for the operating-map x axis.",
+    )
+    campaigns.add_argument(
+        "--y-quantity",
+        help="Canonical result quantity for the operating-map y axis.",
+    )
+    campaigns.add_argument(
+        "--include-unaccepted",
+        action="store_true",
+        help="Show unaccepted points as warning markers; accepted-only is the default.",
+    )
+    campaigns.add_argument(
+        "--title",
+        help="Optional title for the SVG operating map.",
+    )
     campaigns.add_argument("--json", action="store_true", dest="as_json")
 
     sweep = subparsers.add_parser(
@@ -3201,7 +3223,33 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "campaigns":
         project = projects.Project.discover(args.project)
-        if args.export_csv is None:
+        plot_arguments = (args.plot_svg, args.x_parameter, args.y_quantity)
+        plot_requested = any(value is not None for value in plot_arguments) or (
+            args.title is not None or args.include_unaccepted
+        )
+        if plot_requested and not all(
+            value is not None for value in plot_arguments
+        ):
+            raise ProjectError(
+                "Campaign plotting requires --plot-svg, --x-parameter, and --y-quantity together."
+            )
+        if args.plot_svg is not None and args.export_csv is not None:
+            raise ProjectError(
+                "Use --plot-svg and --export-csv in separate commands so neither output is hidden."
+            )
+        if args.plot_svg is not None and args.storage:
+            raise ProjectError(
+                "Operating-map generation never scans storage; remove --storage."
+            )
+        if args.plot_svg is not None:
+            _, report = project.export_campaign_operating_map(
+                args.plot_svg,
+                x_parameter=args.x_parameter,
+                y_quantity=args.y_quantity,
+                accepted_only=not args.include_unaccepted,
+                title=args.title,
+            )
+        elif args.export_csv is None:
             report = project.campaign_index(include_storage=args.storage)
         else:
             _, report = project.export_campaign_csv(
@@ -3211,24 +3259,34 @@ def main(argv: list[str] | None = None) -> int:
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print(
-                f"Campaigns {report['run_count']} | accepted "
-                f"{report['accepted_count']} | failed {report['failed_count']}"
-            )
-            for row in report["runs"]:
-                duration = (
-                    "unknown time"
-                    if row["duration_seconds"] is None
-                    else f"{float(row['duration_seconds']):.3g}s"
-                )
+            if report["schema"] == "agentcfd.campaign-operating-map/0.1":
                 print(
-                    f"{row['run_id']} | {row['status']} | "
-                    f"accepted {str(row['accepted']).lower()} | {duration}"
+                    f"Operating map {report['x_axis']['name']} → "
+                    f"{report['y_axis']['name']} | {report['point_count']} points | "
+                    f"accepted {report['accepted_count']}"
                 )
-            if report["exported_csv"] is not None:
-                print(f"CSV: {report['exported_csv']}")
-            if not report["include_storage"]:
-                print("storage not scanned; add --storage when needed")
+                print(f"SVG: {report['artifact']['path']}")
+                for warning in report["warnings"]:
+                    print(f"warning: {warning}")
+            else:
+                print(
+                    f"Campaigns {report['run_count']} | accepted "
+                    f"{report['accepted_count']} | failed {report['failed_count']}"
+                )
+                for row in report["runs"]:
+                    duration = (
+                        "unknown time"
+                        if row["duration_seconds"] is None
+                        else f"{float(row['duration_seconds']):.3g}s"
+                    )
+                    print(
+                        f"{row['run_id']} | {row['status']} | "
+                        f"accepted {str(row['accepted']).lower()} | {duration}"
+                    )
+                if report["exported_csv"] is not None:
+                    print(f"CSV: {report['exported_csv']}")
+                if not report["include_storage"]:
+                    print("storage not scanned; add --storage when needed")
         return 0
     if args.command == "sweep":
         project = projects.Project.discover(args.project)

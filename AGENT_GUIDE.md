@@ -75,6 +75,10 @@ python -m pytest -q
 19. Use `campaigns --json` or its unit-preserving CSV for comparisons. Do not
     open every `result.json` history or HDF5 field merely to build a design
     table; request `--storage` only when recursive size is part of the decision.
+    For a one-parameter engineering curve, use `campaigns --plot-svg` with an
+    explicit numeric `--x-parameter` and canonical `--y-quantity`. Its default
+    accepted-only curve is the decision surface; unaccepted points may be shown
+    only with `--include-unaccepted` and remain visually separate.
 20. Use a versioned `campaign-request` plus `sweep` for multiple named points.
     Preserve all-points preflight, reuse accepted matching identities, and keep
     serial execution until a bounded resource scheduler explicitly authorizes

@@ -120,6 +120,9 @@ agentcfd view .         # prints the latest XDMF or result target
 agentcfd view . --recipe centerline-pressure --batch  # headless CSV/state
 agentcfd view . --layout wake-overview --batch  # one shared-data dashboard
 agentcfd campaigns . --export-csv design-points.csv   # compact comparison
+agentcfd campaigns . --plot-svg loss-map.svg \
+  --x-parameter mean_velocity \
+  --y-quantity report.system-loss.loss_coefficient    # accepted operating map
 ```
 
 For the first bounded heat-transfer workflow:

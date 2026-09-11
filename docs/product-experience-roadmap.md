@@ -99,6 +99,8 @@ files stay hidden and reproducible.
 - one-command post-processing target and self-documenting output directory;
 - field-free campaign design-point index and unit-preserving CSV export, with
   recursive storage scans remaining explicit opt-in;
+- dependency-free, unit-labelled SVG operating maps over compact campaign
+  markers, with accepted-only decision curves and explicit exclusions;
 - explicit `case.py` factory parameters shared by check/plan/run, fingerprinted
   into every design point and rejected on unknown names before execution;
 - all-points-first sweep preflight, accepted-identity reuse, atomic progress,
@@ -149,8 +151,8 @@ files stay hidden and reproducible.
 
 ### Then: scale without scaling attention
 
-1. Add bounded resource-aware concurrency, explicit retry limits, and
-   operating-map plots to the shipped serial/deduplicated campaign sweep.
+1. Add bounded resource-aware concurrency and explicit retry limits to the
+   shipped serial/deduplicated campaign sweep.
 2. Remote/container/HPC executor protocol with the same run state contract.
 3. Streaming XDMF/HDF5 publication, followed by Catalyst extraction for cases
    where intermediate VTK and native full-field retention dominate I/O.

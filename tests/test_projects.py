@@ -1690,6 +1690,133 @@ def test_campaign_index_and_csv_are_compact_field_free_design_point_tables(
     assert cli_report["observation_cost"]["field_payloads_opened"] == 0
 
 
+def test_campaign_operating_map_is_unit_aware_accepted_and_field_free(
+    tmp_path, capsys
+):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run(
+        campaign=True,
+        parameters={"mean_velocity": 0.01},
+        design_point_name="low-flow",
+    )
+    project.run(
+        campaign=True,
+        parameters={"mean_velocity": 0.03},
+        design_point_name="high-flow",
+    )
+    original_case = project.entrypoint.read_text(encoding="utf-8")
+    project.entrypoint.write_text(
+        "raise RuntimeError('campaign map must not import current case.py')\n"
+        + original_case,
+        encoding="utf-8",
+    )
+
+    report = project.campaign_operating_map(
+        x_parameter="mean_velocity",
+        y_quantity="flow.pressure_drop",
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-operating-map.schema.json")
+    ).validate(report)
+    assert report["x_axis"] == {
+        "source": "project-parameter",
+        "name": "mean_velocity",
+        "label": "Mean inlet velocity",
+        "unit": "m/s",
+    }
+    assert report["y_axis"]["unit"] == "Pa"
+    assert report["y_axis"]["label"] == "Pressure drop"
+    assert [point["x"] for point in report["points"]] == [0.01, 0.03]
+    assert report["accepted_count"] == 2
+    assert report["connected_accepted_curve"] is True
+    assert report["observation_cost"]["plan_files_opened"] == 2
+    assert report["observation_cost"]["result_manifests_opened"] == 0
+    assert report["observation_cost"]["field_payloads_opened"] == 0
+    assert report["artifact_integrity"]["verified"] is False
+    assert report["artifact"] is None
+
+    plot = tmp_path / "pressure-loss-map.svg"
+    _, rendered = project.export_campaign_operating_map(
+        plot,
+        x_parameter="mean_velocity",
+        y_quantity="flow.pressure_drop",
+        title="Pipe operating map",
+    )
+    jsonschema.Draft202012Validator(
+        contracts.load("campaign-operating-map.schema.json")
+    ).validate(rendered)
+    svg = plot.read_text(encoding="utf-8")
+    assert "Pipe operating map" in svg
+    assert "Mean inlet velocity [m/s]" in svg
+    assert "Pressure drop [Pa]" in svg
+    assert "<polyline" in svg
+    assert rendered["artifact"]["bytes"] == plot.stat().st_size
+    assert len(rendered["artifact"]["sha256"]) == 64
+
+    cli_plot = tmp_path / "cli-map.svg"
+    assert (
+        entrypoint(
+            [
+                "campaigns",
+                str(project.root),
+                "--plot-svg",
+                str(cli_plot),
+                "--x-parameter",
+                "mean_velocity",
+                "--y-quantity",
+                "flow.pressure_drop",
+                "--json",
+            ]
+        )
+        == 0
+    )
+    cli_report = json.loads(capsys.readouterr().out)
+    assert cli_report["artifact"]["path"] == str(cli_plot)
+    assert cli_report["observation_cost"]["field_payloads_opened"] == 0
+
+    first_marker = sorted((project.root / "campaigns").glob("*/run.json"))[0]
+    marker_record = json.loads(first_marker.read_text(encoding="utf-8"))
+    marker_record["accepted"] = False
+    first_marker.write_text(json.dumps(marker_record), encoding="utf-8")
+    filtered = project.campaign_operating_map(
+        x_parameter="mean_velocity",
+        y_quantity="flow.pressure_drop",
+    )
+    assert filtered["point_count"] == 1
+    assert filtered["exclusions"][0]["reason"] == "result-not-accepted"
+    inclusive = project.campaign_operating_map(
+        x_parameter="mean_velocity",
+        y_quantity="flow.pressure_drop",
+        accepted_only=False,
+    )
+    assert inclusive["point_count"] == 2
+    assert inclusive["accepted_count"] == 1
+    assert inclusive["connected_accepted_curve"] is False
+    assert inclusive["warnings"]
+
+
+def test_campaign_operating_map_rejects_incomplete_or_ambiguous_axes(tmp_path):
+    project = projects.init_project(tmp_path / "pipe")
+    project.run(campaign=True, parameters={"mean_velocity": 0.02})
+
+    with pytest.raises(ProjectError, match="Unknown project parameter"):
+        project.campaign_operating_map(
+            x_parameter="velocity_typo",
+            y_quantity="flow.pressure_drop",
+        )
+    with pytest.raises(ProjectError, match="Unknown campaign quantity"):
+        project.campaign_operating_map(
+            x_parameter="mean_velocity",
+            y_quantity="flow.not-a-quantity",
+        )
+    with pytest.raises(ProjectError, match=".svg suffix"):
+        project.export_campaign_operating_map(
+            tmp_path / "map.png",
+            x_parameter="mean_velocity",
+            y_quantity="flow.pressure_drop",
+        )
+
+
 def test_campaign_sweep_preflights_all_points_and_reuses_accepted_identity(
     tmp_path, capsys
 ):

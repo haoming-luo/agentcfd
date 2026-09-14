@@ -89,6 +89,7 @@ _SCHEMAS = (
     "turbulent-model-sweep.schema.json",
     "turbulent-wall-study.schema.json",
     "validation-point.schema.json",
+    "zero-d-result.schema.json",
 )
 
 _AGENTCAE_BINDINGS = (

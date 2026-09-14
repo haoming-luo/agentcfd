@@ -38,6 +38,7 @@ def test_capability_catalog_is_truthful():
         "experimental"
     )
     assert maturity["engineering.gas-screening"] == "experimental"
+    assert maturity["engineering.zero-d-hydraulic-network"] == "experimental"
     assert maturity["validation.single-observable-uncertainty"] == "experimental"
     assert maturity["verification.component-loss-baseline"] == "experimental"
     report = capabilities.as_dict()

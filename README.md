@@ -681,6 +681,26 @@ agentcfd calculate pipe-flow --density 998.2 --viscosity 0.001002 \
   --regime laminar --json
 ```
 
+For a complete pipe system, the dependency-free `zero_d` API solves named
+pressure/source nodes, elevation head, circular pipes, general passive
+resistances, and parallel flow splits without generating an OpenFOAM case:
+
+```python
+from agentcfd import fluids, zero_d
+
+water = fluids.newtonian("water", density=998.2, dynamic_viscosity=1.002e-3)
+system = zero_d.network("feed", fluid=water)
+system.node("supply", pressure=250_000.0)
+system.node("load", volume_flow_source=-0.001)
+system.pipe("line", "supply", "load", length=10.0, diameter=0.05)
+result = system.solve().require_accepted()
+print(result.pressure("load"), result.volume_flow_rate("line"))
+```
+
+See [zero-dimensional hydraulic models](docs/zero-d-models.md) for assumptions,
+sign conventions, JSON output, and the boundary between system screening and
+resolved CFD.
+
 Gas-model screening and optional CoolProp/IF97 states use equally explicit
 commands:
 

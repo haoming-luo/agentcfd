@@ -58,6 +58,17 @@ A Step combines a validated Model, one Solution Procedure, requested outputs,
 and execution policy. The Step is where provider capability is checked and the
 public model is lowered. A Step may generate a case without running it.
 
+## Zero-dimensional Network
+
+A zero-dimensional network represents integral system behavior as hydraulic
+nodes and connecting components, without a spatial mesh. It is appropriate for
+pressure/flow screening, network balance, operating-point selection, and
+generating explicit boundary data for resolved CFD. It cannot establish local
+flow structures such as separation, recirculation, mixing, or wall loading.
+Zero-dimensional results therefore keep their own versioned contract and
+capability boundary instead of masquerading as a mesh-resolved Simulation
+Result.
+
 ## Provider
 
 A deterministic implementation that lowers a supported Step to a numerical or

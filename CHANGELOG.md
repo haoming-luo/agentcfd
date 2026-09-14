@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a dependency-free experimental `zero_d` API for steady passive hydraulic
+  networks with prescribed pressures and volume/mass-flow demands, elevation head, circular-pipe
+  and linear/quadratic resistance branches, parallel flow splitting, named
+  result access, stable model fingerprints, compact JSON output, explicit
+  conservation/pressure-closure acceptance, and a versioned result contract.
+
 ## 0.1.0a5 — 2026-09-11
 
 - Keep bounded STL topology inspection compatible with Python 3.11 by clearing

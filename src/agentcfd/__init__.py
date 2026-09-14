@@ -26,6 +26,7 @@ from . import (
     studies,
     templates,
     verification,
+    zero_d,
 )
 from ._version import __version__
 from .archives import restore_project_archive, verify_project_archive
@@ -89,4 +90,5 @@ __all__ = [
     "verify_project_archive",
     "write_circular_elbow_stl",
     "read_result_record",
+    "zero_d",
 ]

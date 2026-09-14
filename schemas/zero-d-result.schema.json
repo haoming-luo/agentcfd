@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/zero-d-result.schema.json",
+  "title": "AgentCFD zero-dimensional hydraulic-network result 0.1",
+  "type": "object",
+  "required": [
+    "schema", "status", "converged", "accepted", "trust_level", "model",
+    "solver", "nodes", "branches", "checks", "limitations"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.zero-d-result/0.1"},
+    "status": {"enum": ["completed"]},
+    "converged": {"type": "boolean"},
+    "accepted": {"type": "boolean"},
+    "trust_level": {"enum": ["computed"]},
+    "model": {
+      "type": "object",
+      "required": ["name", "sha256", "physics"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "physics": {"const": "steady-single-phase-incompressible-constant-property"}
+      },
+      "additionalProperties": false
+    },
+    "solver": {
+      "type": "object",
+      "required": [
+        "method", "iterations", "flow_tolerance", "pressure_tolerance",
+        "maximum_mass_balance_residual", "maximum_pressure_closure_residual"
+      ],
+      "properties": {
+        "method": {"const": "damped-nodal-newton"},
+        "iterations": {"type": "integer", "minimum": 0},
+        "flow_tolerance": {"$ref": "#/$defs/flowQuantity"},
+        "pressure_tolerance": {"$ref": "#/$defs/pressureQuantity"},
+        "maximum_mass_balance_residual": {"$ref": "#/$defs/flowQuantity"},
+        "maximum_pressure_closure_residual": {"$ref": "#/$defs/pressureQuantity"}
+      },
+      "additionalProperties": false
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "boundary_type", "pressure", "elevation", "volume_flow_source",
+          "mass_balance_residual", "required_boundary_volume_flow_rate"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "boundary_type": {"enum": ["prescribed-pressure", "solved-pressure"]},
+          "pressure": {"$ref": "#/$defs/pressureQuantity"},
+          "elevation": {"$ref": "#/$defs/lengthQuantity"},
+          "volume_flow_source": {"$ref": "#/$defs/flowQuantity"},
+          "mass_balance_residual": {"$ref": "#/$defs/flowQuantity"},
+          "required_boundary_volume_flow_rate": {
+            "oneOf": [
+              {"type": "null"},
+              {"$ref": "#/$defs/flowQuantity"}
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "branches": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "type", "start_node", "end_node", "volume_flow_rate",
+          "mass_flow_rate", "static_pressure_difference",
+          "elevation_pressure_difference", "driving_pressure_difference",
+          "modeled_pressure_loss", "pressure_closure_residual"
+        ],
+        "properties": {
+          "name": {"type": "string", "minLength": 1},
+          "type": {"enum": ["circular-pipe", "flow-resistance"]},
+          "start_node": {"type": "string", "minLength": 1},
+          "end_node": {"type": "string", "minLength": 1},
+          "volume_flow_rate": {"$ref": "#/$defs/flowQuantity"},
+          "mass_flow_rate": {"$ref": "#/$defs/massFlowQuantity"},
+          "static_pressure_difference": {"$ref": "#/$defs/pressureQuantity"},
+          "elevation_pressure_difference": {"$ref": "#/$defs/pressureQuantity"},
+          "driving_pressure_difference": {"$ref": "#/$defs/pressureQuantity"},
+          "modeled_pressure_loss": {"$ref": "#/$defs/pressureQuantity"},
+          "pressure_closure_residual": {"$ref": "#/$defs/pressureQuantity"},
+          "mean_speed": {"$ref": "#/$defs/speedQuantity"},
+          "reynolds_number": {"type": "number", "minimum": 0},
+          "flow_regime": {"enum": ["stagnant", "laminar", "transitional", "turbulent"]},
+          "darcy_friction_factor": {"type": ["number", "null"], "minimum": 0},
+          "friction_model": {"const": "churchill-1977"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["name", "passed", "value", "limit", "unit"],
+        "properties": {
+          "name": {"enum": ["free-node-volume-conservation", "branch-pressure-closure"]},
+          "passed": {"type": "boolean"},
+          "value": {"type": "number", "minimum": 0},
+          "limit": {"type": "number", "exclusiveMinimum": 0},
+          "unit": {"enum": ["m^3/s", "Pa"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "pressureQuantity": {"$ref": "#/$defs/quantity", "properties": {"unit": {"const": "Pa"}}},
+    "flowQuantity": {"$ref": "#/$defs/quantity", "properties": {"unit": {"const": "m^3/s"}}},
+    "massFlowQuantity": {"$ref": "#/$defs/quantity", "properties": {"unit": {"const": "kg/s"}}},
+    "lengthQuantity": {"$ref": "#/$defs/quantity", "properties": {"unit": {"const": "m"}}},
+    "speedQuantity": {"$ref": "#/$defs/quantity", "properties": {"unit": {"const": "m/s"}}},
+    "quantity": {
+      "type": "object",
+      "required": ["value", "unit"],
+      "properties": {
+        "value": {"type": "number"},
+        "unit": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

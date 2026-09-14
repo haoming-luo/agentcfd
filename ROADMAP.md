@@ -68,6 +68,11 @@ cases. Detailed results live in `docs/numerical-strategy.md`; product developmen
 now prioritizes end-to-end industrial geometry and decision workflows over
 additional smooth-pipe tuning.
 
+The first steady passive 0D hydraulic-network slice is now available for rapid
+system screening and explicit 3D boundary-condition preparation. It remains an
+experimental, separate abstraction until pumps, active components, thermal
+states, and transient storage have their own verified laws and contracts.
+
 - follow the inlet, resolution, turbulence, and steam promotion sequence in
   `docs/numerical-strategy.md`;
 - steady and transient incompressible flow;

@@ -254,6 +254,26 @@ _CAPABILITIES = (
         ),
     ),
     Capability(
+        name="engineering.zero-d-hydraulic-network",
+        maturity="experimental",
+        scope=(
+            "Steady single-phase incompressible constant-property passive hydraulic "
+            "networks with prescribed pressures, prescribed volume sources or sinks, "
+            "elevation, circular pipes, and linear/quadratic resistances."
+        ),
+        evidence=(
+            "free-node volume-conservation acceptance gate",
+            "branch pressure-closure acceptance gate",
+            "Hagen--Poiseuille, parallel-branch, and elevation regression tests",
+            "versioned JSON result contract",
+        ),
+        limitations=(
+            "This is a lumped system model, not mesh-resolved CFD.",
+            "Churchill 1977 friction is an all-regime system correlation, not validation of transitional three-dimensional flow.",
+            "Pumps, active controls, heat transfer, compressibility, storage, and transients are unsupported.",
+        ),
+    ),
+    Capability(
         name="engineering.gas-screening",
         maturity="experimental",
         scope=(

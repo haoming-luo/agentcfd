@@ -13,6 +13,7 @@ from ._api_contract import (
     workflow_modules,
 )
 from ._version import __version__
+from .extensions import as_dict as extension_catalog
 from .operations import as_dict as operation_catalog
 from .providers.registry import as_dict as provider_catalog
 
@@ -571,5 +572,6 @@ def as_dict() -> dict[str, object]:
         "workflow_stages": list(WORKFLOW_STAGES),
         "provider_catalog": provider_catalog(),
         "operation_catalog": operation_catalog(),
+        "extension_catalog": extension_catalog(),
         "capabilities": [item.to_dict() for item in _CAPABILITIES],
     }

@@ -41,6 +41,8 @@ def main() -> None:
         "field-bundle.schema.json",
         "provider-catalog.schema.json",
         "operation-catalog.schema.json",
+        "extension-catalog.schema.json",
+        "mcp-manifest.schema.json",
     }
     assert required_contracts <= set(contracts.available())
     assert all(contracts.path(name).is_file() for name in required_contracts)
@@ -49,7 +51,13 @@ def main() -> None:
     assert capability_report["capabilities"]
     assert capability_report["provider_catalog"]["providers"]
     assert capability_report["operation_catalog"]["operations"]
+    assert capability_report["extension_catalog"]["schema"] == (
+        "agentcfd.extension-catalog/0.1"
+    )
+    assert run("extensions")["summary"]["discovered"] >= 0
+    assert run("mcp-manifest")["safety"]["arbitrary_shell"] is False
     assert "operations" in agentcfd.public_api("advanced")
+    assert {"extensions", "mcp"} <= set(agentcfd.public_api("expert"))
     assert run("templates")["templates"]
 
     with tempfile.TemporaryDirectory(prefix="agentcfd-wheel-") as raw_root:

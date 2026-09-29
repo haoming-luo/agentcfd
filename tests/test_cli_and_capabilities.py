@@ -60,6 +60,9 @@ def test_capability_catalog_is_truthful():
     jsonschema.Draft202012Validator(
         contracts.load("operation-catalog.schema.json")
     ).validate(report["operation_catalog"])
+    jsonschema.Draft202012Validator(
+        contracts.load("extension-catalog.schema.json")
+    ).validate(report["extension_catalog"])
     assert report["schema"] == "agentcfd.capabilities/0.2"
     assert report["commands"] == list(CLI_COMMANDS)
 

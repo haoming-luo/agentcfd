@@ -21,6 +21,21 @@
   support, expected artifact roles, output contract, and conservative MCP
   annotations. The catalog exposes only AgentCFD commands and never arbitrary
   shell or Python execution.
+- Add descriptor-first optional extension discovery through versioned
+  `agentcfd.providers.v1`, `exporters.v1`, `properties.v1`, and `learning.v1`
+  entry-point groups. Discovery reads package metadata without importing code;
+  ambiguous, legacy, and interface-mismatched extensions fail closed, while
+  explicit loading validates a minimal `agentcfd.extension/1` descriptor.
+- Generate a dependency-free MCP manifest from the bounded operation catalog,
+  including catalog resources, project resource templates, typed placeholder
+  inputs, risk annotations, approval/retry policy, and artifact expectations.
+  It deliberately supplies neither a transport server nor an arbitrary
+  execution escape hatch. Operation templates can now render directly to
+  shell-free argv, and a golden contract-driven journey covers the complete
+  reference-project lifecycle.
+- Extract provider planning and compact result-summary construction from the
+  oversized Project module into pure internal services without changing the
+  public project or serialized-result contracts.
 - Add a dependency-free experimental `zero_d` API for steady passive hydraulic
   networks with prescribed pressures and volume/mass-flow demands, elevation head, circular-pipe
   and linear/quadratic resistance branches, parallel flow splitting, named

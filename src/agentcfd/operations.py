@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
+import shlex
+
+
+_PLACEHOLDER = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +101,26 @@ _OPERATIONS = (
         retry_policy="safe",
         approval_policy="none",
         output_contract="template-catalog.schema.json",
+    ),
+    Operation(
+        "discover_extensions",
+        "agentcfd extensions --json",
+        "read",
+        "Discover compatible optional packages without importing their code.",
+        idempotent=True,
+        retry_policy="safe",
+        approval_policy="none",
+        output_contract="extension-catalog.schema.json",
+    ),
+    Operation(
+        "discover_mcp_manifest",
+        "agentcfd mcp-manifest --json",
+        "read",
+        "Describe bounded MCP resources and tools generated from product contracts.",
+        idempotent=True,
+        retry_policy="safe",
+        approval_policy="none",
+        output_contract="mcp-manifest.schema.json",
     ),
     Operation(
         "create_project",
@@ -241,6 +266,49 @@ def get(name: str) -> Operation:
     )
 
 
+def argument_names(operation: str | Operation) -> tuple[str, ...]:
+    """Return the declared uppercase placeholders as normalized input names."""
+
+    selected = get(operation) if isinstance(operation, str) else operation
+    return tuple(
+        dict.fromkeys(
+            token.lower()
+            for token in shlex.split(selected.command)
+            if _PLACEHOLDER.fullmatch(token)
+        )
+    )
+
+
+def argv(name: str, /, **arguments: str) -> tuple[str, ...]:
+    """Render one catalog command as argv without invoking a shell."""
+
+    operation = get(name)
+    tokens = shlex.split(operation.command)
+    placeholders = argument_names(operation)
+    missing = [
+        placeholder for placeholder in placeholders if placeholder not in arguments
+    ]
+    extra = sorted(set(arguments) - set(placeholders))
+    invalid = [
+        placeholder
+        for placeholder in placeholders
+        if not isinstance(arguments.get(placeholder), str)
+        or not str(arguments[placeholder]).strip()
+        or str(arguments[placeholder]).startswith("-")
+        or "\x00" in str(arguments[placeholder])
+    ]
+    if missing or extra or invalid:
+        raise ValueError(
+            f"Operation {name!r} arguments are invalid: missing={missing!r}, "
+            f"extra={extra!r}, invalid={invalid!r}."
+        )
+    rendered = [
+        arguments[token.lower()] if _PLACEHOLDER.fullmatch(token) else token
+        for token in tokens[1:]
+    ]
+    return tuple(rendered)
+
+
 def as_dict() -> dict[str, object]:
     return {
         "schema": "agentcfd.operation-catalog/0.1",
@@ -248,4 +316,4 @@ def as_dict() -> dict[str, object]:
     }
 
 
-__all__ = ["Operation", "all", "as_dict", "get"]
+__all__ = ["Operation", "all", "argument_names", "argv", "as_dict", "get"]

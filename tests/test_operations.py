@@ -50,3 +50,24 @@ def test_operation_risk_annotations_are_conservative():
 def test_unknown_operation_fails_closed():
     with pytest.raises(ValueError, match="Unknown AgentCFD operation"):
         operations.get("arbitrary_shell")
+
+
+def test_operation_arguments_render_to_shell_free_argv():
+    rendered = operations.argv(
+        "create_project",
+        project="project with spaces",
+        template="industrial-pipe",
+    )
+    assert rendered == (
+        "init",
+        "project with spaces",
+        "--template",
+        "industrial-pipe",
+        "--json",
+    )
+    with pytest.raises(ValueError, match=r"missing=\['template'\]"):
+        operations.argv("create_project", project="case")
+    with pytest.raises(ValueError, match=r"extra=\['shell'\]"):
+        operations.argv("inspect_status", project="case", shell="rm")
+    with pytest.raises(ValueError, match=r"invalid=\['project'\]"):
+        operations.argv("inspect_status", project="--help")

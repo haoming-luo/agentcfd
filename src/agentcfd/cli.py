@@ -23,12 +23,14 @@ from . import (
     contracts,
     data_exchange,
     engineering,
+    extensions,
     fluids,
     geometry,
     geometry_generation,
     geometry_io,
     interoperability,
     licensing,
+    mcp,
     outputs,
     procedures,
     projects,
@@ -2309,6 +2311,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     catalog.add_argument("--json", action="store_true", dest="as_json")
 
+    extension_catalog = subparsers.add_parser(
+        "extensions",
+        help="Discover optional extension descriptors without importing plugin code.",
+    )
+    extension_catalog.add_argument(
+        "--kind",
+        choices=tuple(extensions.ENTRY_POINT_GROUPS),
+        help="Limit discovery to one extension kind.",
+    )
+    extension_catalog.add_argument("--json", action="store_true", dest="as_json")
+
+    mcp_manifest = subparsers.add_parser(
+        "mcp-manifest",
+        help="Describe bounded MCP resources and tools without starting a server.",
+    )
+    mcp_manifest.add_argument("--json", action="store_true", dest="as_json")
+
     benchmark_catalog = subparsers.add_parser(
         "benchmarks",
         help="Show the evidence-gated benchmark roadmap.",
@@ -4541,6 +4560,41 @@ def main(argv: list[str] | None = None) -> int:
             )
             for item in capabilities.all():
                 print(f"{item.name}: {item.maturity}")
+        return 0
+    if args.command == "extensions":
+        report = extensions.as_dict(kind=args.kind)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            summary = report["summary"]
+            print(
+                "AgentCFD extensions | "
+                f"{summary['compatible']} compatible / "
+                f"{summary['discovered']} discovered"
+            )
+            if not report["extensions"]:
+                print("No optional extensions discovered.")
+            for item in report["extensions"]:
+                state = (
+                    "compatible"
+                    if item["compatible"]
+                    else item["compatibility_code"]
+                )
+                distribution = item["distribution"] or "unknown distribution"
+                print(f"- {item['kind']}:{item['name']} | {distribution} | {state}")
+        return 0
+    if args.command == "mcp-manifest":
+        report = mcp.as_dict()
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                "AgentCFD MCP manifest | "
+                f"{len(report['resources'])} resources | "
+                f"{len(report['resource_templates'])} resource templates | "
+                f"{len(report['tools'])} bounded tools"
+            )
+            print("transport: not bundled; execution: operation adapter required")
         return 0
     if args.command == "benchmarks":
         report = benchmarks.as_dict()

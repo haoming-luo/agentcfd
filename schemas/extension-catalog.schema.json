@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/extension-catalog.schema.json",
+  "title": "AgentCFD extension catalog 0.1",
+  "type": "object",
+  "required": [
+    "schema", "extension_api_version", "entry_point_groups", "extensions", "summary"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.extension-catalog/0.1"},
+    "extension_api_version": {"const": "1"},
+    "entry_point_groups": {
+      "type": "object",
+      "required": ["provider", "exporter", "property", "learning"],
+      "properties": {
+        "provider": {"const": "agentcfd.providers.v1"},
+        "exporter": {"const": "agentcfd.exporters.v1"},
+        "property": {"const": "agentcfd.properties.v1"},
+        "learning": {"const": "agentcfd.learning.v1"}
+      },
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind", "group", "name", "object_ref", "distribution",
+          "distribution_version", "api_version", "compatible",
+          "compatibility_code", "compatibility_message"
+        ],
+        "properties": {
+          "kind": {"enum": ["provider", "exporter", "property", "learning"]},
+          "group": {
+            "enum": [
+              "agentcfd.providers.v1", "agentcfd.exporters.v1",
+              "agentcfd.properties.v1", "agentcfd.learning.v1",
+              "agentcfd.providers", "agentcfd.exporters",
+              "agentcfd.properties", "agentcfd.learning"
+            ]
+          },
+          "name": {"type": "string", "minLength": 1},
+          "object_ref": {"type": "string", "minLength": 1},
+          "distribution": {"type": ["string", "null"]},
+          "distribution_version": {"type": ["string", "null"]},
+          "api_version": {"type": ["string", "null"]},
+          "compatible": {"type": "boolean"},
+          "compatibility_code": {
+            "enum": [
+              "compatible", "invalid-name", "unsupported-api-group",
+              "ambiguous-name"
+            ]
+          },
+          "compatibility_message": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["discovered", "compatible", "incompatible"],
+      "properties": {
+        "discovered": {"type": "integer", "minimum": 0},
+        "compatible": {"type": "integer", "minimum": 0},
+        "incompatible": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -135,7 +135,7 @@ No outer interface is allowed to invent a second simulation model.
 
 ## Release sequence and gates
 
-### A6 — product-foundation consolidation (active)
+### A6 — product-foundation consolidation (exit-gate review)
 
 Goal: make the already broad product surface discoverable, stable, and easier
 to maintain before adding more physics.
@@ -163,7 +163,7 @@ Exit gate:
 - provider selection cannot differ between inspection and execution;
 - no change regresses the replace-by-default project or output policy.
 
-### A7 — safe AI operation and extension boundary
+### A7 — safe AI operation and extension boundary (active)
 
 Goal: let AI clients and optional packages operate AgentCFD without privileged
 knowledge of its internals.
@@ -277,10 +277,20 @@ provider resolver; the 0D network has an explicit scalar-only common-result
 bridge. Tests bind all inventories to the real facades, parser, schemas, and
 installed wheel.
 
-The next A6 slice is service extraction from the large project and CLI modules,
-starting with provider planning and result publication. A7 then adds
-descriptor-first extension entry points and thin MCP resources generated from
-these existing contracts, rather than introducing a second tool language.
+Provider planning and compact result-summary construction are now pure internal
+services rather than additional branches inside the Project facade. A golden
+contract-driven reference journey covers create, check, plan, run, inspect,
+result, verify, and cleanup preview without parsing help text or invoking a
+shell.
+
+A7 is now active: versioned entry-point groups support descriptor-first
+provider, exporter, property, and learning discovery without importing optional
+code; explicit loads validate a minimal extension interface. A dependency-free
+MCP manifest generates resources, project resource templates, typed inputs, and
+risk annotations from the existing operation catalog while explicitly bundling
+neither transport nor execution. The remaining A7 work is a separately packaged
+transport adapter, project upgrade reports, and real extension implementations;
+none should widen the core dependency set.
 
 ## Explicitly deferred
 

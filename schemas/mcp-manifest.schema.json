@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/mcp-manifest.schema.json",
+  "title": "AgentCFD transport-neutral MCP manifest 0.1",
+  "type": "object",
+  "required": [
+    "schema", "transport", "execution", "resources",
+    "resource_templates", "tools", "safety"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.mcp-manifest/0.1"},
+    "transport": {"type": "null"},
+    "execution": {"const": "not-implemented-by-manifest"},
+    "resources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/resource"}
+    },
+    "resource_templates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name", "uriTemplate", "description", "mimeType",
+          "command_pattern", "output_contract"
+        ],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "uriTemplate": {"type": "string", "pattern": "^agentcfd://"},
+          "description": {"type": "string", "minLength": 1},
+          "mimeType": {"const": "application/json"},
+          "command_pattern": {"type": "string", "pattern": "^agentcfd "},
+          "output_contract": {"type": ["string", "null"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "inputSchema", "annotations", "agentcfd"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "description": {"type": "string", "minLength": 1},
+          "inputSchema": {"type": "object"},
+          "annotations": {"type": "object"},
+          "agentcfd": {
+            "type": "object",
+            "required": [
+              "command_pattern", "effect", "retry_policy", "approval_policy",
+              "starts_solver", "supports_preview", "expected_artifacts",
+              "output_contract"
+            ],
+            "properties": {
+              "command_pattern": {"type": "string", "pattern": "^agentcfd "},
+              "effect": {"enum": ["read", "write", "execute"]},
+              "retry_policy": {
+                "enum": ["safe", "state-dependent", "do-not-retry-automatically"]
+              },
+              "approval_policy": {
+                "enum": ["none", "user-write", "user-execution", "user-destructive"]
+              },
+              "starts_solver": {"type": "boolean"},
+              "supports_preview": {"type": "boolean"},
+              "expected_artifacts": {
+                "type": "array",
+                "items": {"type": "string"},
+                "uniqueItems": true
+              },
+              "output_contract": {"type": ["string", "null"]}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "safety": {
+      "type": "object",
+      "required": [
+        "arbitrary_shell", "arbitrary_python",
+        "extension_code_loaded_during_discovery", "approval_is_enforced_by"
+      ],
+      "properties": {
+        "arbitrary_shell": {"const": false},
+        "arbitrary_python": {"const": false},
+        "extension_code_loaded_during_discovery": {"const": false},
+        "approval_is_enforced_by": {"const": "host-and-operation-adapter"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "required": ["name", "uri", "description", "mimeType"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "uri": {"type": "string", "pattern": "^agentcfd://"},
+        "description": {"type": "string", "minLength": 1},
+        "mimeType": {"const": "application/json"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

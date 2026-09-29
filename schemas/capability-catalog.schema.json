@@ -13,6 +13,7 @@
     "workflow_stages",
     "provider_catalog",
     "operation_catalog",
+    "extension_catalog",
     "capabilities"
   ],
   "properties": {
@@ -76,6 +77,16 @@
         "operations": {"type": "array", "minItems": 1}
       },
       "additionalProperties": false
+    },
+    "extension_catalog": {
+      "type": "object",
+      "required": ["schema", "extensions", "summary"],
+      "properties": {
+        "schema": {"const": "agentcfd.extension-catalog/0.1"},
+        "extensions": {"type": "array"},
+        "summary": {"type": "object"}
+      },
+      "additionalProperties": true
     },
     "capabilities": {
       "type": "array",

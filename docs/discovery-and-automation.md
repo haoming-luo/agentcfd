@@ -72,6 +72,66 @@ agent should combine static risk metadata with this dynamic project state, and
 must still respect normal user approval policy for writes, solver execution,
 and destructive application.
 
+`agentcfd.operations.argv()` renders one catalog operation directly to an argv
+tuple. It requires every declared placeholder, rejects undeclared arguments,
+and never invokes a shell. This is the preferred boundary for a GUI, agent
+adapter, or test harness that needs to execute an approved operation.
+
+## Optional extensions
+
+```bash
+agentcfd extensions --json
+```
+
+Extension discovery reads Python distribution and entry-point metadata only.
+It does not import the referenced module. The supported API-v1 groups are:
+
+- `agentcfd.providers.v1`
+- `agentcfd.exporters.v1`
+- `agentcfd.properties.v1`
+- `agentcfd.learning.v1`
+
+An extension package declares a normal entry point, for example:
+
+```toml
+[project.entry-points."agentcfd.learning.v1"]
+physicsnemo = "agentcfd_learning_physicsnemo:extension"
+```
+
+Versioning the group makes compatibility visible without custom package
+metadata or importing code. Unversioned legacy groups are reported as
+incompatible. Duplicate group/name registrations also fail closed. Only an
+explicit `agentcfd.extensions.load(kind, name)` imports code; the loaded object
+must then return this minimal descriptor from a callable `descriptor()`:
+
+```python
+{
+    "schema": "agentcfd.extension/1",
+    "kind": "learning",
+    "name": "physicsnemo",
+    "capabilities": ["learning.physicsnemo"],
+}
+```
+
+The core currently establishes discovery and compatibility, not automatic
+installation or privileged execution. Provider/exporter/property/learning
+integration protocols can evolve behind these separate namespaces without
+making their runtimes mandatory core dependencies.
+
+## MCP manifest
+
+```bash
+agentcfd mcp-manifest --json
+```
+
+The dependency-free manifest derives catalog resources, project resource
+templates, typed tool input schemas, annotations, approval/retry policy, and
+expected artifacts from the existing operation catalog. It deliberately
+declares `transport: null` and does not start a server or execute a tool. A thin
+MCP transport package can consume this manifest; it must enforce host approval
+and dispatch only through the bounded argv renderer. Arbitrary shell and
+arbitrary Python remain absent.
+
 ## Minimum machine journey
 
 ```text
@@ -87,5 +147,6 @@ handoff check.
 
 The contracts are shipped inside the wheel as
 `capability-catalog.schema.json`, `provider-catalog.schema.json`, and
-`operation-catalog.schema.json`. Installed-wheel tests verify that discovery
-still works without NumPy or a local OpenFOAM runtime.
+`operation-catalog.schema.json`, together with `extension-catalog.schema.json`
+and `mcp-manifest.schema.json`. Installed-wheel tests verify that discovery
+still works without NumPy, an MCP dependency, or a local OpenFOAM runtime.

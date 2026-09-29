@@ -30,6 +30,7 @@ ADVANCED_WORKFLOW_MODULES = (
     "data_exchange",
     "interoperability",
     "templates",
+    "operations",
 )
 
 EXPERT_WORKFLOW_MODULES = (

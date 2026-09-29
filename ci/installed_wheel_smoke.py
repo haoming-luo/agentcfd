@@ -39,11 +39,17 @@ def main() -> None:
         "project-verification.schema.json",
         "simulation-result.schema.json",
         "field-bundle.schema.json",
+        "provider-catalog.schema.json",
+        "operation-catalog.schema.json",
     }
     assert required_contracts <= set(contracts.available())
     assert all(contracts.path(name).is_file() for name in required_contracts)
     assert run("doctor")["healthy"] is True
-    assert run("capabilities")["capabilities"]
+    capability_report = run("capabilities")
+    assert capability_report["capabilities"]
+    assert capability_report["provider_catalog"]["providers"]
+    assert capability_report["operation_catalog"]["operations"]
+    assert "operations" in agentcfd.public_api("advanced")
     assert run("templates")["templates"]
 
     with tempfile.TemporaryDirectory(prefix="agentcfd-wheel-") as raw_root:

@@ -17,6 +17,7 @@ from typing import TypeAlias
 
 from ._validation import finite_float, integer_at_least, nonnegative_float, positive_float
 from .fluids import NewtonianFluid
+from .results import Check, Quantity, SimulationResult
 
 
 def _name(value: object, *, kind: str) -> str:
@@ -343,6 +344,7 @@ class ZeroDResult:
     model_name: str
     model_sha256: str
     iterations: int
+    maximum_iterations: int
     flow_tolerance: float
     pressure_tolerance: float
     maximum_mass_balance_residual: float
@@ -351,6 +353,7 @@ class ZeroDResult:
     branches: tuple[dict[str, object], ...]
     checks: tuple[dict[str, object], ...]
     limitations: tuple[str, ...]
+    model_record: dict[str, object]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -396,6 +399,148 @@ class ZeroDResult:
             raise RuntimeError("Zero-dimensional result is not accepted: " + ", ".join(failed))
         return self
 
+    def to_simulation_result(self) -> SimulationResult:
+        """Return the common scalar result view used by AgentCFD and AgentCAE.
+
+        The native zero-dimensional contract remains the lossless topology and
+        branch record.  This explicit adapter publishes its scalar semantics,
+        checks, identity, and limitations without inventing a spatial mesh,
+        fields, or physical-time history.
+        """
+
+        quantities = {
+            "network.maximum_mass_balance_residual": Quantity(
+                self.maximum_mass_balance_residual,
+                "m^3/s",
+                kind="conservation",
+                description="Maximum absolute free-node volume-balance residual.",
+            ),
+            "network.maximum_pressure_closure_residual": Quantity(
+                self.maximum_pressure_closure_residual,
+                "Pa",
+                kind="conservation",
+                description="Maximum absolute branch pressure-law closure residual.",
+            ),
+        }
+        for node in self.nodes:
+            name = str(node["name"])
+            _add_zero_d_quantity(
+                quantities,
+                f"node.{name}.pressure",
+                node["pressure"],
+                kind="state",
+                description=f"Static gauge pressure at zero-dimensional node {name!r}.",
+            )
+            boundary_flow = node["required_boundary_volume_flow_rate"]
+            if boundary_flow is not None:
+                _add_zero_d_quantity(
+                    quantities,
+                    f"node.{name}.required_boundary_volume_flow_rate",
+                    boundary_flow,
+                    kind="boundary_state",
+                    description=(
+                        "Signed boundary flow required to maintain the prescribed "
+                        f"pressure at node {name!r}."
+                    ),
+                )
+        for branch in self.branches:
+            name = str(branch["name"])
+            for suffix, source, kind, description in (
+                (
+                    "volume_flow_rate",
+                    "volume_flow_rate",
+                    "flow",
+                    "Signed branch volume flow in the declared start-to-end direction.",
+                ),
+                (
+                    "mass_flow_rate",
+                    "mass_flow_rate",
+                    "flow",
+                    "Signed branch mass flow in the declared start-to-end direction.",
+                ),
+                (
+                    "pressure_loss",
+                    "modeled_pressure_loss",
+                    "pressure_loss",
+                    "Signed passive pressure loss from the declared branch law.",
+                ),
+            ):
+                _add_zero_d_quantity(
+                    quantities,
+                    f"branch.{name}.{suffix}",
+                    branch[source],
+                    kind=kind,
+                    description=description,
+                )
+            if "mean_speed" in branch:
+                _add_zero_d_quantity(
+                    quantities,
+                    f"branch.{name}.mean_speed",
+                    branch["mean_speed"],
+                    kind="flow",
+                    description="Cross-section mean speed derived from branch flow.",
+                )
+            if "reynolds_number" in branch:
+                quantities[f"branch.{name}.reynolds_number"] = Quantity(
+                    float(branch["reynolds_number"]),
+                    "1",
+                    kind="dimensionless",
+                    description="Branch Reynolds number under the declared 0D model.",
+                )
+            friction = branch.get("darcy_friction_factor")
+            if friction is not None:
+                quantities[f"branch.{name}.darcy_friction_factor"] = Quantity(
+                    float(friction),
+                    "1",
+                    kind="dimensionless",
+                    description="Darcy friction factor from the declared branch correlation.",
+                )
+
+        common_checks = tuple(
+            Check(
+                name=f"zero_d.{item['name']}",
+                passed=bool(item["passed"]),
+                value=float(item["value"]),
+                limit=float(item["limit"]),
+                message=(
+                    "The converged 0D balance satisfies the declared tolerance."
+                    if item["passed"]
+                    else "The 0D balance does not satisfy the declared tolerance."
+                ),
+                kind="runtime",
+                observable=(
+                    "network.maximum_mass_balance_residual"
+                    if item["unit"] == "m^3/s"
+                    else "network.maximum_pressure_closure_residual"
+                ),
+                evidence=("agentcfd.zero-d-result/0.1",),
+            )
+            for item in self.checks
+        )
+        return SimulationResult(
+            name=self.model_name,
+            status=self.status,
+            converged=self.converged,
+            provider="zero-d-hydraulic-network",
+            quantities=quantities,
+            checks=common_checks,
+            scientific_inputs={
+                "model": copy.deepcopy(self.model_record),
+                "solver": {
+                    "method": "damped-nodal-newton",
+                    "maximum_iterations": self.maximum_iterations,
+                    "flow_tolerance": self.flow_tolerance,
+                    "pressure_tolerance": self.pressure_tolerance,
+                },
+            },
+            provenance={
+                "model_sha256": self.model_sha256,
+                "native_result_schema": "agentcfd.zero-d-result/0.1",
+                "spatial_dimension": 0,
+            },
+            messages=self.limitations,
+        )
+
     def node(self, name: str) -> dict[str, object]:
         """Return one node record by name without exposing mutable internals."""
 
@@ -440,6 +585,24 @@ class ZeroDResult:
             encoding="utf-8",
         )
         return target
+
+
+def _add_zero_d_quantity(
+    target: dict[str, Quantity],
+    name: str,
+    record: object,
+    *,
+    kind: str,
+    description: str,
+) -> None:
+    if not isinstance(record, dict):
+        raise ValueError(f"Zero-dimensional quantity {name!r} is malformed.")
+    target[name] = Quantity(
+        float(record["value"]),
+        str(record["unit"]),
+        kind=kind,
+        description=description,
+    )
 
 
 class Network:
@@ -903,6 +1066,7 @@ class Network:
             model_name=self.name,
             model_sha256=self.fingerprint(),
             iterations=iterations,
+            maximum_iterations=selected_maximum,
             flow_tolerance=selected_flow_tolerance,
             pressure_tolerance=selected_pressure_tolerance,
             maximum_mass_balance_residual=maximum_balance,
@@ -915,6 +1079,7 @@ class Network:
                 "Churchill friction is a system correlation, not three-dimensional validation.",
                 "Pumps, active controls, heat transfer, compressibility, storage, and transients are unsupported.",
             ),
+            model_record=self.to_dict(),
         )
 
 

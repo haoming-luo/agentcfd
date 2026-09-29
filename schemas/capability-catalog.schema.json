@@ -11,6 +11,8 @@
     "commands",
     "machine_commands",
     "workflow_stages",
+    "provider_catalog",
+    "operation_catalog",
     "capabilities"
   ],
   "properties": {
@@ -57,6 +59,24 @@
       "additionalProperties": {"type": "string", "minLength": 1}
     },
     "workflow_stages": {"$ref": "#/$defs/names"},
+    "provider_catalog": {
+      "type": "object",
+      "required": ["schema", "providers"],
+      "properties": {
+        "schema": {"const": "agentcfd.provider-catalog/0.1"},
+        "providers": {"type": "array", "minItems": 1}
+      },
+      "additionalProperties": false
+    },
+    "operation_catalog": {
+      "type": "object",
+      "required": ["schema", "operations"],
+      "properties": {
+        "schema": {"const": "agentcfd.operation-catalog/0.1"},
+        "operations": {"type": "array", "minItems": 1}
+      },
+      "additionalProperties": false
+    },
     "capabilities": {
       "type": "array",
       "minItems": 1,

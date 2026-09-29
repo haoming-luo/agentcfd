@@ -52,11 +52,12 @@ from .model import Step
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
     OpenFOAMChannelProvider,
-    OpenFOAMImportedProvider,
-    OpenFOAMMeshControls,
-    OpenFOAMProvider,
-    ReferencePipeProvider,
+    ReferencePipeProvider as _ReferencePipeProvider,
+    ids as provider_ids,
     plan_imported_mesh,
+    resolve as resolve_provider,
+    validate_options as validate_provider_options,
+    variant as provider_variant,
 )
 from .providers.openfoam_channel import materialize_interrupted_restart
 from .results import Artifact, FieldRecord, SimulationResult, read_result_record
@@ -65,6 +66,10 @@ from .results import Artifact, FieldRecord, SimulationResult, read_result_record
 _RUN_ALLOCATION_LOCK = threading.Lock()
 _PERFORMANCE_HISTORY_LOCK = threading.Lock()
 _MAX_CAMPAIGN_PARALLELISM = 32
+
+# Preserve the historical test/integration patch point while provider creation
+# itself is centralized in ``providers.resolve``.
+ReferencePipeProvider = _ReferencePipeProvider
 
 
 def _project_record_path_matches(
@@ -145,9 +150,9 @@ class ProjectManifest:
                 "Project entrypoint, factory, provider, and run directory are required strings."
             )
         provider = str(strings["default_provider"]).strip()
-        if provider not in {"reference", "openfoam"}:
+        if provider not in provider_ids():
             raise ProjectError(
-                "Project default_provider must be 'reference' or 'openfoam'."
+                f"Project default_provider must be one of {provider_ids()!r}."
             )
         template = payload.get("template")
         if template is not None:
@@ -2221,18 +2226,10 @@ class Project:
 
     def _openfoam_settings(self) -> dict[str, object]:
         settings = dict(self.manifest.openfoam)
-        allowed = {
-            "container_image",
-            "cross_section_cells",
-            "axial_cells",
-            "nominal_wall_cell_fraction",
-            "export_fields",
-            "keep_workspace",
-            "timeout_seconds",
-        }
-        unknown = sorted(set(settings) - allowed)
-        if unknown:
-            raise ProjectError(f"Unknown [openfoam] keys: {', '.join(unknown)}")
+        try:
+            validate_provider_options("openfoam", settings)
+        except ValueError as error:
+            raise ProjectError(str(error)) from error
         return settings
 
     def _provider(
@@ -2243,43 +2240,30 @@ class Project:
         case_directory: Path | None = None,
         container_image: str | None = None,
     ):
-        if name == "reference":
-            return ReferencePipeProvider()
-        if name != "openfoam":
-            raise ProjectError(f"Unknown provider {name!r}.")
-        settings = self._openfoam_settings()
-        selected_image = container_image or settings.get("container_image")
-        timeout_seconds = float(settings.get("timeout_seconds", 3600.0))
-        if step is not None and isinstance(step.model.domain, ImportedSurface):
-            source = _safe_project_path(
+        settings = self._openfoam_settings() if name == "openfoam" else {}
+        imported_source = None
+        if (
+            name == "openfoam"
+            and step is not None
+            and isinstance(step.model.domain, ImportedSurface)
+        ):
+            imported_source = _safe_project_path(
                 self.root,
                 step.model.domain.asset,
                 label="imported surface asset",
             )
-            return OpenFOAMImportedProvider(
-                source=source,
+        try:
+            return resolve_provider(
+                name,
+                step=step,
                 case_directory=case_directory,
+                imported_source=imported_source,
                 mesh_cache_directory=self.root / ".agentcfd" / "mesh-cache",
-                container_image=str(selected_image) if selected_image else None,
-                timeout_seconds=timeout_seconds,
+                container_image=container_image,
+                options=settings,
             )
-        if step is not None and isinstance(step.model.domain, RectangularChannel):
-            return OpenFOAMChannelProvider(
-                case_directory=case_directory,
-                container_image=str(selected_image) if selected_image else None,
-                timeout_seconds=timeout_seconds,
-            )
-        mesh = OpenFOAMMeshControls(
-            cross_section_cells=settings.get("cross_section_cells", 8),
-            axial_cells=settings.get("axial_cells"),
-            nominal_wall_cell_fraction=settings.get("nominal_wall_cell_fraction"),
-        )
-        return OpenFOAMProvider(
-            case_directory=case_directory,
-            container_image=str(selected_image) if selected_image else None,
-            mesh=mesh,
-            timeout_seconds=timeout_seconds,
-        )
+        except ValueError as error:
+            raise ProjectError(str(error)) from error
 
     def _execution_fingerprint(
         self,
@@ -2369,8 +2353,8 @@ class Project:
         _step: Step | None = None,
     ) -> dict[str, object]:
         selected_name = provider or self.manifest.default_provider
-        if selected_name not in {"reference", "openfoam"}:
-            raise ProjectError("Provider must be 'reference' or 'openfoam'.")
+        if selected_name not in provider_ids():
+            raise ProjectError(f"Provider must be one of {provider_ids()!r}.")
         if portable_fields is not None and not isinstance(portable_fields, bool):
             raise ProjectError("Portable fields override must be true, false, or null.")
         selected_parameters = self._parameters(parameters)
@@ -2396,6 +2380,13 @@ class Project:
             container_image=container_image,
         )
         descriptor = selected.descriptor()
+        provider_options: dict[str, object] = {}
+        if selected_name == "openfoam":
+            provider_options = self._openfoam_settings()
+            if container_image is not None:
+                provider_options["container_image"] = container_image
+            if portable_fields is not None:
+                provider_options["export_fields"] = portable_fields
         study = step.model.study
         if isinstance(step.model.domain, ImportedSurface):
             required_capability = (
@@ -2597,6 +2588,11 @@ class Project:
             else step.initialization.to_dict(),
             "mesh_intent": None if step.mesh is None else step.mesh.to_dict(),
             "provider": asdict(descriptor),
+            "provider_resolution": {
+                "family": selected_name,
+                "variant": provider_variant(selected_name, step=step),
+                "effective_options": provider_options,
+            },
             "required_capability": required_capability,
             "mesh_strategy": (
                 f"intent:{step.mesh.method}"
@@ -8160,8 +8156,8 @@ def init_project(
 ) -> Project:
     """Create a complete editable project without overwriting user data."""
 
-    if provider not in {"reference", "openfoam"}:
-        raise ValueError("Project provider must be 'reference' or 'openfoam'.")
+    if provider not in provider_ids():
+        raise ValueError(f"Project provider must be one of {provider_ids()!r}.")
     template_spec = project_templates.get(template)
     if provider not in template_spec.providers:
         if len(template_spec.providers) == 1:

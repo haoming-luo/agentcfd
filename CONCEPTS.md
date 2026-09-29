@@ -65,9 +65,12 @@ nodes and connecting components, without a spatial mesh. It is appropriate for
 pressure/flow screening, network balance, operating-point selection, and
 generating explicit boundary data for resolved CFD. It cannot establish local
 flow structures such as separation, recirculation, mixing, or wall loading.
-Zero-dimensional results therefore keep their own versioned contract and
-capability boundary instead of masquerading as a mesh-resolved Simulation
-Result.
+Zero-dimensional results therefore keep their own versioned native contract
+and capability boundary instead of masquerading as a mesh-resolved field
+result. An explicit adapter may also publish their scalar quantities and checks
+through the common Simulation Result vocabulary with `spatial_dimension=0` and
+no fields. This is the interoperable AgentCAE/learning view, not a claim that a
+mesh or local flow structure exists.
 
 ## Provider
 

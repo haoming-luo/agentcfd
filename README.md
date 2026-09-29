@@ -1058,6 +1058,8 @@ authoritative.
 
 - [Concepts](CONCEPTS.md)
 - [Workflow](WORKFLOW.md)
+- [Discovery and safe automation](docs/discovery-and-automation.md)
+- [Zero-dimensional hydraulic models](docs/zero-d-models.md)
 - [Changelog](CHANGELOG.md)
 - [Architecture](docs/architecture.md)
 - [Roadmap](ROADMAP.md)

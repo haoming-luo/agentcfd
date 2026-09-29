@@ -1,4 +1,9 @@
-from .base import Provider, ProviderDescriptor
+from .base import (
+    Provider,
+    ProviderDescriptor,
+    ProviderOption,
+    ProviderOptionContract,
+)
 from .openfoam import (
     OpenFOAMMeshControls,
     OpenFOAMProvider,
@@ -28,6 +33,7 @@ from .openfoam_precursor import (
     prepare_turbulent_wall_study,
     turbulent_pipe_wall_mesh_screen,
 )
+from .registry import all, as_dict, get, ids, resolve, validate_options, variant
 
 __all__ = [
     "OpenFOAMMeshControls",
@@ -46,6 +52,8 @@ __all__ = [
     "PreparedImportedMesh",
     "Provider",
     "ProviderDescriptor",
+    "ProviderOption",
+    "ProviderOptionContract",
     "ReferencePipeProvider",
     "prepare_pipe_grid_study",
     "plan_imported_mesh",
@@ -55,4 +63,11 @@ __all__ = [
     "turbulent_pipe_wall_mesh_screen",
     "prepare_turbulent_wall_function_study",
     "prepare_turbulent_model_study",
+    "all",
+    "as_dict",
+    "get",
+    "ids",
+    "resolve",
+    "validate_options",
+    "variant",
 ]

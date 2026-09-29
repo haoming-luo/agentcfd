@@ -101,7 +101,7 @@
       "type": "object",
       "required": [
         "study", "procedure", "outputs", "initialization", "mesh_intent",
-        "provider", "required_capability",
+        "provider", "provider_resolution", "required_capability",
         "mesh_strategy", "solver", "result_profile", "portable_field_bundle",
         "portable_formats", "imported_mesh_plan", "generated_geometry",
         "thermal_preflight"
@@ -113,6 +113,26 @@
         "initialization": {"type": ["object", "null"]},
         "mesh_intent": {"type": ["object", "null"]},
         "provider": {"type": "object"},
+        "provider_resolution": {
+          "type": "object",
+          "required": ["family", "variant", "effective_options"],
+          "properties": {
+            "family": {"enum": ["reference", "openfoam"]},
+            "variant": {
+              "enum": [
+                "hagen-poiseuille", "circular-pipe", "baffled-channel",
+                "imported-internal-flow"
+              ]
+            },
+            "effective_options": {
+              "type": "object",
+              "additionalProperties": {
+                "type": ["string", "number", "integer", "boolean"]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
         "required_capability": {"type": "string"},
         "mesh_strategy": {"type": "string"},
         "solver": {"type": "string"},

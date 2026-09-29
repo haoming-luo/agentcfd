@@ -9,11 +9,26 @@
   capabilities now ship in the validated `agentcfd.capabilities/0.2` catalog.
   The accompanying internal roadmap fixes the provider, extension, MCP,
   AgentFEM/preCICE coupling, and Physics-AI boundaries before further breadth.
+- Add one provider-family registry and typed option contract shared by project
+  validation, planning, execution, resume, CLI choices, and capability
+  discovery. Unknown, mistyped, and non-finite provider options now fail with
+  stable issue codes before a solver starts; OpenFOAM remains an explicit
+  filesystem/subprocess license boundary. Content-addressed solution plans now
+  record the resolved family, variant, and effective provider options.
+- Add a schema-validated bounded operation catalog for agents and future GUIs:
+  every operation declares read/write/execute effects, idempotence,
+  destructiveness, retry and approval policy, solver-start behavior, preview
+  support, expected artifact roles, output contract, and conservative MCP
+  annotations. The catalog exposes only AgentCFD commands and never arbitrary
+  shell or Python execution.
 - Add a dependency-free experimental `zero_d` API for steady passive hydraulic
   networks with prescribed pressures and volume/mass-flow demands, elevation head, circular-pipe
   and linear/quadratic resistance branches, parallel flow splitting, named
   result access, stable model fingerprints, compact JSON output, explicit
   conservation/pressure-closure acceptance, and a versioned result contract.
+  An explicit scalar-only adapter now emits the common SimulationResult,
+  AgentCAE exchange, and learning-sample vocabulary with
+  `spatial_dimension=0`, without fabricating mesh fields or verification.
 
 ## 0.1.0a5 — 2026-09-11
 

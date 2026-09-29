@@ -182,6 +182,44 @@ def test_result_contract_fingerprint_and_json_output_are_stable(tmp_path, water)
     )
 
 
+def test_zero_d_result_has_common_scalar_and_agentcae_views(tmp_path, water):
+    system = zero_d.network("exchangeable", fluid=water, gravity=0.0)
+    system.node("supply", pressure=1000.0)
+    system.node("load", volume_flow_source=-0.001)
+    system.resistance("line", "supply", "load", linear_resistance=1.0e6)
+
+    native = system.solve().require_accepted()
+    common = native.to_simulation_result().require_accepted()
+    common_path = common.write(tmp_path / "simulation-result.json")
+    common_record = json.loads(common_path.read_text(encoding="utf-8"))
+    exchange = common.to_exchange()
+
+    jsonschema.Draft202012Validator(
+        contracts.load("simulation-result.schema.json")
+    ).validate(common_record)
+    jsonschema.Draft202012Validator(
+        contracts.load("result-exchange.schema.json")
+    ).validate(exchange)
+    assert common.provider == "zero-d-hydraulic-network"
+    assert common.trust_level == "converged"
+    assert common.fields == {}
+    assert common.histories == {}
+    assert common.quantity("node.load.pressure").unit == "Pa"
+    assert common.quantity("branch.line.volume_flow_rate").value == pytest.approx(
+        0.001
+    )
+    assert common.quantity("branch.line.pressure_loss").value == pytest.approx(1000.0)
+    assert common.provenance["spatial_dimension"] == 0
+    assert common.scientific_input_manifest()["complete"] is True
+
+    sample = common.to_sample(
+        inputs={"demand_m3_s": 0.001},
+        outputs=("node.load.pressure", "branch.line.mass_flow_rate"),
+    )
+    assert sample["source"]["provider"] == "zero-d-hydraulic-network"
+    assert sample["accepted"] is True
+
+
 def test_network_rejects_invalid_or_unanchored_topology(water):
     with pytest.raises(TypeError, match="NewtonianFluid"):
         zero_d.network("invalid", fluid=object())

@@ -258,26 +258,33 @@ identity, evidence, and fallback semantics as a direct AgentCFD result.
 | Ecosystem | lossless AgentCAE/FEM/learning handoffs | units, mesh identity, provenance required |
 | CI | one local full gate and one Linux fast gate per coherent batch | no push-driven debugging loop |
 
-## Immediate implementation slice
+## Immediate implementation status
 
-This roadmap begins with the A6 discovery contract, because every later GUI,
-MCP server, extension loader, documentation generator, and AI workflow needs a
-stable answer to four questions:
+The first A6 slice now provides the discovery contract required by every later
+GUI, MCP server, extension loader, documentation generator, and AI workflow. It
+answers four questions:
 
 1. What is the recommended core workflow?
 2. Which Model, Step, and Project methods are public?
 3. Which CLI commands actually exist, and which machine paths are preferred?
 4. Which scientific capabilities are mature enough to claim?
 
-The capability catalog is therefore upgraded to include those inventories and
-the package version, while retaining the evidence/limitations records. Tests
-bind the inventories to the real facades and parser. The next implementation
-slice is provider discovery/options; it should reuse this contract rather than
-introduce a parallel registry.
+The capability catalog now includes those inventories and the package version,
+while retaining the evidence/limitations records. It also embeds a provider
+family and option catalog, plus a bounded operation catalog with conservative
+side-effect and MCP annotations. Check, plan, run, and resume share the same
+provider resolver; the 0D network has an explicit scalar-only common-result
+bridge. Tests bind all inventories to the real facades, parser, schemas, and
+installed wheel.
+
+The next A6 slice is service extraction from the large project and CLI modules,
+starting with provider planning and result publication. A7 then adds
+descriptor-first extension entry points and thin MCP resources generated from
+these existing contracts, rather than introducing a second tool language.
 
 ## Explicitly deferred
 
-- a broad MCP tool list before operation and risk contracts exist;
+- a broad MCP tool list beyond the bounded operation and risk contracts;
 - automatic installation of OpenFOAM, ML frameworks, or coupling runtimes from
   a simulation request;
 - generic combustion or multiphase labels from one example;

@@ -35,6 +35,13 @@ result.require_accepted()
 result.require_trust("verified")
 ```
 
+The experimental 0D hydraulic network keeps its richer native result contract
+and exposes an explicit `to_simulation_result()` bridge for common consumers.
+That scalar-only view declares `spatial_dimension=0`, includes node/branch
+quantities and balance checks, and emits no mesh fields. It can therefore use
+the same AgentCAE exchange and scientific-sample functions without pretending
+that a lumped network resolved separation, recirculation, or wall loads.
+
 Serialized results can be reopened with `read_result_record()`, or checked from
 automation using `agentcfd verify result RESULT.json`. The reader recomputes
 the accepted/trust state from the recorded checks and verifies every artifact's

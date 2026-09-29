@@ -43,6 +43,7 @@ from .model import Model
 from .provenance import content_fingerprint, file_sha256
 from .providers import (
     execute_imported_mesh,
+    ids as provider_ids,
     OpenFOAMMeshControls,
     OpenFOAMProvider,
     OpenFOAMTurbulentPrecursorProvider,
@@ -1628,7 +1629,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     init.add_argument(
         "--provider",
-        choices=("reference", "openfoam"),
+        choices=provider_ids(),
         default=None,
     )
     init.add_argument("--geometry", type=Path)
@@ -1738,7 +1739,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Validate project intent and provider compatibility without running.",
     )
     check.add_argument("project", nargs="?", type=Path, default=Path("."))
-    check.add_argument("--provider", choices=("reference", "openfoam"))
+    check.add_argument("--provider", choices=provider_ids())
     check.add_argument("--container-image")
     check.add_argument(
         "--param",
@@ -1763,7 +1764,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resolve a deterministic, inspectable solution plan.",
     )
     plan.add_argument("project", nargs="?", type=Path, default=Path("."))
-    plan.add_argument("--provider", choices=("reference", "openfoam"))
+    plan.add_argument("--provider", choices=provider_ids())
     plan.add_argument("--container-image")
     plan.add_argument(
         "--param",
@@ -2175,7 +2176,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sweep.add_argument("project", type=Path)
     sweep.add_argument("request", type=Path)
-    sweep.add_argument("--provider", choices=("reference", "openfoam"))
+    sweep.add_argument("--provider", choices=provider_ids())
     sweep.add_argument("--container-image")
     sweep.add_argument(
         "--plan-only",
@@ -2810,7 +2811,7 @@ def build_parser() -> argparse.ArgumentParser:
     project_run.add_argument("project", nargs="?", type=Path, default=Path("."))
     project_run.add_argument(
         "--provider",
-        choices=("reference", "openfoam"),
+        choices=provider_ids(),
         dest="project_provider",
     )
     project_run.add_argument("--container-image")
@@ -4525,6 +4526,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
+            product = report["product"]
+            providers = report["provider_catalog"]["providers"]
+            operations = report["operation_catalog"]["operations"]
+            print(f"AgentCFD {product['version']} | schema {report['schema']}")
+            print(f"core modules: {', '.join(report['public_api']['core'])}")
+            print(
+                "providers: "
+                + ", ".join(str(item["name"]) for item in providers)
+            )
+            print(
+                f"bounded agent operations: {len(operations)} "
+                "(use --json for contracts and risk metadata)"
+            )
             for item in capabilities.all():
                 print(f"{item.name}: {item.maturity}")
         return 0

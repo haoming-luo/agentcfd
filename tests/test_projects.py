@@ -78,6 +78,11 @@ def test_project_lifecycle_is_one_readable_agent_and_human_workflow(tmp_path):
         "ready_to_run": True,
     }
     assert plan["decisions"]["solver"] == "Hagen-Poiseuille"
+    assert plan["decisions"]["provider_resolution"] == {
+        "family": "reference",
+        "variant": "hagen-poiseuille",
+        "effective_options": {},
+    }
     assert plan["decisions"]["portable_formats"] == []
     assert plan["decisions"]["thermal_preflight"]["status"] == "not-requested"
     assert (
@@ -162,6 +167,11 @@ def test_heated_pipe_template_is_ready_and_exposes_editable_operating_point(
     assert initialization["provider"] == "openfoam"
     assert project.manifest.openfoam["cross_section_cells"] == 16
     assert project.manifest.openfoam["axial_cells"] == 80
+    assert plan["decisions"]["provider_resolution"]["family"] == "openfoam"
+    assert plan["decisions"]["provider_resolution"]["variant"] == "circular-pipe"
+    assert plan["decisions"]["provider_resolution"]["effective_options"][
+        "cross_section_cells"
+    ] == 16
     assert plan["readiness"]["provider_compatible"] is True
     assert plan["decisions"]["required_capability"] == (
         "openfoam.steady-laminar-heated-circular-pipe"

@@ -64,6 +64,30 @@ mass-flow boundary conditions for a later 3D AgentCFD model. Do not present a 0D
 pressure loss as evidence of separation, mixing, recirculation, local wall
 loads, or other spatial flow structure.
 
+### Common result and AI exchange
+
+The native `ZeroDResult` preserves network-specific nodes, branches, signs, and
+solver tolerances. Convert it explicitly when a common AgentCFD, AgentCAE, or
+learning consumer needs scalar semantic quantities:
+
+```python
+common = result.to_simulation_result().require_accepted()
+common.write("results/result.json")
+
+exchange = common.to_exchange()
+sample = common.to_sample(
+    inputs={"demand_m3_s": 0.0015},
+    outputs=("branch.riser.volume_flow_rate",),
+)
+```
+
+The adapter declares `spatial_dimension=0`, carries the complete network model
+in scientific inputs, and deliberately publishes no mesh fields or time
+histories. A converged network earns the common trust level `converged`; it does
+not become `verified` or `validated` until separate evidence supports those
+claims. This makes scalar training and system-to-3D handoff possible without
+weakening the meaning of CFD field results.
+
 ## Current boundary
 
 The initial capability is deliberately limited to steady, single-phase,

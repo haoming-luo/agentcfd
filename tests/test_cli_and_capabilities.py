@@ -54,6 +54,12 @@ def test_capability_catalog_is_truthful():
     jsonschema.Draft202012Validator(
         contracts.load("capability-catalog.schema.json")
     ).validate(report)
+    jsonschema.Draft202012Validator(
+        contracts.load("provider-catalog.schema.json")
+    ).validate(report["provider_catalog"])
+    jsonschema.Draft202012Validator(
+        contracts.load("operation-catalog.schema.json")
+    ).validate(report["operation_catalog"])
     assert report["schema"] == "agentcfd.capabilities/0.2"
     assert report["commands"] == list(CLI_COMMANDS)
 
@@ -81,6 +87,17 @@ def test_cli_inventory_matches_the_parser():
         if isinstance(action, argparse._SubParsersAction)
     )
     assert tuple(subparsers.choices) == CLI_COMMANDS
+
+
+def test_human_capabilities_surface_summarizes_product_contract(capsys):
+    assert main(["capabilities"]) == 0
+    output = capsys.readouterr().out
+
+    assert "AgentCFD " in output
+    assert "core modules: studies, geometry, fluids" in output
+    assert "providers: reference, openfoam" in output
+    assert "bounded agent operations:" in output
+    assert "reference.hagen-poiseuille: release" in output
 
 
 def test_template_catalog_is_single_source_for_cli_and_project_creation(capsys):

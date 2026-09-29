@@ -13,6 +13,8 @@ from ._api_contract import (
     workflow_modules,
 )
 from ._version import __version__
+from .operations import as_dict as operation_catalog
+from .providers.registry import as_dict as provider_catalog
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,6 +278,7 @@ _CAPABILITIES = (
             "branch pressure-closure acceptance gate",
             "Hagen--Poiseuille, parallel-branch, and elevation regression tests",
             "versioned JSON result contract",
+            "common scalar SimulationResult, AgentCAE exchange, and learning-sample adapter tests",
         ),
         limitations=(
             "This is a lumped system model, not mesh-resolved CFD.",
@@ -566,5 +569,7 @@ def as_dict() -> dict[str, object]:
         "commands": list(CLI_COMMANDS),
         "machine_commands": dict(MACHINE_COMMANDS),
         "workflow_stages": list(WORKFLOW_STAGES),
+        "provider_catalog": provider_catalog(),
+        "operation_catalog": operation_catalog(),
         "capabilities": [item.to_dict() for item in _CAPABILITIES],
     }

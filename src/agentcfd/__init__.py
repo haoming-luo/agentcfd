@@ -7,6 +7,7 @@ from . import (
     capabilities,
     contracts,
     data_exchange,
+    diagnostics,
     engineering,
     fluids,
     geometry,
@@ -14,19 +15,29 @@ from . import (
     geometry_io,
     initialization,
     interoperability,
+    licensing,
     meshing,
     outputs,
     parameters,
     postprocessing,
+    provenance,
     procedures,
     projects,
     properties,
     providers,
     regions,
+    results,
     studies,
     templates,
     verification,
     zero_d,
+)
+from ._api_contract import (
+    ADVANCED_WORKFLOW_MODULES,
+    CORE_WORKFLOW_MODULES,
+    EXPERT_WORKFLOW_MODULES,
+    PUBLIC_WORKFLOW_MODULES,
+    workflow_modules as _workflow_modules,
 )
 from ._version import __version__
 from .archives import restore_project_archive, verify_project_archive
@@ -45,6 +56,13 @@ from .results import (
     read_result_record,
 )
 
+
+def public_api(level: str = "all") -> tuple[str, ...]:
+    """Return public modules at a progressive-disclosure level."""
+
+    return _workflow_modules(level)
+
+
 __all__ = [
     "Artifact",
     "Check",
@@ -56,12 +74,17 @@ __all__ = [
     "ScientificDatasetReader",
     "Step",
     "__version__",
+    "PUBLIC_WORKFLOW_MODULES",
+    "CORE_WORKFLOW_MODULES",
+    "ADVANCED_WORKFLOW_MODULES",
+    "EXPERT_WORKFLOW_MODULES",
     "benchmarks",
     "archives",
     "boundaries",
     "capabilities",
     "contracts",
     "data_exchange",
+    "diagnostics",
     "engineering",
     "fluids",
     "geometry",
@@ -69,6 +92,7 @@ __all__ = [
     "geometry_io",
     "initialization",
     "interoperability",
+    "licensing",
     "meshing",
     "normalize_geometry_regions",
     "outputs",
@@ -76,13 +100,16 @@ __all__ = [
     "open_scientific_dataset",
     "parameters",
     "postprocessing",
+    "provenance",
     "plan_region_normalization",
     "plan_circular_elbow_stl",
     "procedures",
     "properties",
     "projects",
     "providers",
+    "public_api",
     "regions",
+    "results",
     "restore_project_archive",
     "studies",
     "templates",

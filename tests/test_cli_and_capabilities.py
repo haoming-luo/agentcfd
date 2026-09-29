@@ -1,3 +1,4 @@
+import argparse
 import json
 from pathlib import Path
 
@@ -15,7 +16,15 @@ from agentcfd import (
     licensing,
     properties,
     templates,
+    public_api,
 )
+from agentcfd._api_contract import (
+    CLI_COMMANDS,
+    PUBLIC_WORKFLOW_MODULES,
+    facade_method_contract,
+)
+from agentcfd.model import Model, Step
+from agentcfd.projects import Project
 from agentcfd.cli import (
     _flow_distribution_groups,
     _flow_distribution_lines,
@@ -45,6 +54,33 @@ def test_capability_catalog_is_truthful():
     jsonschema.Draft202012Validator(
         contracts.load("capability-catalog.schema.json")
     ).validate(report)
+    assert report["schema"] == "agentcfd.capabilities/0.2"
+    assert report["commands"] == list(CLI_COMMANDS)
+
+
+def test_public_api_contract_is_complete_and_progressively_disclosed():
+    tiers = tuple(set(public_api(level)) for level in ("core", "advanced", "expert"))
+    assert all(
+        left.isdisjoint(right)
+        for index, left in enumerate(tiers)
+        for right in tiers[index + 1 :]
+    )
+    assert set(public_api()) == set(PUBLIC_WORKFLOW_MODULES) == set().union(*tiers)
+
+    facades = {"model": Model, "step": Step, "project": Project}
+    records = facade_method_contract()
+    assert {(record["facade"], record["name"]) for record in records}
+    for record in records:
+        assert hasattr(facades[record["facade"]], record["name"])
+
+
+def test_cli_inventory_matches_the_parser():
+    subparsers = next(
+        action
+        for action in build_parser()._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    assert tuple(subparsers.choices) == CLI_COMMANDS
 
 
 def test_template_catalog_is_single_source_for_cli_and_project_creation(capsys):

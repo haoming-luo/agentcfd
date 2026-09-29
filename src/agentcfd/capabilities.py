@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 
+from ._api_contract import (
+    CAPABILITIES_SCHEMA_VERSION,
+    CLI_COMMANDS,
+    MACHINE_COMMANDS,
+    WORKFLOW_STAGES,
+    facade_method_contract,
+    workflow_modules,
+)
+from ._version import __version__
+
 
 @dataclass(frozen=True, slots=True)
 class Capability:
@@ -546,6 +556,15 @@ def all() -> tuple[Capability, ...]:
 
 def as_dict() -> dict[str, object]:
     return {
-        "schema": "agentcfd.capabilities/0.1",
+        "schema": f"agentcfd.capabilities/{CAPABILITIES_SCHEMA_VERSION}",
+        "product": {"name": "agentcfd", "version": __version__},
+        "public_api": {
+            level: list(workflow_modules(level))
+            for level in ("core", "advanced", "expert")
+        },
+        "facade_api": list(facade_method_contract()),
+        "commands": list(CLI_COMMANDS),
+        "machine_commands": dict(MACHINE_COMMANDS),
+        "workflow_stages": list(WORKFLOW_STAGES),
         "capabilities": [item.to_dict() for item in _CAPABILITIES],
     }

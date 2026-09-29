@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add one dependency-free product-discovery contract shared by Python and
+  `capabilities --json`: progressive core/advanced/expert workflow modules,
+  Model/Step/Project facade methods, the exact CLI inventory, preferred machine
+  commands, workflow stages, package version, and evidence-bounded scientific
+  capabilities now ship in the validated `agentcfd.capabilities/0.2` catalog.
+  The accompanying internal roadmap fixes the provider, extension, MCP,
+  AgentFEM/preCICE coupling, and Physics-AI boundaries before further breadth.
 - Add a dependency-free experimental `zero_d` API for steady passive hydraulic
   networks with prescribed pressures and volume/mass-flow demands, elevation head, circular-pipe
   and linear/quadratic resistance branches, parallel flow splitting, named

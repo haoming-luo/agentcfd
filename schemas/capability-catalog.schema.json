@@ -1,11 +1,62 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/haoming-luo/agentcfd/schemas/capability-catalog.schema.json",
-  "title": "AgentCFD capability catalog 0.1",
+  "title": "AgentCFD capability and interface catalog 0.2",
   "type": "object",
-  "required": ["schema", "capabilities"],
+  "required": [
+    "schema",
+    "product",
+    "public_api",
+    "facade_api",
+    "commands",
+    "machine_commands",
+    "workflow_stages",
+    "capabilities"
+  ],
   "properties": {
-    "schema": {"const": "agentcfd.capabilities/0.1"},
+    "schema": {"const": "agentcfd.capabilities/0.2"},
+    "product": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"const": "agentcfd"},
+        "version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "public_api": {
+      "type": "object",
+      "required": ["core", "advanced", "expert"],
+      "properties": {
+        "core": {"$ref": "#/$defs/names"},
+        "advanced": {"$ref": "#/$defs/names"},
+        "expert": {"$ref": "#/$defs/names"}
+      },
+      "additionalProperties": false
+    },
+    "facade_api": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["facade", "name", "tier", "lifecycle"],
+        "properties": {
+          "facade": {"enum": ["model", "step", "project"]},
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "tier": {"enum": ["core", "advanced", "expert"]},
+          "lifecycle": {"enum": ["recommended", "supported"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "commands": {"$ref": "#/$defs/names"},
+    "machine_commands": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"type": "string", "minLength": 1}
+    },
+    "workflow_stages": {"$ref": "#/$defs/names"},
     "capabilities": {
       "type": "array",
       "minItems": 1,
@@ -36,6 +87,14 @@
         },
         "additionalProperties": false
       }
+    }
+  },
+  "$defs": {
+    "names": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"}
     }
   },
   "additionalProperties": false

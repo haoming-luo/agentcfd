@@ -58,6 +58,7 @@ _SCHEMAS = (
     "postprocess-recipes.schema.json",
     "provider-catalog.schema.json",
     "project-clean.schema.json",
+    "project-compatibility.schema.json",
     "project-archive-plan.schema.json",
     "project-archive-restoration.schema.json",
     "project-archive-verification.schema.json",

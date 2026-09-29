@@ -20,6 +20,7 @@ from . import (
     benchmarks,
     boundaries,
     capabilities,
+    compatibility,
     contracts,
     data_exchange,
     engineering,
@@ -2322,6 +2323,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     extension_catalog.add_argument("--json", action="store_true", dest="as_json")
 
+    compatibility_command = subparsers.add_parser(
+        "compatibility",
+        help="Inspect project schema compatibility without importing or changing it.",
+    )
+    compatibility_command.add_argument(
+        "project", nargs="?", type=Path, default=Path(".")
+    )
+    compatibility_command.add_argument("--json", action="store_true", dest="as_json")
+
     mcp_manifest = subparsers.add_parser(
         "mcp-manifest",
         help="Describe bounded MCP resources and tools without starting a server.",
@@ -4583,6 +4593,21 @@ def main(argv: list[str] | None = None) -> int:
                 distribution = item["distribution"] or "unknown distribution"
                 print(f"- {item['kind']}:{item['name']} | {distribution} | {state}")
         return 0
+    if args.command == "compatibility":
+        report = compatibility.inspect_project(args.project)
+        if args.as_json:
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(
+                "AgentCFD project compatibility | "
+                f"{report['status']} | schema "
+                f"{report['detected_project_schema'] or 'not detected'}"
+            )
+            for issue in report["issues"]:
+                print(f"{issue['severity']}: {issue['code']} | {issue['repair']}")
+            if report["next_action"] is not None:
+                print(f"next: {report['next_action']['command']}")
+        return 0
     if args.command == "mcp-manifest":
         report = mcp.as_dict()
         if args.as_json:
@@ -4640,21 +4665,25 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "contracts":
         report = contracts.catalog()
-        compatibility = None
+        agentcae_status = None
         if args.check_agentcae:
-            compatibility = contracts.agentcae_compatibility()
-            report["agentcae_compatibility"] = compatibility
+            agentcae_status = contracts.agentcae_compatibility()
+            report["agentcae_compatibility"] = agentcae_status
         if args.as_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
             for contract in report["contracts"]:
                 print(f"{contract['name']}: {contract['id']}")
-            if compatibility is not None:
-                print(f"AgentCAE compatibility: {compatibility['status']}")
-                next_action = compatibility.get("next_action")
+            if agentcae_status is not None:
+                print(f"AgentCAE compatibility: {agentcae_status['status']}")
+                next_action = agentcae_status.get("next_action")
                 if isinstance(next_action, dict):
                     print(f"next: {next_action['command']}")
-        return 0 if compatibility is None or compatibility["compatible"] is True else 3
+        return (
+            0
+            if agentcae_status is None or agentcae_status["compatible"] is True
+            else 3
+        )
     if args.command == "dataset" and args.dataset_action == "inspect":
         report = interoperability.open_scientific_dataset(args.directory).inspect(
             preview=args.preview

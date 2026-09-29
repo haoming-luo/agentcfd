@@ -11,6 +11,9 @@ review.
 | Component | Role | License | Distribution rule |
 |---|---|---|---|
 | AgentCFD | workflow and scientific contracts | Apache-2.0 | core |
+| AgentCFD Learning | verified dataset adapter | Apache-2.0 | separate optional extension; no ML runtime |
+| AgentCFD MCP | bounded local agent transport | Apache-2.0 | separate optional adapter |
+| MCP Python SDK | MCP v2 protocol and stdio transport | MIT | mandatory only for `agentcfd-mcp`; absent from core |
 | NumPy | optional array hashing/interchange and NPZ bundles | permissive composite (BSD-3-Clause, 0BSD, MIT, Zlib, CC0) | optional `arrays`/`io` extra; audit bundled notices |
 | h5py/HDF5 | optional binary scientific field storage | BSD-3-Clause plus HDF5 permissive license | optional `io` extra; retain bundled licenses |
 | meshio | optional XDMF/HDF5 and mesh interchange | MIT | optional `io` extra; retain license |
@@ -68,3 +71,5 @@ to the upstream [meshio](https://github.com/nschloe/meshio),
 [CoolProp](https://github.com/CoolProp/CoolProp), and
 [CoolProp IF97](https://github.com/CoolProp/IF97) records. Pinning an
 implementation version remains part of each provider's future release gate.
+The MCP Python SDK v2 package and upstream MIT license were additionally
+reviewed on 2026-09-29 before introducing the separate `agentcfd-mcp` adapter.

@@ -283,14 +283,15 @@ contract-driven reference journey covers create, check, plan, run, inspect,
 result, verify, and cleanup preview without parsing help text or invoking a
 shell.
 
-A7 is now active: versioned entry-point groups support descriptor-first
+A7 is now implemented at its first usable boundary: versioned entry-point groups support descriptor-first
 provider, exporter, property, and learning discovery without importing optional
 code; explicit loads validate a minimal extension interface. A dependency-free
 MCP manifest generates resources, project resource templates, typed inputs, and
-risk annotations from the existing operation catalog while explicitly bundling
-neither transport nor execution. The remaining A7 work is a separately packaged
-transport adapter, project upgrade reports, and real extension implementations;
-none should widen the core dependency set.
+risk annotations from the existing operation catalog. Separate `agentcfd-mcp`
+and `agentcfd-learning` packages now provide a bounded stdio transport and a
+leakage-safe scalar dataset adapter. A read-only compatibility report classifies
+project schemas without importing user code. Later reviewed migrations and
+field-learning adapters must still avoid widening the core dependency set.
 
 ## Explicitly deferred
 

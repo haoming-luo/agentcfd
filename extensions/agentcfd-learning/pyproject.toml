@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentcfd-learning"
+version = "0.1.0a1"
+description = "Framework-neutral learning adapters for verified AgentCFD datasets."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Haoming Luo" }]
+dependencies = ["agentcfd>=0.1.0a6,<0.2"]
+
+[project.optional-dependencies]
+arrays = ["numpy>=1.24"]
+
+[project.entry-points."agentcfd.learning.v1"]
+scientific-dataset = "agentcfd_learning:extension"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9", "F401", "F63", "F7", "F82", "B023"]

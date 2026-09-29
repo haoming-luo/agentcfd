@@ -569,6 +569,10 @@ class ScientificDatasetReader:
         )
         validation_ids = ordered[:validation_count]
         train_ids = ordered[validation_count:]
+        train_id_set = set(train_ids)
+        training_samples = tuple(
+            sample for sample in samples if str(sample["case_id"]) in train_id_set
+        )
 
         input_schema = {str(record["name"]): record for record in self.manifest["inputs"]}
         output_schema = {
@@ -582,7 +586,9 @@ class ScientificDatasetReader:
         ) -> list[dict[str, object]]:
             result: list[dict[str, object]] = []
             for name in names:
-                values = [float(sample[source][name]) for sample in samples]
+                # Fit transforms on the training partition only. Using held-out
+                # values here would leak validation information into training.
+                values = [float(sample[source][name]) for sample in training_samples]
                 minimum = min(values)
                 maximum = max(values)
                 constant = minimum == maximum
@@ -628,6 +634,7 @@ class ScientificDatasetReader:
             "normalization": {
                 "method": "z-score-population",
                 "formula": "normalized=(value-offset)/scale",
+                "fitted_on": "training-partition-only",
                 "inputs": statistics(self.input_names, "inputs", input_schema),
                 "outputs": statistics(self.output_names, "outputs", output_schema),
             },

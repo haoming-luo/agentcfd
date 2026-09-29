@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentcfd-mcp"
+version = "0.1.0a1"
+description = "Official thin, bounded Model Context Protocol adapter for AgentCFD."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Haoming Luo" }]
+dependencies = ["agentcfd>=0.1.0a6,<0.2", "mcp>=2,<3"]
+
+[project.scripts]
+agentcfd-mcp = "agentcfd_mcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E9", "F401", "F63", "F7", "F82", "B023"]

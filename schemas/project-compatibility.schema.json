@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/haoming-luo/agentcfd/schemas/project-compatibility.schema.json",
+  "title": "AgentCFD side-effect-free project compatibility report 0.1",
+  "type": "object",
+  "required": [
+    "schema", "agentcfd_version", "location", "manifest",
+    "detected_project_schema", "supported_project_schema", "status",
+    "compatible", "can_open", "upgrade_available", "mutated", "issues",
+    "next_action"
+  ],
+  "properties": {
+    "schema": {"const": "agentcfd.project-compatibility/0.1"},
+    "agentcfd_version": {"type": "string", "minLength": 1},
+    "location": {"type": "string", "minLength": 1},
+    "manifest": {"type": ["string", "null"]},
+    "detected_project_schema": {"type": ["string", "null"]},
+    "supported_project_schema": {"const": "agentcfd.project/0.1"},
+    "status": {
+      "enum": ["compatible", "upgrade_required", "unsupported_newer", "invalid", "not_found"]
+    },
+    "compatible": {"type": "boolean"},
+    "can_open": {"type": "boolean"},
+    "upgrade_available": {"type": "boolean"},
+    "mutated": {"const": false},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "severity", "message", "repair"],
+        "properties": {
+          "code": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "message": {"type": "string", "minLength": 1},
+          "repair": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "next_action": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["operation", "command", "reason"],
+          "properties": {
+            "operation": {"const": "inspect_project"},
+            "command": {"type": "string", "pattern": "^agentcfd project "},
+            "reason": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}

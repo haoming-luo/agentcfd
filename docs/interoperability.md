@@ -71,9 +71,14 @@ single verified entrance instead of custom JSONL parsing.
 `ScientificDatasetReader.training_plan()` defines a framework-neutral training
 handoff over those samples. Its train/validation membership is ordered by a
 SHA-256 function of seed and case ID, its normalization is explicit and
-unit-aware, and its source sample hash prevents applying a stale plan to a
+unit-aware, is fitted on the training partition only, and its source sample hash prevents applying a stale plan to a
 different campaign export. It does not prescribe a network or serialize
 framework-specific tensors.
+
+The separately installable `extensions/agentcfd-learning` reference adapter
+turns that plan into immutable normalized train/validation batches. It imports
+no neural-network framework and exposes NumPy only as an optional consumer
+adapter, matching AgentFEM's separation of scientific contracts from trainers.
 
 The products share semantics, not Python imports. AgentCFD therefore remains
 installable without AgentFEM, and either product can evolve its solver stack

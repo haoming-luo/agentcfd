@@ -90,7 +90,7 @@ Darcy–Weisbach identity check.
 Install this versioned alpha from PyPI with Python 3.11 or newer:
 
 ```bash
-python -m pip install agentcfd==0.1.0a5
+python -m pip install agentcfd==0.1.0a6
 agentcfd doctor
 agentcfd demo pipe
 ```
@@ -110,7 +110,8 @@ agentcfd status .       # one state, one recommended next action
 agentcfd project .      # unified project/result/output view; no HDF5 read
 agentcfd actions .      # state-aware operations, costs, and side effects for AI
 agentcfd extensions     # installed optional packages, without importing them
-agentcfd mcp-manifest   # bounded resources/tools; no bundled server or execution
+agentcfd compatibility . # schema/openability report; no case.py import or rewrite
+agentcfd mcp-manifest   # bounded resources/tools; transport is a separate package
 agentcfd observations . # compact reports, shared targets, and field retention
 agentcfd params . --output operating-point.json  # freeze validated inputs
 agentcfd result .       # quantities and field metadata without opening HDF5

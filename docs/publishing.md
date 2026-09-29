@@ -2,10 +2,10 @@
 
 ## Published status
 
-`agentcfd` 0.1.0a4 was published on 2026-09-07 from GitHub commit
-`bca67c2` through PyPI Trusted Publishing. Its GitHub prerelease and PyPI wheel
-and source distribution are public. The a5 source tree is a release candidate
-until the `v0.1.0a5` GitHub Release workflow has tested and published its exact
+`agentcfd` 0.1.0a5 was published on 2026-09-11 from GitHub commit
+`f819773` through PyPI Trusted Publishing. Its GitHub prerelease and PyPI wheel
+and source distribution are public. The a6 source tree is a release candidate
+until the `v0.1.0a6` GitHub Release workflow has tested and published its exact
 artifacts; a version bump or local wheel alone is not publication evidence.
 
 The distribution name is occupied by the project, and

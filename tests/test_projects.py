@@ -2209,8 +2209,17 @@ def test_campaign_dataset_is_verified_atomic_and_records_exclusions(tmp_path, ca
     assert set(split_ids) == {f"agentcfd-{low.run_id}", f"agentcfd-{medium.run_id}"}
     assert training_plan["normalization"]["inputs"][0]["constant"] is True
     assert training_plan["normalization"]["inputs"][0]["scale"] == 1.0
-    assert training_plan["normalization"]["inputs"][1]["offset"] == pytest.approx(0.02)
-    assert training_plan["normalization"]["inputs"][1]["scale"] == pytest.approx(0.01)
+    assert training_plan["normalization"]["fitted_on"] == "training-partition-only"
+    velocity_by_case = {
+        f"agentcfd-{low.run_id}": 0.01,
+        f"agentcfd-{medium.run_id}": 0.03,
+    }
+    only_train_case = training_plan["split"]["train_case_ids"][0]
+    assert training_plan["normalization"]["inputs"][1]["offset"] == (
+        velocity_by_case[only_train_case]
+    )
+    assert training_plan["normalization"]["inputs"][1]["scale"] == 1.0
+    assert training_plan["normalization"]["inputs"][1]["constant"] is True
     assert "training-plan.schema.json" in contracts.available()
     plan_path = tmp_path / "training-plan.json"
     assert (

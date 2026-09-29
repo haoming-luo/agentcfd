@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.0a6 — 2026-09-29
+
 - Add one dependency-free product-discovery contract shared by Python and
   `capabilities --json`: progressive core/advanced/expert workflow modules,
   Model/Step/Project facade methods, the exact CLI inventory, preferred machine
@@ -36,6 +38,17 @@
 - Extract provider planning and compact result-summary construction from the
   oversized Project module into pure internal services without changing the
   public project or serialized-result contracts.
+- Add a side-effect-free project compatibility report and bounded agent
+  operation that distinguish current, legacy, newer, foreign, malformed, and
+  missing manifests without importing project code or pretending an automatic
+  migration exists.
+- Add separately installable `agentcfd-mcp` and `agentcfd-learning` reference
+  packages. The MCP v2 stdio adapter enforces roots and deny-by-default
+  mutation/execution; the learning adapter creates framework-neutral batches
+  and AgentFEM-compatible sample records from verified datasets.
+- Fit dataset normalization on training samples only, eliminating validation
+  leakage while retaining deterministic content-bound splits, units, and
+  explicit constant columns.
 - Add a dependency-free experimental `zero_d` API for steady passive hydraulic
   networks with prescribed pressures and volume/mass-flow demands, elevation head, circular-pipe
   and linear/quadratic resistance branches, parallel flow splitting, named

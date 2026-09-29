@@ -123,6 +123,16 @@ _OPERATIONS = (
         output_contract="mcp-manifest.schema.json",
     ),
     Operation(
+        "inspect_compatibility",
+        "agentcfd compatibility PROJECT --json",
+        "read",
+        "Inspect project schema compatibility without importing or changing project code.",
+        idempotent=True,
+        retry_policy="safe",
+        approval_policy="none",
+        output_contract="project-compatibility.schema.json",
+    ),
+    Operation(
         "create_project",
         "agentcfd init PROJECT --template TEMPLATE --json",
         "write",

@@ -113,10 +113,23 @@ must then return this minimal descriptor from a callable `descriptor()`:
 }
 ```
 
-The core currently establishes discovery and compatibility, not automatic
-installation or privileged execution. Provider/exporter/property/learning
+The core establishes discovery and compatibility, not automatic installation
+or privileged execution. The reference `extensions/agentcfd-learning` package
+is the first real implementation: it prepares leakage-safe, framework-neutral
+batches from verified scalar campaign datasets. Provider/exporter/property/learning
 integration protocols can evolve behind these separate namespaces without
 making their runtimes mandatory core dependencies.
+
+## Project compatibility
+
+```bash
+agentcfd compatibility PROJECT --json
+```
+
+This read-only command parses `agentcfd.toml` without importing `case.py`. It
+distinguishes current, legacy, newer, foreign, malformed, and missing schemas,
+reports whether the project can be opened, and never rewrites a manifest. A
+migration is advertised only after an explicit reviewed migrator exists.
 
 ## MCP manifest
 
@@ -129,8 +142,11 @@ templates, typed tool input schemas, annotations, approval/retry policy, and
 expected artifacts from the existing operation catalog. It deliberately
 declares `transport: null` and does not start a server or execute a tool. A thin
 MCP transport package can consume this manifest; it must enforce host approval
-and dispatch only through the bounded argv renderer. Arbitrary shell and
-arbitrary Python remain absent.
+and dispatch only through the bounded argv renderer. The independent
+`extensions/agentcfd-mcp` reference package does this over local stdio: paths
+remain under configured roots, mutation and execution are disabled by default,
+and operations run in separate processes. Arbitrary shell and arbitrary Python
+remain absent.
 
 ## Minimum machine journey
 

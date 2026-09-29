@@ -336,7 +336,9 @@ and bounded rows; it never imports a solver or opens XDMF/HDF5 fields.
 boundary: a SHA-256 case-ID split plus population z-score statistics bound to
 the exact sample payload hash. The plan references rather than duplicates
 samples, records raw declared units and the transform formula, and retains
-constant columns with scale 1. Different frameworks can therefore reproduce
+constant columns with scale 1. Statistics are fitted strictly on the training
+partition, preventing validation data from leaking into preprocessing.
+Different frameworks can therefore reproduce
 the same admission, column order, split, and normalization without sharing
 Python implementations or silently changing scientific context.
 
